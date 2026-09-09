@@ -383,7 +383,7 @@ fn rectangular_pattern_directions(
                 });
             cadmpeg_ir::sketches::SketchPatternDirection::new(
                 source.direction,
-                cadmpeg_ir::features::Length::new(spacing)?,
+                cadmpeg_ir::scalar::Length::new(spacing)?,
                 distance,
                 source.count_parameter.clone(),
             )
@@ -607,7 +607,7 @@ pub(crate) fn exact_circular_pattern(
         native_stream(&parameter.id) == Some(scope)
             && parameter.owner_record_index() == Some(*count_parameter)
     });
-    let angle = cadmpeg_ir::features::Angle::new(*evaluated_angle)?;
+    let angle = cadmpeg_ir::scalar::Angle::new(*evaluated_angle)?;
     if !evaluated_angle.is_finite()
         || angle_parameter.is_some_and(|parameter| {
             design_angle(parameter).is_none_or(|value| !scalar_close(value.get(), angle.get()))
@@ -682,7 +682,7 @@ pub(crate) fn exact_circular_pattern(
                         })
                         .then(|| {
                             Some(SketchCircularPatternInstance {
-                                angle: cadmpeg_ir::features::Angle::new(rotation)?,
+                                angle: cadmpeg_ir::scalar::Angle::new(rotation)?,
                                 entities: instance
                                     .iter()
                                     .map(|entity| entity.id().clone())
@@ -927,8 +927,8 @@ pub(crate) fn translated_sketch_geometry_matches(
 }
 
 fn optional_angle_bounds_match(
-    first: Option<&[cadmpeg_ir::features::Angle; 2]>,
-    second: Option<&[cadmpeg_ir::features::Angle; 2]>,
+    first: Option<&[cadmpeg_ir::scalar::Angle; 2]>,
+    second: Option<&[cadmpeg_ir::scalar::Angle; 2]>,
 ) -> bool {
     match (first, second) {
         (None, None) => true,
@@ -992,13 +992,13 @@ mod tests {
         ));
         let resized = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(12.0, 0.0),
-            radius: cadmpeg_ir::features::Length::new(3.1).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(3.1).unwrap(),
         })
         .unwrap();
         assert!(!translated_sketch_geometry_matches(
             &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(2.0, 3.0),
-                radius: cadmpeg_ir::features::Length::new(3.0).unwrap(),
+                radius: cadmpeg_ir::scalar::Length::new(3.0).unwrap(),
             })
             .unwrap(),
             &resized,
@@ -1270,7 +1270,7 @@ mod tests {
                 id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
-                    radius: cadmpeg_ir::features::Length::new(0.75).unwrap(),
+                    radius: cadmpeg_ir::scalar::Length::new(0.75).unwrap(),
                 })
                 .unwrap(),
             )
@@ -1395,7 +1395,7 @@ mod tests {
                 id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
-                    radius: cadmpeg_ir::features::Length::new(0.75).unwrap(),
+                    radius: cadmpeg_ir::scalar::Length::new(0.75).unwrap(),
                 })
                 .unwrap(),
             )
@@ -1466,8 +1466,8 @@ mod tests {
 
     #[test]
     fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
-        use cadmpeg_ir::features::Length;
         use cadmpeg_ir::math::Point2;
+        use cadmpeg_ir::scalar::Length;
         use cadmpeg_ir::sketches::{
             SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
             SketchGeometryDefinition, SketchId,

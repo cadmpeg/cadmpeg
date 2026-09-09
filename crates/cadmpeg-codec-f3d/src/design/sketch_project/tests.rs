@@ -176,7 +176,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             second_reference: None,
             placement: Some(cadmpeg_ir::sketches::TextPlacement {
                 anchor: Point2::new(0.0, 0.0),
-                rotation: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+                rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
             }),
         },
         raw_bytes: Vec::new(),

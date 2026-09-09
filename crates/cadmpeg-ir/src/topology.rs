@@ -272,21 +272,6 @@ impl Shell {
         &self.free_vertices
     }
 
-    /// Mutable face identities with fixed membership counts.
-    pub fn faces_mut(&mut self) -> &mut [FaceId] {
-        &mut self.faces
-    }
-
-    /// Mutable wire edge identities with fixed membership counts.
-    pub fn wire_edges_mut(&mut self) -> &mut [EdgeId] {
-        &mut self.wire_edges
-    }
-
-    /// Mutable free vertex identities with fixed membership counts.
-    pub fn free_vertices_mut(&mut self) -> &mut [VertexId] {
-        &mut self.free_vertices
-    }
-
     /// Edits topology members and preserves the shell when admission fails.
     pub fn edit_topology<R>(
         &mut self,
@@ -1328,6 +1313,9 @@ impl ParameterInterval {
     pub const fn endpoints(self) -> [f64; 2] {
         self.0
     }
+    pub(crate) const fn as_raw(&self) -> &[f64; 2] {
+        &self.0
+    }
 }
 
 impl TryFrom<[f64; 2]> for ParameterInterval {
@@ -1477,11 +1465,11 @@ pub struct Point {
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }
 
-fn deserialize_tolerance<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::PositiveScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "tolerance")
-}
+crate::units::named_field!(
+    deserialize_tolerance,
+    Option<crate::units::PositiveScalar>,
+    "tolerance"
+);
 
 #[cfg(test)]
 mod tests {

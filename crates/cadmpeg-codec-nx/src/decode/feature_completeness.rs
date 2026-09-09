@@ -2,12 +2,15 @@
 //! Feature-completeness predicates for NX decode.
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
-    CurveProjectionDirectionState, Feature, FeatureDefinition, Length, LoftSection, ParameterId,
-    TrimRegion,
-};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
+        CurveProjectionDirectionState, Feature, FeatureDefinition, LoftSection, ParameterId,
+        TrimRegion,
+    },
+    scalar::Length,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod operands;
@@ -398,7 +401,7 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
     };
     let construction = shape.construction();
     let exit_kind = shape.exit_kind();
-    let diameter = &shape.diameter();
+    let diameter = shape.diameter();
     let (construction_incomplete, specification) = match construction {
         cadmpeg_ir::features::HoleConstruction::Form {
             kind,

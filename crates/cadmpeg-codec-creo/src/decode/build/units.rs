@@ -11,10 +11,11 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, WrapMode};
+use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
@@ -259,37 +260,37 @@ fn scale_length(length: &mut Length, scale: f64) -> Result<(), CodecError> {
 }
 
 fn scale_positive_length(
-    length: &mut cadmpeg_ir::features::PositiveLength,
+    length: &mut cadmpeg_ir::scalar::PositiveLength,
     scale: f64,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::features::PositiveLength::new(length.get() * scale).ok_or_else(|| {
+    *length = cadmpeg_ir::scalar::PositiveLength::new(length.get() * scale).ok_or_else(|| {
         CodecError::Malformed("Creo scaled length must be positive and finite".into())
     })?;
     Ok(())
 }
 
 fn scale_nonzero_length(
-    length: &mut cadmpeg_ir::features::NonZeroLength,
+    length: &mut cadmpeg_ir::scalar::NonZeroLength,
     scale: f64,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::features::NonZeroLength::new(length.get() * scale)
+    *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() * scale)
         .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite and nonzero"))?;
     Ok(())
 }
 
 fn scale_nonnegative_length(
-    length: &mut cadmpeg_ir::features::NonNegativeLength,
+    length: &mut cadmpeg_ir::scalar::NonNegativeLength,
     scale: f64,
 ) -> Result<(), CodecError> {
     *length =
-        cadmpeg_ir::features::NonNegativeLength::new(length.get() * scale).ok_or_else(|| {
+        cadmpeg_ir::scalar::NonNegativeLength::new(length.get() * scale).ok_or_else(|| {
             CodecError::malformed("Creo scaled length must be nonnegative and finite")
         })?;
     Ok(())
 }
 
 fn scale_optional_positive_length(
-    length: &mut Option<cadmpeg_ir::features::PositiveLength>,
+    length: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
     scale: f64,
 ) -> Result<(), CodecError> {
     if let Some(length) = length {
@@ -1344,7 +1345,9 @@ fn scale_pattern_kind(
 fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *normal,
@@ -1353,45 +1356,60 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = cylinder_surface.radius();
             *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
+                radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
-                *ratio,
-                *half_angle,
+                radius * scale,
+                ratio,
+                half_angle,
             )
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = sphere_surface.radius();
             *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
+                radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
-                *major_radius * scale,
-                *minor_radius * scale,
+                major_radius * scale,
+                minor_radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1436,7 +1454,8 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
 fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *direction,
@@ -1444,50 +1463,63 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
+                radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *major_direction,
-                *major_radius * scale,
-                *minor_radius * scale,
+                major_radius * scale,
+                minor_radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
             *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
                 Point3::new(vertex.x * scale, vertex.y * scale, vertex.z * scale),
                 *axis,
                 *major_direction,
-                *focal_distance * scale,
+                focal_distance * scale,
             )
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *major_direction,
-                *major_radius * scale,
-                *minor_radius * scale,
+                major_radius * scale,
+                minor_radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (point,) = degenerate_curve.parts();
+            let point = degenerate_curve.point();
             *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
                 point.x * scale,
                 point.y * scale,
@@ -1550,25 +1582,63 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
         match self {
-            ProceduralSurfaceDefinition::Extrusion {
-                direction,
-                native_position,
-                ..
-            } => {
-                scale_vector3(direction, scale);
-                if let Some(position) = native_position {
+            ProceduralSurfaceDefinition::Extrusion(payload) => {
+                let mut direction = *payload.direction();
+                let mut native_position = payload.native_position();
+                scale_vector3(&mut direction, scale);
+                if let Some(position) = &mut native_position {
                     scale_point3(position, scale);
                 }
+                *payload =
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        payload.directrix().clone(),
+                        payload.parameter_interval(),
+                        direction,
+                        native_position,
+                        payload.revision_form().clone(),
+                    )?;
             }
-            ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
-                scale_vector3(direction, scale);
+            ProceduralSurfaceDefinition::LinearSweep(payload) => {
+                let mut direction = *payload.direction();
+                scale_vector3(&mut direction, scale);
+                *payload =
+                    cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                        payload.directrix().clone(),
+                        direction,
+                    )?;
             }
-            ProceduralSurfaceDefinition::Revolution { axis_origin, .. }
-            | ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
-                scale_point3(axis_origin, scale);
+            ProceduralSurfaceDefinition::Revolution(payload) => {
+                let mut origin = *payload.axis_origin();
+                scale_point3(&mut origin, scale);
+                *payload =
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        payload.directrix().clone(),
+                        (origin, *payload.axis_direction()),
+                        *payload.angular_interval(),
+                        payload.angular_parameter_interval(),
+                        payload.parameter_interval(),
+                        *payload.transposed(),
+                        payload.revision_form().clone(),
+                    )?;
             }
-            ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
-                scale_vector3(basepoint, scale);
+            ProceduralSurfaceDefinition::AxisRevolution(payload) => {
+                let mut axis_origin = *payload.axis_origin();
+                scale_point3(&mut axis_origin, scale);
+                *payload = cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
+                    payload.directrix().clone(),
+                    axis_origin,
+                    *payload.axis_direction(),
+                )?;
+            }
+            ProceduralSurfaceDefinition::Sum(payload) => {
+                let mut basepoint = *payload.basepoint();
+                scale_vector3(&mut basepoint, scale);
+                *payload = cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                    payload.first().clone(),
+                    payload.second().clone(),
+                    basepoint,
+                    payload.revision_form().clone(),
+                )?;
             }
             _ => {}
         }
@@ -1883,7 +1953,7 @@ mod tests {
                 extent: ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(3.0)
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
                                 .expect("nonzero length fixture"),
                         },
                         draft: None,
@@ -2008,7 +2078,7 @@ mod tests {
                 0.0, 0.0, 1.0,
             ))
             .expect("valid direction fixture"),
-            angle: cadmpeg_ir::features::Angle::new(0.5).expect("finite angle fixture"),
+            angle: cadmpeg_ir::scalar::Angle::new(0.5).expect("finite angle fixture"),
         };
         scale_face_motion(&mut rotate, 25.4).expect("valid test fixture");
         let FaceMotion::Rotate {
@@ -2060,7 +2130,7 @@ mod tests {
             .expect("valid test fixture"),
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(
-                cadmpeg_ir::features::PositiveLength::new(2.0).expect("positive length fixture"),
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive length fixture"),
             ),
         };
 
@@ -2093,14 +2163,17 @@ mod tests {
         let surface = cadmpeg_ir::geometry::ProceduralSurface::try_new(
             cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:entity#surface-construction")
                 .expect("identity grammar"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                directrix: cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
-                    .expect("identity grammar"),
-                parameter_interval: Some([1.0, 2.0]),
-                direction: Vector3::new(1.0, 2.0, 3.0),
-                native_position: Some(Point3::new(4.0, 5.0, 6.0)),
-                revision_form: None,
-            },
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
+                        .expect("identity grammar"),
+                    Some([1.0, 2.0]),
+                    Vector3::new(1.0, 2.0, 3.0),
+                    Some(Point3::new(4.0, 5.0, 6.0)),
+                    None,
+                )
+                .unwrap(),
+            ),
             Some(7.0),
             Some([Some(8.0), None, Some(9.0), None]),
         )
@@ -2138,21 +2211,20 @@ mod tests {
         normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            direction,
-            native_position,
-            parameter_interval,
-            ..
-        } = surface.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
+            surface.definition()
         else {
             panic!("test surface construction changed family");
         };
+        let direction = definition_payload.direction();
+        let native_position = definition_payload.native_position();
+        let parameter_interval = definition_payload.parameter_interval();
         assert_vector3(*direction, [25.4, 50.8, 76.2]);
         assert_point3(
             *native_position.as_ref().expect("test native position"),
             [101.6, 127.0, 152.4],
         );
-        assert_eq!(*parameter_interval, Some([1.0, 2.0]));
+        assert_eq!(parameter_interval, Some([1.0, 2.0]));
         assert_close(
             surface
                 .cache_fit_tolerance()
@@ -2170,14 +2242,19 @@ mod tests {
         else {
             panic!("test curve construction changed family");
         };
-        let (_, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+        let center = helix_payload.center();
+        let major = helix_payload.major();
+        let minor = helix_payload.minor();
+        let pitch = helix_payload.pitch();
+        let apex_factor = helix_payload.apex_factor();
+        let axis = helix_payload.axis();
 
         assert_point3(*center, [25.4, 50.8, 76.2]);
         assert_vector3(*major, [101.6, 127.0, 152.4]);
         assert_vector3(*minor, [-127.0, 101.6, 152.4]);
         assert_vector3(*pitch, [254.0, 279.4, 304.8]);
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-        assert_close(*apex_factor, 0.25);
+        assert_close(apex_factor, 0.25);
         assert_close(
             curve.cache_fit_tolerance().expect("test curve tolerance"),
             330.2,
@@ -2195,7 +2272,8 @@ mod tests {
         let PcurveGeometry::Line(line_pcurve) = geometry else {
             panic!("test pcurve changed family");
         };
-        let (origin, direction) = line_pcurve.parts();
+        let origin = line_pcurve.origin();
+        let direction = line_pcurve.direction();
         assert_point2(*origin, [25.4, 2.0]);
         assert_point2(*direction, [76.2, 4.0]);
     }
@@ -2227,17 +2305,21 @@ mod tests {
         let SurfaceGeometry::Cylinder(cylinder_surface) = surface else {
             panic!("test surface changed family");
         };
-        let (origin, axis, _, radius) = cylinder_surface.parts();
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let radius = cylinder_surface.radius();
         assert_point3(*origin, [25.4, 50.8, 76.2]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-        assert_close(*radius, 101.6);
+        assert_close(radius, 101.6);
         let CurveGeometry::Circle(circle_curve) = curve else {
             panic!("test curve changed family");
         };
-        let (center, axis, _, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let radius = circle_curve.radius();
         assert_point3(*center, [50.8, 76.2, 101.6]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-        assert_close(*radius, 127.0);
+        assert_close(radius, 127.0);
     }
 
     fn assert_close(actual: f64, expected: f64) {

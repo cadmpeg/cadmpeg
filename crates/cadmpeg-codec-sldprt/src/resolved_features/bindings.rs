@@ -30,12 +30,13 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed, PatternTransform,
-};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::{
+    features::{FeatureDefinition, PathRef, PatternKind, PatternSeed, PatternTransform},
+    scalar::{Angle, Length},
+};
 use std::collections::{HashMap, HashSet};
 
 const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
@@ -691,7 +692,8 @@ pub(crate) fn bind_pattern_inputs(
 fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             Some((*origin, normal.unit()?))
         }
         SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {

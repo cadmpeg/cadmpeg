@@ -3,9 +3,12 @@
 
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-    HoleConstruction, HoleKind, Length, LinearTermination, ProfileRef, VertexSelection,
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
+        HoleConstruction, HoleKind, LinearTermination, ProfileRef, VertexSelection,
+    },
+    scalar::Length,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -82,7 +85,7 @@ pub(crate) fn project_extrude(
         let sole = values.next().filter(|_| values.next().is_none())?;
         parse_positive_length_mm(sole)
             .or_else(|| parse_positive_dimension_length_mm(sole))
-            .and_then(cadmpeg_ir::features::NonZeroLength::new)
+            .and_then(cadmpeg_ir::scalar::NonZeroLength::new)
     };
     let legacy_length = || {
         source_depth
@@ -91,7 +94,7 @@ pub(crate) fn project_extrude(
                 parse_positive_length_mm(value)
                     .or_else(|| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::features::NonZeroLength::new)
+            .and_then(cadmpeg_ir::scalar::NonZeroLength::new)
     };
     let length = |name| {
         feature
@@ -104,10 +107,10 @@ pub(crate) fn project_extrude(
                     .flatten()
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::features::NonZeroLength::new)
+            .and_then(cadmpeg_ir::scalar::NonZeroLength::new)
     };
     let draft = match feature.parameters.get("Draft") {
-        Some(value) => Some(cadmpeg_ir::features::SlopeAngle::new(parse_angle_rad(
+        Some(value) => Some(cadmpeg_ir::scalar::SlopeAngle::new(parse_angle_rad(
             value,
         )?)?),
         None => None,
@@ -175,7 +178,7 @@ pub(crate) fn project_extrude(
         }),
         Some("OffsetFromFace") => match length("Depth")
             .or_else(sole_length)
-            .and_then(|offset| cadmpeg_ir::features::PositiveLength::new(offset.get()))
+            .and_then(|offset| cadmpeg_ir::scalar::PositiveLength::new(offset.get()))
         {
             Some(offset) => one_sided(LinearTermination::OffsetFromFace {
                 face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
@@ -240,7 +243,7 @@ pub(crate) fn project_hole(
         .parameters
         .get("Diameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::features::PositiveLength::new)
+        .and_then(cadmpeg_ir::scalar::PositiveLength::new)
         .or_else(|| profile.as_ref().map(|profile| profile.diameter));
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
@@ -250,38 +253,38 @@ pub(crate) fn project_hole(
         .parameters
         .get("CounterboreDiameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::features::PositiveLength::new);
+        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
     let counterbore_depth = feature
         .parameters
         .get("CounterboreDepth")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::features::PositiveLength::new);
+        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
     let countersink_diameter = feature
         .parameters
         .get("CountersinkDiameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::features::PositiveLength::new);
+        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
     let countersink_angle = feature
         .parameters
         .get("CountersinkAngle")
         .and_then(|value| parse_bounded_angle_rad(value))
-        .and_then(cadmpeg_ir::features::InteriorAngle::new);
+        .and_then(cadmpeg_ir::scalar::InteriorAngle::new);
     let drill_point_angle = feature
         .parameters
         .get("DrillPointAngle")
         .and_then(|value| parse_bounded_angle_rad(value))
-        .and_then(cadmpeg_ir::features::InteriorAngle::new);
+        .and_then(cadmpeg_ir::scalar::InteriorAngle::new);
     let thread = feature
         .parameters
         .get("ThreadMajorDiameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::features::PositiveLength::new)
+        .and_then(cadmpeg_ir::scalar::PositiveLength::new)
         .zip(
             feature
                 .parameters
                 .get("ThreadDepth")
                 .and_then(|value| parse_positive_length_mm(value))
-                .and_then(cadmpeg_ir::features::PositiveLength::new),
+                .and_then(cadmpeg_ir::scalar::PositiveLength::new),
         )
         .zip(drill_point_angle)
         .map(|((major_diameter, thread_depth), drill_point_angle)| {
@@ -292,7 +295,7 @@ pub(crate) fn project_hole(
                     .parameters
                     .get("ThreadPitch")
                     .and_then(|value| parse_positive_length_mm(value))
-                    .and_then(cadmpeg_ir::features::PositiveLength::new),
+                    .and_then(cadmpeg_ir::scalar::PositiveLength::new),
                 drill_point_angle,
             }
         });
@@ -339,7 +342,7 @@ pub(crate) fn project_hole(
             .and_then(|value| parse_positive_length_mm(value))
             .and_then(Length::new)
             .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
-            .and_then(|length| cadmpeg_ir::features::NonZeroLength::new(length.get()))
+            .and_then(|length| cadmpeg_ir::scalar::NonZeroLength::new(length.get()))
             .map(|length| LinearTermination::Blind { length }),
         Some("ThroughAll") => Some(LinearTermination::ThroughAll),
         Some(_) => None,
@@ -405,12 +408,12 @@ pub(crate) fn threaded_hole_major_diameter(
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HoleProfileConstruction {
-    pub(crate) diameter: cadmpeg_ir::features::PositiveLength,
+    pub(crate) diameter: cadmpeg_ir::scalar::PositiveLength,
     pub(crate) depth: Option<Length>,
     pub(crate) construction: HoleConstruction,
     pub(crate) exit_kind: Option<HoleKind>,
     pub(crate) bottom: Option<HoleBottom>,
-    pub(crate) taper_angle: Option<cadmpeg_ir::features::InteriorAngle>,
+    pub(crate) taper_angle: Option<cadmpeg_ir::scalar::InteriorAngle>,
 }
 
 fn hole_form(kind: HoleKind) -> HoleConstruction {
@@ -460,7 +463,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
     enum ParsedDimension {
         Diameter(Length),
         Length(Length),
-        Angle(cadmpeg_ir::features::InteriorAngle),
+        Angle(cadmpeg_ir::scalar::InteriorAngle),
     }
 
     let mut dimensions = Vec::new();
@@ -489,7 +492,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 dimensions.push(ParsedDimension::Diameter(value));
             }
         } else if let Some(value) =
-            parse_bounded_angle_rad(expression).and_then(cadmpeg_ir::features::InteriorAngle::new)
+            parse_bounded_angle_rad(expression).and_then(cadmpeg_ir::scalar::InteriorAngle::new)
         {
             dimensions.push(ParsedDimension::Angle(value));
         } else if let Some(value) =
@@ -513,7 +516,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
     angles.sort_by(|left, right| left.get().total_cmp(&right.get()));
     match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
-            diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
             depth: Some(*depth),
             construction: hole_form(HoleKind::Simple),
             exit_kind: None,
@@ -521,7 +524,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             taper_angle: None,
         }),
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
-            diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
             depth: Some(*depth),
             construction: hole_form(HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
@@ -547,13 +550,11 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 && thread_depth.get() < drill_depth.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
                 depth: Some(*drill_depth),
                 construction: HoleConstruction::NativeThread {
-                    major_diameter: cadmpeg_ir::features::PositiveLength::new(
-                        major_diameter.get(),
-                    )?,
-                    thread_depth: cadmpeg_ir::features::PositiveLength::new(thread_depth.get())?,
+                    major_diameter: cadmpeg_ir::scalar::PositiveLength::new(major_diameter.get())?,
+                    thread_depth: cadmpeg_ir::scalar::PositiveLength::new(thread_depth.get())?,
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
@@ -574,13 +575,11 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             && taper_angle.get() < drill_point_angle.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
                 depth: Some(*drill_depth),
                 construction: HoleConstruction::NativeThread {
-                    major_diameter: cadmpeg_ir::features::PositiveLength::new(
-                        major_diameter.get(),
-                    )?,
-                    thread_depth: cadmpeg_ir::features::PositiveLength::new(thread_depth.get())?,
+                    major_diameter: cadmpeg_ir::scalar::PositiveLength::new(major_diameter.get())?,
+                    thread_depth: cadmpeg_ir::scalar::PositiveLength::new(thread_depth.get())?,
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
@@ -598,11 +597,11 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 && entry_depth.get() < depth.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
                 depth: Some(*depth),
                 construction: hole_form(HoleKind::CounterboreDrilled {
-                    diameter: cadmpeg_ir::features::PositiveLength::new(entry_diameter.get())?,
-                    depth: cadmpeg_ir::features::PositiveLength::new(entry_depth.get())?,
+                    diameter: cadmpeg_ir::scalar::PositiveLength::new(entry_diameter.get())?,
+                    depth: cadmpeg_ir::scalar::PositiveLength::new(entry_depth.get())?,
                     drill_point_angle: *drill_point_angle,
                 }),
                 exit_kind: None,
@@ -632,16 +631,14 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             && counterbore_depth.get() < through_depth.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
                 depth: Some(*through_depth),
                 construction: hole_form(HoleKind::Counterbore {
-                    diameter: cadmpeg_ir::features::PositiveLength::new(
-                        counterbore_diameter.get(),
-                    )?,
-                    depth: cadmpeg_ir::features::PositiveLength::new(counterbore_depth.get())?,
+                    diameter: cadmpeg_ir::scalar::PositiveLength::new(counterbore_diameter.get())?,
+                    depth: cadmpeg_ir::scalar::PositiveLength::new(counterbore_depth.get())?,
                 }),
                 exit_kind: Some(HoleKind::Countersink {
-                    diameter: cadmpeg_ir::features::PositiveLength::new(exit_diameter.get())?,
+                    diameter: cadmpeg_ir::scalar::PositiveLength::new(exit_diameter.get())?,
                     angle: *exit_angle,
                 }),
                 bottom: None,
@@ -658,18 +655,18 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             && entry_angle.get() < drill_point_angle.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
                 depth: Some(*drill_depth),
                 construction: hole_form(HoleKind::Counterdrill {
                     diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
-                        cadmpeg_ir::features::PositiveLength::new(recess_diameter.get())?,
-                        Some(cadmpeg_ir::features::PositiveLength::new(
+                        cadmpeg_ir::scalar::PositiveLength::new(recess_diameter.get())?,
+                        Some(cadmpeg_ir::scalar::PositiveLength::new(
                             entry_diameter.get(),
                         )?),
                     )
                     .ok()?,
 
-                    depth: cadmpeg_ir::features::PositiveLength::new(recess_depth.get())?,
+                    depth: cadmpeg_ir::scalar::PositiveLength::new(recess_depth.get())?,
                     angle: *entry_angle,
                 }),
                 exit_kind: None,

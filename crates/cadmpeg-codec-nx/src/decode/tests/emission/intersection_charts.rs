@@ -88,11 +88,13 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     else {
         panic!("tolerant intersection definition");
     };
-    let (supports, endpoints, tolerance) = intersection.parts();
+    let supports = intersection.supports();
+    let endpoints = intersection.endpoints();
+    let tolerance = intersection.tolerance();
 
     assert_ne!(supports[0], supports[1]);
     assert_eq!(*endpoints, expected_endpoints);
-    assert_eq!(*tolerance, 0.01);
+    assert_eq!(tolerance, 0.01);
     assert_eq!(*parameterization, None);
 
     let start = off_support_ir.model.edges[0].start.clone();
@@ -975,7 +977,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     else {
         unreachable!()
     };
-    let (supports, _, _) = intersection.parts();
+    let supports = intersection.supports();
 
     assert_eq!(
         ir.model.procedural_curves[0].cache_fit_tolerance(),

@@ -185,8 +185,9 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
         let DecodedProceduralSurfaceDefinition::Helix(construction) = definition else {
             panic!("expected helix surface definition")
         };
-        let (_, _, path, profile) = construction.parts();
-        let (_, _, _, _, pitch, _, _) = path.parts();
+        let path = construction.path();
+        let profile = construction.profile();
+        let pitch = path.pitch();
         assert_eq!(*pitch, Vector3::new(0.0, 0.0, 40.0));
         assert_eq!(
             *profile,

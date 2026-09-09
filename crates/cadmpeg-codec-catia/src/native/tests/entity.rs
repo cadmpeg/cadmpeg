@@ -841,7 +841,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(12.5).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(12.5).unwrap()
         ))
     );
     assert_eq!(parameter.owner, None);

@@ -19,16 +19,18 @@ fn e5_circle_parser_reads_framed_carrier() {
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, _, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let radius = circle_curve.radius();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(*radius, 2.5);
+            assert_eq!(radius, 2.5);
         }
         other => panic!("expected circle, got {other:?}"),
     }
     let surfaces = crate::families::e5::records::e5_surfaces(&stream);
     assert!(
-        matches!(surfaces[0].geometry, SurfaceGeometry::Cylinder(cylinder_surface) if { *cylinder_surface.parts().3 == 2.5 })
+        matches!(surfaces[0].geometry, SurfaceGeometry::Cylinder(cylinder_surface) if { cylinder_surface.radius() == 2.5 })
     );
 
     let mut small = e5_circle_stream();
@@ -273,14 +275,18 @@ fn e5_surface_parser_reads_framed_torus() {
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
-            assert_eq!((*major_radius, *minor_radius), (12.0, 2.0));
+            assert_eq!((major_radius, minor_radius), (12.0, 2.0));
         }
         other => panic!("expected torus, got {other:?}"),
     }
@@ -291,8 +297,8 @@ fn e5_surface_parser_reads_framed_torus() {
     assert!(
         matches!(crate::families::e5::records::e5_surfaces(&large)[0].geometry, SurfaceGeometry::Torus(torus_surface)
         if {
-            (*torus_surface.parts().3 == 2_000_000.0)
-                && (*torus_surface.parts().4 == 1_500_000.0)
+            (torus_surface.major_radius() == 2_000_000.0)
+                && (torus_surface.minor_radius() == 1_500_000.0)
         })
     );
 

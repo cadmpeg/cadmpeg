@@ -230,7 +230,7 @@ pub fn compact_simple_hole_geometry<'a>(
         )?],
         direction: frame.axis(),
         extent: LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
         },
         geometry: HoleCylinder {
             origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
@@ -617,7 +617,7 @@ pub fn extrusion_extent_and_direction(
 pub fn blind_extrude_side(length: f64) -> Option<ExtrudeSide> {
     Some(ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
         },
         draft: None,
     })

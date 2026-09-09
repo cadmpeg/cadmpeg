@@ -82,8 +82,8 @@ pub fn counterbore_dimensions(
             let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
                 return None;
             };
-            let (_, _, _, radius) = cylinder_surface.parts();
-            Some(*radius)
+            let radius = cylinder_surface.radius();
+            Some(radius)
         })
         .collect::<Vec<_>>();
     let dimension_tables = || {
@@ -667,7 +667,7 @@ pub fn counterbore_placement_from_corner_envelopes(
         assignment.position,
         assignment.direction,
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(assignment.length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(assignment.length)?,
         },
     ))
 }
@@ -814,7 +814,7 @@ pub fn counterbore_directed_span(
         counterbore.1,
         Vector3::new(direction[0], direction[1], direction[2]),
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
         },
     ))
 }
@@ -852,8 +852,10 @@ pub fn counterbore_source_boundary_circle(
                 let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
                     return None;
                 };
-                let (center, axis, _, candidate) = circle_curve.parts();
-                ((*candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
+                let center = circle_curve.center();
+                let axis = circle_curve.axis();
+                let candidate = circle_curve.radius();
+                ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalize([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
                 let normal = normalize(plane.normal)?;
@@ -1033,14 +1035,17 @@ pub fn complete_cylinder_source_carrier(
     let SurfaceGeometry::Cylinder(cylinder) = first else {
         return None;
     };
-    let (origin, axis, ref_direction, candidate) = cylinder.parts();
-    ((*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
+    let origin = cylinder.origin();
+    let axis = cylinder.axis();
+    let ref_direction = cylinder.ref_direction();
+    let candidate = cylinder.radius();
+    ((candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
         && carriers.iter().all(|candidate| *candidate == first))
     .then_some(HoleCylinder {
         origin: *origin,
         axis: *axis,
         ref_direction: *ref_direction,
-        radius: *candidate,
+        radius: candidate,
     })
 }
 

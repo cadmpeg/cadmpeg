@@ -12,7 +12,7 @@ use crate::decode::sketch_transfer::loci::{
     unique_bounded_curve_segment,
 };
 use crate::feature::definitions::SolverSubtable;
-use cadmpeg_ir::features::Angle;
+use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,

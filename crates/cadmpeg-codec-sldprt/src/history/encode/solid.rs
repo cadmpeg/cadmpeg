@@ -331,10 +331,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         placements: &Option<Vec<HolePlacement>>,
         construction: &HoleConstruction,
         exit_kind: &Option<HoleKind>,
-        diameter: &Option<cadmpeg_ir::features::PositiveLength>,
+        diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
         extent: &Option<LinearTermination>,
         bottom: &Option<HoleBottom>,
-        taper_angle: &Option<cadmpeg_ir::features::InteriorAngle>,
+        taper_angle: &Option<cadmpeg_ir::scalar::InteriorAngle>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

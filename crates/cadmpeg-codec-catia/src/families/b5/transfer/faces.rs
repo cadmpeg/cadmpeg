@@ -220,7 +220,9 @@ fn b5_planar_loop_points(
     let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
         return None;
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     let normal = normal.unit()?;
     let u_axis = u_axis.unit()?;
     if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
@@ -252,7 +254,8 @@ fn b5_planar_loop_points(
         let PcurveGeometry::Line(line_pcurve) = &pcurve.geometry else {
             return None;
         };
-        let (uv_origin, direction) = line_pcurve.parts();
+        let uv_origin = line_pcurve.origin();
+        let direction = line_pcurve.direction();
         let uv_endpoints = parameter_range.map(|parameter| {
             Point2::new(
                 uv_origin.u + parameter * direction.u,

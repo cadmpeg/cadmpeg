@@ -795,10 +795,12 @@ mod tests {
         let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
             panic!("expected exact plane-cylinder circle");
         };
-        let (center, axis, _, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let radius = circle_curve.radius();
         assert_eq!(*center, Point3::new(0.0, 0.0, 4.0));
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-        assert_eq!(*radius, 5.0);
+        assert_eq!(radius, 5.0);
         assert_eq!(
             coverage.get("transferred_topology_bound_plane_surface_count"),
             Some(&1)

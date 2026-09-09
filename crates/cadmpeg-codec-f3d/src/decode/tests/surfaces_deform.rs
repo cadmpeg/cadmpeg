@@ -476,19 +476,16 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     else {
         panic!("expected T-spline surface")
     };
-    let TSplineSubtransform::Reference {
-        resolved: Some(resolved),
+    let TSplineSubtransform::Resolved {
+        transform: resolved,
         ..
-    } = &construction.subtransform
+    } = construction.subtransform()
     else {
         panic!("expected resolved T-spline reference")
     };
     assert!(resolved.program.as_str().contains("v 1 0 0 0"));
-    assert_eq!(construction.program_graph().unwrap().records.len(), 1);
-    assert_eq!(
-        construction.values_graph().unwrap().records[0].kind,
-        "100verts"
-    );
+    assert_eq!(construction.program_graph().records.len(), 1);
+    assert_eq!(construction.values_graph().records[0].kind, "100verts");
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
@@ -507,7 +504,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         panic!("expected round-trip T-spline surface")
     };
     assert!(matches!(
-        construction.subtransform,
+        construction.subtransform(),
         TSplineSubtransform::Inline(_)
     ));
 }
@@ -1201,7 +1198,7 @@ fn generated_legacy_surface_names_select_modern_layouts() {
                         "scaled_compound_loft",
                         ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
                     )
-                    | ("extrusion", ProceduralSurfaceDefinition::Extrusion { .. })
+                    | ("extrusion", ProceduralSurfaceDefinition::Extrusion(_))
             ),
             "wrong definition for {expected}: {definition:?}"
         );

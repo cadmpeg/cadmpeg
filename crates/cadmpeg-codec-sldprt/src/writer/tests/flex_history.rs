@@ -19,15 +19,18 @@ use crate::SldprtCodec;
 
 #[test]
 fn encoder_writes_source_less_curved_sketches() {
-    use cadmpeg_ir::features::{
-        Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue,
-    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse,
         SketchGeometryDefinition, SketchId, SketchLocus,
+    };
+    use cadmpeg_ir::{
+        features::{
+            DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
+            ParameterValue,
+        },
+        scalar::{Angle, Length},
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -975,12 +978,15 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 
 #[test]
 fn encoder_writes_source_less_native_features() {
-    use cadmpeg_ir::features::{
-        Angle, BodySelection, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind,
-        PatternTransform, RadiusSpec,
-    };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{
+            BodySelection, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection, Feature,
+            FeatureDefinition, FeatureId, HoleKind, LinearTermination, PatternKind,
+            PatternTransform, RadiusSpec,
+        },
+        scalar::{Angle, Length},
+    };
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1018,7 +1024,7 @@ fn encoder_writes_source_less_native_features() {
                     native: "edge-a,edge-b".into(),
                 },
                 radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
                 },
                 tangency_weight: None,
             }),
@@ -1028,8 +1034,8 @@ fn encoder_writes_source_less_native_features() {
                 cadmpeg_ir::features::ChamferGroup {
                     edges: EdgeSelection::Native("edge-c".into()),
                     spec: ChamferSpec::TwoDistances {
-                        first: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                        second: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                        first: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                        second: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                     },
                 },
             ),
@@ -1041,7 +1047,7 @@ fn encoder_writes_source_less_native_features() {
                 faces: vec![ir.model.faces[0].id.clone()],
                 native: "face-a".into(),
             },
-            thickness: Some(cadmpeg_ir::features::PositiveLength::new(1.5).unwrap()),
+            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap()),
             outward: Some(true),
             mode: None,
             join: None,
@@ -1060,7 +1066,7 @@ fn encoder_writes_source_less_native_features() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.2).unwrap()),
+            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.2).unwrap()),
             outward: Some(false),
         },
         FeatureDefinition::Combine {
@@ -1092,7 +1098,7 @@ fn encoder_writes_source_less_native_features() {
         },
         FeatureDefinition::Dome {
             faces: FaceSelection::Native("face-f".into()),
-            height: Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
+            height: Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
             elliptical: Some(true),
             reverse: Some(false),
         },
@@ -1111,16 +1117,16 @@ fn encoder_writes_source_less_native_features() {
             }]),
             shape: cadmpeg_ir::features::HoleShape::new(
                 cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
-                    diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
-                    angle: cadmpeg_ir::features::InteriorAngle::new(1.4).unwrap(),
+                    diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                    angle: cadmpeg_ir::scalar::InteriorAngle::new(1.4).unwrap(),
                 }),
                 None,
-                Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+                Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )
             .unwrap(),
 
             extent: Some(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(20.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(20.0).unwrap(),
             }),
             bottom: None,
             taper_angle: None,
@@ -1311,7 +1317,10 @@ fn encoder_writes_source_less_native_features() {
 
 #[test]
 fn semantic_writer_round_trips_flex_operations() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, FlexMode};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, FlexMode},
+        scalar::Angle,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1373,7 +1382,10 @@ fn semantic_writer_round_trips_flex_operations() {
 
 #[test]
 fn semantic_writer_round_trips_all_flex_modes() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, FlexMode, Length};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, FlexMode},
+        scalar::{Angle, Length},
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1403,7 +1415,7 @@ fn semantic_writer_round_trips_all_flex_modes() {
                             angle: Angle::new(0.2).unwrap(),
                         },
                         "Taper" => FlexMode::Tapering {
-                            factor: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+                            factor: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
                         },
                         "Stretch" => FlexMode::Stretching {
                             distance: Length::new(12.0).unwrap(),

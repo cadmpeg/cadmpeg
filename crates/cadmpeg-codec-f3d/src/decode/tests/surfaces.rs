@@ -271,19 +271,16 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("sum spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        let ProceduralSurfaceDefinition::Sum {
-            first,
-            second,
-            basepoint,
-            revision_form: None,
-        } = procedural.definition()
-        else {
+        let ProceduralSurfaceDefinition::Sum(definition_payload) = procedural.definition() else {
             panic!("expected sum surface construction")
         };
+        assert!(definition_payload.revision_form().is_none());
         assert_eq!(
-            *basepoint,
+            *definition_payload.basepoint(),
             cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
         );
+        let first = definition_payload.first();
+        let second = definition_payload.second();
         let source_curves = [first.clone(), second.clone()];
         assert!(result
             .ir()
@@ -328,14 +325,9 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             .expect("source-less sum surface round trip");
         assert!(matches!(
             round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::Sum {
-                basepoint: cadmpeg_ir::math::Vector3 {
-                    x: 10.0,
-                    y: -20.0,
-                    z: 30.0
-                },
-                ..
-            }
+            ProceduralSurfaceDefinition::Sum(definition_payload)
+                if *definition_payload.basepoint()
+                    == cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
         ));
     }
 }
@@ -410,17 +402,18 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("revolution spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        let ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            revision_form: None,
-        } = procedural.definition()
+        let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
         else {
+            panic!("expected revolution surface construction")
+        };
+        let directrix = definition_payload.directrix();
+        let axis_origin = definition_payload.axis_origin();
+        let axis_direction = definition_payload.axis_direction();
+        let angular_interval = definition_payload.angular_interval();
+        let angular_parameter_interval = definition_payload.angular_parameter_interval();
+        let parameter_interval = definition_payload.parameter_interval();
+        let transposed = definition_payload.transposed();
+        let None = definition_payload.revision_form() else {
             panic!("expected revolution surface construction")
         };
         assert_eq!(
@@ -432,8 +425,8 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(*angular_interval, [0.0, 1.0]);
-        assert_eq!(*angular_parameter_interval, None);
-        assert_eq!(*parameter_interval, Some([0.0, 1.0]));
+        assert_eq!(angular_parameter_interval, None);
+        assert_eq!(parameter_interval, Some([0.0, 1.0]));
         assert!(!transposed);
         assert!(result
             .ir()
@@ -473,18 +466,19 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less revolution surface round trip");
-        assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::Revolution {
-                transposed: false,
-                ..
+        assert!(
+            match round_trip.ir().model.procedural_surfaces[0].definition() {
+                ProceduralSurfaceDefinition::Revolution(matched_payload) =>
+                    matches!((matched_payload.transposed(),), (false,)),
+                _ => false,
             }
-        ));
-        let ProceduralSurfaceDefinition::Revolution { directrix, .. } =
+        );
+        let ProceduralSurfaceDefinition::Revolution(definition_payload) =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             unreachable!()
         };
+        let directrix = definition_payload.directrix();
         assert!(matches!(
             round_trip
                 .ir()
@@ -516,17 +510,16 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("offset spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        let ProceduralSurfaceDefinition::Offset {
-            support,
-            distance,
-            u_sense,
-            v_sense,
-            support_extension: _,
-            extension,
-        } = procedural.definition()
+        let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
         else {
             panic!("expected offset surface construction")
         };
+        let support = definition_payload.support();
+        let distance = definition_payload.distance();
+        let u_sense = definition_payload.u_sense();
+        let v_sense = definition_payload.v_sense();
+        let _ = definition_payload.support_extension();
+        let extension = definition_payload.extension();
         assert_eq!(*distance, -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
         let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
@@ -551,16 +544,15 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less offset surface round trip");
-        let ProceduralSurfaceDefinition::Offset {
-            distance,
-            u_sense,
-            v_sense,
-            extension,
-            ..
-        } = &round_trip.ir().model.procedural_surfaces[0].definition()
+        let ProceduralSurfaceDefinition::Offset(definition_payload) =
+            &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip offset surface")
         };
+        let distance = definition_payload.distance();
+        let u_sense = definition_payload.u_sense();
+        let v_sense = definition_payload.v_sense();
+        let extension = definition_payload.extension();
         assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
         let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
             panic!("expected legacy offset extension")
@@ -657,17 +649,17 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("taper surface decode");
-        let ProceduralSurfaceDefinition::Taper {
-            support,
-            revision_form: _,
-            reference,
-            pcurve,
-            parameter,
-            taper,
-        } = &result.ir().model.procedural_surfaces[0].definition()
+        let ProceduralSurfaceDefinition::Taper(definition_payload) =
+            &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected taper surface")
         };
+        let support = definition_payload.support();
+        let _ = definition_payload.revision_form();
+        let reference = definition_payload.reference();
+        let pcurve = definition_payload.pcurve();
+        let parameter = definition_payload.parameter();
+        let taper = definition_payload.taper();
         assert_eq!(*parameter, 0.35);
         assert!(pcurve.is_some());
         assert!(result
@@ -724,11 +716,12 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less taper round trip");
-        let ProceduralSurfaceDefinition::Taper { reference, .. } =
+        let ProceduralSurfaceDefinition::Taper(definition_payload) =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip taper")
         };
+        let reference = definition_payload.reference();
         assert!(matches!(
             round_trip
                 .ir()
@@ -1010,20 +1003,20 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         )
         .expect("T-spline surface decode");
     let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
-    assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
-    assert_eq!((native.type_code, native.trailing_value), (7, 9));
-    let TSplineSubtransform::Inline(inline) = &native.subtransform else {
+    assert_eq!(native.parameter_ranges(), [[-20.0, 30.0], [-40.0, 50.0]]);
+    assert_eq!((native.type_code(), native.trailing_value()), (7, 9));
+    let TSplineSubtransform::Inline(inline) = native.subtransform() else {
         panic!("expected inline T-spline subtransform")
     };
     assert!(inline.program.as_str().contains("v 1 0 0 0"));
     assert_eq!(inline.separator, Some(false));
     assert_eq!(inline.values.as_str(), "100verts 1 2\n");
-    let graph = native.program_graph().expect("parsed T-spline graph");
+    let graph = native.program_graph();
     assert_eq!(graph.headers.len(), 2);
     assert_eq!(graph.records.len(), 3);
     assert_eq!(graph.records[0].kind, "v");
     assert!(graph.unparsed_lines.is_empty());
-    assert_eq!(native.values_graph().unwrap().records[0].kind, "100verts");
+    assert_eq!(native.values_graph().records[0].kind, "100verts");
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
@@ -1058,8 +1051,11 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         else {
             panic!("expected helix surface")
         };
-        let (angle_range, _, path, profile) = construction.parts();
-        let (_, center, _, _, pitch, _, _) = path.parts();
+        let angle_range = construction.angle_range();
+        let path = construction.path();
+        let profile = construction.profile();
+        let center = path.center();
+        let pitch = path.pitch();
         assert_eq!(*angle_range, [-0.5, 0.5]);
         assert_eq!(center.z, 30.0);
         assert_eq!(pitch.z, 40.0);

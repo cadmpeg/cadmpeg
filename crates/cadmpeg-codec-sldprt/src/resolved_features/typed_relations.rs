@@ -469,7 +469,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::ArcAngle {
                 entity,
-                angle: cadmpeg_ir::features::Angle::new(angle)?,
+                angle: cadmpeg_ir::scalar::Angle::new(angle)?,
             }
         }
         EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => {
@@ -509,7 +509,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::EllipseAngle {
                 entity,
-                angle: cadmpeg_ir::features::Angle::new(angle)?,
+                angle: cadmpeg_ir::scalar::Angle::new(angle)?,
             }
         }
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {

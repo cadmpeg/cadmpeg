@@ -152,15 +152,16 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .find(|procedural| {
                 matches!(
                     procedural.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                 )
             })
             .expect("line revolution construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            parameter_interval: Some(parameter_interval),
-            ..
-        } = procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
+            procedural.definition()
         else {
+            panic!("expected a revolution definition");
+        };
+        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
             panic!("expected a revolution definition");
         };
         assert_eq!(*parameter_interval, [0.0, 1.0]);
@@ -179,7 +180,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                             )
                     })
             })
@@ -251,7 +252,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
@@ -288,7 +289,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .find(|procedural| {
                 matches!(
                     procedural.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                 )
             })
             .expect("round-trip line extrusion construction");
@@ -297,11 +298,12 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_EXTRUSION_ROUND_TRIP);
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: Some(parameter_interval),
-            ..
-        } = round_procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
+            round_procedural.definition()
         else {
+            panic!("expected an extrusion definition");
+        };
+        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
             panic!("expected an extrusion definition");
         };
         assert_eq!(*parameter_interval, [0.0, 1.0]);
@@ -591,7 +593,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
@@ -611,26 +613,24 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                         construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
             .expect("round-trip extrusion surface");
         let source_range = surface_construction(original.ir(), &source_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("source extrusion interval");
         let round_range = surface_construction(round_trip.ir(), &round_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("round-trip extrusion interval");
@@ -723,7 +723,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
@@ -743,26 +743,24 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                         construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
             .expect("round-trip placed extrusion surface");
         let source_range = surface_construction(original.ir(), &source_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("source placed extrusion interval");
         let round_range = surface_construction(round_trip.ir(), &round_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("round-trip placed extrusion interval");
@@ -921,7 +919,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
                     construction_owns_surface(original.ir(), procedural, &surface.id)
                         && matches!(
                             procedural.definition(),
-                            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                         )
                 })
         })
@@ -936,7 +934,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
                 construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                     && matches!(
                         procedural.definition(),
-                        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                     )
             })
     }) else {
@@ -949,19 +947,17 @@ fn assert_type120_round_trip(version: IgesVersion) {
     let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
     let source_range = surface_construction(original.ir(), &source_surface.id)
         .and_then(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-                parameter_interval: Some(range),
-                ..
-            } => Some(*range),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => {
+                payload.parameter_interval()
+            }
             _ => None,
         })
         .expect("source revolution interval");
     let round_range = surface_construction(round_trip.ir(), &round_surface.id)
         .and_then(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-                parameter_interval: Some(range),
-                ..
-            } => Some(*range),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => {
+                payload.parameter_interval()
+            }
             _ => None,
         })
         .expect("round-trip revolution interval");

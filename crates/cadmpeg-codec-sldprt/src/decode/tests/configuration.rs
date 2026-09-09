@@ -3,12 +3,15 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use cadmpeg_ir::features::{
-    ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
-};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{
+    features::{
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
+        FeatureDefinition, FeatureId, FeatureTreeNodeRole, ParameterId, ParameterValue,
+    },
+    scalar::Length,
+};
 use std::collections::BTreeMap;
 
 #[test]

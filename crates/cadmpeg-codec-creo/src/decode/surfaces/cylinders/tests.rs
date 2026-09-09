@@ -296,7 +296,9 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         panic!("generated cylinder: {:?}", surface.geometry);
     };
-    let (&origin, &axis, _, &radius) = cylinder_surface.parts();
+    let origin = *cylinder_surface.origin();
+    let axis = *cylinder_surface.axis();
+    let radius = cylinder_surface.radius();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 1.0);
@@ -318,12 +320,14 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
     );
     assert!(ir.model.surfaces.iter().all(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
-            *radius == 0.3125
-                && *origin == [0.0, 1.625, -1.0].into()
-                && *axis == [0.0, 0.0, 1.0].into()
-        })
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let radius = cylinder_surface.radius();
+                    radius == 0.3125
+                        && *origin == [0.0, 1.625, -1.0].into()
+                        && *axis == [0.0, 0.0, 1.0].into()
+                })
     }));
 }
 
@@ -610,7 +614,10 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         panic!("reconciled cylinder: {:?}", surface.geometry);
     };
-    let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
+    let origin = *cylinder_surface.origin();
+    let axis = *cylinder_surface.axis();
+    let ref_direction = *cylinder_surface.ref_direction();
+    let radius = cylinder_surface.radius();
     assert_eq!(origin, [-12.5, 4.0, 0.0].into());
     assert_eq!(axis, [0.0, 1.0, 0.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());

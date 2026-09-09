@@ -1070,8 +1070,11 @@ fn bounded_nurbs_for_id(
             [0.0, 1.0],
         )),
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
-            let mut nurbs = circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?;
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
+            let mut nurbs = circular_arc_nurbs(*center, *axis, *ref_direction, radius, interval)?;
             anchor_analytic_nurbs_endpoint_poles(
                 &mut nurbs,
                 interval,
@@ -1083,13 +1086,17 @@ fn bounded_nurbs_for_id(
             Some((nurbs, interval))
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let mut nurbs = elliptical_arc_nurbs(
                 *center,
                 *axis,
                 *major_direction,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 interval,
             )?;
             anchor_analytic_nurbs_endpoint_poles(
@@ -1103,9 +1110,12 @@ fn bounded_nurbs_for_id(
             Some((nurbs, interval))
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
             let mut nurbs =
-                parabolic_arc_nurbs(*vertex, *axis, *major_direction, *focal_distance, interval)?;
+                parabolic_arc_nurbs(*vertex, *axis, *major_direction, focal_distance, interval)?;
             anchor_analytic_nurbs_endpoint_poles(
                 &mut nurbs,
                 interval,

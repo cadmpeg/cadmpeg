@@ -435,16 +435,19 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         ir.model.procedural_surfaces.push(
             ProceduralSurface::new(
                 constructions[side].clone(),
-                ProceduralSurfaceDefinition::Offset {
-                    support: surfaces[1 - side].clone(),
-                    distance: 1.0,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        surfaces[1 - side].clone(),
+                        1.0,
+                        Some(0),
+                        Some(0),
+                        None,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap(),
@@ -719,11 +722,14 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
+    let radius = cylinder_surface.radius();
     let mut origin = *origin;
     origin.y = 1.0;
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
             .unwrap();
     assert!(constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
 
@@ -754,7 +760,9 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let SurfaceGeometry::Plane(plane_surface) = &mut ir.model.surfaces[3].geometry else {
         unreachable!()
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     let mut origin = *origin;
     origin.x += 1.0;
     *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
@@ -950,16 +958,19 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         support_offset.clone(),
         ProceduralSurface::new(
             support_offset_construction.clone(),
-            ProceduralSurfaceDefinition::Offset {
-                support: support.clone(),
-                distance: 1.0,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support.clone(),
+                    1.0,
+                    None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -1439,7 +1450,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let mut translated = ir.clone();
     for carrier in &mut translated.model.surfaces {
         if let SurfaceGeometry::Plane(plane_surface) = &mut carrier.geometry {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;
@@ -1464,7 +1477,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let CurveGeometry::Line(line_curve) = &mut geometry else {
         panic!("line spine cache");
     };
-    let (origin, direction) = line_curve.parts();
+    let origin = line_curve.origin();
+    let direction = line_curve.direction();
     let mut origin = *origin;
     origin.x += 1.0e12;
     origin.y += 1.0e12;

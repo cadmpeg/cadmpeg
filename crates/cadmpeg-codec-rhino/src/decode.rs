@@ -2118,9 +2118,9 @@ impl<'a> DecodeContext<'a> {
                 }
             })
             .map_err(|error| error.to_string())?;
-            if !mesh.normals().is_empty() {
+            if !mesh.vertex_normals().is_empty() {
                 let normals = mesh
-                    .normals()
+                    .vertex_normals()
                     .iter()
                     .map(|value| {
                         transform
@@ -2919,17 +2919,20 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
-            let ir_definition = definition.into_definition(|_, path, child| {
-                commit_curve_tree(
-                    candidate,
-                    candidate_annotations,
-                    child,
-                    key,
-                    &association,
-                    Some(unknown.clone()),
-                    path,
-                )
-            })?;
+            let ir_definition = definition.into_definition(
+                |_, path, child| {
+                    commit_curve_tree(
+                        candidate,
+                        candidate_annotations,
+                        child,
+                        key,
+                        &association,
+                        Some(unknown.clone()),
+                        path,
+                    )
+                },
+                |error| error.to_string(),
+            )?;
             let surface_id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
                 .try_into()
                 .expect("valid identity");
@@ -3030,17 +3033,20 @@ impl<'a> DecodeContext<'a> {
                 });
                 let _attached = candidate.model.add_procedural_surface(
                     surface_id.clone(),
-                    ProceduralSurface::new(
-                        procedure_id.clone(),
-                        ProceduralSurfaceDefinition::Extrusion {
-                            directrix: boundary.directrix.clone(),
-                            parameter_interval: None,
-                            direction: extrusion.direction,
-                            native_position: None,
-                            revision_form: None,
-                        },
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        boundary.directrix.clone(),
+                        None,
+                        extrusion.direction,
+                        None,
                         None,
                     )
+                    .and_then(|admitted_payload| {
+                        ProceduralSurface::new(
+                            procedure_id.clone(),
+                            ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                            None,
+                        )
+                    })
                     .map_err(|error| error.to_string())?,
                 );
                 annotate_derived(candidate_annotations, &surface_id.to_string());
@@ -4684,16 +4690,19 @@ fn stage_brep_procedural_surface(
     definition: crate::surfaces::DecodedProceduralSurface,
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
-    let definition = definition.into_definition(|child_index, _, child| {
-        stage_curve_tree(
-            staged,
-            child,
-            context.key,
-            &format!("surface-{index}.child-{child_index}"),
-            context.association,
-            context.unknown,
-        )
-    })?;
+    let definition = definition.into_definition(
+        |child_index, _, child| {
+            stage_curve_tree(
+                staged,
+                child,
+                context.key,
+                &format!("surface-{index}.child-{child_index}"),
+                context.association,
+                context.unknown,
+            )
+        },
+        |error| crate::curves::error(0, &error.to_string()),
+    )?;
     let surface_id: cadmpeg_ir::ids::SurfaceId =
         format!("rhino:object:surface#{}.slot-{index}", context.key)
             .try_into()
@@ -5358,7 +5367,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             CurveGeometry::Nurbs(nurbs)
         }
         CurveGeometry::Line(line_curve) => {
-            let (&origin, &direction) = line_curve.parts();
+            let origin = *line_curve.origin();
+            let direction = *line_curve.direction();
             let transformed_origin = transform.apply_point(origin);
             let endpoint = transform.apply_point(Point3::new(
                 origin.x + direction.x,
@@ -5380,7 +5390,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             )?)
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (&point,) = degenerate_curve.parts();
+            let point = *degenerate_curve.point();
             CurveGeometry::Degenerate(cadmpeg_ir::geometry::DegenerateCurve::try_new(
                 transform.apply_point(point),
             )?)
@@ -5416,7 +5426,9 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             SurfaceGeometry::Nurbs(nurbs)
         }
         SurfaceGeometry::Plane(plane_surface) => {
-            let (&source_origin, &normal, &u_axis) = plane_surface.parts();
+            let source_origin = *plane_surface.origin();
+            let normal = *plane_surface.normal();
+            let u_axis = *plane_surface.u_axis();
             let origin = transform.apply_point(source_origin);
             let normal = transform
                 .apply_normal(normal)

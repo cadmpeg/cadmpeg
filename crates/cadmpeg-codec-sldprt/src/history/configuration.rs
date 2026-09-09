@@ -2,11 +2,14 @@
 //! Configuration-lane enrichment and design-state projection.
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::{
-    Angle, ConfigurationBodies, ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
-    FaceSelection, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterValue,
-};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        ConfigurationBodies, ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
+        FaceSelection, FeatureDefinition, FeatureId, LinearTermination, ParameterValue,
+    },
+    scalar::{Angle, Length},
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::bind::bind_unique_sketch_feature;
@@ -1232,7 +1235,7 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
             }
             (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer)
-                    .and_then(cadmpeg_ir::features::FiniteReal::new)
+                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                     .map(ParameterValue::Real)
             }
             (ParameterValue::Integer(_), ParameterValue::Real(real)) => {

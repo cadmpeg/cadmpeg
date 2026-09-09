@@ -485,7 +485,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
                 },
                 draft: None,
             },

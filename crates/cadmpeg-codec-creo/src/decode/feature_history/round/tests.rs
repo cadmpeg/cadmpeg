@@ -161,7 +161,9 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     let mut conflicting_ir = ir.clone();
     match &mut conflicting_ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x = 0.25;
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
@@ -372,7 +374,9 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
 
     match &mut ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x = -8.5;
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
@@ -384,7 +388,9 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
 
     match &mut ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x = -9.0;
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
@@ -643,7 +649,9 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     if let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface) =
         &mut ir.model.surfaces[1].geometry
     {
-        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
 
         let radius = 0.75;
         *cylinder_surface =

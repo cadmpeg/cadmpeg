@@ -47,10 +47,10 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             tagged.next().is_none().then_some(diameter)
         })
         .filter(|value| *value > 0.0)
-        .and_then(cadmpeg_ir::features::PositiveLength::new);
+        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
     let extent = match feature.parameters.get("D1") {
         Some(value) => parse_positive_dimension_length_mm(value)
-            .and_then(cadmpeg_ir::features::PositiveLength::new)
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
             .map(|length| CosmeticThreadExtent::Blind { length })
             .or_else(|| {
                 (parse_angle_rad(value).is_some()

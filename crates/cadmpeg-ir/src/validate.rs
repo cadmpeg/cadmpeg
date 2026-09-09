@@ -45,7 +45,7 @@ use geometry_consistency::{
     check_edge_endpoint_consistency, check_pcurve_surface_consistency,
     check_procedural_support_consistency,
 };
-use geometry_payloads::{check_bounds, check_tessellations};
+use geometry_payloads::check_tessellations;
 use identity_order::{check_identity_and_order, collect_native_ids};
 use pmi::check_pmi;
 use presentation::check_presentation;
@@ -56,7 +56,7 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::{
     check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
-    check_wire_topology,
+    check_topology_tolerances, check_wire_topology,
 };
 
 /// Count the records represented by the IR arenas without running validation.
@@ -95,7 +95,7 @@ fn validate_model_with_index(
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
     check_procedural_support_consistency(ir, &mut findings);
-    check_bounds(ir, &mut findings);
+    check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);

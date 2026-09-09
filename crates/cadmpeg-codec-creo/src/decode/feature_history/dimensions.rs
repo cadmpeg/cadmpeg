@@ -5,11 +5,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, DesignParameter, DimensionDisplay, FeatureSourceContent, Length, ParameterId,
-    ParameterValue,
-};
 use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, DimensionDisplay, FeatureSourceContent, ParameterId, ParameterValue,
+    },
+    scalar::{Angle, Length},
+};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
@@ -299,7 +301,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                     Length::new(value).map(ParameterValue::Length)
                 }
                 crate::feature::DimensionUnit::SchemaDefined => {
-                    cadmpeg_ir::features::FiniteReal::new(value).map(ParameterValue::Real)
+                    cadmpeg_ir::scalar::FiniteReal::new(value).map(ParameterValue::Real)
                 }
             });
         ir.model.parameters.push(DesignParameter {

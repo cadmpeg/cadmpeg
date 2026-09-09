@@ -166,7 +166,7 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
         shape: cadmpeg_ir::features::HoleShape::new(
             cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             None,
-            Some(cadmpeg_ir::features::PositiveLength::new(diameter).unwrap()),
+            Some(cadmpeg_ir::scalar::PositiveLength::new(diameter).unwrap()),
         )
         .unwrap(),
 

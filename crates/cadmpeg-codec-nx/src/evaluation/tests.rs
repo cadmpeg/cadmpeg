@@ -9,12 +9,13 @@ use cadmpeg_ir::features::{
     ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-    HolePlacement, Length, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
+    HolePlacement, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
     RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection,
     ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::ids::{CurveId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::topology::{Body, BodyKind};
 
 use super::*;
@@ -49,9 +50,9 @@ fn complete_block_ir() -> CadIr {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Block {
                 dimensions: Some([
-                    cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                    cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-                    cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
@@ -136,7 +137,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 shape: cadmpeg_ir::features::HoleShape::new(
                     cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::features::PositiveLength::new(0.5).unwrap()),
+                    Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
                 )
                 .unwrap(),
 
@@ -208,7 +209,7 @@ fn complete_extrude_feature(
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
                     },
                     draft: None,
                 },

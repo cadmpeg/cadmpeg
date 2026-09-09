@@ -367,7 +367,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
 
 #[test]
 fn semantic_writer_preserves_empty_dimensions() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -417,7 +417,7 @@ fn semantic_writer_preserves_empty_dimensions() {
 
 #[test]
 fn semantic_writer_preserves_keywords_attributes() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -455,7 +455,7 @@ fn semantic_writer_preserves_keywords_attributes() {
 #[test]
 fn semantic_writer_preserves_keywords_child_order() {
     use crate::records::HistoryContent;
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -613,7 +613,7 @@ fn semantic_writer_applies_neutral_parameter_order() {
 
 #[test]
 fn semantic_writer_rejects_conflicting_parameter_edits() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let decoded = SldprtCodec
         .decode(
@@ -686,9 +686,12 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
-        ParameterValue,
+    use cadmpeg_ir::{
+        features::{
+            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
+            ParameterValue,
+        },
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -786,7 +789,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 else {
                     panic!("typed positional boss extrusion");
                 };
-                *length = cadmpeg_ir::features::NonZeroLength::new(250.0).unwrap();
+                *length = cadmpeg_ir::scalar::NonZeroLength::new(250.0).unwrap();
             })
             .unwrap();
         ir_edit.model.features[1]
@@ -806,7 +809,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 else {
                     panic!("typed positional cut extrusion");
                 };
-                *length = cadmpeg_ir::features::NonZeroLength::new(4.5).unwrap();
+                *length = cadmpeg_ir::scalar::NonZeroLength::new(4.5).unwrap();
             })
             .unwrap();
     }
@@ -1095,13 +1098,13 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                 *extent = ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(8.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(8.0).unwrap(),
                         },
-                        draft: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+                        draft: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                     },
                     second: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(9.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1346,7 +1349,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
                     panic!("typed fillet feature");
                 };
                 groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(3.5).unwrap(),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
                 };
                 groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
             })
@@ -1386,8 +1389,9 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 
 #[test]
 fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
-    use cadmpeg_ir::features::{
-        ChamferSpec, EdgeSelection, FeatureDefinition, Length, ParameterValue, RadiusSpec,
+    use cadmpeg_ir::{
+        features::{ChamferSpec, EdgeSelection, FeatureDefinition, ParameterValue, RadiusSpec},
+        scalar::Length,
     };
 
     let keywords = format!(
@@ -1450,7 +1454,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                     panic!("typed positional fillet");
                 };
                 groups[0].radius = RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(2.5).unwrap(),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
                 };
             })
             .unwrap();
@@ -1461,8 +1465,8 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                     panic!("typed positional chamfer");
                 };
                 groups[0].spec = ChamferSpec::DistanceAngle {
-                    distance: cadmpeg_ir::features::PositiveLength::new(0.6).unwrap(),
-                    angle: cadmpeg_ir::features::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(0.6).unwrap(),
+                    angle: cadmpeg_ir::scalar::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
                 };
             })
             .unwrap();
@@ -1514,8 +1518,9 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
 #[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
-    use cadmpeg_ir::features::{
-        EdgeSelection, FeatureDefinition, Length, RadiusSpec, VariableRadius,
+    use cadmpeg_ir::{
+        features::{EdgeSelection, FeatureDefinition, RadiusSpec, VariableRadius},
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1590,7 +1595,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
                     panic!("variable fillet after regeneration");
                 };
                 groups[0].radius = RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(6.0).unwrap(),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
                 };
             })
             .unwrap();
@@ -1671,15 +1676,15 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 
     let replacements = [
         ChamferSpec::Distance {
-            distance: cadmpeg_ir::features::PositiveLength::new(2.5).unwrap(),
+            distance: cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
         },
         ChamferSpec::TwoDistances {
-            first: cadmpeg_ir::features::PositiveLength::new(3.5).unwrap(),
-            second: cadmpeg_ir::features::PositiveLength::new(7.0).unwrap(),
+            first: cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
+            second: cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
         },
         ChamferSpec::DistanceAngle {
-            distance: cadmpeg_ir::features::PositiveLength::new(4.5).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
+            distance: cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
         },
     ];
     for (index, (feature, replacement)) in decoded

@@ -1634,7 +1634,7 @@ fn decode_reports_display_list_geometry() {
         vec![[0, 1, 2]]
     );
     assert_eq!(result.ir().model.tessellations[0].strip_lengths(), vec![3]);
-    assert_eq!(result.ir().model.tessellations[0].normals().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].vertex_normals().len(), 3);
     assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
     assert_eq!(
         result.ir().model.tessellations[0].faces,

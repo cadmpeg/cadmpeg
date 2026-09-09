@@ -116,15 +116,26 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }
                 | ProceduralSurfaceDefinition::RollingBallJet(_) => true,
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    resolved_surfaces.contains(support)
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    let support = definition_payload.support();
+                    {
+                        resolved_surfaces.contains(support)
+                    }
                 }
-                ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
-                    resolved_curves.contains(directrix)
+                ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                    let directrix = definition_payload.directrix();
+                    {
+                        resolved_curves.contains(directrix)
+                    }
                 }
-                ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-                | ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => {
-                    resolved_curves.contains(directrix)
+                ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                    let directrix = definition_payload.directrix();
+                    {
+                        resolved_curves.contains(directrix)
+                    }
+                }
+                ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                    resolved_curves.contains(definition_payload.directrix())
                 }
                 _ => false,
             };
@@ -1134,23 +1145,26 @@ mod route_tests {
         ir.model
             .add_procedural_surface(
                 offset_id,
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(
-                        "catia:test:proceduralsurface#procedural-surface-1".to_string(),
-                    )
-                    .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Offset {
-                        support: surface_id,
-                        distance: 2.0,
-                        u_sense: Some(1),
-                        v_sense: Some(1),
-                        support_extension: None,
-                        extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                        ),
-                    },
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    surface_id,
+                    2.0,
+                    Some(1),
+                    Some(1),
                     None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(
+                            "catia:test:proceduralsurface#procedural-surface-1".to_string(),
+                        )
+                        .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Offset(admitted_payload),
+                        None,
+                    )
+                })
                 .expect("valid ProceduralSurface fixture"),
             )
             .expect("attach construction to its fixture carrier");

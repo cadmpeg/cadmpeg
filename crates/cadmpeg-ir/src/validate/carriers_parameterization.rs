@@ -132,14 +132,19 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         .map(|component| component.component.as_str()),
                 );
             }
-            ProceduralSurfaceDefinition::SubSurface { support, .. } => {
-                surfaces.insert(support.as_str());
+            ProceduralSurfaceDefinition::SubSurface(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    surfaces.insert(support.as_str());
+                }
             }
-            ProceduralSurfaceDefinition::Taper {
-                support, reference, ..
-            } => {
-                surfaces.insert(support.as_str());
-                curves.insert(reference.as_str());
+            ProceduralSurfaceDefinition::Taper(definition_payload) => {
+                let support = definition_payload.support();
+                let reference = definition_payload.reference();
+                {
+                    surfaces.insert(support.as_str());
+                    curves.insert(reference.as_str());
+                }
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
@@ -451,11 +456,23 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
-            | ProceduralSurfaceDefinition::Revolution { directrix, .. }
-            | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
-                curves.insert(directrix.as_str());
+            ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                let directrix = definition_payload.directrix();
+                {
+                    curves.insert(directrix.as_str());
+                }
+            }
+            ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                curves.insert(definition_payload.directrix().as_str());
+            }
+            ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                let directrix = definition_payload.directrix();
+                {
+                    curves.insert(directrix.as_str());
+                }
+            }
+            ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+                curves.insert(definition_payload.directrix().as_str());
             }
             ProceduralSurfaceDefinition::Sweep {
                 profile,
@@ -524,21 +541,37 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Offset { support, .. } => {
-                surfaces.insert(support.as_str());
+            ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    surfaces.insert(support.as_str());
+                }
             }
             ProceduralSurfaceDefinition::Replica {
                 source: support, ..
-            }
-            | ProceduralSurfaceDefinition::Subset { support, .. }
-            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+            } => {
                 surfaces.insert(support.as_str());
+            }
+            ProceduralSurfaceDefinition::Subset(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    surfaces.insert(support.as_str());
+                }
+            }
+            ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    surfaces.insert(support.as_str());
+                }
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 curves.extend([first.as_str(), second.as_str()]);
             }
-            ProceduralSurfaceDefinition::Sum { first, second, .. } => {
-                curves.extend([first.as_str(), second.as_str()]);
+            ProceduralSurfaceDefinition::Sum(definition_payload) => {
+                curves.extend([
+                    definition_payload.first().as_str(),
+                    definition_payload.second().as_str(),
+                ]);
             }
             ProceduralSurfaceDefinition::Blend {
                 supports,
@@ -635,7 +668,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::Compound(compound) => {
-                let (_, components) = compound.parts();
+                let components = compound.components();
 
                 curves.extend(
                     components
@@ -654,7 +687,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 construction: intersection,
                 ..
             } => {
-                let (supports, _, _) = intersection.parts();
+                let supports = intersection.supports();
 
                 surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
@@ -672,23 +705,23 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Silhouette {
-                context,
-                cast_surface,
-                ..
-            } => {
-                surfaces.insert(cast_surface.as_str());
-                for side in context.sides() {
+            ProceduralCurveDefinition::Silhouette(definition_payload) => {
+                surfaces.insert(definition_payload.cast_surface().as_str());
+                for side in definition_payload.context().sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
                 }
             }
-            ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
-                curves.insert(base.as_str());
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        surfaces.insert(surface.as_str());
+            ProceduralCurveDefinition::SurfaceOffset(definition_payload) => {
+                let context = definition_payload.context();
+                let base = definition_payload.base();
+                {
+                    curves.insert(base.as_str());
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(surface.as_str());
+                        }
                     }
                 }
             }
@@ -708,15 +741,17 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             },
-            ProceduralCurveDefinition::Deformable {
-                context, source, ..
-            } => {
-                if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
-                    curves.insert(curve.as_str());
-                }
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        surfaces.insert(surface.as_str());
+            ProceduralCurveDefinition::Deformable(definition_payload) => {
+                let context = definition_payload.context();
+                let source = definition_payload.source();
+                {
+                    if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                        curves.insert(curve.as_str());
+                    }
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(surface.as_str());
+                        }
                     }
                 }
             }
@@ -730,45 +765,59 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Offset {
-                source,
-                side,
-                range,
-                ..
-            } => {
-                curves.insert(source.as_str());
-                if let crate::geometry::OffsetSide::Direction {
-                    support: Some(support),
-                    ..
-                } = side
+            ProceduralCurveDefinition::Offset(definition_payload) => {
+                let source = definition_payload.source();
+                let side = definition_payload.side();
+                let range = definition_payload.range();
                 {
-                    surfaces.insert(support.as_str());
-                }
-                if let Some(crate::geometry::CurveOffsetRange::Variable {
-                    distance_law:
-                        crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
-                    ..
-                }) = range
-                {
-                    curves.insert(function.as_str());
-                }
-            }
-            ProceduralCurveDefinition::SpatialOffset { source, .. } => {
-                curves.insert(source.as_str());
-            }
-            ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        surfaces.insert(surface.as_str());
+                    curves.insert(source.as_str());
+                    if let crate::geometry::OffsetSide::Direction {
+                        support: Some(support),
+                        ..
+                    } = side
+                    {
+                        surfaces.insert(support.as_str());
+                    }
+                    if let Some(crate::geometry::CurveOffsetRange::Variable {
+                        distance_law:
+                            crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                        ..
+                    }) = range
+                    {
+                        curves.insert(function.as_str());
                     }
                 }
             }
-            ProceduralCurveDefinition::VectorOffset { source, .. } => {
+            ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
+                let source = definition_payload.source();
+                {
+                    curves.insert(source.as_str());
+                }
+            }
+            ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
+                let context = definition_payload.context();
+                {
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(surface.as_str());
+                        }
+                    }
+                }
+            }
+            ProceduralCurveDefinition::VectorOffset(definition_payload) => {
+                let source = definition_payload.source();
+                {
+                    curves.insert(source.as_str());
+                }
+            }
+            ProceduralCurveDefinition::Replica { source, .. } => {
                 curves.insert(source.as_str());
             }
-            ProceduralCurveDefinition::Replica { source, .. }
-            | ProceduralCurveDefinition::Subset { source, .. } => {
-                curves.insert(source.as_str());
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                {
+                    curves.insert(source.as_str());
+                }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {

@@ -3,15 +3,18 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection,
-    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, Length, ParameterId, PathRef, PatternKind, PatternTransform, RadiusSpec,
-    RuledSurfaceMode, SurfaceContinuity, UnresolvedFamily,
-};
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{
+    features::{
+        BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection, FaceSelection,
+        Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
+        ParameterId, PathRef, PatternKind, PatternTransform, RadiusSpec, RuledSurfaceMode,
+        SurfaceContinuity, UnresolvedFamily,
+    },
+    scalar::{Angle, Length},
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -41,11 +44,11 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
                 0.0, 0.0, 1.0,
             ))
             .unwrap(),
-            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: cadmpeg_ir::features::NonZeroLength::new(2.0).unwrap(),
+                pitch: cadmpeg_ir::scalar::NonZeroLength::new(2.0).unwrap(),
             },
-            revolutions: cadmpeg_ir::features::PositiveReal::new(3.0).unwrap(),
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap(),
             start_angle: Angle::new(0.0).unwrap(),
             clockwise: false,
             segment_turns: None,
@@ -233,7 +236,7 @@ fn design_completeness_audits_typed_construction_families() {
             profile: (cadmpeg_ir::features::ProfileRef::Sketch(sketch))
                 .try_into()
                 .unwrap(),
-            thickness: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
         },
         FeatureDefinition::Block {
@@ -247,7 +250,7 @@ fn design_completeness_audits_typed_construction_families() {
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
             mode: cadmpeg_ir::features::SurfaceProjectionMode::All,
-            height: cadmpeg_ir::features::NonNegativeLength::new(0.0).unwrap(),
+            height: cadmpeg_ir::scalar::NonNegativeLength::new(0.0).unwrap(),
             offset: Length::new(0.0).unwrap(),
         },
         FeatureDefinition::Coil {
@@ -258,13 +261,13 @@ fn design_completeness_audits_typed_construction_families() {
                     ))
                     .unwrap(),
                 },
-                diameter: cadmpeg_ir::features::PositiveLength::new(10.0).unwrap(),
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 extent: cadmpeg_ir::features::CoilExtent::RevolutionsHeight {
-                    revolutions: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+                    revolutions: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
                     height: Length::new(5.0).unwrap(),
                 },
                 section: cadmpeg_ir::features::CoilSection::Circular {
-                    diameter: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    diameter: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 },
                 section_placement: cadmpeg_ir::features::CoilSectionPlacement::Center,
                 clockwise: false,
@@ -274,7 +277,7 @@ fn design_completeness_audits_typed_construction_families() {
         },
         FeatureDefinition::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             op: BooleanOp::Unresolved,
         },
         FeatureDefinition::FaceBlend {
@@ -423,11 +426,11 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
                 0.0, 0.0, 1.0,
             ))
             .unwrap(),
-            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: cadmpeg_ir::features::NonZeroLength::new(2.0).unwrap(),
+                pitch: cadmpeg_ir::scalar::NonZeroLength::new(2.0).unwrap(),
             },
-            revolutions: cadmpeg_ir::features::PositiveReal::new(3.0).unwrap(),
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap(),
             start_angle: Angle::new(0.0).unwrap(),
             clockwise: false,
             segment_turns: None,
@@ -687,7 +690,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::Unresolved,
             cadmpeg_ir::features::LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
             },
         ),
         extrude(
@@ -708,7 +711,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         },
         FeatureDefinition::ExtendSurface {
             faces: face.clone(),
-            distance: Some(cadmpeg_ir::features::PositiveLength::new(10.0).unwrap()),
+            distance: Some(cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()),
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
         },
         FeatureDefinition::FilledSurface {
@@ -793,7 +796,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                     cadmpeg_ir::features::FilletGroup {
                         edges: EdgeSelection::Edges(Vec::new()),
                         radius: RadiusSpec::Constant {
-                            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                         },
                         tangency_weight: None,
                     },
@@ -826,7 +829,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             FeatureDefinition::Shell {
                 bodies: None,
                 removed_faces: FaceSelection::Faces(Vec::new()),
-                thickness: Some(cadmpeg_ir::features::PositiveLength::new(1.0).unwrap()),
+                thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
                 outward: Some(false),
                 mode: None,
                 join: None,
@@ -859,7 +862,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                         0.0, 0.0, 1.0,
                     ))
                     .unwrap(),
-                    distance: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 },
                 angle: None,
                 alternate_face: None,
@@ -907,7 +910,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
         shape: cadmpeg_ir::features::HoleShape::new(
             cadmpeg_ir::features::HoleConstruction::form(cadmpeg_ir::features::HoleKind::Simple),
             exit_kind,
-            Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+            Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
         )
         .unwrap(),
 
@@ -1016,7 +1019,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         expression: "D99 + 1".into(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
@@ -1031,7 +1034,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         expression: "\"D0@Boss-Extrude1".into(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
@@ -1047,7 +1050,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         expression: "D5".into(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
         )),
         dependencies: (vec![future.clone()]).try_into().unwrap(),
         properties: BTreeMap::new(),
@@ -1062,7 +1065,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         expression: "1".into(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
@@ -1093,7 +1096,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         expression: "unsupported(1)".into(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
@@ -1115,7 +1118,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
             expression: "1".into(),
             display: None,
             value: Some(cadmpeg_ir::features::ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
             )),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),

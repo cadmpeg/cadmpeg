@@ -3540,11 +3540,11 @@ fn pcurve_endpoint_fit(
 fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
             Some(*parameter_range)
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_declared_parameter_range(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_declared_parameter_range(basis),
@@ -3756,13 +3756,14 @@ fn pcurve_parameter_break_fractions(
             nurbs.knots().iter().copied().for_each(&mut add);
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let basis = trimmed_pcurve.basis();
             add(parameter_range[0]);
             add(parameter_range[1]);
             pcurve_parameter_break_fractions(basis, parameters, fractions);
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_parameter_break_fractions(basis, parameters, fractions);
         }
         PcurveGeometry::Transformed { basis, .. } => {
@@ -3864,12 +3865,12 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
         | PcurveGeometry::Harmonic(_)
         | PcurveGeometry::SphericalGreatCircle(_) => true,
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_has_angular_parameterization(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_has_angular_parameterization(basis),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (_, _, basis) = trimmed_pcurve.parts();
+            let basis = trimmed_pcurve.basis();
             pcurve_has_angular_parameterization(basis)
         }
         PcurveGeometry::Line(_)
@@ -3893,7 +3894,8 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             selection_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let basis = trimmed_pcurve.basis();
             if parameter_range[0] < parameter_range[1] {
                 Some(*parameter_range)
             } else {
@@ -3901,7 +3903,7 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             }
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_selection_parameter_domain(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_selection_parameter_domain(basis),
@@ -3932,20 +3934,25 @@ fn surface_selection_parameter_domains(
         })
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     match definition {
-        Some(ProceduralSurfaceDefinition::Subset {
-            parameter_ranges, ..
-        }) => [
-            subset_parameter_domain(parameter_ranges[0]),
-            subset_parameter_domain(parameter_ranges[1]),
-        ],
-        Some(ProceduralSurfaceDefinition::AxisRevolution { directrix, .. }) => [
+        Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
+            let parameter_ranges = definition_payload.parameter_ranges();
+            [
+                subset_parameter_domain(parameter_ranges[0]),
+                subset_parameter_domain(parameter_ranges[1]),
+            ]
+        }
+        Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => [
             Some([0.0, std::f64::consts::TAU]),
-            curve_selection_parameter_domain(index, directrix),
+            curve_selection_parameter_domain(index, definition_payload.directrix()),
         ],
-        Some(
-            ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. },
-        ) => [curve_selection_parameter_domain(index, directrix), None],
+        Some(ProceduralSurfaceDefinition::Extrusion(payload)) => [
+            curve_selection_parameter_domain(index, payload.directrix()),
+            None,
+        ],
+        Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => [
+            curve_selection_parameter_domain(index, definition_payload.directrix()),
+            None,
+        ],
         Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
             .surfaces(source.as_str())
             .map_or([None, None], |source_surface| {

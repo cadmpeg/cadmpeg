@@ -1002,7 +1002,8 @@ fn curve_on_parameter_range(
             Some(CurveGeometry::Nurbs(curve))
         }
         CurveGeometry::Line(line_curve) => {
-            let (&origin, &direction) = line_curve.parts();
+            let origin = *line_curve.origin();
+            let direction = *line_curve.direction();
             if source_per_target != 1.0 {
                 return NurbsCurve::new(
                     1,
@@ -1120,7 +1121,9 @@ fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool
     let CurveGeometry::Circle(circle_curve) = geometry else {
         return false;
     };
-    let (center, axis, _, radius) = circle_curve.parts();
+    let center = circle_curve.center();
+    let axis = circle_curve.axis();
+    let radius = circle_curve.radius();
     let center = [center.x, center.y, center.z];
     let axis = [axis.x, axis.y, axis.z];
     points.iter().all(|point| {

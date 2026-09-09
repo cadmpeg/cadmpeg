@@ -642,15 +642,18 @@ fn projection_role_keeps_the_native_string_wire_shape() {
 
 #[test]
 fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
-    let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset {
-        source: crate::ids::CurveId::mint("test:model:curve#source").expect("valid identity"),
-        parameter_range: [-1.0, 2.0],
-        offset: crate::math::Vector3::new(3.0, 4.0, 5.0),
-        roles: crate::geometry::VectorOffsetRoles {
-            source_code: 7,
-            offset_code: 9,
-        },
-    };
+    let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset(
+        crate::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
+            crate::ids::CurveId::mint("test:model:curve#source").expect("valid identity"),
+            [-1.0, 2.0],
+            crate::math::Vector3::new(3.0, 4.0, 5.0),
+            crate::geometry::VectorOffsetRoles {
+                source_code: 7,
+                offset_code: 9,
+            },
+        )
+        .unwrap(),
+    );
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(wire["labels"], serde_json::json!(["source", "offset"]));
     assert_eq!(wire["codes"], serde_json::json!([7, 9]));
@@ -1072,3 +1075,21 @@ mod procedural_surface_payloads;
 mod procedural_curve_payloads;
 
 mod revolution_payloads;
+
+#[test]
+fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
+    let origin = Point2::new(0.0, 0.0);
+    let below = f64::EPSILON.sqrt() / 2.0;
+    let above = f64::EPSILON.sqrt() * 2.0;
+    for u in [0.0, 1e-300, below] {
+        assert!(LinePcurve::try_new(origin, Point2::new(u, 0.0)).is_err());
+        let wire =
+            serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": u, "v": 0.0}});
+        assert!(serde_json::from_value::<LinePcurve>(wire).is_err());
+    }
+    let wire =
+        serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": above, "v": 0.0}});
+    let line = LinePcurve::try_new(origin, Point2::new(above, 0.0)).unwrap();
+    assert_eq!(serde_json::to_value(line).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<LinePcurve>(wire).unwrap(), line);
+}

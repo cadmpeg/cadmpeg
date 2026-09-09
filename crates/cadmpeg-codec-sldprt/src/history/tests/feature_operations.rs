@@ -292,7 +292,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
             panic!("constant fillet");
         };
-        *radius = cadmpeg_ir::features::PositiveLength::new(2.5).unwrap();
+        *radius = cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap();
         updated_ir_evaluation
             .set_definition(updated_ir_definition)
             .unwrap();
@@ -1045,7 +1045,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         &cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(25.0).unwrap(),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
                 },
                 draft: None,
             }
@@ -1062,7 +1062,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(25.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter
@@ -1164,7 +1164,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(25.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter

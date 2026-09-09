@@ -184,23 +184,28 @@ impl SurfaceCarrier {
     pub(crate) fn frame(&self) -> Option<(Vector3, Vector3)> {
         match &self.geometry {
             SurfaceGeometry::Plane(plane_surface) => {
-                let (_, normal, u_axis) = plane_surface.parts();
+                let normal = plane_surface.normal();
+                let u_axis = plane_surface.u_axis();
                 Some((*u_axis, cross(*normal, *u_axis)))
             }
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (_, axis, ref_direction, _) = cylinder_surface.parts();
+                let axis = cylinder_surface.axis();
+                let ref_direction = cylinder_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let (_, axis, ref_direction, _, _, _) = cone_surface.parts();
+                let axis = cone_surface.axis();
+                let ref_direction = cone_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let (_, axis, ref_direction, _) = sphere_surface.parts();
+                let axis = sphere_surface.axis();
+                let ref_direction = sphere_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
             SurfaceGeometry::Torus(torus_surface) => {
-                let (_, axis, ref_direction, _, _) = torus_surface.parts();
+                let axis = torus_surface.axis();
+                let ref_direction = torus_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
             _ => None,
@@ -546,7 +551,8 @@ mod tests {
             let CurveGeometry::Line(line_curve) = carrier.geometry else {
                 panic!("expected line");
             };
-            let (&origin, &direction) = line_curve.parts();
+            let origin = *line_curve.origin();
+            let direction = *line_curve.direction();
             assert_eq!(origin, Point3::new(1_000_000_000_000.0, 0.0, 0.0));
             assert_eq!(direction, Vector3::new(1.0, 0.0, 0.0));
         }
@@ -588,7 +594,12 @@ mod tests {
         let SurfaceGeometry::Cone(cone_surface) = carrier.geometry else {
             panic!("expected cone");
         };
-        let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) = cone_surface.parts();
+        let origin = *cone_surface.origin();
+        let axis = *cone_surface.axis();
+        let ref_direction = *cone_surface.ref_direction();
+        let radius = cone_surface.radius();
+        let ratio = cone_surface.ratio();
+        let half_angle = cone_surface.half_angle();
         assert_eq!(origin, Point3::new(0.0, 0.0, 6.7));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -613,7 +624,11 @@ mod tests {
         let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
             panic!("expected torus");
         };
-        let (&center, &axis, &ref_direction, &major_radius, &minor_radius) = torus_surface.parts();
+        let center = *torus_surface.center();
+        let axis = *torus_surface.axis();
+        let ref_direction = *torus_surface.ref_direction();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
         assert_eq!(center, Point3::new(0.0, 0.0, 0.2));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -665,7 +680,8 @@ mod tests {
         let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
             panic!("expected torus");
         };
-        let (_, _, _, &major_radius, &minor_radius) = torus_surface.parts();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
     }
@@ -686,7 +702,8 @@ mod tests {
         let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
             panic!("expected torus");
         };
-        let (_, _, _, &major_radius, &minor_radius) = torus_surface.parts();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);

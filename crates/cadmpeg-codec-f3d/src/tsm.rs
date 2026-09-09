@@ -1610,7 +1610,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let SubdGripWedge::Slot { spokes, .. } = &layout.wedges()[0] else {
             panic!("first wedge is a fan slot");
         };
-        assert_eq!(spokes[0].as_ref().unwrap().source_index, 4);
+        assert_eq!(spokes[0].as_ref().unwrap().source_index(), 4);
         assert!(layout.wedges()[2..]
             .iter()
             .all(|wedge| matches!(wedge, SubdGripWedge::Phantom)));
@@ -1703,7 +1703,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 .iter()
                 .chain(first_sectors)
                 .chain(second_spokes)
-                .map(|grip| grip.as_ref().unwrap().source_index)
+                .map(|grip| grip.as_ref().unwrap().source_index())
                 .collect::<Vec<_>>(),
             vec![4, 5, 6, 7, 8]
         );

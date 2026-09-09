@@ -9,11 +9,14 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Angle, CosmeticThreadExtent, CurveProjectionDirection, CurveProjectionDirectionState,
-    FaceSelection, FeatureId, FeatureTreeNodeRole, HelixConstructionStyle, Length, PathRef,
-};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        CosmeticThreadExtent, CurveProjectionDirection, CurveProjectionDirectionState,
+        FaceSelection, FeatureId, FeatureTreeNodeRole, HelixConstructionStyle, PathRef,
+    },
+    scalar::{Angle, Length},
+};
 use std::collections::BTreeMap;
 
 #[allow(
@@ -63,7 +66,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_cosmetic_thread(
         &self,
         face: &FaceSelection,
-        diameter: &Option<cadmpeg_ir::features::PositiveLength>,
+        diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
         extent: &Option<CosmeticThreadExtent>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -308,12 +311,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         axis_origin: &Point3,
         axis_direction: &Vector3,
-        radius: &cadmpeg_ir::features::PositiveLength,
+        radius: &cadmpeg_ir::scalar::PositiveLength,
         shape: &cadmpeg_ir::features::HelixShape,
-        revolutions: &cadmpeg_ir::features::PositiveReal,
+        revolutions: &cadmpeg_ir::scalar::PositiveReal,
         start_angle: &Angle,
         clockwise: &bool,
-        segment_turns: &Option<cadmpeg_ir::features::PositiveReal>,
+        segment_turns: &Option<cadmpeg_ir::scalar::PositiveReal>,
         construction_style: &Option<HelixConstructionStyle>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -374,7 +377,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         axis_native_ref: &str,
         axial_rise: &Length,
         pitch: &Length,
-        revolutions: &cadmpeg_ir::features::PositiveReal,
+        revolutions: &cadmpeg_ir::scalar::PositiveReal,
         start_angle: &Angle,
         clockwise: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {

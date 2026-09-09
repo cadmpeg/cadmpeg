@@ -2056,7 +2056,8 @@ fn extrude_target_plane_candidate(
             else {
                 return None;
             };
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
                 return None;
             }
@@ -2141,7 +2142,8 @@ pub(crate) fn face_coincident_with_sketch(
     let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
         return false;
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return false;
     };
@@ -2166,14 +2168,12 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
     point.vector_from(origin).dot(normal).abs() / normal_length
 }
 
-pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
+pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Angle> {
     (parameter
         .unit()
         .map(|field| field.value.as_str())
         .is_some_and(design_angle_unit))
-    .then_some(cadmpeg_ir::features::Angle::new(
-        parameter.evaluated_value(),
-    )?)
+    .then_some(cadmpeg_ir::scalar::Angle::new(parameter.evaluated_value())?)
 }
 
 /// Length scale from a placement's stored origin to the neutral length unit.

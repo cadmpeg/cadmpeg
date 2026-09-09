@@ -39,55 +39,66 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
     };
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             line(*origin, *direction)
         }
         PcurveGeometry::Circle(circle_pcurve) => {
-            let (center, x_axis, _, radius) = circle_pcurve.parts();
+            let center = circle_pcurve.center();
+            let x_axis = circle_pcurve.x_axis();
+            let radius = circle_pcurve.radius();
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
-                    *radius,
+                    radius,
                 )
                 .unwrap(),
             ))
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
-            let (center, x_axis, _, major_radius, minor_radius) = ellipse_pcurve.parts();
+            let center = ellipse_pcurve.center();
+            let x_axis = ellipse_pcurve.x_axis();
+            let major_radius = ellipse_pcurve.major_radius();
+            let minor_radius = ellipse_pcurve.minor_radius();
             Some(CurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
-                    *major_radius,
-                    *minor_radius,
+                    major_radius,
+                    minor_radius,
                 )
                 .unwrap(),
             ))
         }
         PcurveGeometry::Parabola(parabola_pcurve) => {
-            let (vertex, x_axis, _, focal_distance) = parabola_pcurve.parts();
+            let vertex = parabola_pcurve.vertex();
+            let x_axis = parabola_pcurve.x_axis();
+            let focal_distance = parabola_pcurve.focal_distance();
             Some(CurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaCurve::try_new(
                     point(*vertex),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
-                    *focal_distance,
+                    focal_distance,
                 )
                 .unwrap(),
             ))
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
-            let (center, x_axis, _, major_radius, minor_radius) = hyperbola_pcurve.parts();
+            let center = hyperbola_pcurve.center();
+            let x_axis = hyperbola_pcurve.x_axis();
+            let major_radius = hyperbola_pcurve.major_radius();
+            let minor_radius = hyperbola_pcurve.minor_radius();
             Some(CurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
-                    *major_radius,
-                    *minor_radius,
+                    major_radius,
+                    minor_radius,
                 )
                 .unwrap(),
             ))
@@ -106,7 +117,8 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             let CurveGeometry::Line(line_curve) = curve_geometry_for_sheet_pcurve(basis)? else {
                 return None;
             };
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             let transform = Transform::from_rows([
                 [
                     transform.rows()[0][0],
@@ -137,11 +149,12 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             })
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (_, _, basis) = trimmed_pcurve.parts();
+            let basis = trimmed_pcurve.basis();
             curve_geometry_for_sheet_pcurve(basis)
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (distance, basis) = offset_pcurve.parts();
+            let distance = offset_pcurve.distance();
+            let basis = offset_pcurve.basis();
             let (origin, direction) = basis.line_parameters()?;
             let length = direction.u.hypot(direction.v);
             if !length.is_finite() || length == 0.0 {
@@ -209,7 +222,7 @@ fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
     });
     let parameter_range = match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
             *parameter_range
         }
         _ => [0.0, 1.0],
@@ -498,7 +511,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: Some("Cube root".into()),
         visible: None,
         link: None,
@@ -664,7 +677,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     let mesh = &decoded.ir().model.tessellations[0];
     assert_eq!(mesh.vertices().len(), 3);
     assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
-    assert_eq!(mesh.normals().len(), 3);
+    assert_eq!(mesh.vertex_normals().len(), 3);
     assert!(mesh.body.is_some());
 }
 

@@ -294,7 +294,7 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
     else {
         panic!("typed plane carrier");
     };
-    let (origin, _, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
     assert_eq!(*origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
     assert!(derived);
 

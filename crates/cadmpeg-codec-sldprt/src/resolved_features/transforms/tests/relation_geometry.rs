@@ -3,13 +3,14 @@
 use super::super::*;
 use super::marker;
 use crate::records::{SketchInputKind, SketchInputLink, SketchRelationKind};
-use cadmpeg_ir::features::{
-    Angle, DesignParameter, FeatureId, Length, ParameterId, ParameterValue,
-};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
+};
+use cadmpeg_ir::{
+    features::{DesignParameter, FeatureId, ParameterId, ParameterValue},
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -135,8 +136,8 @@ fn locus_relations_require_matching_evaluated_geometry() {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length::new(1.0).unwrap(),
-            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-            end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
         .unwrap(),
     );
@@ -424,8 +425,8 @@ fn locus_relations_require_matching_evaluated_geometry() {
     arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length::new(1.0).unwrap(),
-        start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-        end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::PI).unwrap(),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
     })
     .unwrap();
     assert!(matches!(

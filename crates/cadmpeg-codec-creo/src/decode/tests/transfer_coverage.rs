@@ -81,14 +81,16 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let procedural_surfaces = vec![ProceduralSurface::new(
         ProceduralSurfaceId::mint("test:model:entity#extrusion-construction".to_string())
             .expect("identity grammar"),
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix: CurveId::mint("test:model:entity#directrix".to_string())
-                .expect("identity grammar"),
-            parameter_interval: None,
-            direction: Vector3::new(0.0, 0.0, 1.0),
-            native_position: None,
-            revision_form: None,
-        },
+        ProceduralSurfaceDefinition::Extrusion(
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                CurveId::mint("test:model:entity#directrix".to_string()).expect("identity grammar"),
+                None,
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
+                None,
+            )
+            .unwrap(),
+        ),
         None,
     )
     .unwrap()];

@@ -10,10 +10,6 @@ use crate::records::{
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
-use cadmpeg_ir::features::{
-    Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-    ParameterId, ParameterValue,
-};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
@@ -21,6 +17,13 @@ use cadmpeg_ir::sketches::{
     SketchPlacement,
 };
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
+        ParameterValue,
+    },
+    scalar::{Angle, Length},
+};
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -612,7 +615,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
 
     parameter.value = Some(ParameterValue::Real(
-        cadmpeg_ir::features::FiniteReal::new(0.012).unwrap(),
+        cadmpeg_ir::scalar::FiniteReal::new(0.012).unwrap(),
     ));
     parameter.expression = "0.012".into();
     parameter.display = None;

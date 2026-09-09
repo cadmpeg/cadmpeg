@@ -3,8 +3,8 @@
 use super::super::curves::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
-use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 #[test]

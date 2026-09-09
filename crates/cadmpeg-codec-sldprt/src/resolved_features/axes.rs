@@ -13,10 +13,10 @@ use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FeatureDefinition, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::{features::FeatureDefinition, scalar::Length};
 use std::collections::{HashMap, HashSet};
 
 const TEMPORARY_AXIS_UNIT_DIRECTION_EPS: f64 = 1.0e-9;
@@ -1349,15 +1349,18 @@ pub(super) fn common_generated_surface_axis(
         .iter()
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (origin, axis, _, _) = cylinder_surface.parts();
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.axis();
                 Some((*origin, *axis))
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let (origin, axis, _, _, _, _) = cone_surface.parts();
+                let origin = cone_surface.origin();
+                let axis = cone_surface.axis();
                 Some((*origin, *axis))
             }
             SurfaceGeometry::Torus(torus_surface) => {
-                let (center, axis, _, _, _) = torus_surface.parts();
+                let center = torus_surface.center();
+                let axis = torus_surface.axis();
                 Some((*center, *axis))
             }
             SurfaceGeometry::Plane(_) => None,

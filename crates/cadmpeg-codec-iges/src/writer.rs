@@ -173,8 +173,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 .iter()
                 .find(|procedural| procedural.id == *construction)
                 .and_then(|procedural| match procedural.definition() {
-                    ProceduralSurfaceDefinition::Revolution { directrix, .. }
-                    | ProceduralSurfaceDefinition::Extrusion { directrix, .. } => Some(directrix),
+                    ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                        let directrix = definition_payload.directrix();
+                        Some(directrix)
+                    }
+                    ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                        let directrix = definition_payload.directrix();
+                        Some(directrix)
+                    }
                     _ => None,
                 })
         }) {
@@ -578,20 +584,25 @@ fn is_native_surface_construction(
     ) {
         return false;
     }
-    matches!(
-        definition,
-        ProceduralSurfaceDefinition::Revolution {
-            angular_parameter_interval: None,
-            parameter_interval: Some(_),
-            transposed: false,
-            revision_form: None,
-            ..
-        } | ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: Some(_),
-            revision_form: None,
-            ..
-        }
-    )
+    match definition {
+        ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+            (
+                &matched_payload.angular_parameter_interval(),
+                &matched_payload.parameter_interval(),
+                matched_payload.transposed(),
+                matched_payload.revision_form(),
+            ),
+            (None, Some(_), false, None,)
+        ),
+        ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+            (
+                &matched_payload.parameter_interval(),
+                matched_payload.revision_form(),
+            ),
+            (Some(_), None,)
+        ),
+        _ => false,
+    }
 }
 
 struct ValidatedTopology<'a> {
@@ -3068,12 +3079,15 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
                 *center,
                 *axis,
                 *ref_direction,
-                *radius,
+                radius,
                 span.range,
             )
             .ok_or_else(|| {
@@ -3093,13 +3107,17 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
                 *center,
                 *axis,
                 *major_direction,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 span.range,
             )
             .ok_or_else(|| {
@@ -3119,12 +3137,15 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
             let reversed = crate::entities::curve_conversion::parabolic_arc_nurbs(
                 *vertex,
                 *axis,
                 *major_direction,
-                *focal_distance,
+                focal_distance,
                 span.range,
             )
             .ok_or_else(|| {
@@ -3165,8 +3186,11 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             // The hyperbola parameterization satisfies p(-u) = p(u) with its
             // transverse axis reversed. Emit that equivalent frame with the
             // reflected interval so the Type 104 endpoints follow the
@@ -3176,8 +3200,8 @@ fn oriented_curve_entity(
                     *center,
                     axis.scale(-1.0),
                     *major_direction,
-                    *major_radius,
-                    *minor_radius,
+                    major_radius,
+                    minor_radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
@@ -3252,16 +3276,16 @@ fn procedural_pcurve_source_map(
         return Ok(None);
     };
     let (directrix, fallback_interval) = match procedural.definition() {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            ..
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = definition_payload.parameter_interval();
+            (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
         }
-        | ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            parameter_interval,
-            ..
-        } => (directrix, parameter_interval.unwrap_or([0.0, 1.0])),
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = definition_payload.parameter_interval();
+            (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
+        }
         _ => return Ok(None),
     };
     let source_curve = ir
@@ -3280,51 +3304,52 @@ fn procedural_pcurve_source_map(
     let mut u_map;
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            ..
-        } => {
-            let source_interval = if line_directrix(ir, directrix) {
-                parameter_interval.unwrap_or([0.0, 1.0])
-            } else {
-                parameter_interval.unwrap_or(carrier_interval)
-            };
-            u_map = affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
-                CodecError::Malformed(
-                    "IGES procedural surface parameter domains are invalid".into(),
-                )
-            })?;
-        }
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            ..
-        } => {
-            let source_interval = if line_directrix(ir, directrix) {
-                parameter_interval.unwrap_or([0.0, 1.0])
-            } else {
-                parameter_interval.unwrap_or(carrier_interval)
-            };
-            u_map = affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
-                CodecError::Malformed(
-                    "IGES procedural surface parameter domains are invalid".into(),
-                )
-            })?;
-            if let Some(parameter_interval) = angular_parameter_interval {
-                v_map = affine_parameter_map(*angular_interval, *parameter_interval).ok_or_else(
-                    || {
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = definition_payload.parameter_interval();
+            {
+                let source_interval = if line_directrix(ir, directrix) {
+                    parameter_interval.unwrap_or([0.0, 1.0])
+                } else {
+                    parameter_interval.unwrap_or(carrier_interval)
+                };
+                u_map =
+                    affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
                         CodecError::Malformed(
-                            "IGES procedural surface angular domains are invalid".into(),
+                            "IGES procedural surface parameter domains are invalid".into(),
                         )
-                    },
-                )?;
+                    })?;
             }
-            if *transposed {
-                std::mem::swap(&mut u_map, &mut v_map);
+        }
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let angular_interval = definition_payload.angular_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
+            let transposed = definition_payload.transposed();
+            {
+                let source_interval = if line_directrix(ir, directrix) {
+                    parameter_interval.unwrap_or([0.0, 1.0])
+                } else {
+                    parameter_interval.unwrap_or(carrier_interval)
+                };
+                u_map =
+                    affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "IGES procedural surface parameter domains are invalid".into(),
+                        )
+                    })?;
+                if let Some(parameter_interval) = angular_parameter_interval {
+                    v_map = affine_parameter_map(*angular_interval, parameter_interval)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(
+                                "IGES procedural surface angular domains are invalid".into(),
+                            )
+                        })?;
+                }
+                if *transposed {
+                    std::mem::swap(&mut u_map, &mut v_map);
+                }
             }
         }
         _ => return Ok(None),
@@ -4430,10 +4455,10 @@ fn surface_entities_for_ir(
                     ))
                 })?;
             match procedural.definition() {
-                ProceduralSurfaceDefinition::Revolution { .. } => {
+                ProceduralSurfaceDefinition::Revolution(_) => {
                     revolution_surface_entities(ir, construction, base_index, version)
                 }
-                ProceduralSurfaceDefinition::Extrusion { .. } => {
+                ProceduralSurfaceDefinition::Extrusion(_) => {
                     extrusion_surface_entities(ir, construction, base_index, version)
                 }
                 _ => Err(CodecError::NotImplemented(
@@ -4461,18 +4486,16 @@ fn extrusion_surface_entities(
                 "IGES procedural surface construction {construction} is missing"
             ))
         })?;
-    let ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        parameter_interval,
-        direction,
-        native_position,
-        revision_form,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer only encodes Extrusion surfaces as Type 122".into(),
         ));
     };
+    let directrix = definition_payload.directrix();
+    let parameter_interval = definition_payload.parameter_interval();
+    let direction = definition_payload.direction();
+    let native_position = definition_payload.native_position();
+    let revision_form = definition_payload.revision_form();
     if revision_form.is_some() {
         return Err(CodecError::NotImplemented(
             "IGES Type 122 output does not encode revision-gated extrusion fields".into(),
@@ -4609,21 +4632,20 @@ fn revolution_surface_entities(
                 "IGES procedural surface construction {construction} is missing"
             ))
         })?;
-    let ProceduralSurfaceDefinition::Revolution {
-        directrix,
-        axis_origin,
-        axis_direction,
-        angular_interval,
-        angular_parameter_interval,
-        parameter_interval,
-        transposed,
-        revision_form,
-    } = procedural.definition()
+    let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
     else {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer only encodes procedural Revolution surfaces as Type 120".into(),
         ));
     };
+    let directrix = definition_payload.directrix();
+    let axis_origin = definition_payload.axis_origin();
+    let axis_direction = definition_payload.axis_direction();
+    let angular_interval = definition_payload.angular_interval();
+    let angular_parameter_interval = definition_payload.angular_parameter_interval();
+    let parameter_interval = definition_payload.parameter_interval();
+    let transposed = definition_payload.transposed();
+    let revision_form = definition_payload.revision_form();
     if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {
         return Err(CodecError::NotImplemented(
             "IGES Type 120 output requires the default revolution parameterization".into(),
@@ -4735,7 +4757,9 @@ fn surface_entities(
         analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             if matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) {
                 let (normal, u_axis) = orthonormal_pair(*normal, *u_axis, "legacy plane basis")?;
                 let v_axis = normal.cross(u_axis);
@@ -4774,8 +4798,11 @@ fn surface_entities(
         }
         SurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
-            if !radius.is_finite() || *radius <= 0.0 {
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = cylinder_surface.radius();
+            if !radius.is_finite() || radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES cylinder radius must be positive and finite".into(),
                 ));
@@ -4793,7 +4820,7 @@ fn surface_entities(
                     "{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(*radius),
+                    number(radius),
                     reference_marker(reference)
                 )
                 .into_bytes(),
@@ -4803,20 +4830,25 @@ fn surface_entities(
             Ok(entities)
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
-            if !same_float(*ratio, 1.0) {
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
+            if !same_float(ratio, 1.0) {
                 return Err(CodecError::NotImplemented(
                     "IGES analytic cone writer only encodes circular cones".into(),
                 ));
             }
-            if !radius.is_finite() || *radius < 0.0 {
+            if !radius.is_finite() || radius < 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES cone radius must be finite and non-negative".into(),
                 ));
             }
             if !half_angle.is_finite()
-                || *half_angle <= 0.0
-                || *half_angle >= std::f64::consts::FRAC_PI_2
+                || half_angle <= 0.0
+                || half_angle >= std::f64::consts::FRAC_PI_2
             {
                 return Err(CodecError::Malformed(
                     "IGES cone semi-angle must be in (0, 90) degrees".into(),
@@ -4835,7 +4867,7 @@ fn surface_entities(
                     "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(*radius),
+                    number(radius),
                     number(half_angle.to_degrees()),
                     reference_marker(reference)
                 )
@@ -4846,8 +4878,11 @@ fn surface_entities(
             Ok(entities)
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
-            if !radius.is_finite() || *radius <= 0.0 {
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = sphere_surface.radius();
+            if !radius.is_finite() || radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES sphere radius must be positive and finite".into(),
                 ));
@@ -4864,7 +4899,7 @@ fn surface_entities(
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
-                    number(*radius),
+                    number(radius),
                     reference_marker(axis),
                     reference_marker(reference)
                 )
@@ -4875,11 +4910,15 @@ fn surface_entities(
             Ok(entities)
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             if !major_radius.is_finite()
                 || !minor_radius.is_finite()
-                || *minor_radius <= 0.0
-                || *minor_radius >= *major_radius
+                || minor_radius <= 0.0
+                || minor_radius >= major_radius
             {
                 return Err(CodecError::Malformed(
                     "IGES torus radii must satisfy 0 < minor < major".into(),
@@ -4898,8 +4937,8 @@ fn surface_entities(
                     "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(*major_radius),
-                    number(*minor_radius),
+                    number(major_radius),
+                    number(minor_radius),
                     reference_marker(reference)
                 )
                 .into_bytes(),
@@ -5616,9 +5655,12 @@ fn curve_entity(
             })
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
-            if !radius.is_finite() || *radius <= 0.0 {
+            if !radius.is_finite() || radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES circle radius must be positive and finite".into(),
                 ));
@@ -5648,12 +5690,16 @@ fn curve_entity(
             })
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
             if !major_radius.is_finite()
                 || !minor_radius.is_finite()
-                || *major_radius <= 0.0
-                || *minor_radius <= 0.0
+                || major_radius <= 0.0
+                || minor_radius <= 0.0
             {
                 return Err(CodecError::Malformed(
                     "IGES ellipse basis or radii are invalid".into(),
@@ -5690,16 +5736,19 @@ fn curve_entity(
             })
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
-            if range[0] == range[1] || !focal_distance.is_finite() || *focal_distance <= 0.0 {
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
+            if range[0] == range[1] || !focal_distance.is_finite() || focal_distance <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES parabola requires a finite non-zero parameter span".into(),
                 ));
             }
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "parabola basis")?;
             let x_axis = major.cross(axis);
-            let start_xy = parabola_point(*focal_distance, range[0])?;
-            let end_xy = parabola_point(*focal_distance, range[1])?;
+            let start_xy = parabola_point(focal_distance, range[0])?;
+            let end_xy = parabola_point(focal_distance, range[1])?;
             Ok(Entity {
                 type_code: 104,
                 form: 3,
@@ -5718,13 +5767,16 @@ fn curve_entity(
             })
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             if range[0] == range[1]
                 || !major_radius.is_finite()
                 || !minor_radius.is_finite()
-                || *major_radius <= 0.0
-                || *minor_radius <= 0.0
+                || major_radius <= 0.0
+                || minor_radius <= 0.0
             {
                 return Err(CodecError::Malformed(
                     "IGES hyperbola requires positive radii and a finite span".into(),
@@ -5732,8 +5784,8 @@ fn curve_entity(
             }
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "hyperbola basis")?;
             let y_axis = axis.cross(major);
-            let start_xy = hyperbola_point(*major_radius, *minor_radius, range[0])?;
-            let end_xy = hyperbola_point(*major_radius, *minor_radius, range[1])?;
+            let start_xy = hyperbola_point(major_radius, minor_radius, range[0])?;
+            let end_xy = hyperbola_point(major_radius, minor_radius, range[1])?;
             Ok(Entity {
                 type_code: 104,
                 form: 2,
@@ -5987,7 +6039,8 @@ fn apply_rigid_transform(
     let vector = |value: Vector3, label: &str| unit(transform.apply_vector(value), label);
     Ok(match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (&origin, &direction) = line_curve.parts();
+            let origin = *line_curve.origin();
+            let direction = *line_curve.direction();
             CurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     point(origin),
@@ -5997,7 +6050,10 @@ fn apply_rigid_transform(
             )
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+            let center = *circle_curve.center();
+            let axis = *circle_curve.axis();
+            let ref_direction = *circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point(center),
@@ -6009,8 +6065,11 @@ fn apply_rigid_transform(
             )
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
-                ellipse_curve.parts();
+            let center = *ellipse_curve.center();
+            let axis = *ellipse_curve.axis();
+            let major_direction = *ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             CurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
                     point(center),
@@ -6023,7 +6082,10 @@ fn apply_rigid_transform(
             )
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (&vertex, &axis, &major_direction, &focal_distance) = parabola_curve.parts();
+            let vertex = *parabola_curve.vertex();
+            let axis = *parabola_curve.axis();
+            let major_direction = *parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
             CurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaCurve::try_new(
                     point(vertex),
@@ -6035,8 +6097,11 @@ fn apply_rigid_transform(
             )
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
-                hyperbola_curve.parts();
+            let center = *hyperbola_curve.center();
+            let axis = *hyperbola_curve.axis();
+            let major_direction = *hyperbola_curve.major_direction();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             CurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                     point(center),
@@ -6049,7 +6114,7 @@ fn apply_rigid_transform(
             )
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (&value,) = degenerate_curve.parts();
+            let value = *degenerate_curve.point();
             CurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(point(value))
                     .map_err(cadmpeg_core::CodecError::malformed)?,

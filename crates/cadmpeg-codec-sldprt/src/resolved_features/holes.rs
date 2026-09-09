@@ -18,9 +18,6 @@ use crate::records::{
     SketchInputKind,
 };
 use cadmpeg_core::decode::{alloc_filled, View};
-use cadmpeg_ir::features::{
-    FeatureDefinition, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
-};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -28,6 +25,10 @@ use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
+use cadmpeg_ir::{
+    features::{FeatureDefinition, HoleBottom, HoleKind, HolePlacement, LinearTermination},
+    scalar::Length,
+};
 use std::collections::{HashMap, HashSet};
 
 const EPS_HOLE_POSITION: f64 = 1.0e-8;
@@ -114,7 +115,7 @@ pub(crate) fn project_helix_axes(
             last_point.z - points[0].z,
         )
         .dot(axis_direction);
-        let Some(pitch) = cadmpeg_ir::features::NonZeroLength::new(
+        let Some(pitch) = cadmpeg_ir::scalar::NonZeroLength::new(
             Length::new(signed_rise / revolutions.get())
                 .ok_or_else(|| {
                     cadmpeg_core::CodecError::Malformed(
@@ -141,7 +142,7 @@ pub(crate) fn project_helix_axes(
                             "SolidWorks helix direction must have finite nonzero norm".into(),
                         )
                     })?,
-                radius: cadmpeg_ir::features::PositiveLength::new(radius).ok_or_else(|| {
+                radius: cadmpeg_ir::scalar::PositiveLength::new(radius).ok_or_else(|| {
                     cadmpeg_core::CodecError::Malformed(
                         "SolidWorks projected length must be finite".into(),
                     )
@@ -613,11 +614,11 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
 
 #[derive(Clone)]
 struct ProfiledHoleConstruction {
-    diameter: cadmpeg_ir::features::PositiveLength,
+    diameter: cadmpeg_ir::scalar::PositiveLength,
     extent: LinearTermination,
     kind: HoleKind,
     bottom: Option<HoleBottom>,
-    taper_angle: Option<cadmpeg_ir::features::InteriorAngle>,
+    taper_angle: Option<cadmpeg_ir::scalar::InteriorAngle>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -639,9 +640,9 @@ fn profiled_hole_construction(
 
 #[derive(Clone, Copy)]
 struct DimensionOnlyHole {
-    diameter: cadmpeg_ir::features::PositiveLength,
-    depth: cadmpeg_ir::features::NonZeroLength,
-    drill_point_angle: Option<cadmpeg_ir::features::InteriorAngle>,
+    diameter: cadmpeg_ir::scalar::PositiveLength,
+    depth: cadmpeg_ir::scalar::NonZeroLength,
+    drill_point_angle: Option<cadmpeg_ir::scalar::InteriorAngle>,
 }
 
 impl DimensionOnlyHole {
@@ -725,14 +726,14 @@ fn profiled_hole_construction_with_evidence(
     let dimension_only = if crate::history::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
             ([diameter], [depth], []) => Some(DimensionOnlyHole {
-                diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
-                depth: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
+                depth: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
                 drill_point_angle: None,
             }),
             ([diameter], [depth], [drill_point_angle]) => Some(DimensionOnlyHole {
-                diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
-                depth: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
-                drill_point_angle: Some(cadmpeg_ir::features::InteriorAngle::new(
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
+                depth: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
+                drill_point_angle: Some(cadmpeg_ir::scalar::InteriorAngle::new(
                     *drill_point_angle,
                 )?),
             }),
@@ -883,23 +884,19 @@ fn profiled_hole_construction_with_evidence(
                         ];
                         if profile_translation(&edges, 2).is_some() {
                             return Some(ProfiledHoleConstruction {
-                                diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
+                                diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
                                 extent: LinearTermination::ThroughAll,
                                 kind: HoleKind::Counterdrill {
                                     diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
-                                        cadmpeg_ir::features::PositiveLength::new(
-                                            *recess_diameter,
-                                        )?,
-                                        Some(cadmpeg_ir::features::PositiveLength::new(
+                                        cadmpeg_ir::scalar::PositiveLength::new(*recess_diameter)?,
+                                        Some(cadmpeg_ir::scalar::PositiveLength::new(
                                             *entry_diameter,
                                         )?),
                                     )
                                     .ok()?,
 
-                                    depth: cadmpeg_ir::features::PositiveLength::new(
-                                        *recess_depth,
-                                    )?,
-                                    angle: cadmpeg_ir::features::InteriorAngle::new(*entry_angle)?,
+                                    depth: cadmpeg_ir::scalar::PositiveLength::new(*recess_depth)?,
+                                    angle: cadmpeg_ir::scalar::InteriorAngle::new(*entry_angle)?,
                                 },
                                 bottom: None,
                                 taper_angle: None,
@@ -961,15 +958,13 @@ fn profiled_hole_construction_with_evidence(
                             continue;
                         }
                         return Some(ProfiledHoleConstruction {
-                            diameter: cadmpeg_ir::features::PositiveLength::new(
-                                entry_radius * 2.0,
-                            )?,
+                            diameter: cadmpeg_ir::scalar::PositiveLength::new(entry_radius * 2.0)?,
                             extent: LinearTermination::Blind {
-                                length: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                                length: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
                             },
                             kind: HoleKind::Simple,
                             bottom: Some(HoleBottom::Flat),
-                            taper_angle: Some(cadmpeg_ir::features::InteriorAngle::new(
+                            taper_angle: Some(cadmpeg_ir::scalar::InteriorAngle::new(
                                 half_angle * 2.0,
                             )?),
                         });
@@ -998,17 +993,17 @@ fn profiled_hole_construction_with_evidence(
                             [] => {
                                 let extent = if flat_bottom {
                                     LinearTermination::Blind {
-                                        length: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                                        length: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
                                     }
                                 } else {
                                     LinearTermination::ThroughAll
                                 };
                                 (
                                     HoleKind::Counterbore {
-                                        diameter: cadmpeg_ir::features::PositiveLength::new(
+                                        diameter: cadmpeg_ir::scalar::PositiveLength::new(
                                             *entry_diameter,
                                         )?,
-                                        depth: cadmpeg_ir::features::PositiveLength::new(
+                                        depth: cadmpeg_ir::scalar::PositiveLength::new(
                                             *entry_depth,
                                         )?,
                                     },
@@ -1030,26 +1025,25 @@ fn profiled_hole_construction_with_evidence(
                                 }
                                 (
                                     HoleKind::CounterboreDrilled {
-                                        diameter: cadmpeg_ir::features::PositiveLength::new(
+                                        diameter: cadmpeg_ir::scalar::PositiveLength::new(
                                             *entry_diameter,
                                         )?,
-                                        depth: cadmpeg_ir::features::PositiveLength::new(
+                                        depth: cadmpeg_ir::scalar::PositiveLength::new(
                                             *entry_depth,
                                         )?,
-                                        drill_point_angle:
-                                            cadmpeg_ir::features::InteriorAngle::new(
-                                                *drill_point_angle,
-                                            )?,
+                                        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(
+                                            *drill_point_angle,
+                                        )?,
                                     },
                                     LinearTermination::Blind {
-                                        length: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                                        length: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
                                     },
                                 )
                             }
                             _ => continue,
                         };
                         return Some(ProfiledHoleConstruction {
-                            diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
+                            diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
                             extent,
                             kind,
                             bottom: (angles.is_empty() && flat_bottom).then_some(HoleBottom::Flat),
@@ -1085,13 +1079,11 @@ fn profiled_hole_construction_with_evidence(
                         });
                     if profile_matches {
                         return Some(ProfiledHoleConstruction {
-                            diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
+                            diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
                             extent: LinearTermination::ThroughAll,
                             kind: HoleKind::Countersink {
-                                diameter: cadmpeg_ir::features::PositiveLength::new(
-                                    *entry_diameter,
-                                )?,
-                                angle: cadmpeg_ir::features::InteriorAngle::new(*sink_angle)?,
+                                diameter: cadmpeg_ir::scalar::PositiveLength::new(*entry_diameter)?,
+                                angle: cadmpeg_ir::scalar::InteriorAngle::new(*sink_angle)?,
                             },
                             bottom: None,
                             taper_angle: None,
@@ -1117,18 +1109,16 @@ fn profiled_hole_construction_with_evidence(
                     let edges = [(entry, bore_start), (bore_start, bore_end), (bore_end, tip)];
                     if profile_translation(&edges, 2).is_some() {
                         return Some(ProfiledHoleConstruction {
-                            diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
+                            diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
                             extent: LinearTermination::Blind {
-                                length: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                                length: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
                             },
                             kind: HoleKind::Countersink {
-                                diameter: cadmpeg_ir::features::PositiveLength::new(
-                                    *entry_diameter,
-                                )?,
-                                angle: cadmpeg_ir::features::InteriorAngle::new(sink_angle)?,
+                                diameter: cadmpeg_ir::scalar::PositiveLength::new(*entry_diameter)?,
+                                angle: cadmpeg_ir::scalar::InteriorAngle::new(sink_angle)?,
                             },
                             bottom: Some(HoleBottom::Angled {
-                                included_angle: cadmpeg_ir::features::InteriorAngle::new(
+                                included_angle: cadmpeg_ir::scalar::InteriorAngle::new(
                                     drill_point_angle,
                                 )?,
                                 depth_to_tip: false,
@@ -1154,7 +1144,7 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
-    let incomplete = |diameter: &Option<cadmpeg_ir::features::PositiveLength>,
+    let incomplete = |diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
                       extent: &Option<LinearTermination>,
                       construction: &cadmpeg_ir::features::HoleConstruction| {
         diameter.is_none()
@@ -1838,7 +1828,9 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     .iter()
                     .filter_map(|surface| match &surface.geometry {
                         SurfaceGeometry::Cylinder(cylinder_surface) => {
-                            let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+                            let origin = *cylinder_surface.origin();
+                            let axis = *cylinder_surface.axis();
+                            let candidate = cylinder_surface.radius();
                             ((candidate - radius).abs() <= radius_tolerance
                                 && point_axis_distance_squared(point, origin, axis)
                                     <= axis_tolerance_squared)
@@ -2071,7 +2063,9 @@ pub(crate) fn project_generated_hole_axes(
                     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
                         continue;
                     };
-                    let (&origin, &axis, _, &candidate_radius) = cylinder_surface.parts();
+                    let origin = *cylinder_surface.origin();
+                    let axis = *cylinder_surface.axis();
+                    let candidate_radius = cylinder_surface.radius();
                     if (candidate_radius - radius).abs() > radius_tolerance {
                         continue;
                     }
@@ -2415,13 +2409,16 @@ fn drilled_hole_topology_candidates(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let (_, _, _, &candidate_radius, &ratio, &half_angle) = cone_surface.parts();
+                    let candidate_radius = cone_surface.radius();
+                    let ratio = cone_surface.ratio();
+                    let half_angle = cone_surface.half_angle();
                     (candidate_radius - radius).abs() <= radius_tolerance
                         && (ratio - 1.0).abs() <= EPS_HOLE_GEOMETRY
                         && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY
                 } =>
             {
-                let (&origin, &axis, _, _, _, _) = cone_surface.parts();
+                let origin = *cone_surface.origin();
+                let axis = *cone_surface.axis();
                 hole_axis_key(&HolePlacement::Axis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
                     axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
@@ -2753,7 +2750,7 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
     };
     let left_construction = shape.construction();
     let left_exit_kind = shape.exit_kind();
-    let left_diameter = &shape.diameter();
+    let left_diameter = shape.diameter();
     let FeatureDefinition::Hole {
         shape,
 
@@ -2768,7 +2765,7 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
     };
     let right_construction = shape.construction();
     let right_exit_kind = shape.exit_kind();
-    let right_diameter = &shape.diameter();
+    let right_diameter = shape.diameter();
     left_construction == right_construction
         && left_exit_kind == right_exit_kind
         && left_diameter == right_diameter
@@ -2805,7 +2802,9 @@ fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector
     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         return None;
     };
-    let (&origin, &axis, _, &radius) = cylinder_surface.parts();
+    let origin = *cylinder_surface.origin();
+    let axis = *cylinder_surface.axis();
+    let radius = cylinder_surface.radius();
     let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     let along = delta.dot(axis);
     let radial = Vector3::new(
@@ -3154,7 +3153,9 @@ fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point
             else {
                 return None;
             };
-            let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+            let origin = *cylinder_surface.origin();
+            let axis = *cylinder_surface.axis();
+            let candidate = cylinder_surface.radius();
             ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
         })
         .collect::<Vec<_>>();
@@ -3235,7 +3236,9 @@ fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<V
         let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
             return None;
         };
-        let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+        let origin = *cylinder_surface.origin();
+        let axis = *cylinder_surface.axis();
+        let candidate = cylinder_surface.radius();
         ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
     }))
 }
@@ -3322,7 +3325,9 @@ fn cylindrical_bore_face_spans(
             let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
                 return None;
             };
-            let (&origin, &axis, _, &radius) = cylinder_surface.parts();
+            let origin = *cylinder_surface.origin();
+            let axis = *cylinder_surface.axis();
+            let radius = cylinder_surface.radius();
             let mut stations = face
                 .loops
                 .iter()
@@ -3443,7 +3448,7 @@ pub(crate) fn project_topological_hole_constructions(
             };
             if diameter.is_none() {
                 diameter = Some(
-                    cadmpeg_ir::features::PositiveLength::new(radius * 2.0).ok_or_else(|| {
+                    cadmpeg_ir::scalar::PositiveLength::new(radius * 2.0).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(
                             "SolidWorks projected length must be finite".into(),
                         )
@@ -3458,7 +3463,7 @@ pub(crate) fn project_topological_hole_constructions(
                 .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
             {
                 *extent = Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(*depth).ok_or_else(|| {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(*depth).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(
                             "SolidWorks projected length must be finite".into(),
                         )
@@ -3557,7 +3562,8 @@ pub(crate) fn project_bore_backed_position_sketches(
             .filter_map(|surface| match surface.geometry {
                 SurfaceGeometry::Plane(plane_surface)
                     if {
-                        let (&origin, &normal, _) = plane_surface.parts();
+                        let origin = *plane_surface.origin();
+                        let normal = *plane_surface.normal();
                         normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                             && axes.iter().all(|(point, _)| {
                                 Vector3::new(
@@ -3571,7 +3577,9 @@ pub(crate) fn project_bore_backed_position_sketches(
                             })
                     } =>
                 {
-                    let (&origin, &normal, &u_axis) = plane_surface.parts();
+                    let origin = *plane_surface.origin();
+                    let normal = *plane_surface.normal();
+                    let u_axis = *plane_surface.u_axis();
                     Some((origin, normal, u_axis))
                 }
                 _ => None,
@@ -3767,7 +3775,9 @@ fn match_marker_loci_to_bore_axes(
         let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
             continue;
         };
-        let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+        let origin = *cylinder_surface.origin();
+        let axis = *cylinder_surface.axis();
+        let candidate = cylinder_surface.radius();
         if (candidate - radius).abs() > radius_tolerance {
             continue;
         }
@@ -4321,12 +4331,13 @@ fn constrained_bore_axes(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if {
-                    let (_, &axis, _, &candidate_radius) = cylinder_surface.parts();
+                    let axis = *cylinder_surface.axis();
+                    let candidate_radius = cylinder_surface.radius();
                     (candidate_radius - radius).abs() <= radius_tolerance
                         && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                 } =>
             {
-                let (&candidate, _, _, _) = cylinder_surface.parts();
+                let candidate = *cylinder_surface.origin();
                 let delta = Vector3::new(
                     candidate.x - origin.x,
                     candidate.y - origin.y,

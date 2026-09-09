@@ -419,7 +419,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
         let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) = curve.geometry else {
             panic!("edge line: {curve:#?}");
         };
-        let (&origin, &direction) = line_curve.parts();
+        let origin = *line_curve.origin();
+        let direction = *line_curve.direction();
         let start = model
             .vertices
             .iter()

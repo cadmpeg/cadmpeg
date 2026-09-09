@@ -5563,7 +5563,7 @@ mod tests {
         assert!((tessellations[0].0.vertices()[2].y - 26.0).abs() < EPS_JT_TRANSFORMED_VERTEX);
         assert_eq!(tessellations[0].0.triangles(), vec![[0, 1, 2]]);
         assert_eq!(
-            tessellations[0].0.normals()[1],
+            tessellations[0].0.vertex_normals()[1],
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(

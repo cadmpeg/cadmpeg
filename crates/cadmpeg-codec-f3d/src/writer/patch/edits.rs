@@ -3012,7 +3012,8 @@ pub(crate) fn validate_curve_edits(
         edited.insert(id.to_owned());
         let valid = match after {
             CurveGeometry::Line(line_curve) if { matches!(before, CurveGeometry::Line(_)) } => {
-                let (origin, direction) = line_curve.parts();
+                let origin = line_curve.origin();
+                let direction = line_curve.direction();
                 finite_point(*origin)
                     && finite_vector(*direction)
                     && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
@@ -3020,29 +3021,35 @@ pub(crate) fn validate_curve_edits(
             CurveGeometry::Circle(circle_curve)
                 if { matches!(before, CurveGeometry::Circle(_)) } =>
             {
-                let (center, axis, ref_direction, radius) = circle_curve.parts();
+                let center = circle_curve.center();
+                let axis = circle_curve.axis();
+                let ref_direction = circle_curve.ref_direction();
+                let radius = circle_curve.radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius > 0.0
+                    && radius > 0.0
             }
             CurveGeometry::Ellipse(ellipse_curve)
                 if { matches!(before, CurveGeometry::Ellipse(_)) } =>
             {
-                let (center, axis, major_direction, major_radius, minor_radius) =
-                    ellipse_curve.parts();
+                let center = ellipse_curve.center();
+                let axis = ellipse_curve.axis();
+                let major_direction = ellipse_curve.major_direction();
+                let major_radius = ellipse_curve.major_radius();
+                let minor_radius = ellipse_curve.minor_radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *major_direction)
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
-                    && *minor_radius <= *major_radius
+                    && major_radius > 0.0
+                    && minor_radius > 0.0
+                    && minor_radius <= major_radius
             }
             CurveGeometry::Degenerate(degenerate_curve)
                 if { matches!(before, CurveGeometry::Degenerate(_)) } =>
             {
-                let (point,) = degenerate_curve.parts();
+                let point = degenerate_curve.point();
                 finite_point(*point)
             }
             CurveGeometry::Nurbs(after) => {
@@ -3228,52 +3235,67 @@ pub(crate) fn validate_surface_edits(
             SurfaceGeometry::Plane(plane_surface)
                 if { matches!(before, SurfaceGeometry::Plane(_)) } =>
             {
-                let (origin, normal, u_axis) = plane_surface.parts();
+                let origin = plane_surface.origin();
+                let normal = plane_surface.normal();
+                let u_axis = plane_surface.u_axis();
                 finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
             }
             SurfaceGeometry::Sphere(sphere_surface)
                 if { matches!(before, SurfaceGeometry::Sphere(_)) } =>
             {
-                let (center, axis, ref_direction, radius) = sphere_surface.parts();
+                let center = sphere_surface.center();
+                let axis = sphere_surface.axis();
+                let ref_direction = sphere_surface.ref_direction();
+                let radius = sphere_surface.radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius != 0.0
+                    && radius != 0.0
             }
             SurfaceGeometry::Torus(torus_surface)
                 if { matches!(before, SurfaceGeometry::Torus(_)) } =>
             {
-                let (center, axis, ref_direction, major_radius, minor_radius) =
-                    torus_surface.parts();
+                let center = torus_surface.center();
+                let axis = torus_surface.axis();
+                let ref_direction = torus_surface.ref_direction();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius != 0.0
-                    && *minor_radius != 0.0
+                    && major_radius != 0.0
+                    && minor_radius != 0.0
             }
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if { matches!(before, SurfaceGeometry::Cylinder(_)) } =>
             {
-                let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.axis();
+                let ref_direction = cylinder_surface.ref_direction();
+                let radius = cylinder_surface.radius();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius != 0.0
+                    && radius != 0.0
             }
             SurfaceGeometry::Cone(cone_surface)
                 if { matches!(before, SurfaceGeometry::Cone(_)) } =>
             {
-                let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+                let origin = cone_surface.origin();
+                let axis = cone_surface.axis();
+                let ref_direction = cone_surface.ref_direction();
+                let radius = cone_surface.radius();
+                let ratio = cone_surface.ratio();
+                let half_angle = cone_surface.half_angle();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius != 0.0
+                    && radius != 0.0
                     && ratio.is_finite()
-                    && *ratio > 0.0
+                    && ratio > 0.0
                     && half_angle.is_finite()
-                    && *half_angle >= 0.0
-                    && *half_angle < std::f64::consts::FRAC_PI_2
+                    && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
             SurfaceGeometry::Nurbs(after) => {
                 let SurfaceGeometry::Nurbs(before) = before else {
@@ -3351,55 +3373,56 @@ pub(crate) fn validate_procedural_surface_edits(
         }
         let edit = match (before.definition(), after.definition()) {
             (
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: before_directrix,
-                    parameter_interval: before_parameter_interval,
-                    direction: before_direction,
-                    native_position: before_native_position,
-                    revision_form: None,
-                },
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: after_directrix,
-                    parameter_interval: after_parameter_interval,
-                    direction: after_direction,
-                    native_position: after_native_position,
-                    revision_form: None,
-                },
-            ) if before_directrix == after_directrix => {
-                let interval = after_parameter_interval.ok_or_else(|| {
-                    CodecError::malformed(format_args!("F3D extrusion interval is missing: {id}"))
-                })?;
-                let position = after_native_position.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D extrusion native position is missing: {id}"
-                    ))
-                })?;
-                if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion interval must be finite and ordered: {id}"
-                    )));
-                }
-                if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion direction must be finite and nonzero: {id}"
-                    )));
-                }
-                if ![position.x, position.y, position.z]
-                    .into_iter()
-                    .all(f64::is_finite)
+                ProceduralSurfaceDefinition::Extrusion(definition_payload_0),
+                ProceduralSurfaceDefinition::Extrusion(definition_payload_1),
+            ) if (definition_payload_0.directrix()) == (definition_payload_1.directrix())
+                && definition_payload_0.revision_form().is_none()
+                && definition_payload_1.revision_form().is_none() =>
+            {
+                let before_parameter_interval = definition_payload_0.parameter_interval();
+                let before_direction = definition_payload_0.direction();
+                let before_native_position = definition_payload_0.native_position();
+                let after_parameter_interval = definition_payload_1.parameter_interval();
+                let after_direction = definition_payload_1.direction();
+                let after_native_position = definition_payload_1.native_position();
                 {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion native position must be finite: {id}"
-                    )));
+                    let interval = after_parameter_interval.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D extrusion interval is missing: {id}"
+                        ))
+                    })?;
+                    let position = after_native_position.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D extrusion native position is missing: {id}"
+                        ))
+                    })?;
+                    if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion interval must be finite and ordered: {id}"
+                        )));
+                    }
+                    if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion direction must be finite and nonzero: {id}"
+                        )));
+                    }
+                    if ![position.x, position.y, position.z]
+                        .into_iter()
+                        .all(f64::is_finite)
+                    {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion native position must be finite: {id}"
+                        )));
+                    }
+                    (before_parameter_interval != after_parameter_interval
+                        || before_direction != after_direction
+                        || before_native_position != after_native_position)
+                        .then_some(ProceduralSurfaceEdit::Extrusion {
+                            parameter_interval: interval,
+                            direction: *after_direction,
+                            native_position: position,
+                        })
                 }
-                (before_parameter_interval != after_parameter_interval
-                    || before_direction != after_direction
-                    || before_native_position != after_native_position)
-                    .then_some(ProceduralSurfaceEdit::Extrusion {
-                        parameter_interval: interval,
-                        direction: *after_direction,
-                        native_position: position,
-                    })
             }
             (
                 ProceduralSurfaceDefinition::Blend {
@@ -3513,71 +3536,61 @@ pub(crate) fn validate_procedural_curve_edits(
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
             ) if before.definition() != after.definition() => Some(after.definition().clone()),
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                    source: before_source,
-                    roles: before_roles,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                    source: after_source,
-                    roles: after_roles,
-                    ..
-                },
-            ) if before_source == after_source
-                && before_roles == after_roles
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_0),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_1),
+            ) if (definition_payload_0.source()) == (definition_payload_1.source())
+                && (definition_payload_0.roles()) == (definition_payload_1.roles())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                    source: before_source,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                    source: after_source,
-                    ..
-                },
-            ) if before_source == after_source && before.definition() != after.definition() => {
-                Some(after.definition().clone())
-            }
-            (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: before_context,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: after_context,
-                    ..
-                },
-            ) if before_context.sides() == after_context.sides()
-                && before_context
-                    .discontinuities()
-                    .iter()
-                    .map(Vec::len)
-                    .eq(after_context.discontinuities().iter().map(Vec::len))
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_1),
+            ) if (definition_payload_0.source()) == (definition_payload_1.source())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-                    context: before_context,
-                    base: before_base,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-                    context: after_context,
-                    base: after_base,
-                    ..
-                },
-            ) if before_context.sides() == after_context.sides()
-                && before_context
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                    definition_payload_0,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                    definition_payload_1,
+                ),
+            ) if (definition_payload_0.context()).sides()
+                == (definition_payload_1.context()).sides()
+                && (definition_payload_0.context())
                     .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities().iter().map(Vec::len))
-                && before_base == after_base
+                    .eq((definition_payload_1.context())
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before.definition() != after.definition() =>
+            {
+                Some(after.definition().clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                    definition_payload_0,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                    definition_payload_1,
+                ),
+            ) if (definition_payload_0.context()).sides()
+                == (definition_payload_1.context()).sides()
+                && (definition_payload_0.context())
+                    .discontinuities()
+                    .iter()
+                    .map(Vec::len)
+                    .eq((definition_payload_1.context())
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && (definition_payload_0.base()) == (definition_payload_1.base())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3695,22 +3708,12 @@ pub(crate) fn validate_procedural_curve_edits(
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-                    context: before_context,
-                    silhouette: before_silhouette,
-                    cast_surface: before_cast,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-                    context: after_context,
-                    silhouette: after_silhouette,
-                    cast_surface: after_cast,
-                    ..
-                },
-            ) if before_context == after_context
-                && std::mem::discriminant(before_silhouette)
-                    == std::mem::discriminant(after_silhouette)
-                && before_cast == after_cast
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(after_payload),
+            ) if before_payload.context() == after_payload.context()
+                && std::mem::discriminant(before_payload.silhouette())
+                    == std::mem::discriminant(after_payload.silhouette())
+                && before_payload.cast_surface() == after_payload.cast_surface()
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3719,11 +3722,13 @@ pub(crate) fn validate_procedural_curve_edits(
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(after_compound),
             ) if before_compound
-                .parts()
-                .1
+                .components()
                 .iter()
                 .map(|item| &item.component)
-                .eq(after_compound.parts().1.iter().map(|item| &item.component))
+                .eq(after_compound
+                    .components()
+                    .iter()
+                    .map(|item| &item.component))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

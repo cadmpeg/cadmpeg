@@ -404,7 +404,7 @@ fn native_dimension_subtypes_are_reported() {
         expression: "1".into(),
         display: None,
         value: Some(ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),

@@ -2,9 +2,12 @@
 //! Surface-feature projection.
 
 use crate::records::Feature;
-use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition, Length, PathRef, RuledSurfaceMode,
-    SurfaceExtension, TrimRegion,
+use cadmpeg_ir::{
+    features::{
+        EdgeSelection, FaceSelection, FeatureDefinition, PathRef, RuledSurfaceMode,
+        SurfaceExtension, TrimRegion,
+    },
+    scalar::Length,
 };
 use std::collections::HashMap;
 
@@ -30,9 +33,7 @@ pub(crate) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
 
 pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
     let gap_tolerance = match feature.parameters.get("GapTolerance") {
-        Some(value) => {
-            parse_length_mm(value).and_then(cadmpeg_ir::features::NonNegativeLength::new)
-        }
+        Some(value) => parse_length_mm(value).and_then(cadmpeg_ir::scalar::NonNegativeLength::new),
         None => None,
     };
     FeatureDefinition::KnitSurface {
@@ -123,7 +124,7 @@ pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_positive_length_mm(value))
-            .and_then(cadmpeg_ir::features::PositiveLength::new),
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new),
         method: feature
             .properties
             .get("Method")
@@ -133,7 +134,7 @@ pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(crate) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let distance = cadmpeg_ir::features::PositiveLength::new(parse_positive_length_mm(
+    let distance = cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
         feature
             .parameters
             .get("Distance")

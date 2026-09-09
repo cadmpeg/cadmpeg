@@ -1043,11 +1043,12 @@ fn decode_transfers_exact_consolidated_line_profiles() {
     );
     assert!(decoded.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Line(line_curve)
-        if {
-            let (origin, direction) = line_curve.parts();
-            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
-        })
+                if {
+                    let origin = line_curve.origin();
+        let direction = line_curve.direction();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
+                })
     ));
     assert!(!decoded
         .report()
@@ -1103,13 +1104,13 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .iter()
         .find(|surface| surface.id.as_str() == "catia:consolidated:surface-revolution#0")
         .expect("transferred freeform revolution");
-    assert!(matches!(
-        revolution.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            parameter_interval: Some([-4.0, 9.0]),
-            ..
-        }
-    ));
+    assert!(match revolution.definition() {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+            (&matched_payload.parameter_interval(),),
+            (Some([-4.0, 9.0]),)
+        ),
+        _ => false,
+    });
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 

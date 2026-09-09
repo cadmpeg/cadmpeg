@@ -584,8 +584,6 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             face: None,
             placements: None,
             shape,
-
-
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
         } if matches!((shape.construction(), shape.exit_kind(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
@@ -977,7 +975,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             &[],
             None,
             None,
-            Some(cadmpeg_ir::features::Length::new(8.0).unwrap()),
+            Some(cadmpeg_ir::scalar::Length::new(8.0).unwrap()),
         ), FeatureDefinition::Hole {
             shape,
 
@@ -1140,19 +1138,21 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
                 let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry else {
                     return None;
                 };
-                let (_, normal, _) = plane_surface.parts();
+                let normal = plane_surface.normal();
                 let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
                 (components[axis] > 0.5).then_some(plane_surface)
             })
             .collect::<Vec<_>>();
         assert_eq!(surfaces.len(), 2);
         surfaces.sort_by(|first, second| {
-            let (first, _, _) = first.parts();
-            let (second, _, _) = second.parts();
+            let first = first.origin();
+            let second = second.origin();
             [first.x, first.y, first.z][axis].total_cmp(&[second.x, second.y, second.z][axis])
         });
         for (index, surface) in surfaces.into_iter().enumerate() {
-            let (origin, normal, u_axis) = surface.parts();
+            let origin = surface.origin();
+            let normal = surface.normal();
+            let u_axis = surface.u_axis();
             let mut origin = *origin;
             let coordinate = if index == 0 { 0.0 } else { dimensions[axis] };
             match axis {
@@ -1200,11 +1200,14 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry else {
                 return None;
             };
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(plane_surface)
         })
         .expect("positive y plane");
-    let (origin, normal, u_axis) = high_y.parts();
+    let origin = high_y.origin();
+    let normal = high_y.normal();
+    let u_axis = high_y.u_axis();
     let mut origin = *origin;
     origin.y = 10.0;
     *high_y = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
@@ -1221,7 +1224,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .find(|surface| {
             matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
             if {
-                let (_, normal, _) = plane_surface.parts();
+                let normal = plane_surface.normal();
                 normal.x.abs() > 0.5
             })
         })
@@ -1233,7 +1236,9 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let SurfaceGeometry::Plane(plane_surface) = &mut intermediate_surface.geometry else {
         unreachable!()
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     let mut origin = *origin;
     origin.x = 5.0;
     *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();

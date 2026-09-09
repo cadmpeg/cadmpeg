@@ -8,15 +8,18 @@ use crate::records::{
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_ir::features::{
-    BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-    Feature, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterId, ParameterValue,
-    ProfileRef, RadiusSpec,
-};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
+};
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
+        Feature, FeatureDefinition, FeatureId, LinearTermination, ParameterId, ParameterValue,
+        ProfileRef, RadiusSpec,
+    },
+    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -147,7 +150,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 },
                 tangency_weight: None,
             }),
@@ -1120,7 +1123,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
+                                length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
                             },
                             draft: None,
                         },

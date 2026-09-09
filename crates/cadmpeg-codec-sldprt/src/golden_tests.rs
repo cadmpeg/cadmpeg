@@ -319,11 +319,9 @@ const MUTATION_MM: f64 = 3.0;
 /// Every statement of a one-sided blind extrusion depth in `ir`.
 fn visit_blind_extrude_lengths(
     ir: &mut cadmpeg_ir::CadIr,
-    mut visit: impl FnMut(&mut cadmpeg_ir::features::NonZeroLength),
+    mut visit: impl FnMut(&mut cadmpeg_ir::scalar::NonZeroLength),
 ) -> usize {
-    fn depth(
-        definition: &mut FeatureDefinition,
-    ) -> Option<&mut cadmpeg_ir::features::NonZeroLength> {
+    fn depth(definition: &mut FeatureDefinition) -> Option<&mut cadmpeg_ir::scalar::NonZeroLength> {
         let FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
@@ -374,8 +372,8 @@ fn an_edited_depth_survives_the_semantic_write_path() {
             WritePath::Patched,
             |ir| {
                 visit_blind_extrude_lengths(ir, |depth| {
-                    *depth = cadmpeg_ir::features::NonZeroLength::new(depth.get() + MUTATION_MM)
-                        .unwrap();
+                    *depth =
+                        cadmpeg_ir::scalar::NonZeroLength::new(depth.get() + MUTATION_MM).unwrap();
                 }) != 0
             },
             |outcome| match outcome {

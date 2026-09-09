@@ -5,13 +5,14 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::features::{
-    BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId, Length,
-};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
+use cadmpeg_ir::{
+    features::{BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId},
+    scalar::Length,
+};
 use std::collections::BTreeMap;
 #[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
@@ -434,7 +435,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
                 panic!("expected cosmetic thread");
             };
             *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-            *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
+            *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
         })
         .unwrap();
     project_unbound_cosmetic_thread_faces(

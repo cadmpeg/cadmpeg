@@ -40,14 +40,15 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
-    use cadmpeg_ir::features::{
-        FeatureDefinition, HoleKind, HolePlacement, Length, LinearTermination,
-    };
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, HoleKind, HolePlacement, LinearTermination},
+        scalar::Length,
+    };
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
@@ -226,7 +227,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         projection.blind_depths,
         BTreeMap::from([(
             operation.clone(),
-            cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap()
+            cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap()
         )])
     );
     assert_eq!(
@@ -263,7 +264,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             }],
             diameter: Some(Length::new(4.0).unwrap()),
             extent: Some(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap(),
             }),
             ..super::HoleProjection::default()
         },
@@ -347,12 +348,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, HoleKind, HolePlacement},
+        scalar::Length,
+    };
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
@@ -589,8 +593,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         BTreeMap::from([(
             operation.clone(),
             super::CounterboreDimensions {
-                diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
-                depth: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             },
         )])
     );
@@ -684,17 +688,20 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         let procedural = ProceduralSurface::new(
             ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Offset {
-                support: SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
-                    .expect("identity grammar"),
-                distance,
-                u_sense: Some(1),
-                v_sense: Some(1),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                        .expect("identity grammar"),
+                    distance,
+                    Some(1),
+                    Some(1),
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap();
@@ -814,17 +821,20 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         let procedural = ProceduralSurface::new(
             ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Offset {
-                support: SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
-                    .expect("identity grammar"),
-                distance,
-                u_sense: Some(1),
-                v_sense: Some(1),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                        .expect("identity grammar"),
+                    distance,
+                    Some(1),
+                    Some(1),
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap();
@@ -931,16 +941,19 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         let procedural = ProceduralSurface::new(
             ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Offset {
-                support,
-                distance,
-                u_sense: Some(1),
-                v_sense: Some(1),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    distance,
+                    Some(1),
+                    Some(1),
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap();
@@ -971,10 +984,11 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         .last_mut()
         .expect("positive offset")
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Offset { support, .. } = definition else {
+            let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
                 unreachable!()
             };
-            *support = SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar");
+            definition_payload
+                .set_support(SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar"));
         })
         .unwrap();
     assert!(
@@ -987,10 +1001,10 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         .last_mut()
         .expect("positive offset")
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Offset { distance, .. } = definition else {
+            let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
                 unreachable!()
             };
-            *distance = 7.0;
+            definition_payload.try_set_distance(7.0).unwrap();
         })
         .unwrap();
     assert!(super::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());

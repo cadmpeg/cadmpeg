@@ -1,7 +1,8 @@
 #[test]
 fn per_edge_flange_widths_remain_positive_through_mutation_and_serde() {
-    use crate::features::{
-        PositiveLength, SheetMetalFlangeEdgeWidths, SheetMetalFlangeTwoSidedWidth,
+    use crate::{
+        features::{SheetMetalFlangeEdgeWidths, SheetMetalFlangeTwoSidedWidth},
+        scalar::PositiveLength,
     };
 
     let mut widths = SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth {

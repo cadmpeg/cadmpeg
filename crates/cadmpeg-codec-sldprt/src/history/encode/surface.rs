@@ -11,10 +11,12 @@ use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Angle, BodySelection, EdgeSelection, FaceSelection, Length, PathRef, RuledSurfaceCorner,
-    RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceExtension, ThickenSide,
-    TrimRegion,
+use cadmpeg_ir::{
+    features::{
+        BodySelection, EdgeSelection, FaceSelection, PathRef, RuledSurfaceCorner, RuledSurfaceMode,
+        ShellJoin, ShellMode, SurfaceBoundary, SurfaceExtension, ThickenSide, TrimRegion,
+    },
+    scalar::{Angle, Length},
 };
 
 #[allow(
@@ -82,7 +84,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extend_surface(
         &self,
         faces: &FaceSelection,
-        distance: &Option<cadmpeg_ir::features::PositiveLength>,
+        distance: &Option<cadmpeg_ir::scalar::PositiveLength>,
         method: &SurfaceExtension,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -202,7 +204,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         bodies: &Option<BodySelection>,
         removed_faces: &FaceSelection,
-        thickness: &Option<cadmpeg_ir::features::PositiveLength>,
+        thickness: &Option<cadmpeg_ir::scalar::PositiveLength>,
         outward: &Option<bool>,
         mode: &Option<ShellMode>,
         join: &Option<ShellJoin>,
@@ -287,7 +289,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_thicken(
         &self,
         faces: &FaceSelection,
-        thickness: &Option<cadmpeg_ir::features::PositiveLength>,
+        thickness: &Option<cadmpeg_ir::scalar::PositiveLength>,
         side: &Option<ThickenSide>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -408,7 +410,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         merge_entities: &Option<bool>,
         create_solid: &Option<bool>,
-        gap_tolerance: &Option<cadmpeg_ir::features::NonNegativeLength>,
+        gap_tolerance: &Option<cadmpeg_ir::scalar::NonNegativeLength>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -524,7 +526,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         face_selection: &FaceSelection,
         anchor: &cadmpeg_ir::features::DraftAnchor,
-        angle: &Option<cadmpeg_ir::features::SlopeAngle>,
+        angle: &Option<cadmpeg_ir::scalar::SlopeAngle>,
         outward: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

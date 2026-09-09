@@ -7,12 +7,15 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
     SketchConstraintId, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
+};
+use cadmpeg_ir::{
+    features::{DesignParameter, ParameterId},
+    scalar::{Angle, Length},
 };
 use serde::{Deserialize, Serialize};
 

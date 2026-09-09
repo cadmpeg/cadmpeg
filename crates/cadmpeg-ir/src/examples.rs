@@ -326,12 +326,14 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         .procedural_surfaces
         .push(ProceduralSurface::try_new(
             construction,
-            ProceduralSurfaceDefinition::Sum {
-                first: CurveId::mint("synthetic:v2:curve#u").expect("valid identity"),
-                second: CurveId::mint("synthetic:v2:curve#v").expect("valid identity"),
-                basepoint: Vector3::new(0.0, 0.0, 0.0),
-                revision_form: None,
-            },
+            ProceduralSurfaceDefinition::Sum(
+                crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                    CurveId::mint("synthetic:v2:curve#u").expect("valid identity"),
+                    CurveId::mint("synthetic:v2:curve#v").expect("valid identity"),
+                    Vector3::new(0.0, 0.0, 0.0),
+                    None,
+                )?,
+            ),
             Some(EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9),
             None,
         )?);

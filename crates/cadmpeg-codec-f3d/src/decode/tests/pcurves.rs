@@ -31,21 +31,20 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("surface-offset decode");
-    let ProceduralCurveDefinition::SurfaceOffset {
-        context,
-        discontinuity_flag,
-        base_u_range,
-        base_v_range,
-        base,
-        base_range,
-        distance,
-        shift,
-        scale,
-        ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-offset construction")
     };
+    let context = definition_payload.context();
+    let discontinuity_flag = definition_payload.discontinuity_flag();
+    let base_u_range = definition_payload.base_u_range();
+    let base_v_range = definition_payload.base_v_range();
+    let base = definition_payload.base();
+    let base_range = definition_payload.base_range();
+    let distance = definition_payload.distance();
+    let shift = definition_payload.shift();
+    let scale = definition_payload.scale();
     assert_eq!(*base_u_range, [-1.0, 2.0]);
     assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert!(*discontinuity_flag);
@@ -62,20 +61,25 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::SurfaceOffset {
-                context,
-                discontinuity_flag,
-                base_u_range,
-                base_v_range,
-                base_range,
-                distance,
-                shift,
-                scale,
-                ..
-            } = definition
-            else {
+            let ProceduralCurveDefinition::SurfaceOffset(definition_payload) = definition else {
                 unreachable!()
             };
+            let mut context_value = definition_payload.context().clone();
+            let context = &mut context_value;
+            let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+            let discontinuity_flag = &mut discontinuity_flag_value;
+            let mut base_u_range_value = *definition_payload.base_u_range();
+            let base_u_range = &mut base_u_range_value;
+            let mut base_v_range_value = *definition_payload.base_v_range();
+            let base_v_range = &mut base_v_range_value;
+            let mut base_range_value = *definition_payload.base_range();
+            let base_range = &mut base_range_value;
+            let mut distance_value = *definition_payload.distance();
+            let distance = &mut distance_value;
+            let mut shift_value = *definition_payload.shift();
+            let shift = &mut shift_value;
+            let mut scale_value = *definition_payload.scale();
+            let scale = &mut scale_value;
             context
                 .edit(|_, context_parameter_range, _| {
                     (*context_parameter_range) = [-1.5, 2.5];
@@ -85,7 +89,22 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                     *base_range = [-0.75, 1.75];
                     (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
                 })
-                .unwrap()
+                .unwrap();
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+                    context_value,
+                    discontinuity_flag_value,
+                    [base_u_range_value, base_v_range_value],
+                    (
+                        definition_payload.base().clone(),
+                        base_range_value,
+                        *definition_payload.base_endpoints(),
+                    ),
+                    definition_payload.cache_first().clone(),
+                    distance_value,
+                    [shift_value, scale_value],
+                )
+                .unwrap();
         })
         .unwrap();
     let mut regenerated = Vec::new();
@@ -94,20 +113,13 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated surface-offset decode");
-    assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::SurfaceOffset {
-            ref context,
-            discontinuity_flag: false,
-            base_u_range: [-2.0, 5.0],
-            base_v_range: [-6.0, 7.0],
-            base_range: [-0.75, 1.75],
-            distance: 3.5,
-            shift: -0.25,
-            scale: 0.8,
-            ..
-        } if context.parameter_range() == [-1.5, 2.5]
-    ));
+    assert!(
+        match regenerated.ir().model.procedural_curves[0].definition() {
+            ProceduralCurveDefinition::SurfaceOffset(matched_payload) =>
+                matches!((matched_payload.context(), matched_payload.discontinuity_flag(), matched_payload.base_u_range(), matched_payload.base_v_range(), matched_payload.base_range(), matched_payload.distance(), matched_payload.shift(), matched_payload.scale(),), (context, false, [-2.0, 5.0], [-6.0, 7.0], [-0.75, 1.75], 3.5, -0.25, 0.8,) if context.parameter_range() == [-1.5, 2.5]),
+            _ => false,
+        }
+    );
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -120,19 +132,18 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less surface-offset round trip");
-    let ProceduralCurveDefinition::SurfaceOffset {
-        discontinuity_flag,
-        base_u_range,
-        base_v_range,
-        base_range,
-        distance,
-        shift,
-        scale,
-        ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip surface offset")
     };
+    let discontinuity_flag = definition_payload.discontinuity_flag();
+    let base_u_range = definition_payload.base_u_range();
+    let base_v_range = definition_payload.base_v_range();
+    let base_range = definition_payload.base_range();
+    let distance = definition_payload.distance();
+    let shift = definition_payload.shift();
+    let scale = definition_payload.scale();
     assert_eq!(*base_u_range, [-1.0, 2.0]);
     assert!(*discontinuity_flag);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
@@ -299,22 +310,22 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("deformable decode");
-        let ProceduralCurveDefinition::Deformable {
-            context,
-            cache_first,
-            source,
-            source_parameter_range,
-            data,
-        } = &result.ir().model.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::Deformable(definition_payload) =
+            &result.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected deformable construction")
         };
+        let context = definition_payload.context();
+        let cache_first = definition_payload.cache_first();
+        let source = definition_payload.source();
+        let source_parameter_range = definition_payload.source_parameter_range();
+        let data = definition_payload.data();
         let cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve: source } = source else {
             panic!("expected resolved deformable source")
         };
         assert_eq!(cache_first.revision, 23100);
         assert_eq!(context.parameter_range(), [-1.0, 2.0]);
-        assert_eq!(*source_parameter_range, [Some(0.0), Some(1.0)]);
+        assert_eq!(source_parameter_range, [Some(0.0), Some(1.0)]);
         assert!(result
             .ir()
             .model
@@ -370,14 +381,13 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less deformable round trip");
-        let ProceduralCurveDefinition::Deformable {
-            source: round_source,
-            data: round_data,
-            ..
-        } = &round_trip.ir().model.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::Deformable(definition_payload) =
+            &round_trip.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected round-trip deformable construction")
         };
+        let round_source = definition_payload.source();
+        let round_data = definition_payload.data();
         let cadmpeg_ir::geometry::DeformableCurveSource::Curve {
             curve: round_source,
         } = round_source
@@ -430,13 +440,26 @@ fn generated_deformable_curves_decode_and_write_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Deformable { source, .. } = definition else {
+            let ProceduralCurveDefinition::Deformable(definition_payload) = definition else {
                 panic!("expected deformable construction")
             };
-            *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
-                flag: false,
-                index: 10_000,
+            let mut source_value = definition_payload.source().clone();
+            let source = &mut source_value;
+            {
+                *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+                    flag: false,
+                    index: 10_000,
+                };
             };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::DeformableCurveConstruction::try_new(
+                    definition_payload.context().clone(),
+                    definition_payload.cache_first().clone(),
+                    source_value,
+                    definition_payload.source_parameter_range(),
+                    definition_payload.data().clone(),
+                )
+                .unwrap();
         })
         .unwrap();
     let mut encoded = Vec::new();
@@ -446,16 +469,20 @@ fn generated_deformable_curves_decode_and_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("native-reference deformable round trip");
-    assert!(matches!(
-        &round_trip.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Deformable {
-            source: cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
-                flag: false,
-                index: 10_000,
-            },
-            ..
+    assert!(
+        match &round_trip.ir().model.procedural_curves[0].definition() {
+            ProceduralCurveDefinition::Deformable(matched_payload) => matches!(
+                (matched_payload.source(),),
+                (
+                    cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+                        flag: false,
+                        index: 10_000,
+                    },
+                )
+            ),
+            _ => false,
         }
-    ));
+    );
 }
 
 #[test]

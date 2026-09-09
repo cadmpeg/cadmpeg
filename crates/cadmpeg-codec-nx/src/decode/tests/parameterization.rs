@@ -50,7 +50,9 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     let mut translated = result.ir().clone();
     for carrier in &mut translated.model.surfaces {
         if let SurfaceGeometry::Plane(plane_surface) = &mut carrier.geometry {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;
@@ -98,16 +100,19 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     translated.model.procedural_surfaces.push(
         cadmpeg_ir::geometry::ProceduralSurface::new(
             nested_construction,
-            ProceduralSurfaceDefinition::Offset {
-                support: surface,
-                distance: -0.75,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    surface,
+                    -0.75,
+                    None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -235,16 +240,19 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             construction,
-            ProceduralSurfaceDefinition::Offset {
-                support,
-                distance: 0.75,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    0.75,
+                    None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -286,16 +294,19 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             nested_construction,
-            ProceduralSurfaceDefinition::Offset {
-                support: offset.clone(),
-                distance: 0.5,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    offset.clone(),
+                    0.5,
+                    None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -332,12 +343,11 @@ fn decode_tracks_fully_extended_offset_common_header() {
         .procedural_surfaces
         .first()
         .expect("offset surface");
-    let ProceduralSurfaceDefinition::Offset {
-        support, distance, ..
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         panic!("offset definition");
     };
+    let support = definition_payload.support();
+    let distance = definition_payload.distance();
     assert_eq!(*distance, 2.5);
     let owner = result
         .ir()
@@ -1143,16 +1153,19 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         ir.model.procedural_surfaces.push(
             ProceduralSurface::new(
                 constructions[side].clone(),
-                ProceduralSurfaceDefinition::Offset {
-                    support: base_surfaces[side].clone(),
-                    distance: 0.0,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        base_surfaces[side].clone(),
+                        0.0,
+                        None,
+                        None,
+                        None,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap(),
@@ -1269,7 +1282,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let SurfaceGeometry::Plane(plane_surface) = support.geometry else {
             panic!("plane support");
         };
-        let (&origin, &normal, &u_axis) = plane_surface.parts();
+        let origin = *plane_surface.origin();
+        let normal = *plane_surface.normal();
+        let u_axis = *plane_surface.u_axis();
         let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))
             .expect("identity grammar");
         result.ir_mut().model.surfaces.push(Surface {
@@ -1717,16 +1732,19 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         ir.model.procedural_surfaces.push(
             ProceduralSurface::new(
                 construction,
-                ProceduralSurfaceDefinition::Offset {
-                    support: support.clone(),
-                    distance: 30.0,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        support.clone(),
+                        30.0,
+                        Some(0),
+                        Some(0),
+                        None,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap(),
@@ -1788,11 +1806,10 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
 
     ir.model.procedural_surfaces[1]
         .edit_definition(|definition| {
-            if let ProceduralSurfaceDefinition::Offset {
-                support_extension, ..
-            } = definition
-            {
-                *support_extension = Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear);
+            if let ProceduralSurfaceDefinition::Offset(definition_payload) = definition {
+                definition_payload.set_support_extension(Some(
+                    cadmpeg_ir::geometry::OffsetSupportExtension::Linear,
+                ));
             }
         })
         .unwrap();
@@ -1803,14 +1820,9 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ));
     ir.model.procedural_surfaces[1]
         .edit_definition(|definition| {
-            if let ProceduralSurfaceDefinition::Offset {
-                distance,
-                support_extension,
-                ..
-            } = definition
-            {
-                *support_extension = None;
-                *distance = 31.0;
+            if let ProceduralSurfaceDefinition::Offset(definition_payload) = definition {
+                definition_payload.set_support_extension(None);
+                definition_payload.try_set_distance(31.0).unwrap();
             }
         })
         .unwrap();

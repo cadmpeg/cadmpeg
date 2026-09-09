@@ -880,12 +880,12 @@ fn offset_support_control_hull_excludes_point(
                 SurfaceGeometry::Procedural { construction, .. } => index
                     .procedural_surfaces(construction.as_str())
                     .and_then(|procedural| match procedural.definition() {
-                        ProceduralSurfaceDefinition::Offset {
-                            support,
-                            distance,
-                            support_extension,
-                            ..
-                        } => Some((support, distance, support_extension)),
+                        ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                            let support = definition_payload.support();
+                            let distance = definition_payload.distance();
+                            let support_extension = definition_payload.support_extension();
+                            Some((support, distance, support_extension))
+                        }
                         _ => None,
                     })
                     .is_some_and(|(support, distance, support_extension)| {
@@ -962,15 +962,12 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         return None;
     };
     let procedural = index.procedural_surfaces(construction.as_str())?;
-    let ProceduralSurfaceDefinition::Offset {
-        support,
-        distance,
-        support_extension,
-        ..
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         return None;
     };
+    let support = definition_payload.support();
+    let distance = definition_payload.distance();
+    let support_extension = definition_payload.support_extension();
     let linear_extension = matches!(
         support_extension.as_ref(),
         Some(OffsetSupportExtension::Linear)
@@ -1160,12 +1157,10 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
         return None;
     };
     let procedural = index.procedural_surfaces(construction.as_str())?;
-    let ProceduralSurfaceDefinition::Offset {
-        support_extension, ..
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         return None;
     };
+    let support_extension = definition_payload.support_extension();
     let linear_extension = matches!(
         support_extension.as_ref(),
         Some(OffsetSupportExtension::Linear)
@@ -1319,8 +1314,11 @@ fn coarse_surface_sample_counts(
                 return [9, 9];
             };
             match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    coarse_surface_sample_counts(index, support, depth + 1)
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    let support = definition_payload.support();
+                    {
+                        coarse_surface_sample_counts(index, support, depth + 1)
+                    }
                 }
                 _ => [9, 9],
             }
@@ -1353,12 +1351,12 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
         ),
         SurfaceGeometry::Procedural { construction, .. } => {
             let procedural = index.procedural_surfaces(construction.as_str())?;
-            let ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
-            } = procedural.definition()
+            let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
             else {
                 return None;
             };
+            let support = definition_payload.support();
+            let distance = definition_payload.distance();
             let support_fit_tolerance = fit_tolerance.and_then(|tolerance| {
                 let tolerance = tolerance + distance.abs();
                 tolerance.is_finite().then_some(tolerance)
@@ -1400,10 +1398,11 @@ pub(crate) fn surface_parameter_domain_with_index(
         }
         SurfaceGeometry::Procedural { construction, .. } => {
             let procedural = index.procedural_surfaces(construction.as_str())?;
-            let ProceduralSurfaceDefinition::Offset { support, .. } = procedural.definition()
+            let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
             else {
                 return None;
             };
+            let support = definition_payload.support();
             surface_parameter_domain_with_index(index, support)
         }
         _ => None,
@@ -1823,8 +1822,11 @@ fn surface_parameter_periods_inner(
         SurfaceGeometry::Procedural { construction, .. } => index
             .procedural_surfaces(construction.as_str())
             .and_then(|procedural| match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    Some(surface_parameter_periods_inner(index, support, visiting))
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    let support = definition_payload.support();
+                    {
+                        Some(surface_parameter_periods_inner(index, support, visiting))
+                    }
                 }
                 _ => None,
             })
@@ -2259,7 +2261,8 @@ pub(crate) fn normalize_pcurve_parameters(
 ) -> Option<()> {
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
             let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
             let converted_end = surface_parameters(surface, [end.u, end.v])?;
@@ -2430,16 +2433,19 @@ mod tests {
         ir.model.procedural_surfaces.push(
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 construction,
-                ProceduralSurfaceDefinition::Offset {
-                    support,
-                    distance: 1.0,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: Some(OffsetSupportExtension::Linear),
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        support,
+                        1.0,
+                        None,
+                        None,
+                        Some(OffsetSupportExtension::Linear),
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap(),

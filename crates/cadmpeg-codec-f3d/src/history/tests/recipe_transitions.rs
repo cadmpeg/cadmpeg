@@ -785,12 +785,12 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             shape: cadmpeg_ir::features::HoleShape::new(
                 cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
                 None,
-                Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+                Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )
             .unwrap(),
 
             extent: Some(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
             }),
             bottom: None,
             taper_angle: None,

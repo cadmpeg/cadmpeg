@@ -6,14 +6,24 @@
 //! coedge a [`Pcurve`]). One carrier may therefore support several topological
 //! entities.
 
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::transform::{Transform, Transform2};
+use crate::units::{
+    FinitePoint2, FiniteScalar, FiniteVector, NonNegativeScalar, NonzeroPoint2, OrthonormalFrame3,
+    PositiveScalar, UnitVector3,
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::num::NonZeroI64;
+
+/// Checked procedural curve payloads.
+pub mod curve_payloads;
+/// Checked procedural surface payloads.
+pub mod surface_payloads;
 
 fn default_true() -> bool {
     true
@@ -1158,29 +1168,16 @@ impl<'de> Deserialize<'de> for PolylineCurve {
     }
 }
 
-const EPS_ANALYTIC_FRAME: f64 = 1.0e-9;
-
-fn analytic_unit_vector(value: Vector3) -> bool {
-    (value.norm() - 1.0).abs() <= EPS_ANALYTIC_FRAME
-}
-
-fn analytic_frame(axis: Vector3, reference: Vector3) -> bool {
-    analytic_unit_vector(axis)
-        && analytic_unit_vector(reference)
-        && axis.dot(reference).abs() <= EPS_ANALYTIC_FRAME
-}
-
 /// Plane with a finite origin and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "PlaneSurfaceWire")]
+#[serde(try_from = "PlaneSurfaceWire", into = "PlaneSurfaceWire")]
 pub struct PlaneSurface {
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
+    origin: FinitePoint3,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PlaneSurfaceWire {
     origin: Point3,
@@ -1191,23 +1188,49 @@ struct PlaneSurfaceWire {
 impl PlaneSurface {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("PlaneSurface.origin must be finite");
-        }
-        if !analytic_frame(normal, u_axis) {
-            return Err("PlaneSurface.normal/u_axis must form an orthonormal frame");
-        }
-        Ok(Self {
-            origin,
-            normal,
-            u_axis,
-        })
+        let frame = OrthonormalFrame3::new(normal, u_axis)
+            .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
+        let origin = FinitePoint3::new(origin).ok_or("PlaneSurface.origin must be finite")?;
+        Ok(Self { origin, frame })
+    }
+
+    /// Return the origin.
+    #[must_use]
+    pub const fn origin(&self) -> &Point3 {
+        self.origin.as_raw()
+    }
+
+    /// Return the normal.
+    #[must_use]
+    pub const fn normal(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the u axis.
+    #[must_use]
+    pub const fn u_axis(&self) -> &Vector3 {
+        self.frame.reference()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3) {
-        (&self.origin, &self.normal, &self.u_axis)
+        (
+            self.origin.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+        )
+    }
+}
+
+impl From<PlaneSurface> for PlaneSurfaceWire {
+    fn from(value: PlaneSurface) -> Self {
+        Self {
+            origin: *value.origin(),
+            normal: *value.normal(),
+            u_axis: *value.u_axis(),
+        }
     }
 }
 
@@ -1221,15 +1244,14 @@ impl TryFrom<PlaneSurfaceWire> for PlaneSurface {
 /// Circular cylinder with a positive radius and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "CylinderSurfaceWire")]
+#[serde(try_from = "CylinderSurfaceWire", into = "CylinderSurfaceWire")]
 pub struct CylinderSurface {
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
+    origin: FinitePoint3,
+    radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CylinderSurfaceWire {
     origin: Point3,
@@ -1246,30 +1268,63 @@ impl CylinderSurface {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("CylinderSurface.origin must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("CylinderSurface.radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("CylinderSurface.axis/ref_direction must form an orthonormal frame");
-        }
-        if radius <= 0.0 {
-            return Err("CylinderSurface.radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
+        let origin = FinitePoint3::new(origin).ok_or("CylinderSurface.origin must be finite")?;
+        let radius = PositiveScalar::new(radius)
+            .ok_or("CylinderSurface.radius must be positive and finite")?;
         Ok(Self {
             origin,
-            axis,
-            ref_direction,
             radius,
+            frame,
         })
+    }
+
+    /// Return the origin.
+    #[must_use]
+    pub const fn origin(&self) -> &Point3 {
+        self.origin.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the ref direction.
+    #[must_use]
+    pub const fn ref_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the radius.
+    #[must_use]
+    pub const fn radius(&self) -> f64 {
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (&self.origin, &self.axis, &self.ref_direction, &self.radius)
+        (
+            self.origin.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+        )
+    }
+}
+
+impl From<CylinderSurface> for CylinderSurfaceWire {
+    fn from(value: CylinderSurface) -> Self {
+        Self {
+            origin: *value.origin(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+        }
     }
 }
 
@@ -1283,17 +1338,16 @@ impl TryFrom<CylinderSurfaceWire> for CylinderSurface {
 /// Elliptical cone with finite parameters and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ConeSurfaceWire")]
+#[serde(try_from = "ConeSurfaceWire", into = "ConeSurfaceWire")]
 pub struct ConeSurface {
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
-    ratio: f64,
-    half_angle: f64,
+    origin: FinitePoint3,
+    radius: NonNegativeScalar,
+    ratio: PositiveScalar,
+    half_angle: FiniteScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ConeSurfaceWire {
     origin: Point3,
@@ -1314,48 +1368,85 @@ impl ConeSurface {
         ratio: f64,
         half_angle: f64,
     ) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("ConeSurface.origin must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("ConeSurface.radius must be finite");
-        }
-        if !ratio.is_finite() {
-            return Err("ConeSurface.ratio must be finite");
-        }
-        if !half_angle.is_finite() {
-            return Err("ConeSurface.half_angle must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("ConeSurface.axis/ref_direction must form an orthonormal frame");
-        }
-        if radius < 0.0 {
-            return Err("ConeSurface.radius must be nonnegative");
-        }
-        if ratio <= 0.0 {
-            return Err("ConeSurface.ratio must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
+        let origin = FinitePoint3::new(origin).ok_or("ConeSurface.origin must be finite")?;
+        let radius = NonNegativeScalar::new(radius)
+            .ok_or("ConeSurface.radius must be nonnegative and finite")?;
+        let ratio =
+            PositiveScalar::new(ratio).ok_or("ConeSurface.ratio must be positive and finite")?;
+        let half_angle =
+            FiniteScalar::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
         Ok(Self {
             origin,
-            axis,
-            ref_direction,
             radius,
             ratio,
             half_angle,
+            frame,
         })
+    }
+
+    /// Return the origin.
+    #[must_use]
+    pub const fn origin(&self) -> &Point3 {
+        self.origin.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the ref direction.
+    #[must_use]
+    pub const fn ref_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the radius.
+    #[must_use]
+    pub const fn radius(&self) -> f64 {
+        self.radius.get()
+    }
+
+    /// Return the ratio.
+    #[must_use]
+    pub const fn ratio(&self) -> f64 {
+        self.ratio.get()
+    }
+
+    /// Return the half angle.
+    #[must_use]
+    pub const fn half_angle(&self) -> f64 {
+        self.half_angle.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64, &f64) {
         (
-            &self.origin,
-            &self.axis,
-            &self.ref_direction,
-            &self.radius,
-            &self.ratio,
-            &self.half_angle,
+            self.origin.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+            self.ratio.as_raw(),
+            self.half_angle.as_raw(),
         )
+    }
+}
+
+impl From<ConeSurface> for ConeSurfaceWire {
+    fn from(value: ConeSurface) -> Self {
+        Self {
+            origin: *value.origin(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+            ratio: value.ratio(),
+            half_angle: value.half_angle(),
+        }
     }
 }
 
@@ -1376,15 +1467,14 @@ impl TryFrom<ConeSurfaceWire> for ConeSurface {
 /// Sphere with a signed nonzero radius and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SphereSurfaceWire")]
+#[serde(try_from = "SphereSurfaceWire", into = "SphereSurfaceWire")]
 pub struct SphereSurface {
-    center: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
+    center: FinitePoint3,
+    radius: FiniteScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SphereSurfaceWire {
     center: Point3,
@@ -1401,30 +1491,65 @@ impl SphereSurface {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("SphereSurface.center must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("SphereSurface.radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("SphereSurface.axis/ref_direction must form an orthonormal frame");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
         if radius == 0.0 {
             return Err("SphereSurface.radius must be nonzero");
         }
+        let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
+        let radius = FiniteScalar::new(radius).ok_or("SphereSurface.radius must be finite")?;
         Ok(Self {
             center,
-            axis,
-            ref_direction,
             radius,
+            frame,
         })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the ref direction.
+    #[must_use]
+    pub const fn ref_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the radius.
+    #[must_use]
+    pub const fn radius(&self) -> f64 {
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (&self.center, &self.axis, &self.ref_direction, &self.radius)
+        (
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+        )
+    }
+}
+
+impl From<SphereSurface> for SphereSurfaceWire {
+    fn from(value: SphereSurface) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+        }
     }
 }
 
@@ -1438,16 +1563,15 @@ impl TryFrom<SphereSurfaceWire> for SphereSurface {
 /// Torus with a positive major radius, signed tube radius, and orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "TorusSurfaceWire")]
+#[serde(try_from = "TorusSurfaceWire", into = "TorusSurfaceWire")]
 pub struct TorusSurface {
-    center: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint3,
+    major_radius: PositiveScalar,
+    minor_radius: FiniteScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct TorusSurfaceWire {
     center: Point3,
@@ -1466,43 +1590,77 @@ impl TorusSurface {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("TorusSurface.center must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("TorusSurface.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("TorusSurface.minor_radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("TorusSurface.axis/ref_direction must form an orthonormal frame");
-        }
-        if major_radius <= 0.0 {
-            return Err("TorusSurface.major_radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("TorusSurface.axis/ref_direction must form an orthonormal frame")?;
         if minor_radius == 0.0 {
             return Err("TorusSurface.minor_radius must be nonzero");
         }
+        let center = FinitePoint3::new(center).ok_or("TorusSurface.center must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("TorusSurface.major_radius must be positive and finite")?;
+        let minor_radius =
+            FiniteScalar::new(minor_radius).ok_or("TorusSurface.minor_radius must be finite")?;
         Ok(Self {
             center,
-            axis,
-            ref_direction,
             major_radius,
             minor_radius,
+            frame,
         })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the ref direction.
+    #[must_use]
+    pub const fn ref_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> f64 {
+        self.major_radius.get()
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> f64 {
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
         (
-            &self.center,
-            &self.axis,
-            &self.ref_direction,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
+    }
+}
+
+impl From<TorusSurface> for TorusSurfaceWire {
+    fn from(value: TorusSurface) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            major_radius: value.major_radius(),
+            minor_radius: value.minor_radius(),
+        }
     }
 }
 
@@ -1524,8 +1682,8 @@ impl TryFrom<TorusSurfaceWire> for TorusSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LineCurveWire")]
 pub struct LineCurve {
-    origin: Point3,
-    direction: Vector3,
+    origin: FinitePoint3,
+    direction: UnitVector3,
 }
 
 #[derive(Deserialize)]
@@ -1538,24 +1696,34 @@ struct LineCurveWire {
 impl LineCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
-        self.direction = Vector3::new(-self.direction.x, -self.direction.y, -self.direction.z);
+        self.direction = self.direction.reversed();
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point3, direction: Vector3) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("LineCurve.origin must be finite");
-        }
-        if !analytic_unit_vector(direction) {
-            return Err("LineCurve.direction must have unit length");
-        }
+        let origin = FinitePoint3::new(origin).ok_or("LineCurve.origin must be finite")?;
+        let direction =
+            UnitVector3::new(direction).ok_or("LineCurve.direction must have unit length")?;
         Ok(Self { origin, direction })
+    }
+
+    /// Return the origin.
+    #[must_use]
+    pub const fn origin(&self) -> &Point3 {
+        self.origin.as_raw()
+    }
+
+    /// Return the direction.
+    #[must_use]
+    pub const fn direction(&self) -> &Vector3 {
+        self.direction.as_raw()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3) {
-        (&self.origin, &self.direction)
+        (self.origin.as_raw(), self.direction.as_raw())
     }
 }
 
@@ -1569,15 +1737,14 @@ impl TryFrom<LineCurveWire> for LineCurve {
 /// Circle with a positive radius and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "CircleCurveWire")]
+#[serde(try_from = "CircleCurveWire", into = "CircleCurveWire")]
 pub struct CircleCurve {
-    center: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
+    center: FinitePoint3,
+    radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CircleCurveWire {
     center: Point3,
@@ -1589,7 +1756,7 @@ struct CircleCurveWire {
 impl CircleCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
-        self.axis = Vector3::new(-self.axis.x, -self.axis.y, -self.axis.z);
+        self.frame.reverse_axis();
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
@@ -1599,30 +1766,63 @@ impl CircleCurve {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("CircleCurve.center must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("CircleCurve.radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("CircleCurve.axis/ref_direction must form an orthonormal frame");
-        }
-        if radius <= 0.0 {
-            return Err("CircleCurve.radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("CircleCurve.axis/ref_direction must form an orthonormal frame")?;
+        let center = FinitePoint3::new(center).ok_or("CircleCurve.center must be finite")?;
+        let radius =
+            PositiveScalar::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
         Ok(Self {
             center,
-            axis,
-            ref_direction,
             radius,
+            frame,
         })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the ref direction.
+    #[must_use]
+    pub const fn ref_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the radius.
+    #[must_use]
+    pub const fn radius(&self) -> f64 {
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (&self.center, &self.axis, &self.ref_direction, &self.radius)
+        (
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+        )
+    }
+}
+
+impl From<CircleCurve> for CircleCurveWire {
+    fn from(value: CircleCurve) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+        }
     }
 }
 
@@ -1636,16 +1836,15 @@ impl TryFrom<CircleCurveWire> for CircleCurve {
 /// Ellipse with ordered positive radii and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "EllipseCurveWire")]
+#[serde(try_from = "EllipseCurveWire", into = "EllipseCurveWire")]
 pub struct EllipseCurve {
-    center: Point3,
-    axis: Vector3,
-    major_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint3,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct EllipseCurveWire {
     center: Point3,
@@ -1658,7 +1857,7 @@ struct EllipseCurveWire {
 impl EllipseCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
-        self.axis = Vector3::new(-self.axis.x, -self.axis.y, -self.axis.z);
+        self.frame.reverse_axis();
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
@@ -1669,46 +1868,77 @@ impl EllipseCurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("EllipseCurve.center must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("EllipseCurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("EllipseCurve.minor_radius must be finite");
-        }
-        if !analytic_frame(axis, major_direction) {
-            return Err("EllipseCurve.axis/major_direction must form an orthonormal frame");
-        }
-        if major_radius <= 0.0 {
-            return Err("EllipseCurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("EllipseCurve.minor_radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, major_direction)
+            .ok_or("EllipseCurve.axis/major_direction must form an orthonormal frame")?;
         if major_radius < minor_radius {
             return Err("EllipseCurve.major_radius must be at least minor_radius");
         }
+        let center = FinitePoint3::new(center).ok_or("EllipseCurve.center must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("EllipseCurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("EllipseCurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
-            axis,
-            major_direction,
             major_radius,
             minor_radius,
+            frame,
         })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the major direction.
+    #[must_use]
+    pub const fn major_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> f64 {
+        self.major_radius.get()
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> f64 {
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
         (
-            &self.center,
-            &self.axis,
-            &self.major_direction,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
+    }
+}
+
+impl From<EllipseCurve> for EllipseCurveWire {
+    fn from(value: EllipseCurve) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            major_direction: *value.major_direction(),
+            major_radius: value.major_radius(),
+            minor_radius: value.minor_radius(),
+        }
     }
 }
 
@@ -1728,15 +1958,14 @@ impl TryFrom<EllipseCurveWire> for EllipseCurve {
 /// Parabola with a positive focal distance and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ParabolaCurveWire")]
+#[serde(try_from = "ParabolaCurveWire", into = "ParabolaCurveWire")]
 pub struct ParabolaCurve {
-    vertex: Point3,
-    axis: Vector3,
-    major_direction: Vector3,
-    focal_distance: f64,
+    vertex: FinitePoint3,
+    focal_distance: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ParabolaCurveWire {
     vertex: Point3,
@@ -1753,35 +1982,63 @@ impl ParabolaCurve {
         major_direction: Vector3,
         focal_distance: f64,
     ) -> Result<Self, &'static str> {
-        if !(vertex.x.is_finite() && vertex.y.is_finite() && vertex.z.is_finite()) {
-            return Err("ParabolaCurve.vertex must be finite");
-        }
-        if !focal_distance.is_finite() {
-            return Err("ParabolaCurve.focal_distance must be finite");
-        }
-        if !analytic_frame(axis, major_direction) {
-            return Err("ParabolaCurve.axis/major_direction must form an orthonormal frame");
-        }
-        if focal_distance <= 0.0 {
-            return Err("ParabolaCurve.focal_distance must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, major_direction)
+            .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")?;
+        let vertex = FinitePoint3::new(vertex).ok_or("ParabolaCurve.vertex must be finite")?;
+        let focal_distance = PositiveScalar::new(focal_distance)
+            .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
         Ok(Self {
             vertex,
-            axis,
-            major_direction,
             focal_distance,
+            frame,
         })
+    }
+
+    /// Return the vertex.
+    #[must_use]
+    pub const fn vertex(&self) -> &Point3 {
+        self.vertex.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the major direction.
+    #[must_use]
+    pub const fn major_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the focal distance.
+    #[must_use]
+    pub const fn focal_distance(&self) -> f64 {
+        self.focal_distance.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
         (
-            &self.vertex,
-            &self.axis,
-            &self.major_direction,
-            &self.focal_distance,
+            self.vertex.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.focal_distance.as_raw(),
         )
+    }
+}
+
+impl From<ParabolaCurve> for ParabolaCurveWire {
+    fn from(value: ParabolaCurve) -> Self {
+        Self {
+            vertex: *value.vertex(),
+            axis: *value.axis(),
+            major_direction: *value.major_direction(),
+            focal_distance: value.focal_distance(),
+        }
     }
 }
 
@@ -1800,16 +2057,15 @@ impl TryFrom<ParabolaCurveWire> for ParabolaCurve {
 /// Hyperbola with positive radii and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HyperbolaCurveWire")]
+#[serde(try_from = "HyperbolaCurveWire", into = "HyperbolaCurveWire")]
 pub struct HyperbolaCurve {
-    center: Point3,
-    axis: Vector3,
-    major_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint3,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct HyperbolaCurveWire {
     center: Point3,
@@ -1823,11 +2079,7 @@ impl HyperbolaCurve {
     /// Return the opposite branch with unchanged radii.
     #[must_use]
     pub fn opposite_branch(mut self) -> Self {
-        self.major_direction = Vector3::new(
-            -self.major_direction.x,
-            -self.major_direction.y,
-            -self.major_direction.z,
-        );
+        self.frame.reverse_reference();
         self
     }
 
@@ -1839,43 +2091,74 @@ impl HyperbolaCurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("HyperbolaCurve.center must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("HyperbolaCurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("HyperbolaCurve.minor_radius must be finite");
-        }
-        if !analytic_frame(axis, major_direction) {
-            return Err("HyperbolaCurve.axis/major_direction must form an orthonormal frame");
-        }
-        if major_radius <= 0.0 {
-            return Err("HyperbolaCurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("HyperbolaCurve.minor_radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, major_direction)
+            .ok_or("HyperbolaCurve.axis/major_direction must form an orthonormal frame")?;
+        let center = FinitePoint3::new(center).ok_or("HyperbolaCurve.center must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("HyperbolaCurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("HyperbolaCurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
-            axis,
-            major_direction,
             major_radius,
             minor_radius,
+            frame,
         })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.frame.axis()
+    }
+
+    /// Return the major direction.
+    #[must_use]
+    pub const fn major_direction(&self) -> &Vector3 {
+        self.frame.reference()
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> f64 {
+        self.major_radius.get()
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> f64 {
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
         (
-            &self.center,
-            &self.axis,
-            &self.major_direction,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
+    }
+}
+
+impl From<HyperbolaCurve> for HyperbolaCurveWire {
+    fn from(value: HyperbolaCurve) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            major_direction: *value.major_direction(),
+            major_radius: value.major_radius(),
+            minor_radius: value.minor_radius(),
+        }
     }
 }
 
@@ -1897,7 +2180,7 @@ impl TryFrom<HyperbolaCurveWire> for HyperbolaCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DegenerateCurveWire")]
 pub struct DegenerateCurve {
-    point: Point3,
+    point: FinitePoint3,
 }
 
 #[derive(Deserialize)]
@@ -1909,16 +2192,14 @@ struct DegenerateCurveWire {
 impl DegenerateCurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(point: Point3) -> Result<Self, &'static str> {
-        if !(point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) {
-            return Err("DegenerateCurve.point must be finite");
-        }
+        let point = FinitePoint3::new(point).ok_or("DegenerateCurve.point must be finite")?;
         Ok(Self { point })
     }
 
-    /// Borrow the carrier parameters in constructor order.
+    /// Return the point.
     #[must_use]
-    pub fn parts(&self) -> (&Point3,) {
-        (&self.point,)
+    pub const fn point(&self) -> &Point3 {
+        self.point.as_raw()
     }
 }
 
@@ -1934,8 +2215,8 @@ impl TryFrom<DegenerateCurveWire> for DegenerateCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LinePcurveWire")]
 pub struct LinePcurve {
-    origin: Point2,
-    direction: Point2,
+    origin: FinitePoint2,
+    direction: NonzeroPoint2,
 }
 
 #[derive(Deserialize)]
@@ -1948,28 +2229,35 @@ struct LinePcurveWire {
 impl LinePcurve {
     /// Unit-u line through the parameter-space origin.
     pub const U_AXIS: Self = Self {
-        origin: Point2 { u: 0.0, v: 0.0 },
-        direction: Point2 { u: 1.0, v: 0.0 },
+        origin: FinitePoint2::ZERO,
+        direction: NonzeroPoint2::U_AXIS,
     };
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point2, direction: Point2) -> Result<Self, &'static str> {
-        if !(origin.u.is_finite() && origin.v.is_finite()) {
-            return Err("LinePcurve.origin must be finite");
-        }
-        if !(direction.u.is_finite() && direction.v.is_finite()) {
-            return Err("LinePcurve.direction must be finite");
-        }
-        if direction.u.hypot(direction.v) <= 0.0 {
-            return Err("LinePcurve.direction must be nonzero");
-        }
+        let origin = FinitePoint2::new(origin).ok_or("LinePcurve.origin must be finite")?;
+        let direction = NonzeroPoint2::new(direction)
+            .ok_or("LinePcurve.direction must be finite with squared norm greater than epsilon")?;
         Ok(Self { origin, direction })
+    }
+
+    /// Return the origin.
+    #[must_use]
+    pub const fn origin(&self) -> &Point2 {
+        self.origin.as_raw()
+    }
+
+    /// Return the direction.
+    #[must_use]
+    pub const fn direction(&self) -> &Point2 {
+        self.direction.as_raw()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2) {
-        (&self.origin, &self.direction)
+        (self.origin.as_raw(), self.direction.as_raw())
     }
 }
 
@@ -1985,12 +2273,12 @@ impl TryFrom<LinePcurveWire> for LinePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PolarHarmonicPcurveWire")]
 pub struct PolarHarmonicPcurve {
-    radial_center: Point2,
-    radial_cos: Point2,
-    radial_sin: Point2,
-    axial_origin: f64,
-    axial_cos: f64,
-    axial_sin: f64,
+    radial_center: FinitePoint2,
+    radial_cos: FinitePoint2,
+    radial_sin: FinitePoint2,
+    axial_origin: FiniteScalar,
+    axial_cos: FiniteScalar,
+    axial_sin: FiniteScalar,
 }
 
 #[derive(Deserialize)]
@@ -2014,27 +2302,21 @@ impl PolarHarmonicPcurve {
         axial_cos: f64,
         axial_sin: f64,
     ) -> Result<Self, &'static str> {
-        if !(radial_center.u.is_finite() && radial_center.v.is_finite()) {
-            return Err("PolarHarmonicPcurve.radial_center must be finite");
-        }
-        if !(radial_cos.u.is_finite() && radial_cos.v.is_finite()) {
-            return Err("PolarHarmonicPcurve.radial_cos must be finite");
-        }
-        if !(radial_sin.u.is_finite() && radial_sin.v.is_finite()) {
-            return Err("PolarHarmonicPcurve.radial_sin must be finite");
-        }
-        if !axial_origin.is_finite() {
-            return Err("PolarHarmonicPcurve.axial_origin must be finite");
-        }
-        if !axial_cos.is_finite() {
-            return Err("PolarHarmonicPcurve.axial_cos must be finite");
-        }
-        if !axial_sin.is_finite() {
-            return Err("PolarHarmonicPcurve.axial_sin must be finite");
-        }
         if !(radial_cos.u.hypot(radial_cos.v) > 0.0 || radial_sin.u.hypot(radial_sin.v) > 0.0) {
             return Err("PolarHarmonicPcurve.radial_cos/radial_sin must not both be zero");
         }
+        let radial_center = FinitePoint2::new(radial_center)
+            .ok_or("PolarHarmonicPcurve.radial_center must be finite")?;
+        let radial_cos =
+            FinitePoint2::new(radial_cos).ok_or("PolarHarmonicPcurve.radial_cos must be finite")?;
+        let radial_sin =
+            FinitePoint2::new(radial_sin).ok_or("PolarHarmonicPcurve.radial_sin must be finite")?;
+        let axial_origin = FiniteScalar::new(axial_origin)
+            .ok_or("PolarHarmonicPcurve.axial_origin must be finite")?;
+        let axial_cos =
+            FiniteScalar::new(axial_cos).ok_or("PolarHarmonicPcurve.axial_cos must be finite")?;
+        let axial_sin =
+            FiniteScalar::new(axial_sin).ok_or("PolarHarmonicPcurve.axial_sin must be finite")?;
         Ok(Self {
             radial_center,
             radial_cos,
@@ -2045,16 +2327,53 @@ impl PolarHarmonicPcurve {
         })
     }
 
+    /// Return the radial center.
+    #[must_use]
+    pub const fn radial_center(&self) -> &Point2 {
+        self.radial_center.as_raw()
+    }
+
+    /// Return the radial cos.
+    #[must_use]
+    pub const fn radial_cos(&self) -> &Point2 {
+        self.radial_cos.as_raw()
+    }
+
+    /// Return the radial sin.
+    #[must_use]
+    pub const fn radial_sin(&self) -> &Point2 {
+        self.radial_sin.as_raw()
+    }
+
+    /// Return the axial origin.
+    #[must_use]
+    pub const fn axial_origin(&self) -> f64 {
+        self.axial_origin.get()
+    }
+
+    /// Return the axial cos.
+    #[must_use]
+    pub const fn axial_cos(&self) -> f64 {
+        self.axial_cos.get()
+    }
+
+    /// Return the axial sin.
+    #[must_use]
+    pub const fn axial_sin(&self) -> f64 {
+        self.axial_sin.get()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64, &f64) {
         (
-            &self.radial_center,
-            &self.radial_cos,
-            &self.radial_sin,
-            &self.axial_origin,
-            &self.axial_cos,
-            &self.axial_sin,
+            self.radial_center.as_raw(),
+            self.radial_cos.as_raw(),
+            self.radial_sin.as_raw(),
+            self.axial_origin.as_raw(),
+            self.axial_cos.as_raw(),
+            self.axial_sin.as_raw(),
         )
     }
 }
@@ -2078,10 +2397,10 @@ impl TryFrom<PolarHarmonicPcurveWire> for PolarHarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SphericalGreatCirclePcurveWire")]
 pub struct SphericalGreatCirclePcurve {
-    azimuth_origin: f64,
-    azimuth_rate: f64,
-    plane_phase: f64,
-    plane_slope: f64,
+    azimuth_origin: FiniteScalar,
+    azimuth_rate: FiniteScalar,
+    plane_phase: FiniteScalar,
+    plane_slope: FiniteScalar,
 }
 
 #[derive(Deserialize)]
@@ -2101,21 +2420,17 @@ impl SphericalGreatCirclePcurve {
         plane_phase: f64,
         plane_slope: f64,
     ) -> Result<Self, &'static str> {
-        if !azimuth_origin.is_finite() {
-            return Err("SphericalGreatCirclePcurve.azimuth_origin must be finite");
-        }
-        if !azimuth_rate.is_finite() {
-            return Err("SphericalGreatCirclePcurve.azimuth_rate must be finite");
-        }
-        if !plane_phase.is_finite() {
-            return Err("SphericalGreatCirclePcurve.plane_phase must be finite");
-        }
-        if !plane_slope.is_finite() {
-            return Err("SphericalGreatCirclePcurve.plane_slope must be finite");
-        }
         if azimuth_rate == 0.0 {
             return Err("SphericalGreatCirclePcurve.azimuth_rate must be nonzero");
         }
+        let azimuth_origin = FiniteScalar::new(azimuth_origin)
+            .ok_or("SphericalGreatCirclePcurve.azimuth_origin must be finite")?;
+        let azimuth_rate = FiniteScalar::new(azimuth_rate)
+            .ok_or("SphericalGreatCirclePcurve.azimuth_rate must be finite")?;
+        let plane_phase = FiniteScalar::new(plane_phase)
+            .ok_or("SphericalGreatCirclePcurve.plane_phase must be finite")?;
+        let plane_slope = FiniteScalar::new(plane_slope)
+            .ok_or("SphericalGreatCirclePcurve.plane_slope must be finite")?;
         Ok(Self {
             azimuth_origin,
             azimuth_rate,
@@ -2124,14 +2439,39 @@ impl SphericalGreatCirclePcurve {
         })
     }
 
+    /// Return the azimuth origin.
+    #[must_use]
+    pub const fn azimuth_origin(&self) -> f64 {
+        self.azimuth_origin.get()
+    }
+
+    /// Return the azimuth rate.
+    #[must_use]
+    pub const fn azimuth_rate(&self) -> f64 {
+        self.azimuth_rate.get()
+    }
+
+    /// Return the plane phase.
+    #[must_use]
+    pub const fn plane_phase(&self) -> f64 {
+        self.plane_phase.get()
+    }
+
+    /// Return the plane slope.
+    #[must_use]
+    pub const fn plane_slope(&self) -> f64 {
+        self.plane_slope.get()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&f64, &f64, &f64, &f64) {
         (
-            &self.azimuth_origin,
-            &self.azimuth_rate,
-            &self.plane_phase,
-            &self.plane_slope,
+            self.azimuth_origin.as_raw(),
+            self.azimuth_rate.as_raw(),
+            self.plane_phase.as_raw(),
+            self.plane_slope.as_raw(),
         )
     }
 }
@@ -2153,10 +2493,10 @@ impl TryFrom<SphericalGreatCirclePcurveWire> for SphericalGreatCirclePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CirclePcurveWire")]
 pub struct CirclePcurve {
-    center: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    radius: f64,
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    radius: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2176,27 +2516,17 @@ impl CirclePcurve {
         y_axis: Point2,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("CirclePcurve.center must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("CirclePcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("CirclePcurve.y_axis must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("CirclePcurve.radius must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("CirclePcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("CirclePcurve.y_axis must be nonzero");
         }
-        if radius <= 0.0 {
-            return Err("CirclePcurve.radius must be positive");
-        }
+        let center = FinitePoint2::new(center).ok_or("CirclePcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("CirclePcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("CirclePcurve.y_axis must be finite")?;
+        let radius =
+            PositiveScalar::new(radius).ok_or("CirclePcurve.radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2205,10 +2535,40 @@ impl CirclePcurve {
         })
     }
 
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point2 {
+        self.center.as_raw()
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &Point2 {
+        self.x_axis.as_raw()
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &Point2 {
+        self.y_axis.as_raw()
+    }
+
+    /// Return the radius.
+    #[must_use]
+    pub const fn radius(&self) -> f64 {
+        self.radius.get()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64) {
-        (&self.center, &self.x_axis, &self.y_axis, &self.radius)
+        (
+            self.center.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.radius.as_raw(),
+        )
     }
 }
 
@@ -2224,11 +2584,11 @@ impl TryFrom<CirclePcurveWire> for CirclePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "EllipsePcurveWire")]
 pub struct EllipsePcurve {
-    center: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2250,33 +2610,19 @@ impl EllipsePcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("EllipsePcurve.center must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("EllipsePcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("EllipsePcurve.y_axis must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("EllipsePcurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("EllipsePcurve.minor_radius must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("EllipsePcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("EllipsePcurve.y_axis must be nonzero");
         }
-        if major_radius <= 0.0 {
-            return Err("EllipsePcurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("EllipsePcurve.minor_radius must be positive");
-        }
+        let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("EllipsePcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("EllipsePcurve.y_axis must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2286,15 +2632,46 @@ impl EllipsePcurve {
         })
     }
 
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point2 {
+        self.center.as_raw()
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &Point2 {
+        self.x_axis.as_raw()
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &Point2 {
+        self.y_axis.as_raw()
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> f64 {
+        self.major_radius.get()
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> f64 {
+        self.minor_radius.get()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64) {
         (
-            &self.center,
-            &self.x_axis,
-            &self.y_axis,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
     }
 }
@@ -2317,9 +2694,9 @@ impl TryFrom<EllipsePcurveWire> for EllipsePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HarmonicPcurveWire")]
 pub struct HarmonicPcurve {
-    center: Point2,
-    cosine: Point2,
-    sine: Point2,
+    center: FinitePoint2,
+    cosine: FinitePoint2,
+    sine: FinitePoint2,
 }
 
 #[derive(Deserialize)]
@@ -2333,18 +2710,12 @@ struct HarmonicPcurveWire {
 impl HarmonicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("HarmonicPcurve.center must be finite");
-        }
-        if !(cosine.u.is_finite() && cosine.v.is_finite()) {
-            return Err("HarmonicPcurve.cosine must be finite");
-        }
-        if !(sine.u.is_finite() && sine.v.is_finite()) {
-            return Err("HarmonicPcurve.sine must be finite");
-        }
         if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
             return Err("HarmonicPcurve.cosine/sine must not both be zero");
         }
+        let center = FinitePoint2::new(center).ok_or("HarmonicPcurve.center must be finite")?;
+        let cosine = FinitePoint2::new(cosine).ok_or("HarmonicPcurve.cosine must be finite")?;
+        let sine = FinitePoint2::new(sine).ok_or("HarmonicPcurve.sine must be finite")?;
         Ok(Self {
             center,
             cosine,
@@ -2352,10 +2723,33 @@ impl HarmonicPcurve {
         })
     }
 
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point2 {
+        self.center.as_raw()
+    }
+
+    /// Return the cosine.
+    #[must_use]
+    pub const fn cosine(&self) -> &Point2 {
+        self.cosine.as_raw()
+    }
+
+    /// Return the sine.
+    #[must_use]
+    pub const fn sine(&self) -> &Point2 {
+        self.sine.as_raw()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2) {
-        (&self.center, &self.cosine, &self.sine)
+        (
+            self.center.as_raw(),
+            self.cosine.as_raw(),
+            self.sine.as_raw(),
+        )
     }
 }
 
@@ -2371,10 +2765,10 @@ impl TryFrom<HarmonicPcurveWire> for HarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ParabolaPcurveWire")]
 pub struct ParabolaPcurve {
-    vertex: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    focal_distance: f64,
+    vertex: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    focal_distance: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2394,27 +2788,17 @@ impl ParabolaPcurve {
         y_axis: Point2,
         focal_distance: f64,
     ) -> Result<Self, &'static str> {
-        if !(vertex.u.is_finite() && vertex.v.is_finite()) {
-            return Err("ParabolaPcurve.vertex must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("ParabolaPcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("ParabolaPcurve.y_axis must be finite");
-        }
-        if !focal_distance.is_finite() {
-            return Err("ParabolaPcurve.focal_distance must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.y_axis must be nonzero");
         }
-        if focal_distance <= 0.0 {
-            return Err("ParabolaPcurve.focal_distance must be positive");
-        }
+        let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("ParabolaPcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("ParabolaPcurve.y_axis must be finite")?;
+        let focal_distance = PositiveScalar::new(focal_distance)
+            .ok_or("ParabolaPcurve.focal_distance must be positive and finite")?;
         Ok(Self {
             vertex,
             x_axis,
@@ -2423,14 +2807,39 @@ impl ParabolaPcurve {
         })
     }
 
+    /// Return the vertex.
+    #[must_use]
+    pub const fn vertex(&self) -> &Point2 {
+        self.vertex.as_raw()
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &Point2 {
+        self.x_axis.as_raw()
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &Point2 {
+        self.y_axis.as_raw()
+    }
+
+    /// Return the focal distance.
+    #[must_use]
+    pub const fn focal_distance(&self) -> f64 {
+        self.focal_distance.get()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64) {
         (
-            &self.vertex,
-            &self.x_axis,
-            &self.y_axis,
-            &self.focal_distance,
+            self.vertex.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.focal_distance.as_raw(),
         )
     }
 }
@@ -2447,11 +2856,11 @@ impl TryFrom<ParabolaPcurveWire> for ParabolaPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HyperbolaPcurveWire")]
 pub struct HyperbolaPcurve {
-    center: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2473,33 +2882,19 @@ impl HyperbolaPcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("HyperbolaPcurve.center must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("HyperbolaPcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("HyperbolaPcurve.y_axis must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("HyperbolaPcurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("HyperbolaPcurve.minor_radius must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.y_axis must be nonzero");
         }
-        if major_radius <= 0.0 {
-            return Err("HyperbolaPcurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("HyperbolaPcurve.minor_radius must be positive");
-        }
+        let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("HyperbolaPcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("HyperbolaPcurve.y_axis must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2509,15 +2904,46 @@ impl HyperbolaPcurve {
         })
     }
 
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point2 {
+        self.center.as_raw()
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &Point2 {
+        self.x_axis.as_raw()
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &Point2 {
+        self.y_axis.as_raw()
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> f64 {
+        self.major_radius.get()
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> f64 {
+        self.minor_radius.get()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64) {
         (
-            &self.center,
-            &self.x_axis,
-            &self.y_axis,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
     }
 }
@@ -2540,9 +2966,9 @@ impl TryFrom<HyperbolaPcurveWire> for HyperbolaPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HyperbolicPcurveWire")]
 pub struct HyperbolicPcurve {
-    center: Point2,
-    cosine: Point2,
-    sine: Point2,
+    center: FinitePoint2,
+    cosine: FinitePoint2,
+    sine: FinitePoint2,
 }
 
 #[derive(Deserialize)]
@@ -2556,18 +2982,12 @@ struct HyperbolicPcurveWire {
 impl HyperbolicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("HyperbolicPcurve.center must be finite");
-        }
-        if !(cosine.u.is_finite() && cosine.v.is_finite()) {
-            return Err("HyperbolicPcurve.cosine must be finite");
-        }
-        if !(sine.u.is_finite() && sine.v.is_finite()) {
-            return Err("HyperbolicPcurve.sine must be finite");
-        }
         if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
             return Err("HyperbolicPcurve.cosine/sine must not both be zero");
         }
+        let center = FinitePoint2::new(center).ok_or("HyperbolicPcurve.center must be finite")?;
+        let cosine = FinitePoint2::new(cosine).ok_or("HyperbolicPcurve.cosine must be finite")?;
+        let sine = FinitePoint2::new(sine).ok_or("HyperbolicPcurve.sine must be finite")?;
         Ok(Self {
             center,
             cosine,
@@ -2575,10 +2995,33 @@ impl HyperbolicPcurve {
         })
     }
 
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point2 {
+        self.center.as_raw()
+    }
+
+    /// Return the cosine.
+    #[must_use]
+    pub const fn cosine(&self) -> &Point2 {
+        self.cosine.as_raw()
+    }
+
+    /// Return the sine.
+    #[must_use]
+    pub const fn sine(&self) -> &Point2 {
+        self.sine.as_raw()
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2) {
-        (&self.center, &self.cosine, &self.sine)
+        (
+            self.center.as_raw(),
+            self.cosine.as_raw(),
+            self.sine.as_raw(),
+        )
     }
 }
 
@@ -2628,8 +3071,27 @@ impl TrimmedPcurve {
         })
     }
 
+    /// Return the parameter range.
+    #[must_use]
+    pub const fn parameter_range(&self) -> &[f64; 2] {
+        &self.parameter_range
+    }
+
+    /// Return the same sense.
+    #[must_use]
+    pub const fn same_sense(&self) -> bool {
+        self.same_sense
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &PcurveGeometry {
+        &self.basis
+    }
+
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&[f64; 2], &bool, &PcurveGeometry) {
         (&self.parameter_range, &self.same_sense, &self.basis)
     }
@@ -2647,7 +3109,7 @@ impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "OffsetPcurveWire")]
 pub struct OffsetPcurve {
-    distance: f64,
+    distance: FiniteScalar,
     basis: Box<PcurveGeometry>,
 }
 
@@ -2661,16 +3123,27 @@ struct OffsetPcurveWire {
 impl OffsetPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
-        if !distance.is_finite() {
-            return Err("OffsetPcurve.distance must be finite");
-        }
+        let distance = FiniteScalar::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
         Ok(Self { distance, basis })
+    }
+
+    /// Return the distance.
+    #[must_use]
+    pub const fn distance(&self) -> f64 {
+        self.distance.get()
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &PcurveGeometry {
+        &self.basis
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&f64, &PcurveGeometry) {
-        (&self.distance, &self.basis)
+        (self.distance.as_raw(), &self.basis)
     }
 }
 
@@ -3374,8 +3847,21 @@ impl CompoundCurveConstruction {
         })
     }
 
+    /// Return the parameters.
+    #[must_use]
+    pub fn parameters(&self) -> &[f64] {
+        &self.parameters
+    }
+
+    /// Return the components.
+    #[must_use]
+    pub fn components(&self) -> &[CompoundComponent<CurveId>] {
+        &self.components
+    }
+
     /// Leading parameters and ordered parameter-component pairs.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&[f64], &[CompoundComponent<CurveId>]) {
         (&self.parameters, &self.components)
     }
@@ -3401,29 +3887,9 @@ pub enum ProceduralSurfaceDefinition {
         components: Vec<CompoundComponent<SurfaceId>>,
     },
     /// Exact rectangular restriction of an embedded support surface.
-    SubSurface {
-        /// Embedded support surface whose parameterization is retained.
-        support: SurfaceId,
-        /// Ordered U and V parameter intervals.
-        parameter_ranges: [[f64; 2]; 2],
-    },
+    SubSurface(surface_payloads::SubSurfaceConstruction),
     /// Taper of a support surface around a reference curve.
-    Taper {
-        /// Base surface being tapered.
-        support: SurfaceId,
-        /// Reference curve on the support.
-        reference: CurveId,
-        /// UV curve on the support, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pcurve: Option<PcurveGeometry>,
-        /// Native taper parameter or draft magnitude.
-        parameter: f64,
-        /// Subtype-specific taper tail.
-        taper: TaperSurfaceKind,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Taper(surface_payloads::TaperSurfaceConstruction),
     /// Native loft defined by two section graphs and closure contracts.
     Loft {
         /// Two ordered loft sections.
@@ -3494,81 +3960,15 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<VertexBlendConstruction>,
     },
     /// Translation of a directrix along a direction.
-    Extrusion {
-        /// Curve swept along `direction` to form the surface.
-        directrix: CurveId,
-        /// Native source directrix parameter interval, when carried by the
-        /// source. The neutral surface-carrier interval is in
-        /// `ProceduralSurface::record_bounds`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        /// Length-bearing sweep direction, in document length units.
-        direction: Vector3,
-        /// Native model-space position following the sweep direction, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native_position: Option<Point3>,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The directrix parameter interval is `parameter_interval`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     /// Unbounded linear sweep of a directrix.
-    LinearSweep {
-        /// Curve swept along `direction`.
-        directrix: CurveId,
-        /// Length-bearing sweep vector.
-        direction: Vector3,
-    },
+    LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
     /// Revolution of a directrix about an axis.
-    Revolution {
-        /// Curve revolved about the axis to form the surface.
-        directrix: CurveId,
-        /// A point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit direction of the revolution axis.
-        axis_direction: Vector3,
-        /// Angular start and end parameters, in radians.
-        angular_interval: [f64; 2],
-        /// Surface-parameter interval that maps affinely to
-        /// `angular_interval`. Absence means the surface parameter is already
-        /// the revolution angle in radians.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angular_parameter_interval: Option<[f64; 2]>,
-        /// Native source directrix parameter start and end values, when
-        /// carried by the source representation. The neutral surface-carrier
-        /// interval is in `ProceduralSurface::record_bounds`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        /// Whether the source parameter directions are transposed.
-        transposed: bool,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The profile curve's optional endpoints are `reference_endpoints`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Revolution(surface_payloads::RevolutionSurfaceConstruction),
     /// Full revolution of a directrix about an axis.
-    AxisRevolution {
-        /// Curve revolved about the axis.
-        directrix: CurveId,
-        /// Point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit revolution-axis direction.
-        axis_direction: Vector3,
-    },
+    AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
     /// Sum of two ordered curves from a base point.
-    Sum {
-        /// First curve, varying in the first surface parameter.
-        first: CurveId,
-        /// Second curve, varying in the second surface parameter.
-        second: CurveId,
-        /// Surface base point.
-        basepoint: Vector3,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The first curve's optional endpoints are `reference_endpoints`
-        /// and the second curve's are `second_endpoints`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Sum(surface_payloads::SumSurfaceConstruction),
     /// Sweep of a profile along a spine.
     Sweep {
         /// Cross-section curve carried along `spine`.
@@ -3595,42 +3995,9 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<DeformableSurfaceConstruction>,
     },
     /// Offset from a support surface.
-    Offset {
-        /// Surface this surface is offset from.
-        support: SurfaceId,
-        /// Signed offset distance, in document length units.
-        distance: f64,
-        /// Native U parameter-direction sense enum, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<i64>,
-        /// Native V parameter-direction sense enum, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<i64>,
-        /// Support continuation law outside its active NURBS rectangle.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        support_extension: Option<OffsetSupportExtension>,
-        /// Legacy conditional extension flags or the revision-gated form.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
-        extension: OffsetExtension,
-    },
+    Offset(surface_payloads::OffsetSurfaceConstruction),
     /// Rectangular parameter sub-range of a support surface.
-    Subset {
-        /// Surface being restricted.
-        support: SurfaceId,
-        /// U and V parameter endpoints in the support parameterization.
-        ///
-        /// The endpoint order is significant for cyclic and reversed
-        /// trims. A producer that does not carry direction metadata may
-        /// leave the sense fields absent and use increasing endpoints.
-        parameter_ranges: [[f64; 2]; 2],
-        /// Whether the trimmed surface U direction agrees with the support.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<bool>,
-        /// Whether the trimmed surface V direction agrees with the support.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<bool>,
-    },
+    Subset(surface_payloads::SubsetSurfaceConstruction),
     /// Affine replica of a surface carrier, retaining the parent surface
     /// construction and its parameter domain.
     Replica {
@@ -3640,14 +4007,7 @@ pub enum ProceduralSurfaceDefinition {
         transform: Transform,
     },
     /// Parallel offset from a support surface.
-    ParallelOffset {
-        /// Surface being offset.
-        support: SurfaceId,
-        /// Signed offset distance.
-        distance: f64,
-        /// Whether the source classifies the result as self-intersecting.
-        self_intersect: Option<bool>,
-    },
+    ParallelOffset(surface_payloads::ParallelOffsetSurfaceConstruction),
     /// Self-intersecting torus with an explicitly selected outer or inner sheet.
     DegenerateTorus {
         /// Whether the outer sheet is selected at the self-intersection.
@@ -3716,20 +4076,8 @@ enum ProceduralSurfaceDefinitionWire {
         #[serde(flatten, with = "compound_surface_components_wire")]
         components: Vec<CompoundComponent<SurfaceId>>,
     },
-    SubSurface {
-        support: SurfaceId,
-        parameter_ranges: [[f64; 2]; 2],
-    },
-    Taper {
-        support: SurfaceId,
-        reference: CurveId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pcurve: Option<PcurveGeometry>,
-        parameter: f64,
-        taper: TaperSurfaceKind,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    SubSurface(surface_payloads::SubSurfaceConstruction),
+    Taper(surface_payloads::TaperSurfaceConstruction),
     Loft {
         sections: [LoftSection; 2],
         parameters: SplineSurfaceParameters,
@@ -3770,45 +4118,11 @@ enum ProceduralSurfaceDefinitionWire {
     VertexBlend {
         construction: Box<VertexBlendConstruction>,
     },
-    Extrusion {
-        directrix: CurveId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        direction: Vector3,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native_position: Option<Point3>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
-    LinearSweep {
-        directrix: CurveId,
-        direction: Vector3,
-    },
-    Revolution {
-        directrix: CurveId,
-        axis_origin: Point3,
-        axis_direction: Vector3,
-        angular_interval: [f64; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angular_parameter_interval: Option<[f64; 2]>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        transposed: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
-    AxisRevolution {
-        directrix: CurveId,
-        axis_origin: Point3,
-        axis_direction: Vector3,
-    },
-    Sum {
-        first: CurveId,
-        second: CurveId,
-        basepoint: Vector3,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
+    LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
+    Revolution(surface_payloads::RevolutionSurfaceConstruction),
+    AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
+    Sum(surface_payloads::SumSurfaceConstruction),
     Sweep {
         profile: CurveId,
         spine: CurveId,
@@ -3824,35 +4138,13 @@ enum ProceduralSurfaceDefinitionWire {
     Deformable {
         construction: Box<DeformableSurfaceConstruction>,
     },
-    Offset {
-        support: SurfaceId,
-        distance: f64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<i64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<i64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        support_extension: Option<OffsetSupportExtension>,
-        #[serde(flatten)]
-        extension: OffsetExtension,
-    },
-    Subset {
-        support: SurfaceId,
-        parameter_ranges: [[f64; 2]; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<bool>,
-    },
+    Offset(surface_payloads::OffsetSurfaceConstruction),
+    Subset(surface_payloads::SubsetSurfaceConstruction),
     Replica {
         source: SurfaceId,
         transform: Transform,
     },
-    ParallelOffset {
-        support: SurfaceId,
-        distance: f64,
-        self_intersect: Option<bool>,
-    },
+    ParallelOffset(surface_payloads::ParallelOffsetSurfaceConstruction),
     DegenerateTorus {
         select_outer: bool,
     },
@@ -3893,885 +4185,758 @@ impl<'de> Deserialize<'de> for ProceduralSurfaceDefinition {
     }
 }
 
-const EPS_REVOLUTION_AXIS_UNIT: f64 = 1.0e-9;
-
 impl ProceduralSurfaceDefinition {
     fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
-        if let Self::Revolution {
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            ..
-        } = self
-        {
-            for (interval, message) in [
-                (
-                    Some(angular_interval),
-                    "revolution angular_interval must be finite and strictly increasing",
-                ),
-                (
-                    angular_parameter_interval.as_ref(),
-                    "revolution angular_parameter_interval must be finite and strictly increasing",
-                ),
-                (
-                    parameter_interval.as_ref(),
-                    "revolution parameter_interval must be finite and strictly increasing",
-                ),
-            ] {
-                if interval.is_some_and(|interval| {
-                    !interval[0].is_finite()
-                        || !interval[1].is_finite()
-                        || interval[0] >= interval[1]
-                }) {
-                    return Err(ProceduralGeometryError::Payload(message));
+        match self {
+            Self::Revolution(..) => Ok(()),
+            Self::AxisRevolution(..) => Ok(()),
+            Self::Sum(..) => Ok(()),
+            Self::Extrusion(..) => Ok(()),
+            Self::LinearSweep(..) => Ok(()),
+            Self::ParallelOffset(..) => Ok(()),
+            Self::Exact { spline } => {
+                let valid = match spline {
+                    crate::geometry::ExactSpline::Legacy { ranges, .. } => {
+                        ranges.iter().all(|range| {
+                            range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                        })
+                    }
+                    crate::geometry::ExactSpline::Revision { intervals, .. } => intervals
+                        .iter()
+                        .flatten()
+                        .flatten()
+                        .all(|value| value.is_finite()),
+                };
+                if !valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "exact spline surface parameter fields are invalid",
+                    ));
                 }
+                Ok(())
             }
-        }
-        if let Self::AxisRevolution {
-            axis_origin,
-            axis_direction,
-            ..
-        } = self
-        {
-            if ![
-                axis_origin.x,
-                axis_origin.y,
-                axis_origin.z,
-                axis_direction.x,
-                axis_direction.y,
-                axis_direction.z,
-            ]
-            .into_iter()
-            .all(f64::is_finite)
-                || (axis_direction.norm() - 1.0).abs() > EPS_REVOLUTION_AXIS_UNIT
-            {
-                return Err(ProceduralGeometryError::Payload("revolution axis_origin and axis_direction must be finite, with unit axis_direction"));
-            }
-        }
-        if let Self::Sum { basepoint, .. } = self {
-            if !basepoint.x.is_finite() || !basepoint.y.is_finite() || !basepoint.z.is_finite() {
-                return Err(ProceduralGeometryError::Payload(
-                    "sum basepoint must be finite",
-                ));
-            }
-        }
-
-        if let ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval,
-            direction,
-            native_position,
-            ..
-        } = self
-        {
-            if parameter_interval.is_some_and(|range| !range.iter().all(|value| value.is_finite()))
-                || ![direction.x, direction.y, direction.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                || native_position.is_some_and(|point| {
-                    ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                })
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "extrusion interval, direction, or native position is non-finite",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::LinearSweep { direction, .. } = self {
-            if ![direction.x, direction.y, direction.z]
-                .into_iter()
-                .all(f64::is_finite)
-                || (direction.norm() <= f64::EPSILON)
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "invalid linear-sweep direction",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::ParallelOffset { distance, .. } = self {
-            if !distance.is_finite() {
-                return Err(ProceduralGeometryError::Payload(
-                    "non-finite parallel offset",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Exact { spline } = self {
-            let valid = match spline {
-                crate::geometry::ExactSpline::Legacy { ranges, .. } => ranges.iter().all(|range| {
-                    range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                }),
-                crate::geometry::ExactSpline::Revision { intervals, .. } => intervals
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .all(|value| value.is_finite()),
-            };
-            if !valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "exact spline surface parameter fields are invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Compound { components } = self {
-            if components.iter().any(|item| !item.parameter.is_finite()) {
-                return Err(ProceduralGeometryError::Payload(
-                    "compound surface parameters and components are inconsistent",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::SubSurface {
-            parameter_ranges, ..
-        } = self
-        {
-            if !parameter_ranges
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite())
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "sub-surface parameter interval is not finite",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Taper {
-            parameter, taper, ..
-        } = self
-        {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let tail_finite = match taper {
-                crate::geometry::TaperSurfaceKind::Standard
-                | crate::geometry::TaperSurfaceKind::Orthogonal { .. } => true,
-                crate::geometry::TaperSurfaceKind::Edge { draft } => vector_finite(draft),
-                crate::geometry::TaperSurfaceKind::Shadow {
-                    draft,
-                    sine,
-                    cosine,
+            Self::Compound { components } => {
+                if components.iter().any(|item| !item.parameter.is_finite()) {
+                    return Err(ProceduralGeometryError::Payload(
+                        "compound surface parameters and components are inconsistent",
+                    ));
                 }
-                | crate::geometry::TaperSurfaceKind::Swept {
-                    draft,
-                    sine,
-                    cosine,
-                } => vector_finite(draft) && sine.is_finite() && cosine.is_finite(),
-                crate::geometry::TaperSurfaceKind::Ruled {
-                    draft,
-                    sine,
-                    cosine,
-                    factor,
-                } => {
-                    vector_finite(draft)
-                        && sine.is_finite()
-                        && cosine.is_finite()
-                        && factor.is_finite()
-                }
-            };
-            if !parameter.is_finite() || !tail_finite {
-                return Err(ProceduralGeometryError::Payload(
-                    "taper surface parameter or subtype tail is not finite",
-                ));
+                Ok(())
             }
-        }
-        if let ProceduralSurfaceDefinition::Loft {
-            sections,
-            parameters,
-            bridge,
-            ..
-        } = self
-        {
-            let parameters_valid = match parameters {
-                crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
-                    ranges.iter().all(|range| {
-                        range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
+            Self::SubSurface(..) => Ok(()),
+            Self::Taper(..) => Ok(()),
+            Self::Loft {
+                sections,
+                parameters,
+                bridge,
+                ..
+            } => {
+                let parameters_valid = match parameters {
+                    crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
+                        ranges.iter().all(|range| {
+                            range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
+                        })
+                    }
+                    crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => {
+                        intervals
+                            .iter()
+                            .flatten()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                    }
+                };
+                let sections_valid =
+                    sections
+                        .iter()
+                        .flat_map(|section| &section.entries)
+                        .all(|entry| {
+                            entry.parameter.is_finite()
+                                && entry.profile.iter().all(|member| {
+                                    let table = member.form.subdata();
+                                    table.row_values_are_finite()
+                                })
+                        });
+                let bridge_valid = bridge.iter().all(|token| match token {
+                    crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
+                    crate::geometry::LoftBridgeToken::Boolean(_)
+                    | crate::geometry::LoftBridgeToken::Integer(_)
+                    | crate::geometry::LoftBridgeToken::Text(_)
+                    | crate::geometry::LoftBridgeToken::Enum(_) => true,
+                });
+                if !parameters_valid || !sections_valid || !bridge_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "loft construction payload is invalid",
+                    ));
+                }
+                Ok(())
+            }
+            Self::CompoundLoft { construction } => {
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
+                let tail_valid = match &construction.tail {
+                    crate::geometry::CompoundLoftTail::Six {
+                        scale,
+                        direction,
+                        parameter_range,
+                        ..
+                    } => {
+                        scales.push(scale.as_ref());
+                        vector_finite(direction)
+                            && parameter_range.iter().all(|value| value.is_finite())
+                            && parameter_range[0] <= parameter_range[1]
+                    }
+                    crate::geometry::CompoundLoftTail::Seven {
+                        first_scale,
+                        second_scale,
+                        direction,
+                        ..
+                    } => {
+                        scales.extend(first_scale.iter().map(Box::as_ref));
+                        scales.push(second_scale.as_ref());
+                        vector_finite(direction)
+                    }
+                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => match direction {
+                        crate::geometry::CompoundLoftDirection::Vector { value } => {
+                            vector_finite(value)
+                        }
+                        crate::geometry::CompoundLoftDirection::Curve { .. } => true,
+                    },
+                };
+                let scales_valid = scales.iter().all(|scale| {
+                    scale.members.iter().all(|member| {
+                        let data = &member.data;
+                        let table = &data.subdata;
+                        table.row_values_are_finite()
+                            && data.direction.as_ref().is_none_or(&vector_finite)
                     })
+                });
+                if !tail_valid || !scales_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "compound loft construction payload is invalid",
+                    ));
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                Ok(())
+            }
+            Self::ScaledCompoundLoft { construction } => {
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let shape_valid = match &construction.shape {
+                    crate::geometry::ScaledCompoundLoftShape::Full => true,
+                    crate::geometry::ScaledCompoundLoftShape::None {
+                        parameter_ranges,
+                        parameters,
+                    } => {
+                        parameter_ranges
+                            .iter()
+                            .flatten()
+                            .chain(parameters.iter().flatten())
+                            .all(|value| value.is_finite())
+                            && parameter_ranges.iter().all(|range| range[0] <= range[1])
+                    }
+                };
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
+                let branch_valid = match &construction.branch {
+                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                        first_scale,
+                        second_scale,
+                        direction,
+                        ..
+                    } => {
+                        scales.extend(first_scale.iter().map(Box::as_ref));
+                        scales.push(second_scale.as_ref());
+                        vector_finite(direction)
+                    }
+                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve { scale, .. } => {
+                        scales.extend(scale.iter().map(Box::as_ref));
+                        true
+                    }
+                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
+                        match direction {
+                            crate::geometry::CompoundLoftDirection::Vector { value } => {
+                                vector_finite(value)
+                            }
+                            crate::geometry::CompoundLoftDirection::Curve { .. } => true,
+                        }
+                    }
+                };
+                let scales_valid = scales.iter().all(|scale| {
+                    scale.members.iter().all(|member| {
+                        let data = &member.data;
+                        let table = &data.subdata;
+                        table.row_values_are_finite()
+                            && data.direction.as_ref().is_none_or(&vector_finite)
+                    })
+                });
+                let scalars_valid = construction
+                    .discontinuities
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite())
+                    && construction.tail_directions.iter().all(vector_finite);
+                if !shape_valid || !branch_valid || !scales_valid || !scalars_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "scaled compound loft construction payload is invalid",
+                    ));
+                }
+                Ok(())
+            }
+            Self::Law { construction } => {
+                let formula_valid = |formula: &crate::geometry::LawFormula| {
+                    formula.variables().iter().all(|value| law_valid(value, 0))
+                };
+                let tail_valid = match &construction.tail {
+                    crate::geometry::LawSurfaceTail::Summary { parameters, .. } => {
+                        parameters.iter().flatten().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawSurfaceTail::None {
+                        parameter_ranges, ..
+                    } => parameter_ranges
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite()),
+                    crate::geometry::LawSurfaceTail::Full
+                    | crate::geometry::LawSurfaceTail::Historical
+                    | crate::geometry::LawSurfaceTail::Optimal => true,
+                };
+                let valid = construction
+                    .parameter_ranges
                     .iter()
                     .flatten()
                     .flatten()
-                    .all(|value| value.is_finite()),
-            };
-            let sections_valid =
-                sections
+                    .chain(construction.discontinuities.iter().flatten())
+                    .all(|value| value.is_finite())
+                    && tail_valid
+                    && formula_valid(&construction.primary)
+                    && construction.additional.iter().all(formula_valid);
+                if !valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "law surface construction payload is invalid",
+                    ));
+                }
+                Ok(())
+            }
+            Self::Skin { construction } => {
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let layout_valid = match &construction.layout {
+                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
+                        profiles.iter().all(|profile| {
+                            let table = &profile.data.subdata;
+                            table.row_values_are_finite()
+                                && profile.data.direction.as_ref().is_none_or(&vector_finite)
+                        })
+                    }
+                    crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
+                        subdata.row_values_are_finite()
+                    }
+                };
+                let formula_valid = construction
+                    .formula
+                    .variables()
                     .iter()
-                    .flat_map(|section| &section.entries)
-                    .all(|entry| {
+                    .all(|variable| law_valid(variable, 0));
+                let scalars_valid = construction.parameter.is_finite()
+                    && construction.trailing_parameter.is_finite()
+                    && vector_finite(&construction.direction)
+                    && construction
+                        .discontinuities
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite());
+                if !layout_valid || !formula_valid || !scalars_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "skin surface construction payload is invalid",
+                    ));
+                }
+                Ok(())
+            }
+            Self::Net { construction } => {
+                let sections_valid = construction.sections.iter().all(|section| {
+                    section.entries.iter().all(|entry| {
                         entry.parameter.is_finite()
                             && entry.profile.iter().all(|member| {
                                 let table = member.form.subdata();
                                 table.row_values_are_finite()
                             })
+                    })
+                });
+                let formulas_valid = construction.formulas.iter().all(|formula| {
+                    formula
+                        .variables()
+                        .iter()
+                        .all(|variable| law_valid(variable, 0))
+                });
+                let scalars_valid = construction
+                    .frame_parameters
+                    .iter()
+                    .chain(construction.discontinuities.iter().flatten())
+                    .all(|value| value.is_finite())
+                    && construction.directions.iter().all(|direction| {
+                        direction.x.is_finite()
+                            && direction.y.is_finite()
+                            && direction.z.is_finite()
                     });
-            let bridge_valid = bridge.iter().all(|token| match token {
-                crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
-                _ => true,
-            });
-            if !parameters_valid || !sections_valid || !bridge_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "loft construction payload is invalid",
-                ));
+                if !sections_valid || !formulas_valid || !scalars_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "net surface construction payload is invalid",
+                    ));
+                }
+                Ok(())
             }
-        }
-        if let ProceduralSurfaceDefinition::CompoundLoft { construction } = self {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
-            let tail_valid = match &construction.tail {
-                crate::geometry::CompoundLoftTail::Six {
-                    scale,
-                    direction,
-                    parameter_range,
-                    ..
-                } => {
-                    scales.push(scale.as_ref());
-                    vector_finite(direction)
-                        && parameter_range.iter().all(|value| value.is_finite())
-                        && parameter_range[0] <= parameter_range[1]
-                }
-                crate::geometry::CompoundLoftTail::Seven {
-                    first_scale,
-                    second_scale,
-                    direction,
-                    ..
-                } => {
-                    scales.extend(first_scale.iter().map(Box::as_ref));
-                    scales.push(second_scale.as_ref());
-                    vector_finite(direction)
-                }
-                crate::geometry::CompoundLoftTail::Zero { direction, .. } => match direction {
-                    crate::geometry::CompoundLoftDirection::Vector { value } => {
-                        vector_finite(value)
+            Self::Sweep {
+                native: Some(construction),
+                ..
+            } => {
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let point_finite = |point: &crate::math::Point3| {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                };
+                let formula_valid = |formula: &crate::geometry::LawFormula| {
+                    formula
+                        .variables()
+                        .iter()
+                        .all(|variable| law_valid(variable, 0))
+                };
+                let layout_valid = match &construction.layout {
+                    crate::geometry::SweepSurfaceLayout::ProfileFirst {
+                        directions,
+                        origin,
+                        parameters,
+                        formulas,
+                        ..
+                    } => {
+                        directions.iter().all(vector_finite)
+                            && point_finite(origin)
+                            && parameters.iter().all(|value| value.is_finite())
+                            && formulas.iter().all(formula_valid)
                     }
-                    crate::geometry::CompoundLoftDirection::Curve { .. } => true,
-                },
-            };
-            let scales_valid = scales.iter().all(|scale| {
-                scale.members.iter().all(|member| {
-                    let data = &member.data;
-                    let table = &data.subdata;
-                    table.row_values_are_finite()
-                        && data.direction.as_ref().is_none_or(&vector_finite)
-                })
-            });
-            if !tail_valid || !scales_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "compound loft construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = self {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let shape_valid = match &construction.shape {
-                crate::geometry::ScaledCompoundLoftShape::Full => true,
-                crate::geometry::ScaledCompoundLoftShape::None {
-                    parameter_ranges,
-                    parameters,
-                } => {
-                    parameter_ranges
+                    crate::geometry::SweepSurfaceLayout::ExplicitFormula {
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        path_range,
+                        path_parameter,
+                        formula,
+                        ..
+                    } => {
+                        profile_range
+                            .iter()
+                            .chain(path_range)
+                            .all(|value| value.is_finite())
+                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                                point_finite(point) && vector_finite(vector)
+                            })
+                            && point_finite(origin)
+                            && directions.iter().all(vector_finite)
+                            && path_parameter.is_finite()
+                            && formula_valid(formula)
+                    }
+                    crate::geometry::SweepSurfaceLayout::ExplicitGuide {
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        path_range,
+                        path_parameter,
+                        guide_range,
+                        guide_parameters,
+                        ..
+                    } => {
+                        profile_range
+                            .iter()
+                            .chain(path_range)
+                            .chain(guide_range)
+                            .chain(guide_parameters)
+                            .all(|value| value.is_finite())
+                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                                point_finite(point) && vector_finite(vector)
+                            })
+                            && point_finite(origin)
+                            && directions.iter().all(vector_finite)
+                            && path_parameter.is_finite()
+                    }
+                    crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        path_range,
+                        path_parameter,
+                        ..
+                    } => {
+                        profile_range
+                            .iter()
+                            .chain(path_range)
+                            .all(|value| value.is_finite())
+                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                                point_finite(point) && vector_finite(vector)
+                            })
+                            && point_finite(origin)
+                            && directions.iter().all(vector_finite)
+                            && path_parameter.is_finite()
+                    }
+                    crate::geometry::SweepSurfaceLayout::LawDriven {
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        first_law,
+                        first_range,
+                        law_direction,
+                        path_range,
+                        path_parameter,
+                        second_law,
+                        formula,
+                        ..
+                    } => {
+                        profile_range
+                            .iter()
+                            .chain(first_range)
+                            .chain(path_range)
+                            .all(|value| value.is_finite())
+                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                                point_finite(point) && vector_finite(vector)
+                            })
+                            && point_finite(origin)
+                            && directions.iter().all(vector_finite)
+                            && vector_finite(law_direction)
+                            && path_parameter.is_finite()
+                            && law_valid(first_law, 0)
+                            && law_valid(second_law, 0)
+                            && formula_valid(formula)
+                    }
+                };
+                let scalars_valid = layout_valid
+                    && construction
+                        .discontinuities
                         .iter()
                         .flatten()
-                        .chain(parameters.iter().flatten())
-                        .all(|value| value.is_finite())
-                        && parameter_ranges.iter().all(|range| range[0] <= range[1])
+                        .all(|value| value.is_finite());
+                if !scalars_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "sweep surface construction payload is invalid",
+                    ));
                 }
-            };
-            let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
-            let branch_valid = match &construction.branch {
-                crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
-                    first_scale,
-                    second_scale,
-                    direction,
-                    ..
-                } => {
-                    scales.extend(first_scale.iter().map(Box::as_ref));
-                    scales.push(second_scale.as_ref());
-                    vector_finite(direction)
-                }
-                crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve { scale, .. } => {
-                    scales.extend(scale.iter().map(Box::as_ref));
-                    true
-                }
-                crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                    match direction {
-                        crate::geometry::CompoundLoftDirection::Vector { value } => {
-                            vector_finite(value)
-                        }
-                        crate::geometry::CompoundLoftDirection::Curve { .. } => true,
+                Ok(())
+            }
+            Self::Sweep { native: None, .. } => Ok(()),
+            Self::TSpline { .. } => Ok(()),
+            Self::Deformable { construction } => {
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
+                    frame.leading_vectors.iter().all(vector_finite)
+                        && frame.secondary_vectors.iter().all(vector_finite)
+                        && frame.leading_parameter.is_finite()
+                        && frame.secondary_parameter.is_finite()
+                        && frame.point.x.is_finite()
+                        && frame.point.y.is_finite()
+                        && frame.point.z.is_finite()
+                };
+                let data_valid = match &construction.data {
+                    crate::geometry::DeformableSurfaceData::Full {
+                        leading_vectors,
+                        leading_parameter,
+                        first_parameter,
+                        second_parameter,
+                        frames,
+                        ..
+                    } => {
+                        leading_vectors.iter().all(vector_finite)
+                            && leading_parameter.is_finite()
+                            && first_parameter.is_finite()
+                            && second_parameter.is_finite()
+                            && frames.iter().all(|frame| {
+                                frame.vectors.iter().all(vector_finite)
+                                    && frame.parameter.is_finite()
+                            })
                     }
+                    crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                        first_parameter,
+                        second_parameter,
+                        vectors,
+                        frame_parameter,
+                        parameter_triples,
+                        ..
+                    } => {
+                        first_parameter.is_finite()
+                            && second_parameter.is_finite()
+                            && vectors.iter().all(vector_finite)
+                            && frame_parameter.is_finite()
+                            && parameter_triples
+                                .iter()
+                                .flatten()
+                                .all(|value| value.is_finite())
+                    }
+                    crate::geometry::DeformableSurfaceData::Plain {
+                        frame,
+                        parameter_triples,
+                    } => {
+                        frame_valid(frame)
+                            && parameter_triples
+                                .iter()
+                                .flatten()
+                                .all(|value| value.is_finite())
+                    }
+                    crate::geometry::DeformableSurfaceData::Guided {
+                        frame,
+                        guide_parameter,
+                        ..
+                    } => frame_valid(frame) && guide_parameter.is_finite(),
+                    crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
+                        vectors.iter().all(vector_finite)
+                    }
+                    crate::geometry::DeformableSurfaceData::RevisionMode3 {
+                        leading_vectors,
+                        leading_parameter,
+                        trailing_point,
+                        trailing_vectors,
+                        frame_parameter,
+                        parameters,
+                        trailing_parameter,
+                        ..
+                    } => {
+                        leading_vectors.iter().all(vector_finite)
+                            && leading_parameter.is_finite()
+                            && trailing_point.x.is_finite()
+                            && trailing_point.y.is_finite()
+                            && trailing_point.z.is_finite()
+                            && trailing_vectors.iter().all(vector_finite)
+                            && frame_parameter.is_finite()
+                            && parameters.iter().all(|value| value.is_finite())
+                            && trailing_parameter.is_finite()
+                    }
+                };
+                if !data_valid
+                    || !construction
+                        .discontinuities
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite())
+                {
+                    return Err(ProceduralGeometryError::Payload(
+                        "deformable surface construction payload is invalid",
+                    ));
                 }
-            };
-            let scales_valid = scales.iter().all(|scale| {
-                scale.members.iter().all(|member| {
-                    let data = &member.data;
-                    let table = &data.subdata;
-                    table.row_values_are_finite()
-                        && data.direction.as_ref().is_none_or(&vector_finite)
-                })
-            });
-            let scalars_valid = construction
-                .discontinuities
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite())
-                && construction.tail_directions.iter().all(vector_finite);
-            if !shape_valid || !branch_valid || !scales_valid || !scalars_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "scaled compound loft construction payload is invalid",
-                ));
+                Ok(())
             }
-        }
-        if let ProceduralSurfaceDefinition::Law { construction } = self {
-            let formula_valid = |formula: &crate::geometry::LawFormula| {
-                formula.variables().iter().all(|value| law_valid(value, 0))
-            };
-            let tail_valid = match &construction.tail {
-                crate::geometry::LawSurfaceTail::Summary { parameters, .. } => {
-                    parameters.iter().flatten().all(|value| value.is_finite())
-                }
-                crate::geometry::LawSurfaceTail::None {
-                    parameter_ranges, ..
-                } => parameter_ranges
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite()),
-                _ => true,
-            };
-            let valid = construction
-                .parameter_ranges
-                .iter()
-                .flatten()
-                .flatten()
-                .chain(construction.discontinuities.iter().flatten())
-                .all(|value| value.is_finite())
-                && tail_valid
-                && formula_valid(&construction.primary)
-                && construction.additional.iter().all(formula_valid);
-            if !valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "law surface construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Skin { construction } = self {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let layout_valid = match &construction.layout {
-                crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
-                    profiles.iter().all(|profile| {
-                        let table = &profile.data.subdata;
-                        table.row_values_are_finite()
-                            && profile.data.direction.as_ref().is_none_or(&vector_finite)
-                    })
-                }
-                crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
-                    subdata.row_values_are_finite()
-                }
-            };
-            let formula_valid = construction
-                .formula
-                .variables()
-                .iter()
-                .all(|variable| law_valid(variable, 0));
-            let scalars_valid = construction.parameter.is_finite()
-                && construction.trailing_parameter.is_finite()
-                && vector_finite(&construction.direction)
-                && construction
-                    .discontinuities
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite());
-            if !layout_valid || !formula_valid || !scalars_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "skin surface construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Net { construction } = self {
-            let sections_valid = construction.sections.iter().all(|section| {
-                section.entries.iter().all(|entry| {
-                    entry.parameter.is_finite()
-                        && entry.profile.iter().all(|member| {
-                            let table = member.form.subdata();
-                            table.row_values_are_finite()
-                        })
-                })
-            });
-            let formulas_valid = construction.formulas.iter().all(|formula| {
-                formula
-                    .variables()
-                    .iter()
-                    .all(|variable| law_valid(variable, 0))
-            });
-            let scalars_valid = construction
-                .frame_parameters
-                .iter()
-                .chain(construction.discontinuities.iter().flatten())
-                .all(|value| value.is_finite())
-                && construction.directions.iter().all(|direction| {
+            Self::G2Blend { construction } => {
+                let direction_finite = |direction: &Vector3| {
                     direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
+                };
+                let first_shape_valid = match &construction.first_shape {
+                    crate::geometry::G2BlendFirstShape::Full { .. } => true,
+                    crate::geometry::G2BlendFirstShape::None {
+                        coefficients,
+                        extension,
+                        ..
+                    } => {
+                        coefficients.iter().all(|value| value.is_finite())
+                            && extension.as_ref().is_none_or(|token| match token {
+                                crate::geometry::LoftBridgeToken::Double(value) => {
+                                    value.is_finite()
+                                }
+                                crate::geometry::LoftBridgeToken::Boolean(_)
+                                | crate::geometry::LoftBridgeToken::Integer(_)
+                                | crate::geometry::LoftBridgeToken::Text(_)
+                                | crate::geometry::LoftBridgeToken::Enum(_) => true,
+                            })
+                    }
+                };
+                let ranges_valid = construction.parameter_ranges.iter().all(|range| {
+                    range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
                 });
-            if !sections_valid || !formulas_valid || !scalars_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "net surface construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Sweep {
-            native: Some(construction),
-            ..
-        } = self
-        {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let point_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
-            let formula_valid = |formula: &crate::geometry::LawFormula| {
-                formula
-                    .variables()
+                let scalars_valid = construction
+                    .center_parameters
                     .iter()
-                    .all(|variable| law_valid(variable, 0))
-            };
-            let layout_valid = match &construction.layout {
-                crate::geometry::SweepSurfaceLayout::ProfileFirst {
-                    directions,
-                    origin,
-                    parameters,
-                    formulas,
-                    ..
-                } => {
-                    directions.iter().all(vector_finite)
-                        && point_finite(origin)
-                        && parameters.iter().all(|value| value.is_finite())
-                        && formulas.iter().all(formula_valid)
-                }
-                crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path_range,
-                    path_parameter,
-                    formula,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(path_range)
-                        .all(|value| value.is_finite())
-                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                            point_finite(point) && vector_finite(vector)
-                        })
-                        && point_finite(origin)
-                        && directions.iter().all(vector_finite)
-                        && path_parameter.is_finite()
-                        && formula_valid(formula)
-                }
-                crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path_range,
-                    path_parameter,
-                    guide_range,
-                    guide_parameters,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(path_range)
-                        .chain(guide_range)
-                        .chain(guide_parameters)
-                        .all(|value| value.is_finite())
-                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                            point_finite(point) && vector_finite(vector)
-                        })
-                        && point_finite(origin)
-                        && directions.iter().all(vector_finite)
-                        && path_parameter.is_finite()
-                }
-                crate::geometry::SweepSurfaceLayout::ExplicitSurface {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path_range,
-                    path_parameter,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(path_range)
-                        .all(|value| value.is_finite())
-                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                            point_finite(point) && vector_finite(vector)
-                        })
-                        && point_finite(origin)
-                        && directions.iter().all(vector_finite)
-                        && path_parameter.is_finite()
-                }
-                crate::geometry::SweepSurfaceLayout::LawDriven {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    first_law,
-                    first_range,
-                    law_direction,
-                    path_range,
-                    path_parameter,
-                    second_law,
-                    formula,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(first_range)
-                        .chain(path_range)
-                        .all(|value| value.is_finite())
-                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                            point_finite(point) && vector_finite(vector)
-                        })
-                        && point_finite(origin)
-                        && directions.iter().all(vector_finite)
-                        && vector_finite(law_direction)
-                        && path_parameter.is_finite()
-                        && law_valid(first_law, 0)
-                        && law_valid(second_law, 0)
-                        && formula_valid(formula)
-                }
-            };
-            let scalars_valid = layout_valid
-                && construction
-                    .discontinuities
-                    .iter()
-                    .flatten()
+                    .chain(construction.trailing_parameters.iter())
+                    .chain(construction.discontinuities.iter().flatten())
                     .all(|value| value.is_finite());
-            if !scalars_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "sweep surface construction payload is invalid",
-                ));
+                if !direction_finite(&construction.first.direction)
+                    || !direction_finite(&construction.second.direction)
+                    || !first_shape_valid
+                    || !ranges_valid
+                    || !scalars_valid
+                {
+                    return Err(ProceduralGeometryError::Payload(
+                        "G2 blend construction payload is invalid",
+                    ));
+                }
+                Ok(())
             }
-        }
-        if let ProceduralSurfaceDefinition::TSpline { construction } = self {
-            let ranges_valid = construction
-                .parameter_ranges
-                .iter()
-                .flatten()
-                .chain(construction.discontinuities.iter().flatten())
-                .all(|value| value.is_finite());
-            if !ranges_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "T-spline surface construction payload is invalid",
-                ));
+            Self::VariableBlend { construction } => {
+                let ranges_valid = construction.u_range.iter().all(|value| value.is_finite())
+                    && construction.u_range[0] <= construction.u_range[1]
+                    && construction.v_lower.is_none_or(f64::is_finite)
+                    && [&construction.post_range, &construction.slice_range]
+                        .into_iter()
+                        .chain(
+                            construction
+                                .secondary_curve
+                                .as_ref()
+                                .map(|curve| &curve.parameter_range),
+                        )
+                        .all(|range| {
+                            range.iter().flatten().all(|value| value.is_finite())
+                                && match (range[0], range[1]) {
+                                    (Some(lower), Some(upper)) => lower <= upper,
+                                    (None | Some(_), None) | (None, Some(_)) => true,
+                                }
+                        });
+                let sides_valid = construction.sides.iter().all(|side| {
+                    side.location.x.is_finite()
+                        && side.location.y.is_finite()
+                        && side.location.z.is_finite()
+                });
+                let values_valid = match &construction.radii {
+                    crate::geometry::VariableBlendRadii::Single { value } => {
+                        variable_blend_value_valid(value)
+                    }
+                    crate::geometry::VariableBlendRadii::Two { first, second } => {
+                        variable_blend_value_valid(first) && variable_blend_value_valid(second)
+                    }
+                } && construction.cross_section.as_ref().is_none_or(
+                    |cross_section| match cross_section {
+                        crate::geometry::VariableBlendCrossSection::Circular => true,
+                        crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
+                        | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
+                            parameters.iter().all(|value| value.is_finite())
+                        }
+                        crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
+                            radius.as_deref().is_none_or(variable_blend_value_valid)
+                        }
+                        crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
+                    },
+                );
+                let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
+                    && construction.shape_parameter.is_finite()
+                    && construction.shape_length.is_finite();
+                if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "variable blend construction payload is invalid",
+                    ));
+                }
+                Ok(())
             }
-        }
-        if let ProceduralSurfaceDefinition::Deformable { construction } = self {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
-                frame.leading_vectors.iter().all(vector_finite)
-                    && frame.secondary_vectors.iter().all(vector_finite)
-                    && frame.leading_parameter.is_finite()
-                    && frame.secondary_parameter.is_finite()
-                    && frame.point.x.is_finite()
-                    && frame.point.y.is_finite()
-                    && frame.point.z.is_finite()
-            };
-            let data_valid = match &construction.data {
-                crate::geometry::DeformableSurfaceData::Full {
-                    leading_vectors,
-                    leading_parameter,
-                    first_parameter,
-                    second_parameter,
-                    frames,
-                    ..
-                } => {
-                    leading_vectors.iter().all(vector_finite)
-                        && leading_parameter.is_finite()
-                        && first_parameter.is_finite()
-                        && second_parameter.is_finite()
-                        && frames.iter().all(|frame| {
-                            frame.vectors.iter().all(vector_finite) && frame.parameter.is_finite()
-                        })
-                }
-                crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                    first_parameter,
-                    second_parameter,
-                    vectors,
-                    frame_parameter,
-                    parameter_triples,
-                    ..
-                } => {
-                    first_parameter.is_finite()
-                        && second_parameter.is_finite()
-                        && vectors.iter().all(vector_finite)
-                        && frame_parameter.is_finite()
-                        && parameter_triples
-                            .iter()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                }
-                crate::geometry::DeformableSurfaceData::Plain {
-                    frame,
-                    parameter_triples,
-                } => {
-                    frame_valid(frame)
-                        && parameter_triples
-                            .iter()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                }
-                crate::geometry::DeformableSurfaceData::Guided {
-                    frame,
-                    guide_parameter,
-                    ..
-                } => frame_valid(frame) && guide_parameter.is_finite(),
-                crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
-                    vectors.iter().all(vector_finite)
-                }
-                crate::geometry::DeformableSurfaceData::RevisionMode3 {
-                    leading_vectors,
-                    leading_parameter,
-                    trailing_point,
-                    trailing_vectors,
-                    frame_parameter,
-                    parameters,
-                    trailing_parameter,
-                    ..
-                } => {
-                    leading_vectors.iter().all(vector_finite)
-                        && leading_parameter.is_finite()
-                        && trailing_point.x.is_finite()
-                        && trailing_point.y.is_finite()
-                        && trailing_point.z.is_finite()
-                        && trailing_vectors.iter().all(vector_finite)
-                        && frame_parameter.is_finite()
-                        && parameters.iter().all(|value| value.is_finite())
-                        && trailing_parameter.is_finite()
-                }
-            };
-            if !data_valid
-                || !construction
-                    .discontinuities
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite())
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "deformable surface construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::G2Blend { construction } = self {
-            let direction_finite = |direction: &Vector3| {
-                direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
-            };
-            let first_shape_valid = match &construction.first_shape {
-                crate::geometry::G2BlendFirstShape::Full { .. } => true,
-                crate::geometry::G2BlendFirstShape::None {
-                    coefficients,
-                    extension,
-                    ..
-                } => {
-                    coefficients.iter().all(|value| value.is_finite())
-                        && extension.as_ref().is_none_or(|token| match token {
-                            crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
-                            _ => true,
-                        })
-                }
-            };
-            let ranges_valid = construction
-                .parameter_ranges
-                .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
-            let scalars_valid = construction
-                .center_parameters
-                .iter()
-                .chain(construction.trailing_parameters.iter())
-                .chain(construction.discontinuities.iter().flatten())
-                .all(|value| value.is_finite());
-            if !direction_finite(&construction.first.direction)
-                || !direction_finite(&construction.second.direction)
-                || !first_shape_valid
-                || !ranges_valid
-                || !scalars_valid
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "G2 blend construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::VariableBlend { construction } = self {
-            let ranges_valid = construction.u_range.iter().all(|value| value.is_finite())
-                && construction.u_range[0] <= construction.u_range[1]
-                && construction.v_lower.is_none_or(f64::is_finite)
-                && [&construction.post_range, &construction.slice_range]
-                    .into_iter()
-                    .chain(
-                        construction
-                            .secondary_curve
-                            .as_ref()
-                            .map(|curve| &curve.parameter_range),
-                    )
-                    .all(|range| {
-                        range.iter().flatten().all(|value| value.is_finite())
-                            && match (range[0], range[1]) {
-                                (Some(lower), Some(upper)) => lower <= upper,
-                                _ => true,
+            Self::VertexBlend { construction } => {
+                let point_finite = |point: &crate::math::Point3| {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                };
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let boundaries_valid = construction.boundaries.iter().all(|boundary| {
+                    vector_finite(&boundary.magic)
+                        && boundary.fullness.is_finite()
+                        && match &boundary.geometry {
+                            crate::geometry::VertexBlendBoundaryGeometry::Circle {
+                                twists,
+                                parameters,
+                                ..
+                            } => {
+                                twists.entries().iter().all(&point_finite)
+                                    && parameters.iter().all(|value| value.is_finite())
                             }
-                    });
-            let sides_valid = construction.sides.iter().all(|side| {
-                side.location.x.is_finite()
-                    && side.location.y.is_finite()
-                    && side.location.z.is_finite()
-            });
-            let values_valid = match &construction.radii {
-                crate::geometry::VariableBlendRadii::Single { value } => {
-                    variable_blend_value_valid(value)
-                }
-                crate::geometry::VariableBlendRadii::Two { first, second } => {
-                    variable_blend_value_valid(first) && variable_blend_value_valid(second)
-                }
-            } && construction.cross_section.as_ref().is_none_or(
-                |cross_section| match cross_section {
-                    crate::geometry::VariableBlendCrossSection::Circular => true,
-                    crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
-                    | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
-                        parameters.iter().all(|value| value.is_finite())
-                    }
-                    crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
-                        radius.as_deref().is_none_or(variable_blend_value_valid)
-                    }
-                    crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
-                },
-            );
-            let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
-                && construction.shape_parameter.is_finite()
-                && construction.shape_length.is_finite();
-            if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "variable blend construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::VertexBlend { construction } = self {
-            let point_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let boundaries_valid = construction.boundaries.iter().all(|boundary| {
-                vector_finite(&boundary.magic)
-                    && boundary.fullness.is_finite()
-                    && match &boundary.geometry {
-                        crate::geometry::VertexBlendBoundaryGeometry::Circle {
-                            twists,
-                            parameters,
-                            ..
-                        } => {
-                            twists.entries().iter().all(&point_finite)
-                                && parameters.iter().all(|value| value.is_finite())
-                        }
-                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate {
-                            location,
-                            normals,
-                        } => {
-                            point_finite(location)
-                                && normals.iter().all(|normal| {
-                                    vector_finite(normal) && (normal.norm() > f64::EPSILON)
-                                })
-                        }
-                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve { .. } => true,
-                        crate::geometry::VertexBlendBoundaryGeometry::Plane {
-                            normal,
-                            parameters,
-                            ..
-                        } => {
-                            vector_finite(normal)
-                                && (normal.norm() > f64::EPSILON)
-                                && parameters.iter().all(|value| value.is_finite())
-                        }
-                    }
-            });
-            if !boundaries_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "vertex blend construction payload is invalid",
-                ));
-            }
-        }
-        if let ProceduralSurfaceDefinition::Blend {
-            native: Some(construction),
-            ..
-        } = self
-        {
-            let point_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let ranges_valid = [&construction.u_range, &construction.v_range]
-                .iter()
-                .all(|range| {
-                    range.iter().flatten().all(|value| value.is_finite())
-                        && match range {
-                            [Some(lower), Some(upper)] => lower <= upper,
-                            _ => true,
+                            crate::geometry::VertexBlendBoundaryGeometry::Degenerate {
+                                location,
+                                normals,
+                            } => {
+                                point_finite(location)
+                                    && normals.iter().all(|normal| {
+                                        vector_finite(normal) && (normal.norm() > f64::EPSILON)
+                                    })
+                            }
+                            crate::geometry::VertexBlendBoundaryGeometry::Pcurve { .. } => true,
+                            crate::geometry::VertexBlendBoundaryGeometry::Plane {
+                                normal,
+                                parameters,
+                                ..
+                            } => {
+                                vector_finite(normal)
+                                    && (normal.norm() > f64::EPSILON)
+                                    && parameters.iter().all(|value| value.is_finite())
+                            }
                         }
                 });
-            let selector_valid = match construction.radius_selector {
-                crate::geometry::RollingBallRadiusSelector::None => true,
-                crate::geometry::RollingBallRadiusSelector::Value { value } => value.is_finite(),
-            };
-            let scalars_valid = construction
-                .offsets
-                .iter()
-                .chain(construction.parameters.iter())
-                .chain(construction.discontinuities.iter().flatten())
-                .all(|value| value.is_finite());
-            let sides_valid = construction
-                .sides
-                .iter()
-                .all(|side| point_finite(&side.location));
-            let third_valid = construction
-                .third
-                .as_ref()
-                .is_none_or(|side| vector_finite(&side.direction));
-            if !ranges_valid || !selector_valid || !scalars_valid || !sides_valid || !third_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "rolling-ball blend construction payload is invalid",
-                ));
+                if !boundaries_valid {
+                    return Err(ProceduralGeometryError::Payload(
+                        "vertex blend construction payload is invalid",
+                    ));
+                }
+                Ok(())
             }
-        }
-        if let ProceduralSurfaceDefinition::Offset { distance, .. } = self {
-            if !distance.is_finite() {
-                return Err(ProceduralGeometryError::Payload(
-                    "offset spline surface distance is invalid",
-                ));
+            Self::Blend {
+                native: Some(construction),
+                ..
+            } => {
+                let point_finite = |point: &crate::math::Point3| {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                };
+                let vector_finite = |vector: &Vector3| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                };
+                let ranges_valid =
+                    [&construction.u_range, &construction.v_range]
+                        .iter()
+                        .all(|range| {
+                            range.iter().flatten().all(|value| value.is_finite())
+                                && match range {
+                                    [Some(lower), Some(upper)] => lower <= upper,
+                                    [None | Some(_), None] | [None, Some(_)] => true,
+                                }
+                        });
+                let selector_valid = match construction.radius_selector {
+                    crate::geometry::RollingBallRadiusSelector::None => true,
+                    crate::geometry::RollingBallRadiusSelector::Value { value } => {
+                        value.is_finite()
+                    }
+                };
+                let scalars_valid = construction
+                    .offsets
+                    .iter()
+                    .chain(construction.parameters.iter())
+                    .chain(construction.discontinuities.iter().flatten())
+                    .all(|value| value.is_finite());
+                let sides_valid = construction
+                    .sides
+                    .iter()
+                    .all(|side| point_finite(&side.location));
+                let third_valid = construction
+                    .third
+                    .as_ref()
+                    .is_none_or(|side| vector_finite(&side.direction));
+                if !ranges_valid
+                    || !selector_valid
+                    || !scalars_valid
+                    || !sides_valid
+                    || !third_valid
+                {
+                    return Err(ProceduralGeometryError::Payload(
+                        "rolling-ball blend construction payload is invalid",
+                    ));
+                }
+                Ok(())
             }
+            Self::Blend { native: None, .. } => Ok(()),
+            Self::Offset(..) => Ok(()),
+            Self::Subset(..) => Ok(()),
+            Self::RevisionCompoundLoft { .. } => Ok(()),
+            Self::RevisionG2Blend { .. } => Ok(()),
+            Self::Helix { .. } => Ok(()),
+            Self::Replica { .. } => Ok(()),
+            Self::DegenerateTorus { .. } => Ok(()),
+            Self::CurveBounded { .. } => Ok(()),
+            Self::Ruled { .. } => Ok(()),
+            Self::RollingBallJet(..) => Ok(()),
+            Self::Unknown { .. } => Ok(()),
         }
-        if let ProceduralSurfaceDefinition::Subset {
-            parameter_ranges, ..
-        } = self
-        {
-            if !parameter_ranges
-                .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] != range[1])
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "surface subset ranges are not finite and non-zero",
-                ));
-            }
-        }
-        Ok(())
     }
 
     fn revision_cache(&self) -> Option<&RevisionCacheForm> {
@@ -4779,14 +4944,23 @@ impl ProceduralSurfaceDefinition {
             Self::Exact {
                 spline: ExactSpline::Revision { form, .. },
             } => Some(&form.cache),
-            Self::Taper { revision_form, .. }
-            | Self::Extrusion { revision_form, .. }
-            | Self::Revolution { revision_form, .. }
-            | Self::Sum { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
-            Self::Offset {
-                extension: OffsetExtension::Revision(form),
-                ..
-            } => Some(&form.cache),
+            Self::Taper(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Extrusion(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Revolution(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Sum(payload) => payload.revision_form().as_ref().map(|form| &form.cache),
+            Self::Offset(payload) => match payload.extension() {
+                OffsetExtension::Revision(form) => Some(&form.cache),
+                OffsetExtension::Legacy(_) => None,
+            },
             Self::Loft { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
             Self::RevisionCompoundLoft { construction } => Some(&construction.cache),
             Self::RevisionG2Blend { construction } => Some(&construction.cache),
@@ -4813,14 +4987,11 @@ impl ProceduralSurfaceDefinition {
             Self::Exact {
                 spline: ExactSpline::Revision { form, .. },
             } => Some(&mut form.cache),
-            Self::Taper { revision_form, .. }
-            | Self::Extrusion { revision_form, .. }
-            | Self::Revolution { revision_form, .. }
-            | Self::Sum { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
-            Self::Offset {
-                extension: OffsetExtension::Revision(form),
-                ..
-            } => Some(&mut form.cache),
+            Self::Taper(payload) => payload.revision_cache_mut(),
+            Self::Extrusion(payload) => payload.revision_cache_mut(),
+            Self::Revolution(payload) => payload.revision_cache_mut(),
+            Self::Sum(payload) => payload.revision_cache_mut(),
+            Self::Offset(payload) => payload.revision_cache_mut(),
             Self::Loft { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
             Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
             Self::RevisionG2Blend { construction } => Some(&mut construction.cache),
@@ -5433,13 +5604,13 @@ const EPS_HELIX_CURVE_RADIUS: f64 = 1.0e-9;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixPathConstructionWire")]
 pub struct HelixPathConstruction {
-    angle_range: [f64; 2],
-    center: Point3,
-    major: Vector3,
-    minor: Vector3,
-    pitch: Vector3,
-    apex_factor: f64,
-    axis: Vector3,
+    angle_range: FiniteVector<2>,
+    center: FinitePoint3,
+    major: FiniteVector3,
+    minor: FiniteVector3,
+    pitch: FiniteVector3,
+    apex_factor: FiniteScalar,
+    axis: FiniteVector3,
 }
 
 #[derive(Deserialize)]
@@ -5465,19 +5636,6 @@ impl HelixPathConstruction {
         apex_factor: f64,
         axis: Vector3,
     ) -> Result<Self, &'static str> {
-        if !angle_range.iter().all(|value| value.is_finite())
-            || ![center.x, center.y, center.z]
-                .into_iter()
-                .chain(
-                    [major, minor, pitch, axis]
-                        .into_iter()
-                        .flat_map(|vector| [vector.x, vector.y, vector.z]),
-                )
-                .chain([apex_factor])
-                .all(f64::is_finite)
-        {
-            return Err("helix surface path fields must be finite");
-        }
         let major_length = (major.x.powi(2) + major.y.powi(2) + major.z.powi(2)).sqrt();
         let minor_length = (minor.x.powi(2) + minor.y.powi(2) + minor.z.powi(2)).sqrt();
         if !(major_length > 0.0
@@ -5487,6 +5645,19 @@ impl HelixPathConstruction {
             return Err("helix surface path major and minor must define a circular path");
         }
 
+        let angle_range = FiniteVector::new(angle_range)
+            .ok_or("HelixPathConstruction.angle_range must be finite")?;
+        let center =
+            FinitePoint3::new(center).ok_or("HelixPathConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixPathConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixPathConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixPathConstruction.pitch must be finite")?;
+        let apex_factor = FiniteScalar::new(apex_factor)
+            .ok_or("HelixPathConstruction.apex_factor must be finite")?;
+        let axis = FiniteVector3::new(axis).ok_or("HelixPathConstruction.axis must be finite")?;
         Ok(Self {
             angle_range,
             center,
@@ -5497,8 +5668,51 @@ impl HelixPathConstruction {
             axis,
         })
     }
+    /// Return the angle range.
+    #[must_use]
+    pub const fn angle_range(&self) -> &[f64; 2] {
+        self.angle_range.as_raw()
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the major.
+    #[must_use]
+    pub const fn major(&self) -> &Vector3 {
+        self.major.as_raw()
+    }
+
+    /// Return the minor.
+    #[must_use]
+    pub const fn minor(&self) -> &Vector3 {
+        self.minor.as_raw()
+    }
+
+    /// Return the pitch.
+    #[must_use]
+    pub const fn pitch(&self) -> &Vector3 {
+        self.pitch.as_raw()
+    }
+
+    /// Return the apex factor.
+    #[must_use]
+    pub const fn apex_factor(&self) -> f64 {
+        self.apex_factor.get()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.axis.as_raw()
+    }
+
     /// Borrow the payload parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(
         &self,
     ) -> (
@@ -5511,13 +5725,13 @@ impl HelixPathConstruction {
         &Vector3,
     ) {
         (
-            &self.angle_range,
-            &self.center,
-            &self.major,
-            &self.minor,
-            &self.pitch,
-            &self.apex_factor,
-            &self.axis,
+            self.angle_range.as_raw(),
+            self.center.as_raw(),
+            self.major.as_raw(),
+            self.minor.as_raw(),
+            self.pitch.as_raw(),
+            self.apex_factor.as_raw(),
+            self.axis.as_raw(),
         )
     }
 }
@@ -5542,13 +5756,13 @@ impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCurveConstructionWire")]
 pub struct HelixCurveConstruction {
-    angle_range: [f64; 2],
-    center: Point3,
-    major: Vector3,
-    minor: Vector3,
-    pitch: Vector3,
-    apex_factor: f64,
-    axis: Vector3,
+    angle_range: FiniteVector<2>,
+    center: FinitePoint3,
+    major: FiniteVector3,
+    minor: FiniteVector3,
+    pitch: FiniteVector3,
+    apex_factor: FiniteScalar,
+    axis: FiniteVector3,
 }
 
 #[derive(Deserialize)]
@@ -5574,19 +5788,6 @@ impl HelixCurveConstruction {
         apex_factor: f64,
         axis: Vector3,
     ) -> Result<Self, &'static str> {
-        if !angle_range.iter().all(|value| value.is_finite())
-            || ![center.x, center.y, center.z]
-                .into_iter()
-                .chain(
-                    [major, minor, pitch, axis]
-                        .into_iter()
-                        .flat_map(|vector| [vector.x, vector.y, vector.z]),
-                )
-                .chain([apex_factor])
-                .all(f64::is_finite)
-        {
-            return Err("helix curve fields must be finite");
-        }
         if angle_range[0] > angle_range[1] {
             return Err("helix curve angle_range must be ordered");
         }
@@ -5600,6 +5801,19 @@ impl HelixCurveConstruction {
             return Err("helix curve major and minor radii must agree");
         }
 
+        let angle_range = FiniteVector::new(angle_range)
+            .ok_or("HelixCurveConstruction.angle_range must be finite")?;
+        let center =
+            FinitePoint3::new(center).ok_or("HelixCurveConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixCurveConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
+        let apex_factor = FiniteScalar::new(apex_factor)
+            .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
+        let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
         Ok(Self {
             angle_range,
             center,
@@ -5610,8 +5824,51 @@ impl HelixCurveConstruction {
             axis,
         })
     }
+    /// Return the angle range.
+    #[must_use]
+    pub const fn angle_range(&self) -> &[f64; 2] {
+        self.angle_range.as_raw()
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &Point3 {
+        self.center.as_raw()
+    }
+
+    /// Return the major.
+    #[must_use]
+    pub const fn major(&self) -> &Vector3 {
+        self.major.as_raw()
+    }
+
+    /// Return the minor.
+    #[must_use]
+    pub const fn minor(&self) -> &Vector3 {
+        self.minor.as_raw()
+    }
+
+    /// Return the pitch.
+    #[must_use]
+    pub const fn pitch(&self) -> &Vector3 {
+        self.pitch.as_raw()
+    }
+
+    /// Return the apex factor.
+    #[must_use]
+    pub const fn apex_factor(&self) -> f64 {
+        self.apex_factor.get()
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &Vector3 {
+        self.axis.as_raw()
+    }
+
     /// Borrow the payload parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(
         &self,
     ) -> (
@@ -5624,13 +5881,13 @@ impl HelixCurveConstruction {
         &Vector3,
     ) {
         (
-            &self.angle_range,
-            &self.center,
-            &self.major,
-            &self.minor,
-            &self.pitch,
-            &self.apex_factor,
-            &self.axis,
+            self.angle_range.as_raw(),
+            self.center.as_raw(),
+            self.major.as_raw(),
+            self.minor.as_raw(),
+            self.pitch.as_raw(),
+            self.apex_factor.as_raw(),
+            self.axis.as_raw(),
         )
     }
 }
@@ -5653,10 +5910,10 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
 impl HelixCurveConstruction {
     /// Reverse the native interval and signed path fields.
     pub fn reverse_parameterization(&mut self) {
-        self.angle_range = [-self.angle_range[1], -self.angle_range[0]];
-        self.minor = Vector3::new(-self.minor.x, -self.minor.y, -self.minor.z);
-        self.pitch = Vector3::new(-self.pitch.x, -self.pitch.y, -self.pitch.z);
-        self.apex_factor = -self.apex_factor;
+        self.angle_range = self.angle_range.reversed_negated();
+        self.minor = self.minor.negated();
+        self.pitch = self.pitch.negated();
+        self.apex_factor = self.apex_factor.negated();
     }
 
     /// Scale lengths atomically and retain the old path when admission fails.
@@ -5664,17 +5921,17 @@ impl HelixCurveConstruction {
         let vector =
             |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
         let candidate = Self::try_new(
-            self.angle_range,
+            self.angle_range.get(),
             Point3::new(
                 self.center.x * scale,
                 self.center.y * scale,
                 self.center.z * scale,
             ),
-            vector(self.major),
-            vector(self.minor),
-            vector(self.pitch),
-            self.apex_factor,
-            self.axis,
+            vector(self.major.get()),
+            vector(self.minor.get()),
+            vector(self.pitch.get()),
+            self.apex_factor.get(),
+            self.axis.get(),
         )?;
         *self = candidate;
         Ok(())
@@ -5686,8 +5943,8 @@ impl HelixCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCircleProfileWire")]
 pub struct HelixCircleProfile {
-    length: f64,
-    radius: f64,
+    length: FiniteScalar,
+    radius: FiniteScalar,
 }
 
 #[derive(Deserialize)]
@@ -5700,24 +5957,25 @@ struct HelixCircleProfileWire {
 impl HelixCircleProfile {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(length: f64, radius: f64) -> Result<Self, &'static str> {
-        if !length.is_finite() {
-            return Err("helix circle profile length must be finite");
-        }
-        if !radius.is_finite() || radius == 0.0 {
+        if radius == 0.0 {
             return Err("helix circle profile radius must be finite and nonzero");
         }
+        let length =
+            FiniteScalar::new(length).ok_or("helix circle profile length must be finite")?;
+        let radius =
+            FiniteScalar::new(radius).ok_or("helix circle profile radius must be finite")?;
         Ok(Self { length, radius })
     }
     /// Native profile length.
     #[must_use]
     pub const fn length(&self) -> f64 {
-        self.length
+        self.length.get()
     }
 
     /// Signed circular profile radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 }
 
@@ -5785,8 +6043,8 @@ pub enum HelixSurfaceProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixSurfaceConstructionWire")]
 pub struct HelixSurfaceConstruction {
-    angle_range: [f64; 2],
-    dimension_range: [f64; 2],
+    angle_range: FiniteVector<2>,
+    dimension_range: FiniteVector<2>,
     path: HelixPathConstruction,
     profile: HelixSurfaceProfile,
 }
@@ -5808,13 +6066,10 @@ impl HelixSurfaceConstruction {
         path: HelixPathConstruction,
         profile: HelixSurfaceProfile,
     ) -> Result<Self, &'static str> {
-        if !angle_range
-            .iter()
-            .chain(dimension_range.iter())
-            .all(|value| value.is_finite())
-        {
-            return Err("helix surface angle_range and dimension_range must be finite");
-        }
+        let angle_range =
+            FiniteVector::new(angle_range).ok_or("helix surface angle_range must be finite")?;
+        let dimension_range = FiniteVector::new(dimension_range)
+            .ok_or("helix surface dimension_range must be finite")?;
         Ok(Self {
             angle_range,
             dimension_range,
@@ -5822,8 +6077,33 @@ impl HelixSurfaceConstruction {
             profile,
         })
     }
+    /// Return the angle range.
+    #[must_use]
+    pub const fn angle_range(&self) -> &[f64; 2] {
+        self.angle_range.as_raw()
+    }
+
+    /// Return the dimension range.
+    #[must_use]
+    pub const fn dimension_range(&self) -> &[f64; 2] {
+        self.dimension_range.as_raw()
+    }
+
+    /// Return the path.
+    #[must_use]
+    pub const fn path(&self) -> &HelixPathConstruction {
+        &self.path
+    }
+
+    /// Return the profile.
+    #[must_use]
+    pub const fn profile(&self) -> &HelixSurfaceProfile {
+        &self.profile
+    }
+
     /// Borrow the payload parameters in constructor order.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(
         &self,
     ) -> (
@@ -5833,8 +6113,8 @@ impl HelixSurfaceConstruction {
         &HelixSurfaceProfile,
     ) {
         (
-            &self.angle_range,
-            &self.dimension_range,
+            self.angle_range.as_raw(),
+            self.dimension_range.as_raw(),
             &self.path,
             &self.profile,
         )
@@ -5953,12 +6233,12 @@ impl InlineTSplineSubtransform {
 pub enum TSplineSubtransform {
     /// Inline line-oriented T-spline program and companion values.
     Inline(InlineTSplineSubtransform),
-    /// Reference to an earlier subtype-table entry.
-    Reference {
+    /// Resolved reference to an earlier subtype-table entry.
+    Resolved {
         /// Native subtype-table index.
         index: SubtypeTableIndex,
-        /// Resolved shared program when the table target is available.
-        resolved: Option<Box<InlineTSplineSubtransform>>,
+        /// Resolved shared program.
+        transform: Box<InlineTSplineSubtransform>,
     },
 }
 
@@ -5987,9 +6267,10 @@ impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
                 separator,
                 values,
             } => InlineTSplineSubtransform::try_new(program, separator, values).map(Self::Inline),
-            TSplineSubtransformWire::Reference { index, resolved } => {
-                Ok(Self::Reference { index, resolved })
-            }
+            TSplineSubtransformWire::Reference { index, resolved } => Ok(Self::Resolved {
+                index,
+                transform: resolved.ok_or("T-spline subtransform is unresolved")?,
+            }),
         }
     }
 }
@@ -6001,15 +6282,14 @@ impl Serialize for TSplineSubtransform {
         enum Wire<'a> {
             Reference {
                 index: SubtypeTableIndex,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                resolved: Option<&'a InlineTSplineSubtransform>,
+                resolved: &'a InlineTSplineSubtransform,
             },
         }
         match self {
             Self::Inline(inline) => inline.serialize(serializer),
-            Self::Reference { index, resolved } => Wire::Reference {
+            Self::Resolved { index, transform } => Wire::Reference {
                 index: *index,
-                resolved: resolved.as_deref(),
+                resolved: transform,
             }
             .serialize(serializer),
         }
@@ -6017,12 +6297,12 @@ impl Serialize for TSplineSubtransform {
 }
 
 impl TSplineSubtransform {
-    /// Effective inline program when present or resolved.
+    /// Effective inline program, including resolved references.
     #[must_use]
-    pub fn inline(&self) -> Option<&InlineTSplineSubtransform> {
+    pub fn inline(&self) -> &InlineTSplineSubtransform {
         match self {
-            Self::Inline(inline) => Some(inline),
-            Self::Reference { resolved, .. } => resolved.as_deref(),
+            Self::Inline(inline) => inline,
+            Self::Resolved { transform, .. } => transform,
         }
     }
 }
@@ -6031,39 +6311,107 @@ impl TSplineSubtransform {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TSplineSurfaceConstruction {
     /// Ordered U and V native parameter intervals.
-    pub parameter_ranges: [[f64; 2]; 2],
+    parameter_ranges: [crate::topology::ParameterInterval; 2],
     /// Native T-spline type integer.
-    pub type_code: i64,
+    type_code: i64,
     /// Inline or referenced shared subtransform object.
-    pub subtransform: TSplineSubtransform,
+    subtransform: TSplineSubtransform,
     /// Native trailing integer.
-    pub trailing_value: i64,
+    trailing_value: i64,
     /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
-    pub discontinuity_flag: bool,
+    discontinuity_flag: bool,
     /// Revision-gated form fields; absent from the pre-revision layout. The
     /// revision layout stores the shared tail first, then four optional
     /// parameter values (`support_bounds`), the type code as an enum, the
     /// nested subtransform scope, and the trailing integer.
-    pub revision_form: Option<RevisionSurfaceForm>,
+    revision_form: Option<RevisionSurfaceForm>,
 }
 
 impl TSplineSurfaceConstruction {
+    /// Admit finite ordered ranges, finite discontinuities, and a resolved subtransform.
+    pub fn try_new(
+        parameter_ranges: [[f64; 2]; 2],
+        type_code: i64,
+        subtransform: TSplineSubtransform,
+        trailing_value: i64,
+        discontinuities: [Vec<f64>; 6],
+        discontinuity_flag: bool,
+        revision_form: Option<RevisionSurfaceForm>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let parameter_ranges = [
+            crate::topology::ParameterInterval::new(parameter_ranges[0])
+                .map_err(ProceduralGeometryError::Payload)?,
+            crate::topology::ParameterInterval::new(parameter_ranges[1])
+                .map_err(ProceduralGeometryError::Payload)?,
+        ];
+        if !discontinuities
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "T-spline discontinuities must be finite",
+            ));
+        }
+        Ok(Self {
+            parameter_ranges,
+            type_code,
+            subtransform,
+            trailing_value,
+            discontinuities,
+            discontinuity_flag,
+            revision_form,
+        })
+    }
+
+    /// Return ordered U and V intervals.
+    pub fn parameter_ranges(&self) -> [[f64; 2]; 2] {
+        self.parameter_ranges
+            .map(crate::topology::ParameterInterval::endpoints)
+    }
+
+    /// Return the native type code value.
+    pub const fn type_code(&self) -> i64 {
+        self.type_code
+    }
+
+    /// Return the native subtransform value.
+    pub const fn subtransform(&self) -> &TSplineSubtransform {
+        &self.subtransform
+    }
+
+    /// Return the native trailing integer.
+    pub const fn trailing_value(&self) -> i64 {
+        self.trailing_value
+    }
+
+    /// Return the native discontinuities value.
+    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the native discontinuity flag value.
+    pub const fn discontinuity_flag(&self) -> bool {
+        self.discontinuity_flag
+    }
+
+    /// Return the native revision form value.
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+        self.revision_form.as_ref()
+    }
+
     /// Parse the semantic index of the effective topology program.
     #[must_use]
-    pub fn program_graph(&self) -> Option<TSplineProgram> {
-        self.subtransform
-            .inline()
-            .map(|inline| TSplineProgram::parse(inline.program.as_str()))
+    pub fn program_graph(&self) -> TSplineProgram {
+        TSplineProgram::parse(self.subtransform.inline().program.as_str())
     }
 
     /// Parse the semantic index of the effective values program.
     #[must_use]
-    pub fn values_graph(&self) -> Option<TSplineProgram> {
-        self.subtransform
-            .inline()
-            .map(|inline| TSplineProgram::parse(inline.values.as_str()))
+    pub fn values_graph(&self) -> TSplineProgram {
+        TSplineProgram::parse(self.subtransform.inline().values.as_str())
     }
 }
 
@@ -6072,10 +6420,8 @@ struct TSplineSurfaceConstructionWriteWire<'a> {
     parameter_ranges: &'a [[f64; 2]; 2],
     type_code: i64,
     subtransform: &'a TSplineSubtransform,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    program_graph: Option<&'a TSplineProgram>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    values_graph: Option<&'a TSplineProgram>,
+    program_graph: &'a TSplineProgram,
+    values_graph: &'a TSplineProgram,
     trailing_value: i64,
     discontinuities: &'a [Vec<f64>; 6],
     discontinuity_flag: bool,
@@ -6108,11 +6454,11 @@ impl Serialize for TSplineSurfaceConstruction {
         let program_graph = self.program_graph();
         let values_graph = self.values_graph();
         TSplineSurfaceConstructionWriteWire {
-            parameter_ranges: &self.parameter_ranges,
+            parameter_ranges: &self.parameter_ranges(),
             type_code: self.type_code,
             subtransform: &self.subtransform,
-            program_graph: program_graph.as_ref(),
-            values_graph: values_graph.as_ref(),
+            program_graph: &program_graph,
+            values_graph: &values_graph,
             trailing_value: self.trailing_value,
             discontinuities: &self.discontinuities,
             discontinuity_flag: self.discontinuity_flag,
@@ -6128,19 +6474,20 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         D: serde::Deserializer<'de>,
     {
         let wire = TSplineSurfaceConstructionReadWire::deserialize(deserializer)?;
-        let construction = Self {
-            parameter_ranges: wire.parameter_ranges,
-            type_code: wire.type_code,
-            subtransform: wire.subtransform,
-            trailing_value: wire.trailing_value,
-            discontinuities: wire.discontinuities,
-            discontinuity_flag: wire.discontinuity_flag,
-            revision_form: wire.revision_form,
-        };
+        let construction = Self::try_new(
+            wire.parameter_ranges,
+            wire.type_code,
+            wire.subtransform,
+            wire.trailing_value,
+            wire.discontinuities,
+            wire.discontinuity_flag,
+            wire.revision_form,
+        )
+        .map_err(serde::de::Error::custom)?;
         if wire
             .program_graph
             .as_ref()
-            .is_some_and(|graph| Some(graph) != construction.program_graph().as_ref())
+            .is_some_and(|graph| *graph != construction.program_graph())
         {
             return Err(serde::de::Error::custom(
                 "program_graph does not match the T-spline program",
@@ -6149,7 +6496,7 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         if wire
             .values_graph
             .as_ref()
-            .is_some_and(|graph| Some(graph) != construction.values_graph().as_ref())
+            .is_some_and(|graph| *graph != construction.values_graph())
         {
             return Err(serde::de::Error::custom(
                 "values_graph does not match the T-spline values program",
@@ -10670,7 +11017,7 @@ impl IntcurveSupportContext {
 pub struct TolerantIntersectionConstruction {
     supports: [SurfaceId; 2],
     endpoints: [Point3; 2],
-    tolerance: f64,
+    tolerance: NonNegativeScalar,
 }
 
 #[derive(Deserialize)]
@@ -10704,8 +11051,8 @@ impl TolerantIntersectionConstruction {
         {
             return Err("tolerant intersection endpoints must be finite");
         }
-        FitTolerance::try_new(tolerance)
-            .map_err(|_| "tolerant intersection tolerance must be finite and non-negative")?;
+        let tolerance = NonNegativeScalar::new(tolerance)
+            .ok_or("tolerant intersection tolerance must be finite and non-negative")?;
         Ok(Self {
             supports,
             endpoints,
@@ -10713,10 +11060,29 @@ impl TolerantIntersectionConstruction {
         })
     }
 
+    /// Return the supports.
+    #[must_use]
+    pub const fn supports(&self) -> &[SurfaceId; 2] {
+        &self.supports
+    }
+
+    /// Return the endpoints.
+    #[must_use]
+    pub const fn endpoints(&self) -> &[Point3; 2] {
+        &self.endpoints
+    }
+
+    /// Return the tolerance.
+    #[must_use]
+    pub const fn tolerance(&self) -> f64 {
+        self.tolerance.get()
+    }
+
     /// Support surfaces, endpoint witnesses, and maximum admitted deviation.
     #[must_use]
+    #[deprecated(note = "use the named parameter accessors")]
     pub const fn parts(&self) -> (&[SurfaceId; 2], &[Point3; 2], &f64) {
-        (&self.supports, &self.endpoints, &self.tolerance)
+        (&self.supports, &self.endpoints, self.tolerance.as_raw())
     }
 }
 
@@ -11408,7 +11774,7 @@ pub enum SilhouetteKind {
     /// Draft/taper silhouette with an explicit factor.
     Taper {
         /// Native unscaled draft factor.
-        draft_factor: f64,
+        draft_factor: crate::scalar::FiniteReal,
     },
 }
 
@@ -11667,45 +12033,9 @@ pub enum ProceduralCurveDefinition {
         family: SurfaceCurveFamily,
     },
     /// Silhouette of a cast surface in a light direction.
-    Silhouette {
-        /// Shared first two support pairs.
-        context: IntcurveSupportContext,
-        /// Standard, parametric, or taper silhouette semantics.
-        silhouette: SilhouetteKind,
-        /// Surface whose silhouette is constructed.
-        cast_surface: SurfaceId,
-        /// Native model-space light direction.
-        light_direction: Vector3,
-    },
+    Silhouette(curve_payloads::SilhouetteCurveConstruction),
     /// Curve offset relative to a surface parameterization.
-    SurfaceOffset {
-        /// Shared first two support pairs.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Native U interval on the base surface.
-        base_u_range: [f64; 2],
-        /// Native V interval on the base surface.
-        base_v_range: [f64; 2],
-        /// Embedded base curve.
-        base: CurveId,
-        /// Native interval on `base`.
-        base_range: [f64; 2],
-        /// Optional parameter endpoints following the embedded base curve in
-        /// the cache-first layout.
-        #[serde(default)]
-        base_endpoints: [Option<f64>; 2],
-        /// Cache-first shared-context fields; absent from the context-first
-        /// layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_first: Option<CacheFirstCurveForm>,
-        /// Signed model-space offset distance.
-        distance: f64,
-        /// Native unscaled parameter shift.
-        shift: f64,
-        /// Native unscaled parameter scale.
-        scale: f64,
-    },
+    SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     /// Blend spring guide between two support sides.
     Spring {
         /// Structurally selected context-first or cache-first representation.
@@ -11716,18 +12046,7 @@ pub enum ProceduralCurveDefinition {
         direction: i64,
     },
     /// Deformation of an embedded source curve.
-    Deformable {
-        /// Shared cache-first support context.
-        context: IntcurveSupportContext,
-        /// Cache-first serializer fields surrounding the solved curve cache.
-        cache_first: CacheFirstCurveForm,
-        /// Curve being deformed or its unresolved native reference.
-        source: DeformableCurveSource,
-        /// Optional native bounds following the source curve.
-        source_parameter_range: [Option<f64>; 2],
-        /// Discriminator-specific deformation payload.
-        data: DeformableCurveData,
-    },
+    Deformable(curve_payloads::DeformableCurveConstruction),
     /// Projection of a source curve onto a support surface.
     Projection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
@@ -11740,63 +12059,15 @@ pub enum ProceduralCurveDefinition {
         tail: ProjectionTail,
     },
     /// Offset from a source curve.
-    Offset {
-        /// Curve this curve is offset from.
-        source: CurveId,
-        /// Signed offset distance, in document length units.
-        distance: f64,
-        /// Exclusive plane-normal or explicit-direction carrier.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
-        side: OffsetSide,
-        /// Retained parameter range, with its distance law when variable.
-        #[serde(flatten, with = "curve_offset_range_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CurveOffsetRangeWire"))]
-        range: Option<CurveOffsetRange>,
-    },
+    Offset(curve_payloads::OffsetCurveConstruction),
     /// Free-space 3D offset using a reference direction.
-    SpatialOffset {
-        /// Curve being offset.
-        source: CurveId,
-        /// Signed offset distance.
-        distance: f64,
-        /// Reference direction controlling the offset frame.
-        reference_direction: Vector3,
-        /// Whether the source classifies the result as self-intersecting.
-        self_intersect: Option<bool>,
-    },
+    SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
     /// Intersection of two surfaces after applying independent signed offsets.
-    TwoSidedOffset {
-        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Signed offset distance for each support side, in document length units.
-        offsets: [f64; 2],
-    },
+    TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
     /// Free-space vector offset of a source curve over a parameter interval.
-    VectorOffset {
-        /// Curve being offset.
-        source: CurveId,
-        /// Native parameter interval on the source curve.
-        parameter_range: [f64; 2],
-        /// Model-space offset vector.
-        offset: Vector3,
-        /// Integer codes attached to the fixed `source` and `offset` roles.
-        #[serde(flatten, with = "vector_offset_roles_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "VectorOffsetRolesWire"))]
-        roles: VectorOffsetRoles,
-    },
+    VectorOffset(curve_payloads::VectorOffsetCurveConstruction),
     /// A parameter sub-range of a parent curve.
-    Subset {
-        /// Parent curve being restricted.
-        source: CurveId,
-        /// Native parameter interval retained from the parent.
-        parameter_range: [f64; 2],
-        /// Whether the subset follows increasing parent parameters.
-        #[serde(default = "default_true")]
-        sense: bool,
-    },
+    Subset(curve_payloads::SubsetCurveConstruction),
     /// Affine replica of a curve carrier, retaining the parent curve's
     /// parameter range and parameterization.
     Replica {
@@ -11859,77 +12130,25 @@ enum ProceduralCurveDefinitionWire {
         #[serde(flatten)]
         family: SurfaceCurveFamily,
     },
-    Silhouette {
-        context: IntcurveSupportContext,
-        silhouette: SilhouetteKind,
-        cast_surface: SurfaceId,
-        light_direction: Vector3,
-    },
-    SurfaceOffset {
-        context: IntcurveSupportContext,
-        discontinuity_flag: bool,
-        base_u_range: [f64; 2],
-        base_v_range: [f64; 2],
-        base: CurveId,
-        base_range: [f64; 2],
-        #[serde(default)]
-        base_endpoints: [Option<f64>; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_first: Option<CacheFirstCurveForm>,
-        distance: f64,
-        shift: f64,
-        scale: f64,
-    },
+    Silhouette(curve_payloads::SilhouetteCurveConstruction),
+    SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     Spring {
         #[serde(flatten, with = "spring_layout_wire")]
         layout: SpringLayout,
         direction: i64,
     },
-    Deformable {
-        context: IntcurveSupportContext,
-        cache_first: CacheFirstCurveForm,
-        source: DeformableCurveSource,
-        source_parameter_range: [Option<f64>; 2],
-        data: DeformableCurveData,
-    },
+    Deformable(curve_payloads::DeformableCurveConstruction),
     Projection {
         context: IntcurveSupportContext,
         discontinuity_flag: bool,
         source: CurveId,
         tail: ProjectionTail,
     },
-    Offset {
-        source: CurveId,
-        distance: f64,
-        #[serde(flatten)]
-        side: OffsetSide,
-        #[serde(flatten, with = "curve_offset_range_wire")]
-        range: Option<CurveOffsetRange>,
-    },
-    SpatialOffset {
-        source: CurveId,
-        distance: f64,
-        reference_direction: Vector3,
-        self_intersect: Option<bool>,
-    },
-    TwoSidedOffset {
-        context: IntcurveSupportContext,
-        discontinuity_flag: bool,
-        offsets: [f64; 2],
-    },
-    VectorOffset {
-        source: CurveId,
-        parameter_range: [f64; 2],
-        offset: Vector3,
-        #[serde(flatten, with = "vector_offset_roles_wire")]
-        roles: VectorOffsetRoles,
-    },
-    Subset {
-        source: CurveId,
-        parameter_range: [f64; 2],
-        #[serde(default = "default_true")]
-        sense: bool,
-    },
+    Offset(curve_payloads::OffsetCurveConstruction),
+    SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
+    TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
+    VectorOffset(curve_payloads::VectorOffsetCurveConstruction),
+    Subset(curve_payloads::SubsetCurveConstruction),
     Replica {
         source: CurveId,
         transform: Transform,
@@ -12004,306 +12223,101 @@ mod vector_offset_roles_wire {
     }
 }
 
-const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
-const EPS_OFFSET_PLANE_NORMAL: f64 = 1.0e-10;
-
 impl ProceduralCurveDefinition {
     fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
-        if let ProceduralCurveDefinition::Offset {
-            distance,
-            side,
-            range,
-            ..
-        } = self
-        {
-            let side_valid = match side {
-                crate::geometry::OffsetSide::PlaneNormal(normal) => {
-                    normal.x.is_finite()
-                        && normal.y.is_finite()
-                        && normal.z.is_finite()
-                        && (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
-                }
-                crate::geometry::OffsetSide::Direction { direction, .. } => {
-                    direction.x.is_finite()
-                        && direction.y.is_finite()
-                        && direction.z.is_finite()
-                        && direction.norm() > 0.0
-                }
-            };
-            let range_valid = range.as_ref().is_none_or(|range| {
-                let parameter_range = match range {
-                    crate::geometry::CurveOffsetRange::Uniform { parameter_range }
-                    | crate::geometry::CurveOffsetRange::Variable {
-                        parameter_range, ..
-                    } => parameter_range,
-                };
-                parameter_range.iter().all(|value| value.is_finite())
-                    && parameter_range[0] < parameter_range[1]
-            });
-            let law_valid = match range {
-                Some(crate::geometry::CurveOffsetRange::Variable { distance_law, .. }) => {
-                    match distance_law {
-                        crate::geometry::CurveOffsetDistanceLaw::Linear {
-                            distances,
-                            control_range,
-                            ..
-                        } => {
-                            distances.iter().all(|value| value.is_finite())
-                                && control_range.iter().all(|value| value.is_finite())
-                                && control_range[0] < control_range[1]
-                        }
-                        crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                            function_parameter_offset,
-                            function_parameter_scale,
-                            ..
-                        } => {
-                            function_parameter_offset.is_finite()
-                                && function_parameter_scale.is_finite()
-                                && *function_parameter_scale != 0.0
-                        }
-                    }
-                }
-                _ => true,
-            };
-            if !distance.is_finite() || !side_valid || !range_valid || !law_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "curve offset distance, side, range, or law is invalid",
-                ));
-            }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::SpatialOffset {
-            distance,
-            reference_direction,
-            ..
-        } = self
-        {
-            if !distance.is_finite()
-                || ![
-                    reference_direction.x,
-                    reference_direction.y,
-                    reference_direction.z,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
-                || (reference_direction.norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "invalid spatial curve offset",
-                ));
-            }
-        }
-        if let ProceduralCurveDefinition::Deformable {
-            source_parameter_range,
-            data,
-            ..
-        } = self
-        {
-            let finite_vector = |vector: &crate::math::Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let payload_finite = match data {
-                crate::geometry::DeformableCurveData::VectorField {
-                    vectors,
-                    parameter_pairs,
-                } => {
-                    vectors.iter().all(finite_vector)
-                        && parameter_pairs
-                            .iter()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                }
-                crate::geometry::DeformableCurveData::Mode3 {
-                    leading_vectors,
-                    leading_parameter,
-                    trailing_point,
-                    trailing_vectors,
-                    frame_parameter,
-                    parameters,
-                    trailing_parameter,
-                    ..
-                } => {
-                    leading_vectors.iter().all(finite_vector)
-                        && leading_parameter.is_finite()
-                        && [trailing_point.x, trailing_point.y, trailing_point.z]
-                            .into_iter()
-                            .all(f64::is_finite)
-                        && trailing_vectors.iter().all(finite_vector)
-                        && frame_parameter.is_finite()
-                        && parameters.iter().all(|value| value.is_finite())
-                        && trailing_parameter.is_finite()
-                }
-            };
-            let range_valid = source_parameter_range
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite());
-            if !payload_finite || !range_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "deformable curve payload is not finite",
-                ));
-            }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::Spring { layout, .. } = self {
-            let context = layout.support_context();
-            let inline_ranges_finite = match layout {
-                crate::geometry::SpringLayout::ContextFirst {
-                    supports,
-                    first_pcurve,
-                    ..
-                } => {
-                    supports.iter().all(|support| match support {
-                        crate::geometry::SpringSupport::Surface(_) => true,
-                        crate::geometry::SpringSupport::Ranges(ranges) => {
-                            ranges.iter().all(|range| {
+        match self {
+            Self::Offset(..) => Ok(()),
+            Self::SpatialOffset(..) => Ok(()),
+            Self::Deformable(..) => Ok(()),
+            Self::Spring { layout, .. } => {
+                let context = layout.support_context();
+                let inline_ranges_finite = match layout {
+                    crate::geometry::SpringLayout::ContextFirst {
+                        supports,
+                        first_pcurve,
+                        ..
+                    } => {
+                        supports.iter().all(|support| match support {
+                            crate::geometry::SpringSupport::Surface(_) => true,
+                            crate::geometry::SpringSupport::Ranges(ranges) => {
+                                ranges.iter().all(|range| {
+                                    range.iter().all(|value| value.is_finite())
+                                        && range[0] <= range[1]
+                                })
+                            }
+                        }) && match first_pcurve {
+                            crate::geometry::SpringPcurve::Pcurve(_) => true,
+                            crate::geometry::SpringPcurve::Range(range) => {
                                 range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                            })
-                        }
-                    }) && match first_pcurve {
-                        crate::geometry::SpringPcurve::Pcurve(_) => true,
-                        crate::geometry::SpringPcurve::Range(range) => {
-                            range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                            }
                         }
                     }
+                    crate::geometry::SpringLayout::CacheFirst { .. } => true,
+                };
+                if context.is_err() || !inline_ranges_finite {
+                    return Err(ProceduralGeometryError::Payload(
+                        "spring context or null-support ranges are invalid",
+                    ));
                 }
-                crate::geometry::SpringLayout::CacheFirst { .. } => true,
-            };
-            if context.is_err() || !inline_ranges_finite {
-                return Err(ProceduralGeometryError::Payload(
-                    "spring context or null-support ranges are invalid",
-                ));
+                Ok(())
             }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::SurfaceOffset {
-            base_u_range,
-            base_v_range,
-            base_range,
-            distance,
-            shift,
-            scale,
-            ..
-        } = self
-        {
-            let ranges = [base_u_range, base_v_range, base_range];
-            if ranges
-                .iter()
-                .any(|range| !range.iter().all(|value| value.is_finite()) || range[0] > range[1])
-                || !distance.is_finite()
-                || !shift.is_finite()
-                || !scale.is_finite()
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "surface-offset fields are not finite and ordered",
-                ));
-            }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::Silhouette {
-            silhouette,
-            light_direction,
-            ..
-        } = self
-        {
-            let draft_finite = match silhouette {
-                crate::geometry::SilhouetteKind::Taper { draft_factor } => draft_factor.is_finite(),
-                _ => true,
-            };
-            if !light_direction.x.is_finite()
-                || !light_direction.y.is_finite()
-                || !light_direction.z.is_finite()
-                || light_direction.norm() <= f64::EPSILON
-                || !draft_finite
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "silhouette fields are not finite or the light direction is degenerate",
-                ));
-            }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } = self {
-            if third
-                .pcurve
-                .as_ref()
-                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-                && context.parameter_range()[0] == context.parameter_range()[1]
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "three-surface intersection context is not finite and ordered",
-                ));
-            }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::Projection { tail, .. } = self {
-            let tail_finite = match tail {
-                crate::geometry::ProjectionTail::EarlyClose { .. } => true,
-                crate::geometry::ProjectionTail::Ranged {
-                    parameter_range, ..
-                } => {
-                    parameter_range.iter().all(|value| value.is_finite())
-                        && parameter_range[0] <= parameter_range[1]
+            Self::SurfaceOffset(..) => Ok(()),
+            Self::Silhouette(..) => Ok(()),
+            Self::ThreeSurfaceIntersection { context, third, .. } => {
+                if third
+                    .pcurve
+                    .as_ref()
+                    .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+                    && context.parameter_range()[0] == context.parameter_range()[1]
+                {
+                    return Err(ProceduralGeometryError::Payload(
+                        "three-surface intersection context is not finite and ordered",
+                    ));
                 }
-            };
-            if !tail_finite {
-                return Err(ProceduralGeometryError::Payload(
-                    "projection fields are not finite and ordered",
-                ));
+                Ok(())
             }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::TwoSidedOffset { offsets, .. } = self {
-            let finite = offsets.iter().all(|value| value.is_finite());
-            if !finite {
-                return Err(ProceduralGeometryError::Payload(
-                    "two-sided offset fields are not finite and ordered",
-                ));
+            Self::Projection { tail, .. } => {
+                let tail_finite = match tail {
+                    crate::geometry::ProjectionTail::EarlyClose { .. } => true,
+                    crate::geometry::ProjectionTail::Ranged {
+                        parameter_range, ..
+                    } => {
+                        parameter_range.iter().all(|value| value.is_finite())
+                            && parameter_range[0] <= parameter_range[1]
+                    }
+                };
+                if !tail_finite {
+                    return Err(ProceduralGeometryError::Payload(
+                        "projection fields are not finite and ordered",
+                    ));
+                }
+                Ok(())
             }
-            return Ok(());
+            Self::TwoSidedOffset(..) => Ok(()),
+            Self::Subset(..) => Ok(()),
+            Self::VectorOffset(..) => Ok(()),
+            Self::Exact => Ok(()),
+            Self::Law { .. } => Ok(()),
+            Self::Compound(..) => Ok(()),
+            Self::Helix(..) => Ok(()),
+            Self::Intersection { .. } => Ok(()),
+            Self::TolerantIntersection { .. } => Ok(()),
+            Self::SurfaceCurve { .. } => Ok(()),
+            Self::Replica { .. } => Ok(()),
+            Self::BlendSpine { .. } => Ok(()),
+            Self::Unknown { .. } => Ok(()),
         }
-        if let ProceduralCurveDefinition::Subset {
-            parameter_range, ..
-        } = self
-        {
-            if !parameter_range.iter().all(|value| value.is_finite())
-                || parameter_range[0] > parameter_range[1]
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "subset-curve range is not finite and ordered",
-                ));
-            }
-            return Ok(());
-        }
-        if let ProceduralCurveDefinition::VectorOffset {
-            parameter_range,
-            offset,
-            ..
-        } = self
-        {
-            if !parameter_range.iter().all(|value| value.is_finite())
-                || parameter_range[0] > parameter_range[1]
-                || !offset.x.is_finite()
-                || !offset.y.is_finite()
-                || !offset.z.is_finite()
-            {
-                return Err(ProceduralGeometryError::Payload(
-                    "vector-offset fields are not finite and ordered",
-                ));
-            }
-            return Ok(());
-        }
-        Ok(())
     }
 
     fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache(),
-            Self::SurfaceOffset {
-                cache_first: Some(form),
-                ..
-            } => Some(&form.cache),
+            Self::SurfaceOffset(payload) => payload.cache_first().as_ref().map(|form| &form.cache),
             Self::Spring { layout, .. } => layout.cache_first().map(|form| &form.cache),
-            Self::Deformable { cache_first, .. } => Some(&cache_first.cache),
+            Self::Deformable(definition_payload) => {
+                let cache_first = definition_payload.cache_first();
+                Some(&cache_first.cache)
+            }
             _ => None,
         }
     }
@@ -12313,12 +12327,9 @@ impl ProceduralCurveDefinition {
     ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache_mut(),
-            Self::SurfaceOffset {
-                cache_first: Some(form),
-                ..
-            } => Some(&mut form.cache),
+            Self::SurfaceOffset(payload) => payload.revision_cache_mut(),
             Self::Spring { layout, .. } => layout.cache_first_mut().map(|form| &mut form.cache),
-            Self::Deformable { cache_first, .. } => Some(&mut cache_first.cache),
+            Self::Deformable(payload) => Some(payload.revision_cache_mut()),
             _ => None,
         }
     }
@@ -13216,42 +13227,42 @@ impl PcurveGeometry {
         let isotropic = u_scale == v_scale;
         let scaled = match self {
             Self::Line(line) => Self::Line(LinePcurve::try_new(
-                scale(line.origin),
-                scale(line.direction),
+                scale(*line.origin()),
+                scale(*line.direction()),
             )?),
             Self::Circle(circle) if isotropic => Self::Circle(CirclePcurve::try_new(
-                scale(circle.center),
-                circle.x_axis,
-                circle.y_axis,
-                circle.radius * u_scale,
+                scale(*circle.center()),
+                *circle.x_axis(),
+                *circle.y_axis(),
+                circle.radius() * u_scale,
             )?),
             Self::Circle(circle) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(circle.center),
+                scale(*circle.center()),
                 scale(Point2::new(
-                    circle.radius * circle.x_axis.u,
-                    circle.radius * circle.x_axis.v,
+                    circle.radius() * circle.x_axis().u,
+                    circle.radius() * circle.x_axis().v,
                 )),
                 scale(Point2::new(
-                    circle.radius * circle.y_axis.u,
-                    circle.radius * circle.y_axis.v,
+                    circle.radius() * circle.y_axis().u,
+                    circle.radius() * circle.y_axis().v,
                 )),
             )?),
             Self::Ellipse(ellipse) if isotropic => Self::Ellipse(EllipsePcurve::try_new(
-                scale(ellipse.center),
-                ellipse.x_axis,
-                ellipse.y_axis,
-                ellipse.major_radius * u_scale,
-                ellipse.minor_radius * u_scale,
+                scale(*ellipse.center()),
+                *ellipse.x_axis(),
+                *ellipse.y_axis(),
+                ellipse.major_radius() * u_scale,
+                ellipse.minor_radius() * u_scale,
             )?),
             Self::Ellipse(ellipse) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(ellipse.center),
+                scale(*ellipse.center()),
                 scale(Point2::new(
-                    ellipse.major_radius * ellipse.x_axis.u,
-                    ellipse.major_radius * ellipse.x_axis.v,
+                    ellipse.major_radius() * ellipse.x_axis().u,
+                    ellipse.major_radius() * ellipse.x_axis().v,
                 )),
                 scale(Point2::new(
-                    ellipse.minor_radius * ellipse.y_axis.u,
-                    ellipse.minor_radius * ellipse.y_axis.v,
+                    ellipse.minor_radius() * ellipse.y_axis().u,
+                    ellipse.minor_radius() * ellipse.y_axis().v,
                 )),
             )?),
             Self::Parabola(parabola) => {
@@ -13259,39 +13270,39 @@ impl PcurveGeometry {
                     return Err("parabola coordinate scaling must be isotropic".into());
                 }
                 Self::Parabola(ParabolaPcurve::try_new(
-                    scale(parabola.vertex),
-                    parabola.x_axis,
-                    parabola.y_axis,
-                    parabola.focal_distance * u_scale,
+                    scale(*parabola.vertex()),
+                    *parabola.x_axis(),
+                    *parabola.y_axis(),
+                    parabola.focal_distance() * u_scale,
                 )?)
             }
             Self::Hyperbola(hyperbola) if isotropic => Self::Hyperbola(HyperbolaPcurve::try_new(
-                scale(hyperbola.center),
-                hyperbola.x_axis,
-                hyperbola.y_axis,
-                hyperbola.major_radius * u_scale,
-                hyperbola.minor_radius * u_scale,
+                scale(*hyperbola.center()),
+                *hyperbola.x_axis(),
+                *hyperbola.y_axis(),
+                hyperbola.major_radius() * u_scale,
+                hyperbola.minor_radius() * u_scale,
             )?),
             Self::Hyperbola(hyperbola) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(hyperbola.center),
+                scale(*hyperbola.center()),
                 scale(Point2::new(
-                    hyperbola.major_radius * hyperbola.x_axis.u,
-                    hyperbola.major_radius * hyperbola.x_axis.v,
+                    hyperbola.major_radius() * hyperbola.x_axis().u,
+                    hyperbola.major_radius() * hyperbola.x_axis().v,
                 )),
                 scale(Point2::new(
-                    hyperbola.minor_radius * hyperbola.y_axis.u,
-                    hyperbola.minor_radius * hyperbola.y_axis.v,
+                    hyperbola.minor_radius() * hyperbola.y_axis().u,
+                    hyperbola.minor_radius() * hyperbola.y_axis().v,
                 )),
             )?),
             Self::Harmonic(harmonic) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(harmonic.center),
-                scale(harmonic.cosine),
-                scale(harmonic.sine),
+                scale(*harmonic.center()),
+                scale(*harmonic.cosine()),
+                scale(*harmonic.sine()),
             )?),
             Self::Hyperbolic(hyperbolic) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(hyperbolic.center),
-                scale(hyperbolic.cosine),
-                scale(hyperbolic.sine),
+                scale(*hyperbolic.center()),
+                scale(*hyperbolic.cosine()),
+                scale(*hyperbolic.sine()),
             )?),
             Self::Nurbs { nurbs } => {
                 let mut nurbs = nurbs.clone();
@@ -13319,7 +13330,7 @@ impl PcurveGeometry {
                 }
                 let mut basis = offset.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Offset(OffsetPcurve::try_new(offset.distance * u_scale, basis)?)
+                Self::Offset(OffsetPcurve::try_new(offset.distance() * u_scale, basis)?)
             }
             Self::Transformed { basis, transform } => {
                 if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0
@@ -13359,7 +13370,8 @@ impl PcurveGeometry {
     pub fn line_parameters(&self) -> Option<(Point2, Point2)> {
         match self {
             Self::Line(line_pcurve) => {
-                let (origin, direction) = line_pcurve.parts();
+                let origin = line_pcurve.origin();
+                let direction = line_pcurve.direction();
                 Some((*origin, *direction))
             }
             Self::Transformed { basis, transform } => {
@@ -13370,7 +13382,7 @@ impl PcurveGeometry {
                 ))
             }
             Self::Trimmed(trimmed_pcurve) => {
-                let (_, _, basis) = trimmed_pcurve.parts();
+                let basis = trimmed_pcurve.basis();
                 basis.line_parameters()
             }
             Self::PolarHarmonic(_) => None,

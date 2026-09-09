@@ -11,6 +11,10 @@ use crate::ids::{
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::{JointId, NonEmptyString};
+use crate::scalar::{
+    Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
+    NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
+};
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -32,6 +36,9 @@ macro_rules! checked_feature_geometry {
 
             /// Return the geometric value.
             pub const fn get(self) -> $raw { self.0 }
+
+            /// Borrow the geometric value.
+            pub const fn as_raw(&self) -> &$raw { &self.0 }
         }
 
         impl PartialEq<$raw> for $name {
@@ -75,6 +82,14 @@ checked_feature_geometry!(
     [value.x, value.y, value.z].into_iter().all(f64::is_finite),
     "FiniteVector3 components must be finite"
 );
+impl FiniteVector3 {
+    /// Reverse all components.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+}
+
 checked_feature_geometry!(
     /// A direction with finite nonzero norm.
     FeatureDirection3, Vector3, value,
@@ -1323,168 +1338,15 @@ pub enum ParameterValue {
     String(String),
 }
 
-fn deserialize_parameter_real<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<FiniteReal, D::Error> {
-    FiniteReal::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format!("value: {error}")))
-}
+crate::units::named_field!(deserialize_parameter_real, FiniteReal, "value");
 
 fn deserialize_dependencies<'de, D, T>(deserializer: D) -> Result<DistinctMembers<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de> + Eq + std::hash::Hash,
 {
-    DistinctMembers::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format!("dependencies: {error}")))
+    crate::units::deserialize_named(deserializer, "dependencies")
 }
-
-macro_rules! checked_feature_scalar {
-    ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
-        $(#[$attribute])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
-        pub struct $name(f64);
-
-        impl $name {
-            /// Admits a value within the scalar's domain.
-            pub fn new($value: f64) -> Option<Self> {
-                ($value.is_finite() && $condition).then_some(Self($value))
-            }
-
-            /// Returns the scalar value.
-            pub const fn get(self) -> f64 {
-                self.0
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where D: serde::Deserializer<'de>,
-            {
-                Self::new(f64::deserialize(deserializer)?)
-                    .ok_or_else(|| serde::de::Error::custom($error))
-            }
-        }
-
-        impl TryFrom<f64> for $name {
-            type Error = &'static str;
-
-            fn try_from(value: f64) -> Result<Self, Self::Error> {
-                Self::new(value).ok_or($error)
-            }
-        }
-
-        impl From<$name> for f64 {
-            fn from(value: $name) -> Self { value.get() }
-        }
-    };
-}
-
-checked_feature_scalar!(
-    /// A finite length in canonical millimeters.
-    Length, value, true, "Length must be finite"
-);
-checked_feature_scalar!(
-    /// A finite signed angle in canonical radians.
-    #[derive(Default)]
-    Angle, value, true, "Angle must be finite"
-);
-checked_feature_scalar!(
-    /// A positive finite length in canonical millimeters.
-    PositiveLength, value, value > 0.0, "PositiveLength must be positive and finite"
-);
-checked_feature_scalar!(
-    /// A finite nonzero signed length in canonical millimeters.
-    NonZeroLength, value, value != 0.0, "NonZeroLength must be finite and nonzero"
-);
-checked_feature_scalar!(
-    /// A nonnegative finite length in canonical millimeters.
-    NonNegativeLength, value, value >= 0.0, "NonNegativeLength must be nonnegative and finite"
-);
-checked_feature_scalar!(
-    /// A finite angle strictly between negative and positive half-pi radians.
-    SlopeAngle, value, value.abs() < std::f64::consts::FRAC_PI_2,
-    "SlopeAngle must be finite and strictly between -pi/2 and pi/2"
-);
-checked_feature_scalar!(
-    /// A finite angle strictly between zero and pi radians.
-    InteriorAngle, value, value > 0.0 && value < std::f64::consts::PI,
-    "InteriorAngle must be finite and strictly between zero and pi"
-);
-checked_feature_scalar!(
-    /// A positive finite angle in canonical radians.
-    PositiveAngle, value, value > 0.0, "PositiveAngle must be positive and finite"
-);
-checked_feature_scalar!(
-    /// A finite dimensionless scalar.
-    FiniteReal, value, true, "FiniteReal must be finite"
-);
-checked_feature_scalar!(
-    /// A positive finite dimensionless scalar.
-    PositiveReal, value, value > 0.0, "PositiveReal must be positive and finite"
-);
-checked_feature_scalar!(
-    /// A finite nonzero signed dimensionless scalar.
-    NonZeroReal, value, value != 0.0, "NonZeroReal must be finite and nonzero"
-);
-checked_feature_scalar!(
-    /// A finite fraction in the closed interval from zero to one.
-    Fraction, value, (0.0..=1.0).contains(&value), "Fraction must be between zero and one"
-);
-
-impl FiniteReal {
-    /// Unit scalar value.
-    pub const ONE: Self = Self(1.0);
-}
-
-impl Length {
-    /// Zero in canonical units.
-    pub const ZERO: Self = Self(0.0);
-}
-
-impl Angle {
-    /// One full turn in radians.
-    pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
-    /// Zero in canonical units.
-    pub const ZERO: Self = Self(0.0);
-}
-
-impl SlopeAngle {
-    /// Zero in canonical radians.
-    pub const ZERO: Self = Self(0.0);
-}
-
-impl PositiveAngle {
-    /// One full turn in radians.
-    pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
-}
-
-macro_rules! feature_scalar_conversion {
-    ($from:ident => $to:ident, $error:literal) => {
-        impl From<$from> for $to {
-            fn from(value: $from) -> Self {
-                Self(value.get())
-            }
-        }
-
-        impl TryFrom<$to> for $from {
-            type Error = &'static str;
-
-            fn try_from(value: $to) -> Result<Self, Self::Error> {
-                Self::new(value.get()).ok_or($error)
-            }
-        }
-    };
-}
-
-feature_scalar_conversion!(PositiveLength => Length, "length must be positive");
-feature_scalar_conversion!(NonZeroLength => Length, "length must be nonzero");
-feature_scalar_conversion!(NonNegativeLength => Length, "length must be nonnegative");
-feature_scalar_conversion!(SlopeAngle => Angle, "angle must be strictly between -pi/2 and pi/2");
-feature_scalar_conversion!(InteriorAngle => Angle, "angle must be strictly between zero and pi");
-feature_scalar_conversion!(PositiveAngle => Angle, "angle must be positive");
 
 /// A polygon side count of at least three.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -7179,7 +7041,7 @@ mod helix_shape_wire {
         D: Deserializer<'de>,
     {
         let wire = Wire::deserialize(deserializer)?;
-        match (wire.pitch.0 == 0.0, wire.radial_growth, wire.cone_angle) {
+        match (wire.pitch.get() == 0.0, wire.radial_growth, wire.cone_angle) {
             (false, None, None) => Ok(HelixShape::Cylindrical {
                 pitch: NonZeroLength::new(wire.pitch.get()).ok_or_else(|| {
                     serde::de::Error::custom("helix pitch field must be finite and nonzero")

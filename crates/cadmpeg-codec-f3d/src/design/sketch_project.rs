@@ -144,7 +144,7 @@ pub fn project_sketch_design(
     Vec<cadmpeg_ir::sketches::Sketch>,
     Vec<cadmpeg_ir::sketches::SketchEntity>,
 ) {
-    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
     let text_frame_curves = text_frame_curve_records(relations, curves, texts);
@@ -387,7 +387,7 @@ pub fn project_spatial_sketch_design(
     ),
     cadmpeg_core::CodecError,
 > {
-    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };

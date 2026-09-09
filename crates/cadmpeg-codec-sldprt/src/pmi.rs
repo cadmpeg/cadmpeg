@@ -330,9 +330,12 @@ pub(crate) fn apply_to_parameters(
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{
-        DesignParameter, DimensionDisplay, Length, ParameterId, ParameterPmi, ParameterValue,
-        PmiDimensionSubtype,
+    use cadmpeg_ir::{
+        features::{
+            DesignParameter, DimensionDisplay, ParameterId, ParameterPmi, ParameterValue,
+            PmiDimensionSubtype,
+        },
+        scalar::Length,
     };
 
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
@@ -374,7 +377,7 @@ pub(crate) fn apply_to_parameters(
                 record.value.to_string(),
                 None,
                 Some(ParameterValue::Angle(
-                    cadmpeg_ir::features::Angle::new(record.value).ok_or_else(|| {
+                    cadmpeg_ir::scalar::Angle::new(record.value).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(
                             "SolidWorks projected angle must be finite".into(),
                         )

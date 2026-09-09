@@ -290,7 +290,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
     let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = &carrier.geometry else {
         panic!("expected the ratio-1 ellipse to decode as a circle");
     };
-    let (_, axis, _, _) = circle_curve.parts();
+    let axis = circle_curve.axis();
     assert!((axis.z - -1.0).abs() < 1.0e-12, "axis must be negated");
 }
 

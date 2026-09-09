@@ -182,7 +182,10 @@ fn generated_revision_rot_surface_round_trips() {
 fn generated_revision_t_spline_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("t_spl_sur", |surface| {
         push_revision_surface_tail(surface);
-        push_optional_value_quartet(surface);
+        for value in [0.0, 1.0, 0.0, 1.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
         push_tagged_i64(surface, 0x15, 0);
         surface.push(0x0f);
         t_ident(surface, "t_spl_subtrans_object");
@@ -874,20 +877,20 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
 
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
-    let ProceduralSurfaceDefinition::Extrusion {
-        direction,
-        directrix,
-        parameter_interval,
-        native_position,
-        revision_form: None,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
+        panic!("expected extrusion")
+    };
+    let direction = definition_payload.direction();
+    let directrix = definition_payload.directrix();
+    let parameter_interval = definition_payload.parameter_interval();
+    let native_position = definition_payload.native_position();
+    let None = definition_payload.revision_form() else {
         panic!("expected extrusion")
     };
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
-    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(parameter_interval, Some([0.25, 0.75]));
     assert_eq!(
-        *native_position,
+        native_position,
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix = result
@@ -915,19 +918,16 @@ fn decode_retains_versioned_nested_translational_extrusion() {
         .expect("versioned extrusion decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
-    let ProceduralSurfaceDefinition::Extrusion {
-        direction,
-        parameter_interval,
-        native_position,
-        ..
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")
     };
-    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    let direction = definition_payload.direction();
+    let parameter_interval = definition_payload.parameter_interval();
+    let native_position = definition_payload.native_position();
+    assert_eq!(parameter_interval, Some([0.25, 0.75]));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        *native_position,
+        native_position,
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -967,18 +967,29 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     edited.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion {
-                parameter_interval,
-                direction,
-                native_position,
-                ..
-            } = definition
-            else {
+            let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
                 panic!("expected extrusion")
             };
-            *parameter_interval = Some([-0.5, 1.25]);
-            *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
-            *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+            let mut parameter_interval_value = definition_payload.parameter_interval();
+            let parameter_interval = &mut parameter_interval_value;
+            let mut direction_value = *definition_payload.direction();
+            let direction = &mut direction_value;
+            let mut native_position_value = definition_payload.native_position();
+            let native_position = &mut native_position_value;
+            {
+                *parameter_interval = Some([-0.5, 1.25]);
+                *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
+                *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    definition_payload.directrix().clone(),
+                    parameter_interval_value,
+                    direction_value,
+                    native_position_value,
+                    definition_payload.revision_form().clone(),
+                )
+                .unwrap();
         })
         .unwrap();
 
@@ -988,19 +999,18 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
-    let ProceduralSurfaceDefinition::Extrusion {
-        parameter_interval,
-        direction,
-        native_position,
-        ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip extrusion")
     };
-    assert_eq!(*parameter_interval, Some([-0.5, 1.25]));
+    let parameter_interval = definition_payload.parameter_interval();
+    let direction = definition_payload.direction();
+    let native_position = definition_payload.native_position();
+    assert_eq!(parameter_interval, Some([-0.5, 1.25]));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0));
     assert_eq!(
-        *native_position,
+        native_position,
         Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0))
     );
 }
@@ -1160,11 +1170,12 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
         edited.model.procedural_surfaces[0].definition()
     else {
         panic!("expected extrusion")
     };
+    let directrix = definition_payload.directrix();
     let directrix_id = directrix.clone();
     let curve = edited
         .model
@@ -1233,7 +1244,7 @@ fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert!(matches!(
         result.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Extrusion { .. }
+        ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(!result
         .report()
@@ -1394,21 +1405,23 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
         .expect("rolling-ball carrier");
     assert!(matches!(round_trip
-    .ir()
-    .model
-    .surfaces
-    .iter()
-    .find(|surface| &surface.id == carrier_id)
-    .expect("rolling-ball carrier")
-    .geometry
-    .solved_cache()
-    .expect("solved rolling-ball cache"), SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
-            *origin == Point3::new(2.0, 2.0, -4.0)
-                && *axis == Vector3::new(0.0, 0.0, 1.0)
-                && *radius == 2.0
-        }));
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| &surface.id == carrier_id)
+        .expect("rolling-ball carrier")
+        .geometry
+        .solved_cache()
+        .expect("solved rolling-ball cache"), SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let radius = cylinder_surface.radius();
+                *origin == Point3::new(2.0, 2.0, -4.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && radius == 2.0
+            }));
 }
 
 #[test]

@@ -238,7 +238,8 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     let SurfaceGeometry::Plane(plane_surface) = &plane.geometry else {
         panic!("expected plane geometry");
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin.z, 4.0);
 
@@ -331,10 +332,11 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         surface.id
             == SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar")
             && matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
-            if {
-                let (origin, normal, _) = plane_surface.parts();
-                origin.z == 4.0 && *normal == Vector3::new(0.0, 0.0, 1.0)
-            })
+                        if {
+                            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+                            origin.z == 4.0 && *normal == Vector3::new(0.0, 0.0, 1.0)
+                        })
     }));
 }
 

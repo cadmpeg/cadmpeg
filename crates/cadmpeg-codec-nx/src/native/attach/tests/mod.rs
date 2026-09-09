@@ -3,8 +3,8 @@
 pub(crate) use super::*;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::Length;
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
 pub(crate) fn hole_diameters_for_operations(

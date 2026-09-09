@@ -45,7 +45,8 @@ fn placed_offset_source(
     let orientation = transform_orientation(transform)?;
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             Some(CurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     transform.apply_point(*origin),
@@ -55,13 +56,16 @@ fn placed_offset_source(
             ))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     transform.apply_point(*center),
                     unit_vector(transform.apply_vector(*axis))?.scale(orientation),
                     unit_vector(transform.apply_vector(*ref_direction))?,
-                    *radius,
+                    radius,
                 )
                 .ok()?,
             ))
@@ -420,11 +424,12 @@ pub(super) fn project(
                 let geometry = match &offset_source_geometry {
                     CurveGeometry::Line(line_curve)
                         if {
-                            let (_, direction) = line_curve.parts();
+                            let direction = line_curve.direction();
                             normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
                         } =>
                     {
-                        let (origin, direction) = line_curve.parts();
+                        let origin = line_curve.origin();
+                        let direction = line_curve.direction();
                         let Some(payload) = admit(
                             cadmpeg_ir::geometry::LineCurve::try_new(
                                 origin.translated(normal.cross(*direction), distance),
@@ -439,11 +444,14 @@ pub(super) fn project(
                     }
                     CurveGeometry::Circle(circle_curve)
                         if {
-                            let (_, axis, _, _) = circle_curve.parts();
+                            let axis = circle_curve.axis();
                             normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
-                        let (center, axis, ref_direction, radius) = circle_curve.parts();
+                        let center = circle_curve.center();
+                        let axis = circle_curve.axis();
+                        let ref_direction = circle_curve.ref_direction();
+                        let radius = circle_curve.radius();
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
@@ -536,7 +544,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let (_, direction) = line_curve.parts();
+                let direction = line_curve.direction();
                 if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
@@ -656,7 +664,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let (_, direction) = line_curve.parts();
+                let direction = line_curve.direction();
                 if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
@@ -809,14 +817,12 @@ pub(super) fn project(
             .expect("identity grammar");
         let edge_id =
             EdgeId::mint(format!("iges:model:edge#D{}", entry.sequence)).expect("identity grammar");
-        let procedural = match ProceduralCurve::new(
-            ProceduralCurveId::mint(format!("iges:model:procedural-curve#D{}", entry.sequence))
-                .expect("identity grammar"),
-            ProceduralCurveDefinition::Offset {
-                source: offset_source_id.clone(),
+        let procedural =
+            match cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                offset_source_id.clone(),
                 distance,
-                side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
-                range: Some(match distance_law {
+                cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
+                Some(match distance_law {
                     Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
                         parameter_range: [start, end],
                         distance_law,
@@ -825,14 +831,23 @@ pub(super) fn project(
                         parameter_range: [start, end],
                     },
                 }),
-            },
-        ) {
-            Ok(procedural) => procedural,
-            Err(error) => {
-                losses.push(entity_loss(entry, error.to_string()));
-                continue;
-            }
-        };
+            )
+            .and_then(|admitted_payload| {
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!(
+                        "iges:model:procedural-curve#D{}",
+                        entry.sequence
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralCurveDefinition::Offset(admitted_payload),
+                )
+            }) {
+                Ok(procedural) => procedural,
+                Err(error) => {
+                    losses.push(entity_loss(entry, error.to_string()));
+                    continue;
+                }
+            };
         if offset_source_id != source_id {
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),

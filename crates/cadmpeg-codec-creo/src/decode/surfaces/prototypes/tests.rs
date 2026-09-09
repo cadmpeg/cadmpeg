@@ -52,17 +52,20 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .expect("first cone instance");
     assert!(
         matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
-        if {
-            let (origin, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
-            (*cone_surface.parts().3 == 0.0)
-                && (*cone_surface.parts().4 == 1.0)
-                && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
-                    && origin.y.abs() < EPS_CONE_FRAME
-                    && origin.z.abs() < EPS_CONE_FRAME
-                    && *axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
-                    && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-                    && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME)
-        })
+                if {
+                    let origin = cone_surface.origin();
+        let axis = cone_surface.axis();
+        let ref_direction = cone_surface.ref_direction();
+        let half_angle = cone_surface.half_angle();
+                    (cone_surface.radius() == 0.0)
+                        && (cone_surface.ratio() == 1.0)
+                        && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
+                            && origin.y.abs() < EPS_CONE_FRAME
+                            && origin.z.abs() < EPS_CONE_FRAME
+                            && *axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+                            && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+                            && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME)
+                })
     );
 }
 
@@ -158,7 +161,11 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
     let SurfaceGeometry::Torus(torus_surface) = surface.geometry else {
         panic!("first instance geometry: {:?}", surface.geometry);
     };
-    let (&center, &axis, &ref_direction, &major_radius, &minor_radius) = torus_surface.parts();
+    let center = *torus_surface.center();
+    let axis = *torus_surface.axis();
+    let ref_direction = *torus_surface.ref_direction();
+    let major_radius = torus_surface.major_radius();
+    let minor_radius = torus_surface.minor_radius();
     assert_eq!(center, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(ref_direction, [0.0, 1.0, 0.0].into());
@@ -306,7 +313,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
-    let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
+    let origin = *cylinder_surface.origin();
+    let axis = *cylinder_surface.axis();
+    let ref_direction = *cylinder_surface.ref_direction();
+    let radius = cylinder_surface.radius();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [0.0, 0.0, 1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -336,8 +346,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     assert!(
         matches!(nonvisible_surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (_, _, _, radius) = cylinder_surface.parts();
-            *radius == 50.8
+            let radius = cylinder_surface.radius();
+            radius == 50.8
         })
     );
     assert_eq!(
@@ -402,7 +412,12 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     let SurfaceGeometry::Cone(cone_surface) = surface.geometry else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
-    let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) = cone_surface.parts();
+    let origin = *cone_surface.origin();
+    let axis = *cone_surface.axis();
+    let ref_direction = *cone_surface.ref_direction();
+    let radius = cone_surface.radius();
+    let ratio = cone_surface.ratio();
+    let half_angle = cone_surface.half_angle();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(axis, [0.0, 0.0, -1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -466,7 +481,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
-    let (&origin, &normal, &u_axis) = plane_surface.parts();
+    let origin = *plane_surface.origin();
+    let normal = *plane_surface.normal();
+    let u_axis = *plane_surface.u_axis();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(normal, [0.0, 0.0, 1.0].into());
     assert_eq!(u_axis, [1.0, 0.0, 0.0].into());

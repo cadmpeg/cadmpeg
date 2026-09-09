@@ -49,6 +49,36 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for (id, tolerance) in ir
+        .model
+        .vertices
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity.tolerance))
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .map(|entity| (entity.id.as_str(), entity.tolerance)),
+        )
+        .chain(
+            ir.model
+                .faces
+                .iter()
+                .map(|entity| (entity.id.as_str(), entity.tolerance)),
+        )
+    {
+        if tolerance.is_some_and(|value| value.get() > 1.0e6) {
+            findings.push(Finding {
+                check: Check::Tolerances,
+                severity: Severity::Warning,
+                message: "topology tolerance is outside a sane canonical range".into(),
+                entity: Some(id.to_owned()),
+            });
+        }
+    }
+}
+
 pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     for b in &ir.model.bodies {
         for l in &b.regions {
@@ -355,8 +385,20 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::SubSurface { support, .. }
-            | ProceduralSurfaceDefinition::Replica {
+            ProceduralSurfaceDefinition::SubSurface(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    if ids.surfaces(support.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "surface",
+                            support.as_str(),
+                        );
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::Replica {
                 source: support, ..
             } => {
                 if ids.surfaces(support.as_str()).is_none() {
@@ -368,24 +410,26 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     );
                 }
             }
-            ProceduralSurfaceDefinition::Taper {
-                support, reference, ..
-            } => {
-                if ids.surfaces(support.as_str()).is_none() {
-                    ref_error(
-                        findings,
-                        procedural.id.as_str(),
-                        "surface",
-                        support.as_str(),
-                    );
-                }
-                if ids.curves(reference.as_str()).is_none() {
-                    ref_error(
-                        findings,
-                        procedural.id.as_str(),
-                        "curve",
-                        reference.as_str(),
-                    );
+            ProceduralSurfaceDefinition::Taper(definition_payload) => {
+                let support = definition_payload.support();
+                let reference = definition_payload.reference();
+                {
+                    if ids.surfaces(support.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "surface",
+                            support.as_str(),
+                        );
+                    }
+                    if ids.curves(reference.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            reference.as_str(),
+                        );
+                    }
                 }
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
@@ -854,10 +898,45 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
-            | ProceduralSurfaceDefinition::Revolution { directrix, .. }
-            | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
+            ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                let directrix = definition_payload.directrix();
+                {
+                    if ids.curves(directrix.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            directrix.as_str(),
+                        );
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                let directrix = definition_payload.directrix();
+                if ids.curves(directrix.as_str()).is_none() {
+                    ref_error(
+                        findings,
+                        procedural.id.as_str(),
+                        "curve",
+                        directrix.as_str(),
+                    );
+                }
+            }
+            ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                let directrix = definition_payload.directrix();
+                {
+                    if ids.curves(directrix.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            directrix.as_str(),
+                        );
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+                let directrix = definition_payload.directrix();
                 if ids.curves(directrix.as_str()).is_none() {
                     ref_error(
                         findings,
@@ -968,25 +1047,43 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Offset { support, .. } => {
-                if ids.surfaces(support.as_str()).is_none() {
-                    ref_error(
-                        findings,
-                        procedural.id.as_str(),
-                        "surface",
-                        support.as_str(),
-                    );
+            ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    if ids.surfaces(support.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "surface",
+                            support.as_str(),
+                        );
+                    }
                 }
             }
-            ProceduralSurfaceDefinition::Subset { support, .. }
-            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
-                if ids.surfaces(support.as_str()).is_none() {
-                    ref_error(
-                        findings,
-                        procedural.id.as_str(),
-                        "surface",
-                        support.as_str(),
-                    );
+            ProceduralSurfaceDefinition::Subset(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    if ids.surfaces(support.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "surface",
+                            support.as_str(),
+                        );
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
+                let support = definition_payload.support();
+                {
+                    if ids.surfaces(support.as_str()).is_none() {
+                        ref_error(
+                            findings,
+                            procedural.id.as_str(),
+                            "surface",
+                            support.as_str(),
+                        );
+                    }
                 }
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
@@ -996,8 +1093,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Sum { first, second, .. } => {
-                for curve in [first, second] {
+            ProceduralSurfaceDefinition::Sum(definition_payload) => {
+                for curve in [definition_payload.first(), definition_payload.second()] {
                     if ids.curves(curve.as_str()).is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
@@ -1186,7 +1283,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::Compound(compound) => {
-                let (_, components) = compound.parts();
+                let components = compound.components();
 
                 for component in components {
                     if ids.curves(component.component.as_str()).is_none() {
@@ -1217,7 +1314,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 construction: intersection,
                 ..
             } => {
-                let (supports, _, _) = intersection.parts();
+                let supports = intersection.supports();
 
                 for surface in supports {
                     if ids.surfaces(surface.as_str()).is_none() {
@@ -1258,11 +1355,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Silhouette {
-                context,
-                cast_surface,
-                ..
-            } => {
+            ProceduralCurveDefinition::Silhouette(definition_payload) => {
+                let context = definition_payload.context();
+                let cast_surface = definition_payload.cast_surface();
                 if ids.surfaces(cast_surface.as_str()).is_none() {
                     ref_error(
                         findings,
@@ -1284,19 +1379,23 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
-                if ids.curves(base.as_str()).is_none() {
-                    ref_error(findings, procedural.id.as_str(), "curve", base.as_str());
-                }
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
-                            ref_error(
-                                findings,
-                                procedural.id.as_str(),
-                                "surface",
-                                surface.as_str(),
-                            );
+            ProceduralCurveDefinition::SurfaceOffset(definition_payload) => {
+                let context = definition_payload.context();
+                let base = definition_payload.base();
+                {
+                    if ids.curves(base.as_str()).is_none() {
+                        ref_error(findings, procedural.id.as_str(), "curve", base.as_str());
+                    }
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            if ids.surfaces(surface.as_str()).is_none() {
+                                ref_error(
+                                    findings,
+                                    procedural.id.as_str(),
+                                    "surface",
+                                    surface.as_str(),
+                                );
+                            }
                         }
                     }
                 }
@@ -1323,23 +1422,25 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     error,
                 ),
             },
-            ProceduralCurveDefinition::Deformable {
-                context, source, ..
-            } => {
-                if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
-                    if ids.curves(curve.as_str()).is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+            ProceduralCurveDefinition::Deformable(definition_payload) => {
+                let context = definition_payload.context();
+                let source = definition_payload.source();
+                {
+                    if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                        if ids.curves(curve.as_str()).is_none() {
+                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        }
                     }
-                }
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
-                            ref_error(
-                                findings,
-                                procedural.id.as_str(),
-                                "surface",
-                                surface.as_str(),
-                            );
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            if ids.surfaces(surface.as_str()).is_none() {
+                                ref_error(
+                                    findings,
+                                    procedural.id.as_str(),
+                                    "surface",
+                                    surface.as_str(),
+                                );
+                            }
                         }
                     }
                 }
@@ -1363,68 +1464,84 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Offset {
-                source,
-                side,
-                range,
-                ..
-            } => {
-                if ids.curves(source.as_str()).is_none() {
-                    ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
-                }
-                if let crate::geometry::OffsetSide::Direction {
-                    support: Some(support),
-                    ..
-                } = side
+            ProceduralCurveDefinition::Offset(definition_payload) => {
+                let source = definition_payload.source();
+                let side = definition_payload.side();
+                let range = definition_payload.range();
                 {
-                    if ids.surfaces(support.as_str()).is_none() {
-                        ref_error(
-                            findings,
-                            procedural.id.as_str(),
-                            "surface",
-                            support.as_str(),
-                        );
+                    if ids.curves(source.as_str()).is_none() {
+                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
-                }
-                if let Some(crate::geometry::CurveOffsetRange::Variable {
-                    distance_law:
-                        crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
-                    ..
-                }) = range
-                {
-                    if ids.curves(function.as_str()).is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", function.as_str());
-                    }
-                }
-            }
-            ProceduralCurveDefinition::SpatialOffset { source, .. } => {
-                if ids.curves(source.as_str()).is_none() {
-                    ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
-                }
-            }
-            ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                    if let crate::geometry::OffsetSide::Direction {
+                        support: Some(support),
+                        ..
+                    } = side
+                    {
+                        if ids.surfaces(support.as_str()).is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
-                                surface.as_str(),
+                                support.as_str(),
                             );
+                        }
+                    }
+                    if let Some(crate::geometry::CurveOffsetRange::Variable {
+                        distance_law:
+                            crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                        ..
+                    }) = range
+                    {
+                        if ids.curves(function.as_str()).is_none() {
+                            ref_error(findings, procedural.id.as_str(), "curve", function.as_str());
                         }
                     }
                 }
             }
-            ProceduralCurveDefinition::VectorOffset { source, .. } => {
+            ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
+                let source = definition_payload.source();
+                {
+                    if ids.curves(source.as_str()).is_none() {
+                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                    }
+                }
+            }
+            ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
+                let context = definition_payload.context();
+                {
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            if ids.surfaces(surface.as_str()).is_none() {
+                                ref_error(
+                                    findings,
+                                    procedural.id.as_str(),
+                                    "surface",
+                                    surface.as_str(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            ProceduralCurveDefinition::VectorOffset(definition_payload) => {
+                let source = definition_payload.source();
+                {
+                    if ids.curves(source.as_str()).is_none() {
+                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                    }
+                }
+            }
+            ProceduralCurveDefinition::Replica { source, .. } => {
                 if ids.curves(source.as_str()).is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                 }
             }
-            ProceduralCurveDefinition::Replica { source, .. }
-            | ProceduralCurveDefinition::Subset { source, .. } => {
-                if ids.curves(source.as_str()).is_none() {
-                    ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                {
+                    if ids.curves(source.as_str()).is_none() {
+                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                    }
                 }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {

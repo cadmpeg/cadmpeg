@@ -1038,12 +1038,9 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Block {
                     dimensions: Some([
-                        cadmpeg_ir::features::PositiveLength::new(1.0)
-                            .expect("valid block fixture"),
-                        cadmpeg_ir::features::PositiveLength::new(2.0)
-                            .expect("valid block fixture"),
-                        cadmpeg_ir::features::PositiveLength::new(3.0)
-                            .expect("valid block fixture"),
+                        cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("valid block fixture"),
+                        cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("valid block fixture"),
+                        cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("valid block fixture"),
                     ]),
                     placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                     op: cadmpeg_ir::features::BooleanOp::NewBody,

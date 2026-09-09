@@ -47,7 +47,7 @@ fn semantic_writer_round_trips_typed_shell() {
                 else {
                     panic!("typed shell feature");
                 };
-                *thickness = Some(cadmpeg_ir::features::PositiveLength::new(3.0).unwrap());
+                *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap());
                 *outward = Some(true);
                 *removed_faces = FaceSelection::Native("face:5,face:6".into());
             })
@@ -115,7 +115,7 @@ fn semantic_writer_round_trips_typed_thicken() {
                     panic!("typed thicken feature");
                 };
                 *faces = FaceSelection::Native("face:5,face:6".into());
-                *thickness = Some(cadmpeg_ir::features::PositiveLength::new(3.0).unwrap());
+                *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap());
                 *side = Some(ThickenSide::Both);
             })
             .unwrap();
@@ -148,8 +148,9 @@ fn semantic_writer_round_trips_typed_thicken() {
 
 #[test]
 fn semantic_writer_round_trips_positional_thicken_dimension() {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, Length, ParameterValue, ThickenSide,
+    use cadmpeg_ir::{
+        features::{FaceSelection, FeatureDefinition, ParameterValue, ThickenSide},
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -188,7 +189,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
                 let FeatureDefinition::Thicken { thickness, .. } = definition else {
                     panic!("typed positional thicken");
                 };
-                *thickness = Some(cadmpeg_ir::features::PositiveLength::new(8.5).unwrap());
+                *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(8.5).unwrap());
             })
             .unwrap();
     }
@@ -287,7 +288,7 @@ fn semantic_writer_round_trips_typed_scale() {
                 ));
                 *factors = ScaleFactors::PerAxis(
                     [1.5, 2.0, 2.5]
-                        .map(|value| cadmpeg_ir::features::NonZeroReal::new(value).unwrap()),
+                        .map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap()),
                 );
             })
             .unwrap();
@@ -323,7 +324,7 @@ fn semantic_writer_round_trips_typed_scale() {
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::PerAxis(factors),
             ..
-        } if (factors.map(cadmpeg_ir::features::NonZeroReal::get) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
+        } if (factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
@@ -613,7 +614,7 @@ fn semantic_writer_round_trips_typed_draft() {
                 pull.direction =
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
                         .unwrap();
-                *angle = Some(cadmpeg_ir::features::SlopeAngle::new(7f64.to_radians()).unwrap());
+                *angle = Some(cadmpeg_ir::scalar::SlopeAngle::new(7f64.to_radians()).unwrap());
                 *outward = Some(true);
                 *faces = FaceSelection::Native("face:4".into());
                 *neutral_plane = FaceSelection::Native("face:5".into());
@@ -786,7 +787,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
                     panic!("typed chamfer");
                 };
                 groups[0].spec = ChamferSpec::Distance {
-                    distance: cadmpeg_ir::features::PositiveLength::new(2.5).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
                 };
             })
             .unwrap();
@@ -796,7 +797,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
                 let FeatureDefinition::Shell { thickness, .. } = definition else {
                     panic!("typed shell");
                 };
-                *thickness = Some(cadmpeg_ir::features::PositiveLength::new(1.5).unwrap());
+                *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap());
             })
             .unwrap();
         ir_edit.model.features[2]
@@ -805,7 +806,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
                 let FeatureDefinition::Draft { angle, .. } = definition else {
                     panic!("typed draft");
                 };
-                *angle = Some(cadmpeg_ir::features::SlopeAngle::new(5f64.to_radians()).unwrap());
+                *angle = Some(cadmpeg_ir::scalar::SlopeAngle::new(5f64.to_radians()).unwrap());
             })
             .unwrap();
     }
@@ -1185,8 +1186,11 @@ fn semantic_writer_round_trips_typed_replace_face() {
 
 #[test]
 fn semantic_writer_round_trips_all_move_face_forms() {
-    use cadmpeg_ir::features::{Angle, FaceMotion, FaceSelection, FeatureDefinition, Length};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FaceMotion, FaceSelection, FeatureDefinition},
+        scalar::{Angle, Length},
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1346,7 +1350,7 @@ fn semantic_writer_round_trips_typed_dome() {
                     panic!("typed dome");
                 };
                 *faces = FaceSelection::Native("face:10,face:11".into());
-                *height = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
+                *height = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
                 *elliptical = Some(true);
                 *reverse = Some(true);
             })
@@ -1642,7 +1646,10 @@ fn semantic_writer_round_trips_typed_reference_plane() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_localized_offset_plane() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, ParameterValue},
+        scalar::Length,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

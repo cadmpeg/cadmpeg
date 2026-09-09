@@ -337,13 +337,13 @@ pub(in super::super) enum ProfileGeometry {
     },
     Arc {
         center: Point2,
-        radius: cadmpeg_ir::features::Length,
-        start_angle: cadmpeg_ir::features::Angle,
-        end_angle: cadmpeg_ir::features::Angle,
+        radius: cadmpeg_ir::scalar::Length,
+        start_angle: cadmpeg_ir::scalar::Angle,
+        end_angle: cadmpeg_ir::scalar::Angle,
     },
     Circle {
         center: Point2,
-        radius: cadmpeg_ir::features::Length,
+        radius: cadmpeg_ir::scalar::Length,
     },
     Nurbs {
         curve: cadmpeg_ir::geometry::PcurveNurbs,

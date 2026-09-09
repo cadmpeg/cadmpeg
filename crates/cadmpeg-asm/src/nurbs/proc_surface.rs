@@ -94,6 +94,44 @@ impl DecodedProceduralSurface {
     }
 }
 
+/// Native T-spline fields before surface admission.
+pub struct EmbeddedTSplineSurface {
+    /// Native U and V ranges.
+    pub parameter_ranges: [[f64; 2]; 2],
+    /// Native type integer.
+    pub type_code: i64,
+    /// Native program or reference and its resolution result.
+    pub subtransform: EmbeddedTSplineSubtransform,
+    /// Native trailing integer.
+    pub trailing_value: i64,
+    /// Native discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity flag.
+    pub discontinuity_flag: bool,
+    /// Revision layout fields, when present.
+    pub revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+}
+
+/// Parsed T-spline subtransform before reference and program admission.
+pub enum EmbeddedTSplineSubtransform {
+    /// Inline native program strings.
+    Inline {
+        /// Topology program.
+        program: String,
+        /// Native separator flag.
+        separator: Option<bool>,
+        /// Companion values program.
+        values: String,
+    },
+    /// Native reference with its optional resolved target.
+    Reference {
+        /// Native table index.
+        index: i64,
+        /// Target when the reference chain resolves to an admitted inline program.
+        resolved: Option<cadmpeg_ir::geometry::InlineTSplineSubtransform>,
+    },
+}
+
 /// Source-native procedural semantics before embedded geometry is assigned IR ids.
 pub enum DecodedProceduralSurfaceDefinition {
     /// Exact NURBS construction and retained native parameter fields.
@@ -145,7 +183,7 @@ pub enum DecodedProceduralSurfaceDefinition {
     /// Native sweep surface graph with embedded carriers.
     Sweep(Box<EmbeddedSweepSurface>),
     /// Native T-spline wrapper and subtransform program.
-    TSpline(Box<cadmpeg_ir::geometry::TSplineSurfaceConstruction>),
+    TSpline(Box<EmbeddedTSplineSurface>),
     /// Native circular or linear helix surface.
     Helix(Box<cadmpeg_ir::geometry::HelixSurfaceConstruction>),
     /// Native deformable surface with embedded support.
@@ -3772,9 +3810,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     ))
 }
 
-fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
-    use cadmpeg_ir::geometry::{TSplineSubtransform, TSplineSurfaceConstruction};
-
+fn t_spl_sur(toks: &[Token], table: &SubtypeTable) -> Option<DecodedProceduralSurface> {
     enum Layout {
         Legacy {
             cache_fit_tolerance: f64,
@@ -3845,29 +3881,12 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         return None;
     }
     cur.bump();
-    let source_kind = cur.take_ident()?;
-    let subtransform = match source_kind {
-        "t_spl_subtrans_object" => {
-            let program = cur.take_str()?.to_string();
-            let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
-                None
-            } else {
-                Some(cur.take_bool()?)
-            };
-            let values = cur.take_str()?.to_string();
-            TSplineSubtransform::Inline(
-                cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
-                    program, separator, values,
-                )
-                .ok()?,
-            )
-        }
-        "ref" => TSplineSubtransform::Reference {
-            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
-            resolved: None,
-        },
-        _ => return None,
-    };
+    let mut subtransform = t_spline_subtransform(&mut cur)?;
+    if let EmbeddedTSplineSubtransform::Reference { index, resolved } = &mut subtransform {
+        *resolved = usize::try_from(*index)
+            .ok()
+            .and_then(|index| resolve_t_spline_subtransform(index, table, &mut Vec::new()));
+    }
     if !matches!(cur.peek(), Some(Token::SubtypeClose)) {
         return None;
     }
@@ -3881,7 +3900,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuity_flag,
             parameter_ranges,
         } => DecodedProceduralSurface::legacy(
-            DecodedProceduralSurfaceDefinition::TSpline(Box::new(TSplineSurfaceConstruction {
+            DecodedProceduralSurfaceDefinition::TSpline(Box::new(EmbeddedTSplineSurface {
                 parameter_ranges,
                 type_code,
                 subtransform,
@@ -3895,7 +3914,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         Layout::Revision(form) => {
             let bounds = form.support_bounds;
             DecodedProceduralSurface::revision(DecodedProceduralSurfaceDefinition::TSpline(
-                Box::new(TSplineSurfaceConstruction {
+                Box::new(EmbeddedTSplineSurface {
                     parameter_ranges: [
                         [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
                         [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
@@ -4284,11 +4303,7 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
     ))
 }
 
-fn t_spline_subtransform(span: &[Token]) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
-    use cadmpeg_ir::geometry::TSplineSubtransform;
-
-    let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
-    let mut cur = Cur::at(span, start);
+fn t_spline_subtransform(cur: &mut Cur<'_>) -> Option<EmbeddedTSplineSubtransform> {
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program = cur.take_str()?.to_string();
@@ -4298,15 +4313,14 @@ fn t_spline_subtransform(span: &[Token]) -> Option<cadmpeg_ir::geometry::TSpline
                 Some(cur.take_bool()?)
             };
             let values = cur.take_str()?.to_string();
-            Some(TSplineSubtransform::Inline(
-                cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
-                    program, separator, values,
-                )
-                .ok()?,
-            ))
+            Some(EmbeddedTSplineSubtransform::Inline {
+                program,
+                separator,
+                values,
+            })
         }
-        "ref" => Some(TSplineSubtransform::Reference {
-            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
+        "ref" => Some(EmbeddedTSplineSubtransform::Reference {
+            index: cur.take_long()?,
             resolved: None,
         }),
         _ => None,
@@ -4318,17 +4332,22 @@ fn resolve_t_spline_subtransform(
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
 ) -> Option<cadmpeg_ir::geometry::InlineTSplineSubtransform> {
-    use cadmpeg_ir::geometry::TSplineSubtransform;
-
     if seen.contains(&index) {
         return None;
     }
     seen.push(index);
-    let decoded = t_spline_subtransform(table.span(index)?)?;
+    let span = table.span(index)?;
+    let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
+    let decoded = t_spline_subtransform(&mut Cur::at(span, start))?;
     match decoded {
-        TSplineSubtransform::Inline(inline) => Some(inline),
-        TSplineSubtransform::Reference { index, .. } => {
-            resolve_t_spline_subtransform(usize::try_from(index.get()).ok()?, table, seen)
+        EmbeddedTSplineSubtransform::Inline {
+            program,
+            separator,
+            values,
+        } => cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(program, separator, values)
+            .ok(),
+        EmbeddedTSplineSubtransform::Reference { index, .. } => {
+            resolve_t_spline_subtransform(usize::try_from(index).ok()?, table, seen)
         }
     }
 }
@@ -4346,9 +4365,9 @@ fn procedural_resolving_refs(
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(mut decoded) = defm_spl_sur(toks)
+    if let Some(decoded) = defm_spl_sur(toks)
         .or_else(|| helix_spl_sur(toks))
-        .or_else(|| t_spl_sur(toks))
+        .or_else(|| t_spl_sur(toks, table))
         .or_else(|| exact_spl_sur(toks))
         .or_else(|| comp_spl_sur(toks))
         .or_else(|| taper_spl_sur(toks, Some(table)))
@@ -4371,18 +4390,6 @@ fn procedural_resolving_refs(
         .or_else(|| full_rb_blend_spl_sur(toks, table))
         .or_else(|| compact_rb_blend_spl_sur(toks))
     {
-        if let DecodedProceduralSurfaceDefinition::TSpline(construction) = &mut decoded.definition {
-            if let cadmpeg_ir::geometry::TSplineSubtransform::Reference { index, resolved } =
-                &mut construction.subtransform
-            {
-                let inline = resolve_t_spline_subtransform(
-                    usize::try_from(index.get()).ok()?,
-                    table,
-                    &mut Vec::new(),
-                )?;
-                *resolved = Some(Box::new(inline));
-            }
-        }
         return Some(decoded);
     }
     // Follow references for records whose own construction is absent. A record

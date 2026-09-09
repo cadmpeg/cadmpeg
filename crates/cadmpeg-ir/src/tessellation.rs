@@ -592,9 +592,10 @@ impl Tessellation {
         &self.shading
     }
 
+    /// Reads the `PerVertex` shading storage.
     /// Per-vertex normals; empty when the source carried none or corner normals.
     #[must_use]
-    pub fn normals(&self) -> &[Vector3] {
+    pub fn vertex_normals(&self) -> &[Vector3] {
         match &self.shading {
             TessellationNormals::PerVertex(normals) => normals,
             TessellationNormals::None | TessellationNormals::PerCorner(_) => &[],
@@ -614,7 +615,7 @@ impl Tessellation {
             TessellationNormals::None => {
                 return Err(TessellationError(
                     "mesh has no shading normals to edit".into(),
-                ));
+                ))
             }
         };
         edit(normals);
@@ -623,9 +624,10 @@ impl Tessellation {
         Ok(())
     }
 
+    /// Reads the `PerCorner` shading storage.
     /// Per-triangle-corner normals; empty when the source carried none or vertex normals.
     #[must_use]
-    pub fn corner_normals(&self) -> &[Vector3] {
+    pub fn per_corner_normals(&self) -> &[Vector3] {
         match &self.shading {
             TessellationNormals::PerCorner(normals) => normals,
             TessellationNormals::None | TessellationNormals::PerVertex(_) => &[],
@@ -828,8 +830,8 @@ impl TessellationChannel {
 impl From<Tessellation> for TessellationWire {
     fn from(mesh: Tessellation) -> Self {
         let strip_lengths = mesh.strip_lengths().to_vec();
-        let normals = mesh.normals().to_vec();
-        let corner_normals = mesh.corner_normals().to_vec();
+        let normals = mesh.vertex_normals().to_vec();
+        let corner_normals = mesh.per_corner_normals().to_vec();
         Self {
             id: mesh.id,
             body: mesh.body,

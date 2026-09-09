@@ -286,7 +286,7 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
         expression: "1 mm".to_string(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(1.0).unwrap(),
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
         )),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),

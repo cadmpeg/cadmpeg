@@ -304,7 +304,9 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         let SurfaceGeometry::Plane(plane_surface) = &mut plane.geometry else {
             unreachable!()
         };
-        let (origin, normal, u_axis) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
         let mut origin = *origin;
         origin.x = 25.0;
         *plane_surface =
@@ -318,7 +320,8 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         let CurveGeometry::Line(line_curve) = &mut line.geometry else {
             unreachable!()
         };
-        let (origin, direction) = line_curve.parts();
+        let origin = line_curve.origin();
+        let direction = line_curve.direction();
         let mut origin = *origin;
         origin.y = 12.0;
         *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
@@ -338,7 +341,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     assert!(regenerated.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
         if {
-            let (origin, _, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
             origin.x == 25.0
         })
     ));
@@ -351,7 +354,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     assert!(regenerated.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Line(line_curve)
         if {
-            let (origin, _) = line_curve.parts();
+            let origin = line_curve.origin();
             origin.y == 12.0
         })
     ));

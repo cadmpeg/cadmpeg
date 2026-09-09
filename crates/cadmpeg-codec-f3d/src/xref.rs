@@ -305,7 +305,7 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
                 ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
                 transform: crate::design::components::neutral_transform(transform)?,
                 linked_prototype: None,
-                scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
+                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                 name: None,
                 visible: None,
                 link: None,

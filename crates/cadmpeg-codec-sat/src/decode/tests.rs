@@ -28,8 +28,8 @@ fn sphere_radius(result: &DecodeResult) -> f64 {
     let SurfaceGeometry::Sphere(sphere_surface) = &surface.geometry else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
-    let (_, _, _, radius) = sphere_surface.parts();
-    *radius
+
+    sphere_surface.radius()
 }
 
 #[test]

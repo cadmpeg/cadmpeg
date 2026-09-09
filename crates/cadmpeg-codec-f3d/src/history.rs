@@ -8743,18 +8743,9 @@ pub(crate) fn historical_topology(
         .filter_map(|surface| {
             use cadmpeg_ir::geometry::SurfaceGeometry;
             let radius = match &surface.geometry {
-                SurfaceGeometry::Cylinder(cylinder_surface) => {
-                    let (_, _, _, radius) = cylinder_surface.parts();
-                    *radius
-                }
-                SurfaceGeometry::Sphere(sphere_surface) => {
-                    let (_, _, _, radius) = sphere_surface.parts();
-                    *radius
-                }
-                SurfaceGeometry::Torus(torus_surface) => {
-                    let (_, _, _, _, minor_radius) = torus_surface.parts();
-                    *minor_radius
-                }
+                SurfaceGeometry::Cylinder(cylinder_surface) => cylinder_surface.radius(),
+                SurfaceGeometry::Sphere(sphere_surface) => sphere_surface.radius(),
+                SurfaceGeometry::Torus(torus_surface) => torus_surface.minor_radius(),
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceRadius {
@@ -8791,7 +8782,9 @@ pub(crate) fn historical_topology(
             else {
                 return None;
             };
-            let (&origin, &axis, _, &radius) = cylinder_surface.parts();
+            let origin = *cylinder_surface.origin();
+            let axis = *cylinder_surface.axis();
+            let radius = cylinder_surface.radius();
             Some(crate::history_records::AsmHistoricalCylinder {
                 surface: entity_ref(surface.id.as_str())?,
                 origin,
@@ -8809,7 +8802,8 @@ pub(crate) fn historical_topology(
             else {
                 return None;
             };
-            let (&origin, &normal, _) = plane_surface.parts();
+            let origin = *plane_surface.origin();
+            let normal = *plane_surface.normal();
             Some(crate::history_records::AsmHistoricalPlane {
                 surface: entity_ref(surface.id.as_str())?,
                 origin,
@@ -8825,15 +8819,18 @@ pub(crate) fn historical_topology(
             use cadmpeg_ir::geometry::SurfaceGeometry;
             let (origin, direction) = match surface.geometry {
                 SurfaceGeometry::Cylinder(cylinder_surface) => {
-                    let (&origin, &axis, _, _) = cylinder_surface.parts();
+                    let origin = *cylinder_surface.origin();
+                    let axis = *cylinder_surface.axis();
                     (origin, axis)
                 }
                 SurfaceGeometry::Cone(cone_surface) => {
-                    let (&origin, &axis, _, _, _, _) = cone_surface.parts();
+                    let origin = *cone_surface.origin();
+                    let axis = *cone_surface.axis();
                     (origin, axis)
                 }
                 SurfaceGeometry::Torus(torus_surface) => {
-                    let (&center, &axis, _, _, _) = torus_surface.parts();
+                    let center = *torus_surface.center();
+                    let axis = *torus_surface.axis();
                     (center, axis)
                 }
                 _ => return None,
@@ -8870,15 +8867,18 @@ pub(crate) fn historical_topology(
                 use cadmpeg_ir::geometry::CurveGeometry;
                 let (origin, direction) = match curve.geometry {
                     CurveGeometry::Line(line_curve) => {
-                        let (&origin, &direction) = line_curve.parts();
+                        let origin = *line_curve.origin();
+                        let direction = *line_curve.direction();
                         (origin, direction)
                     }
                     CurveGeometry::Circle(circle_curve) => {
-                        let (&center, &axis, _, _) = circle_curve.parts();
+                        let center = *circle_curve.center();
+                        let axis = *circle_curve.axis();
                         (center, axis)
                     }
                     CurveGeometry::Ellipse(ellipse_curve) => {
-                        let (&center, &axis, _, _, _) = ellipse_curve.parts();
+                        let center = *ellipse_curve.center();
+                        let axis = *ellipse_curve.axis();
                         (center, axis)
                     }
                     _ => return None,

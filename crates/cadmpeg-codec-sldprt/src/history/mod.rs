@@ -340,26 +340,26 @@ mod literal_tests {
         assert_eq!(
             ParameterExpressionParser::new_flat("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(2.0).unwrap()
+                cadmpeg_ir::scalar::Length::new(2.0).unwrap()
             ))
         );
         assert_eq!(
             ParameterExpressionParser::new_flat("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(5.0).unwrap()
+                cadmpeg_ir::scalar::Length::new(5.0).unwrap()
             ))
         );
         assert_eq!(
             ParameterExpressionParser::new_flat("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,)
                 .parse(),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(2.0).unwrap()
+                cadmpeg_ir::scalar::Length::new(2.0).unwrap()
             ))
         );
         assert_eq!(
             parse_parameter_literal("&lt;MOD-DIAM&gt;4.917"),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(4.917).unwrap()
+                cadmpeg_ir::scalar::Length::new(4.917).unwrap()
             ))
         );
     }
@@ -371,20 +371,20 @@ mod literal_tests {
         assert_eq!(
             ParameterExpressionParser::new_flat("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(2.0).unwrap()
+                cadmpeg_ir::scalar::Length::new(2.0).unwrap()
             ))
         );
         assert_eq!(
             ParameterExpressionParser::new_flat("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,)
                 .parse(),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(5.0).unwrap()
+                cadmpeg_ir::scalar::Length::new(5.0).unwrap()
             ))
         );
         assert_eq!(
             parse_parameter_literal("<MOD-RHO>0.5"),
             Some(ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(0.5).unwrap()
+                cadmpeg_ir::scalar::Length::new(0.5).unwrap()
             ))
         );
         assert_eq!(
@@ -406,7 +406,7 @@ mod literal_tests {
             assert_eq!(
                 parse_parameter_literal(expression),
                 Some(ParameterValue::Length(
-                    cadmpeg_ir::features::Length::new(expected).unwrap()
+                    cadmpeg_ir::scalar::Length::new(expected).unwrap()
                 )),
                 "{expression}"
             );
@@ -414,7 +414,7 @@ mod literal_tests {
             assert_eq!(
                 ParameterExpressionParser::new_flat(expression, &aliases, &values).parse(),
                 Some(ParameterValue::Length(
-                    cadmpeg_ir::features::Length::new(expected).unwrap()
+                    cadmpeg_ir::scalar::Length::new(expected).unwrap()
                 )),
                 "{expression}"
             );
@@ -489,7 +489,7 @@ mod literal_tests {
         }
         assert_eq!(
             parameters::eval::ParameterFunction::Int.apply(&[ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(-3.75).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(-3.75).unwrap()
             )]),
             Some(ParameterValue::Integer(-3))
         );
@@ -508,13 +508,13 @@ mod literal_tests {
                 &ParameterValue::Integer(-((1_i64 << 53) + 1)),
             ),
             Some(ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(-1.0).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap()
             ))
         );
         assert_eq!(
             exponentiate_parameter_value(&ParameterValue::Integer(2), &ParameterValue::Integer(-3),),
             Some(ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(0.125).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(0.125).unwrap()
             ))
         );
     }
@@ -559,7 +559,7 @@ mod literal_tests {
     fn mixed_numeric_comparisons_preserve_integer_identity() {
         let integer = ParameterValue::Integer((1_i64 << 53) + 1);
         let rounded_real =
-            ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(2_f64.powi(53)).unwrap());
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(2_f64.powi(53)).unwrap());
         assert_eq!(
             compare_parameter_values(&integer, &rounded_real, "="),
             Some(false)
@@ -576,7 +576,7 @@ mod literal_tests {
         assert_eq!(
             compare_parameter_values(
                 &ParameterValue::Integer(-3),
-                &ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(-3.5).unwrap()),
+                &ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(-3.5).unwrap()),
                 ">",
             ),
             Some(true)
@@ -585,7 +585,7 @@ mod literal_tests {
             compare_parameter_values(
                 &ParameterValue::Integer(i64::MAX),
                 &ParameterValue::Real(
-                    cadmpeg_ir::features::FiniteReal::new(-(i64::MIN as f64)).unwrap()
+                    cadmpeg_ir::scalar::FiniteReal::new(-(i64::MIN as f64)).unwrap()
                 ),
                 "<",
             ),
