@@ -114,9 +114,15 @@ impl SectorChain {
         1 + self.rest.len()
     }
 
-    fn into_vec(mut self) -> Vec<u32> {
-        self.rest.insert(0, self.first);
-        self.rest
+    fn iter(&self) -> impl Iterator<Item = &u32> + Clone {
+        std::iter::once(&self.first).chain(&self.rest)
+    }
+
+    fn get(&self, index: usize) -> Option<&u32> {
+        match index.checked_sub(1) {
+            None => Some(&self.first),
+            Some(index) => self.rest.get(index),
+        }
     }
 }
 
@@ -279,9 +285,9 @@ struct CompoundState {
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
     directory: Vec<DirectorySlot>,
-    directory_chain: Vec<u32>,
-    mini_fat_chain: Vec<u32>,
-    root_mini_chain: Vec<u32>,
+    directory_chain: Option<SectorChain>,
+    mini_fat_chain: Option<SectorChain>,
+    root_mini_chain: Option<SectorChain>,
     fat_sectors: BTreeSet<u32>,
     difat_sectors: BTreeSet<u32>,
     range_lock_sector: Option<u32>,
@@ -481,10 +487,20 @@ impl<'a> CompoundSnapshot<'a> {
         for &sector in &self.parsed.difat_sectors {
             structural.insert(sector, CfbSpanRole::Difat);
         }
-        for &sector in &self.parsed.directory_chain {
+        for &sector in self
+            .parsed
+            .directory_chain
+            .iter()
+            .flat_map(SectorChain::iter)
+        {
             structural.insert(sector, CfbSpanRole::Directory);
         }
-        for &sector in &self.parsed.mini_fat_chain {
+        for &sector in self
+            .parsed
+            .mini_fat_chain
+            .iter()
+            .flat_map(SectorChain::iter)
+        {
             structural.insert(sector, CfbSpanRole::MiniFat);
         }
         let mut regular = BTreeMap::new();
@@ -521,6 +537,7 @@ impl<'a> CompoundSnapshot<'a> {
             .parsed
             .root_mini_chain
             .iter()
+            .flat_map(SectorChain::iter)
             .enumerate()
             .map(|(ordinal, sector)| (*sector, ordinal))
             .collect::<BTreeMap<_, _>>();
@@ -668,7 +685,8 @@ impl<'a> CompoundSnapshot<'a> {
         let &regular_sector = self
             .parsed
             .root_mini_chain
-            .get(regular_ordinal)
+            .as_ref()
+            .and_then(|chain| chain.get(regular_ordinal))
             .ok_or_else(|| {
                 CodecError::Malformed("CFB mini sector escapes the root mini stream".into())
             })?;
@@ -868,24 +886,29 @@ impl CompoundState {
             CompoundVersion::V3 => None,
             CompoundVersion::V4 => NonZeroUsize::new(directory_sector_count),
         };
-        let directory_chain = chain(
+        let directory_chain = Some(chain(
             Some(ctx),
             &fat,
             sector_count,
             directory_start,
             directory_expected,
             "directory",
-        )?
-        .into_vec();
+        )?);
         let directory_byte_count = directory_chain
-            .len()
+            .as_ref()
+            .map_or(0, SectorChain::len)
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB directory byte size overflow".into()))?;
         let directory_scratch = ctx.reserve_scoped(
             directory_byte_count as u64,
             "assemble CFB directory sectors",
         )?;
-        let directory_bytes = join_sectors(bytes, sector_size, sector_count, &directory_chain)?;
+        let directory_bytes = join_sectors(
+            bytes,
+            sector_size,
+            sector_count,
+            directory_chain.iter().flat_map(SectorChain::iter),
+        )?;
         let directory = parse_directory(Some(ctx), &directory_bytes, version)?;
         drop(directory_scratch);
         validate_root(&directory)?;
@@ -893,20 +916,20 @@ impl CompoundState {
             if mini_fat_start != END_OF_CHAIN {
                 return malformed("empty CFB mini FAT has a start sector");
             }
-            Vec::new()
+            None
         } else {
-            chain(
+            Some(chain(
                 Some(ctx),
                 &fat,
                 sector_count,
                 mini_fat_start,
                 NonZeroUsize::new(mini_fat_count),
                 "mini FAT",
-            )?
-            .into_vec()
+            )?)
         };
         let mini_fat_byte_count = mini_fat_chain
-            .len()
+            .as_ref()
+            .map_or(0, SectorChain::len)
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB mini FAT byte size overflow".into()))?;
         let mini_fat_scratch =
@@ -914,10 +937,15 @@ impl CompoundState {
         let mini_fat_word_count = mini_fat_byte_count / 4;
         ctx.charge_collection_items(mini_fat_word_count as u64, "parse CFB mini FAT words")?;
         ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT")?;
-        let mini_fat = join_sectors(bytes, sector_size, sector_count, &mini_fat_chain)?
-            .chunks_exact(4)
-            .map(|word| le_u32(word, 0).expect("four-byte chunk"))
-            .collect::<Vec<_>>();
+        let mini_fat = join_sectors(
+            bytes,
+            sector_size,
+            sector_count,
+            mini_fat_chain.iter().flat_map(SectorChain::iter),
+        )?
+        .chunks_exact(4)
+        .map(|word| le_u32(word, 0).expect("four-byte chunk"))
+        .collect::<Vec<_>>();
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
@@ -929,17 +957,16 @@ impl CompoundState {
             if !matches!(root.start_sector, END_OF_CHAIN | FREE_SECTOR) {
                 return malformed("empty CFB root mini stream has an invalid start sector");
             }
-            Vec::new()
+            None
         } else {
-            chain(
+            Some(chain(
                 Some(ctx),
                 &fat,
                 sector_count,
                 root.start_sector,
                 NonZeroUsize::new(root_sectors),
                 "root mini stream",
-            )?
-            .into_vec()
+            )?)
         };
         Ok(Self {
             version,
@@ -1133,9 +1160,9 @@ impl CompoundState {
             .fat_sectors
             .iter()
             .chain(&self.difat_sectors)
-            .chain(&self.directory_chain)
-            .chain(&self.mini_fat_chain)
-            .chain(&self.root_mini_chain)
+            .chain(self.directory_chain.iter().flat_map(SectorChain::iter))
+            .chain(self.mini_fat_chain.iter().flat_map(SectorChain::iter))
+            .chain(self.root_mini_chain.iter().flat_map(SectorChain::iter))
         {
             if !used.insert(sector) {
                 return malformed("CFB regular sector has duplicate structural ownership");
@@ -1379,7 +1406,8 @@ impl CompoundPrefixProbe {
         if expected_directory_count.is_some_and(|count| count != directory_chain.len()) {
             return Self::Malformed("CFB directory chain length does not match the header".into());
         }
-        let Ok(directory_bytes) = join_sectors(prefix, sector_size, available, &directory_chain)
+        let Ok(directory_bytes) =
+            join_sectors(prefix, sector_size, available, directory_chain.iter())
         else {
             return Self::Incomplete;
         };
@@ -1770,14 +1798,15 @@ fn chain(
     Ok(output)
 }
 
-fn join_sectors(
+fn join_sectors<'a>(
     bytes: &[u8],
     sector_size: usize,
     sector_count: usize,
-    sectors: &[u32],
+    sectors: impl Iterator<Item = &'a u32> + Clone,
 ) -> Result<Vec<u8>, CodecError> {
     let length = sectors
-        .len()
+        .clone()
+        .count()
         .checked_mul(sector_size)
         .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
     let mut output = Vec::with_capacity(length);
