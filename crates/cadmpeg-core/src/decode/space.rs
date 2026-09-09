@@ -143,7 +143,7 @@ impl ResolvedAddress {
             };
             let extracted = format!("{input}.member");
             commands.push(format!(
-                "cadmpeg inspect extract --output={} -- {} {}",
+                "cadmpeg inspect extract --force --output={} -- {} {}",
                 quote(&extracted),
                 quote(&input),
                 quote(member),
@@ -241,8 +241,8 @@ mod tests {
             },
         );
         assert_eq!(address.inspect_commands("project part.FCStd"), [
-            "cadmpeg inspect extract --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
-            "cadmpeg inspect extract --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
             "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
         ]);
     }
