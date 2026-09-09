@@ -1244,16 +1244,18 @@ impl<'a> DecodeContext<'a> {
             ordinal: u64::try_from(hatch.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("RhinoHatch".to_string()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "hatch".into(),
-                parameters,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "hatch".into(),
+                    parameters,
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let hatch_loops = hatch.loops;
@@ -1331,16 +1333,18 @@ impl<'a> DecodeContext<'a> {
             ordinal: u64::try_from(source_order).expect("source order fits u64"),
             name,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::from([("construction".to_string(), construction)]),
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "polyedge_reference".into(),
-                parameters,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "polyedge_reference".into(),
+                    parameters,
+                },
+            ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
         };
         match self
@@ -1406,25 +1410,27 @@ impl<'a> DecodeContext<'a> {
             ordinal: u64::try_from(detail.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::from([
                 ("view_bytes".to_string(), view.len().to_string()),
                 ("view_sha256".to_string(), sha256_hex(view)),
             ]),
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "detail_view".into(),
-                parameters: BTreeMap::from([
-                    ("boundary".to_string(), curve_id.clone()),
-                    (
-                        "page_per_model_ratio".to_string(),
-                        detail.page_per_model_ratio.to_string(),
-                    ),
-                ]),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "detail_view".into(),
+                    parameters: BTreeMap::from([
+                        ("boundary".to_string(), curve_id.clone()),
+                        (
+                            "page_per_model_ratio".to_string(),
+                            detail.page_per_model_ratio.to_string(),
+                        ),
+                    ]),
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let result = self.validate_candidate(|candidate, candidate_annotations| {
@@ -1534,27 +1540,29 @@ impl<'a> DecodeContext<'a> {
             ordinal: u64::try_from(cage.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: properties,
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "nurbs_cage".into(),
-                parameters: BTreeMap::from([
-                    ("dimension".to_string(), cage.dimension.to_string()),
-                    ("rational".to_string(), cage.rational().to_string()),
-                    (
-                        "orders".to_string(),
-                        format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
-                    ),
-                    (
-                        "counts".to_string(),
-                        format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
-                    ),
-                ]),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "nurbs_cage".into(),
+                    parameters: BTreeMap::from([
+                        ("dimension".to_string(), cage.dimension.to_string()),
+                        ("rational".to_string(), cage.rational().to_string()),
+                        (
+                            "orders".to_string(),
+                            format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+                        ),
+                        (
+                            "counts".to_string(),
+                            format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+                        ),
+                    ]),
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         match self
@@ -1696,22 +1704,24 @@ impl<'a> DecodeContext<'a> {
                 .expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: model_id
                 .as_ref()
                 .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
                 .unwrap_or_default(),
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "curve_on_surface".into(),
-                parameters: BTreeMap::from([
-                    ("parameter_curve".to_string(), parameter_id.clone()),
-                    ("support_surface".to_string(), surface_id.to_string()),
-                ]),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "curve_on_surface".into(),
+                    parameters: BTreeMap::from([
+                        ("parameter_curve".to_string(), parameter_id.clone()),
+                        ("support_surface".to_string(), surface_id.to_string()),
+                    ]),
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let parameter_curve = construction.parameter_curve;
@@ -2676,13 +2686,11 @@ impl<'a> DecodeContext<'a> {
                     point: point_id.clone(),
                     tolerance: None,
                 });
-                self.ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region_id.clone(),
-                    faces: Vec::new(),
-                    wire_edges: Vec::new(),
-                    free_vertices: vec![vertex_id.clone()],
-                });
+                self.ir.model.shells.push(Shell::with_free_vertex(
+                    shell_id.clone(),
+                    region_id.clone(),
+                    vertex_id.clone(),
+                ));
                 self.ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id.clone(),
@@ -2752,13 +2760,20 @@ impl<'a> DecodeContext<'a> {
                     });
                     vertices.push(vertex_id);
                 }
-                self.ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region_id.clone(),
-                    faces: Vec::new(),
-                    wire_edges: Vec::new(),
-                    free_vertices: vertices,
-                });
+                self.ir.model.shells.push(
+                    match Shell::new(
+                        shell_id.clone(),
+                        region_id.clone(),
+                        Vec::new(),
+                        Vec::new(),
+                        vertices,
+                    ) {
+                        Ok(shell) => shell,
+                        Err(_) => {
+                            return false;
+                        }
+                    },
+                );
                 self.ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id.clone(),
@@ -3711,13 +3726,11 @@ fn stage_extrusion_caps(
         });
         annotate_derived(annotations, &surface_id.to_string());
         annotate_derived(annotations, &face_id.to_string());
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: vec![face_id],
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(Shell::with_face(
+            shell_id.clone(),
+            region_id.clone(),
+            face_id,
+        ));
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -4326,21 +4339,24 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             .entry(region_label)
             .or_default()
             .push(shell_id.clone());
-        staged.draft.model_mut().shells.push(Shell {
-            id: shell_id,
-            region: region_id.clone(),
-            faces: shell
-                .faces
-                .iter()
-                .map(|index| face_ids[*index].clone())
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: if component == 0 {
-                free_vertex_ids.clone()
-            } else {
-                Vec::new()
-            },
-        });
+        staged.draft.model_mut().shells.push(
+            Shell::new(
+                shell_id,
+                region_id.clone(),
+                shell
+                    .faces
+                    .iter()
+                    .map(|index| face_ids[*index].clone())
+                    .collect(),
+                Vec::new(),
+                if component == 0 {
+                    free_vertex_ids.clone()
+                } else {
+                    Vec::new()
+                },
+            )
+            .map_err(|message| crate::curves::GeometryError::malformed(0, message))?,
+        );
         if !regions.iter().any(|region: &Region| region.id == region_id) {
             regions.push(Region {
                 id: region_id,

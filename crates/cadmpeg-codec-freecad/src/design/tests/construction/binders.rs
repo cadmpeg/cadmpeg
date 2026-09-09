@@ -127,14 +127,15 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str) {
@@ -241,7 +242,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert!(offset.is_none());
         } else {
             let offset = offset.as_ref().expect("selected offset");
-            assert!((offset.distance.0 + 2.5).abs() <= f64::EPSILON);
+            assert!((offset.distance.get() + 2.5).abs() <= f64::EPSILON);
             assert_eq!(
                 offset.join,
                 if name == "OffsetJoinType" {

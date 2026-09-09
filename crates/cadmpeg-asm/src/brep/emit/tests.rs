@@ -187,9 +187,15 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
                 ..Reachable::default()
             };
             let mut out = AsmBrep::default();
-            emit_vertices(&mut out, &records, &by_index, &reach, IdFormat("f3d"));
+            emit_vertices(&mut out, &records, &by_index, &reach, IdFormat("f3d"))
+                .expect("valid tolerant vertex fixture");
             assert_eq!(out.vertices.len(), 1);
-            assert_eq!(out.vertices[0].tolerance, tolerance);
+            assert_eq!(
+                out.vertices[0]
+                    .tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get),
+                tolerance
+            );
             assert_eq!(out.tolerant_vertex_tails.len(), 1);
             assert_eq!(
                 out.tolerant_vertex_tails[0].leading_tolerances,

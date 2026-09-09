@@ -19,7 +19,10 @@ use cadmpeg_ir::features::{DimensionDisplay, Length, ParameterId};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
+};
 use cadmpeg_ir::topology::{Body, BodyKind};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,14 +37,16 @@ fn sketch_curve_references_require_a_materialized_curve() {
         7,
     )
     .expect("valid section frame");
-    let sketch = SketchId("creo:model:sketch#5".to_string());
-    let line = SketchGeometry::Line {
+    let sketch = SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture");
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(2.0, 0.0),
-    };
-    let point = SketchGeometry::Point {
+    })
+    .expect("valid test fixture");
+    let point = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 2.0),
-    };
+    })
+    .expect("valid test fixture");
 
     assert_eq!(
         placed_sketch_curve_ref(Some(&transform), &sketch, 3, &line),
@@ -99,10 +104,11 @@ fn placed_extrusion_arc_defines_cylinder() {
     assert_eq!(
         placed_section_geometry_curve(
             &transform,
-            &SketchGeometry::Circle {
+            &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(3.0, -4.0),
-                radius: Length(2.0),
-            },
+                radius: Length::new(2.0).expect("finite length fixture"),
+            })
+            .expect("valid test fixture"),
         ),
         Some(CurveGeometry::Circle {
             center: Point3::new(10.0, 23.0, 26.0),
@@ -127,23 +133,23 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         body: Vec::new(),
         offset: 40,
     };
-    let entity = SketchEntityId("entity".into());
-    let sketch = SketchId("sketch".into());
+    let entity = SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture");
+    let sketch = SketchId::mint("synthetic:test:id#sketch").expect("valid test fixture");
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone()),
-        Some(SketchConstraintDefinition::Vertical {
+        Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone()),
-        Some(SketchConstraintDefinition::Horizontal {
+        Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(2);
-    let Some(SketchConstraintDefinition::Native {
+    let Some(SketchConstraintDefinitionInput::Native {
         native_properties,
         entities,
         operands,
@@ -164,11 +170,15 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
         section_segment_verhor_definition(&segment, &sketch, entity),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
     assert_eq!(
-        section_segment_verhor_definition(&segment, &sketch, SketchEntityId("entity".into())),
+        section_segment_verhor_definition(
+            &segment,
+            &sketch,
+            SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture")
+        ),
         None
     );
 }
@@ -185,9 +195,12 @@ fn skamp_status_low_bit_controls_constraint_activity() {
 
 #[test]
 fn dimension_identity_includes_its_feature_definition() {
-    let sketch_917 = SketchId("creo:model:sketch#917".to_string());
-    let sketch_1104 = SketchId("creo:model:sketch#1104".to_string());
-    let sketch_1200 = SketchId("creo:model:sketch#1200".to_string());
+    let sketch_917 =
+        SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
+    let sketch_1104 =
+        SketchId::mint("creo:model:sketch#1104".to_string()).expect("valid test fixture");
+    let sketch_1200 =
+        SketchId::mint("creo:model:sketch#1200".to_string()).expect("valid test fixture");
     assert_ne!(
         feature_dimension_parameter_id(&sketch_917, 3),
         feature_dimension_parameter_id(&sketch_1104, 3)
@@ -297,9 +310,10 @@ fn dimension_identity_includes_its_feature_definition() {
     let radius = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(radius.len(), 1);
     assert_eq!(
-        radius[0].0.definition,
-        SketchConstraintDefinition::Radius {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+        *(radius[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::Radius {
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
+                .expect("valid test fixture"),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
         }
@@ -311,13 +325,13 @@ fn dimension_identity_includes_its_feature_definition() {
         &BTreeSet::new(),
     );
     assert_eq!(retained_without_circle.len(), 1);
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_properties,
         entities,
         operands,
         ..
-    } = &retained_without_circle[0].0.definition
+    } = retained_without_circle[0].0.definition.kind()
     else {
         panic!("a missing circle entity must retain its native radius relation");
     };
@@ -334,7 +348,8 @@ fn dimension_identity_includes_its_feature_definition() {
         Some("radius")
     );
     assert_eq!(operands[1].object_index, 0);
-    let circle_entity = SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string());
+    let circle_entity = SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
+        .expect("valid test fixture");
     let retained_without_parameter = section_segment_radius_constraints_for_emitted(
         &definition,
         &sketch_917,
@@ -342,8 +357,8 @@ fn dimension_identity_includes_its_feature_definition() {
         &BTreeSet::new(),
     );
     assert!(matches!(
-        &retained_without_parameter[0].0.definition,
-        SketchConstraintDefinition::Native {
+        retained_without_parameter[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             entities,
             ..
@@ -362,9 +377,10 @@ fn dimension_identity_includes_its_feature_definition() {
     let diameter = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(diameter.len(), 1);
     assert_eq!(
-        diameter[0].0.definition,
-        SketchConstraintDefinition::Diameter {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+        *(diameter[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::Diameter {
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
+                .expect("valid test fixture"),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
         }
@@ -387,8 +403,8 @@ fn dimension_identity_includes_its_feature_definition() {
         section_segment_radius_constraints(&duplicate_circle_id, &sketch_917);
     assert_eq!(duplicate_constraints.len(), 2);
     assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::Native { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     )));
     definition
         .segments
@@ -400,11 +416,13 @@ fn dimension_identity_includes_its_feature_definition() {
         BTreeMap::from([(0, 2.5)])
     );
     assert_eq!(
-        section_segment_radius_constraints(&definition, &sketch_917)[0]
+        *(section_segment_radius_constraints(&definition, &sketch_917)[0]
             .0
-            .definition,
-        SketchConstraintDefinition::Diameter {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+            .definition)
+            .kind(),
+        SketchConstraintDefinitionInput::Diameter {
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
+                .expect("valid test fixture"),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
         }
@@ -423,8 +441,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert!(resolved_section_radii(&definition).is_empty());
     let unresolved_kind = section_segment_radius_constraints(&definition, &sketch_917);
     assert!(matches!(
-        unresolved_kind[0].0.definition,
-        SketchConstraintDefinition::Native { .. }
+        unresolved_kind[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     ));
     let segments = definition.segments.as_mut().expect("segment table");
     let circle = segments.rows.edit_circles(|rows| rows.remove(0));
@@ -451,13 +469,13 @@ fn dimension_identity_includes_its_feature_definition() {
         .iter()
         .find(|(constraint, _)| constraint.id.as_str().ends_with("radius2:42"))
         .expect("secondary radius binding");
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_properties,
         entities,
         operands,
         ..
-    } = &secondary.0.definition
+    } = secondary.0.definition.kind()
     else {
         panic!("secondary radius binding must remain native");
     };
@@ -465,9 +483,10 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(native_properties["dimension_ordinal"], "7");
     assert_eq!(
         entities,
-        &[SketchEntityId(
-            "creo:featdefs:sketch_entity#917:42".to_string()
-        )]
+        &[
+            SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
+                .expect("valid test fixture")
+        ]
     );
     assert_eq!(
         operands[0].field.as_ref().map(|field| field.name.as_str()),
@@ -508,8 +527,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert!(typed_slots.iter().any(|(constraint, _)| {
         constraint.id.as_str().ends_with("segtab-radius:43")
             && matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::Native {
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native {
                     native_properties,
                     ..
                 } if native_properties["dimension_ordinal"] == "8"
@@ -518,8 +537,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert!(typed_slots.iter().any(|(constraint, _)| {
         constraint.id.as_str().ends_with("segtab-radius2:43")
             && matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::Native {
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native {
                     native_properties,
                     ..
                 } if native_properties["dimension_ordinal"] == "9"
@@ -555,10 +574,13 @@ fn dimension_identity_includes_its_feature_definition() {
                 .cloned()
                 .collect::<Vec<_>>()[0],
         ),
-        Some(SketchGeometry::Circle {
-            center: Point2::new(1.0, 2.0),
-            radius: Length(2.5),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length::new(2.5).expect("finite length fixture"),
+            })
+            .expect("valid test fixture")
+        )
     );
     let unresolved_dimension = crate::feature::FeatureDimension {
         value: crate::feature::definitions::DimensionValue::Undefined,

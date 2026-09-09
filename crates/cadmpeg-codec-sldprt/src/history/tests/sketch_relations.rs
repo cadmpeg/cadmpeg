@@ -12,7 +12,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_owned_native_sketch_relation() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -33,7 +33,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .expect("projected sketch feature");
     let cadmpeg_ir::features::FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         panic!("bound sketch feature");
     };
@@ -53,7 +53,7 @@ fn decode_projects_owned_native_sketch_relation() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     let constraint = decoded
@@ -69,8 +69,8 @@ fn decode_projects_owned_native_sketch_relation() {
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:relation-instance#")));
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             entities,
             parameter: Some(relation_parameter),
@@ -99,7 +99,7 @@ fn decode_projects_owned_native_sketch_relation() {
 
 #[test]
 fn decode_groups_compact_relation_scalar_pair() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_compact_relation_pair(&triangle_body());
     source.extend(make_block(
@@ -139,8 +139,8 @@ fn decode_groups_compact_relation_scalar_pair() {
         .find(|constraint| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
         .expect("projected compact relation");
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             parameter: Some(parameter),
             ..
@@ -188,7 +188,7 @@ fn decode_starts_another_relation_after_two_repeated_operand_scalars() {
 
 #[test]
 fn decode_groups_native_tagged_point_line_relations() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_tagged_compact_relation(
         &triangle_body(),
@@ -214,7 +214,7 @@ fn decode_groups_native_tagged_point_line_relations() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     let native = sldprt_native(decoded.ir());
@@ -247,8 +247,8 @@ fn decode_groups_native_tagged_point_line_relations() {
         .find(|constraint| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
         .expect("projected point-line relation");
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             operands,
             ..
@@ -289,7 +289,10 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
         .find(|parameter| parameter.name == "D2")
         .expect("driving vertical-distance parameter");
     assert_eq!(parameter.expression, "25");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(25.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(25.0).unwrap()))
+    );
     assert!(parameter.native_ref.is_some());
 }
 
@@ -319,7 +322,10 @@ fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
         .find(|parameter| parameter.name == "D2")
         .expect("driving distance parameter");
     assert_eq!(parameter.expression, "1");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(1.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(1.0).unwrap()))
+    );
     assert!(parameter.native_ref.is_some());
 }
 
@@ -345,13 +351,16 @@ fn decode_uses_relation_units_for_bare_integer_angles() {
         .find(|parameter| parameter.name == "D2")
         .expect("driving angle parameter");
     assert_eq!(parameter.expression, "25");
-    assert_eq!(parameter.value, Some(ParameterValue::Angle(Angle(0.025))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Angle(Angle::new(0.025).unwrap()))
+    );
     assert!(parameter.native_ref.is_some());
 }
 
 #[test]
 fn decode_groups_unary_circle_diameter_relations() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_tagged_compact_relation(
         &triangle_body(),
@@ -398,8 +407,8 @@ fn decode_groups_unary_circle_diameter_relations() {
         .any(|constraint| {
             constraint.native_ref.as_deref() == Some(relation.id.as_str())
                 && matches!(
-                    &constraint.definition,
-                    SketchConstraintDefinition::Native {
+                    constraint.definition.kind(),
+                    SketchConstraintDefinitionInput::Native {
                         native_kind,
                         parameter: Some(bound_parameter),
                         operands,
@@ -555,7 +564,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             assert_eq!(
                 parameter.value,
                 Some(cadmpeg_ir::features::ParameterValue::Angle(
-                    cadmpeg_ir::features::Angle(0.025)
+                    cadmpeg_ir::features::Angle::new(0.025).unwrap()
                 ))
             );
         } else {
@@ -563,7 +572,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             assert_eq!(
                 parameter.value,
                 Some(cadmpeg_ir::features::ParameterValue::Length(
-                    cadmpeg_ir::features::Length(25.0)
+                    cadmpeg_ir::features::Length::new(25.0).unwrap()
                 ))
             );
         }
@@ -584,8 +593,8 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             .any(|constraint| {
                 constraint.native_ref.as_deref() == Some(relation.id.as_str())
                     && matches!(
-                        &constraint.definition,
-                        cadmpeg_ir::sketches::SketchConstraintDefinition::Native {
+                        constraint.definition.kind(),
+                        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
                             native_kind,
                             ..
                         } if native_kind == class

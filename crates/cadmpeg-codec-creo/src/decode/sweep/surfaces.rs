@@ -37,7 +37,7 @@ const EPS_AXIAL_RATE: f64 = 1.0e-10;
 const EPS_MAJOR_RADIUS: f64 = 1.0e-10;
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::BTreeSet;
 
@@ -65,8 +65,8 @@ pub(in super::super) fn revolved_section_surface(
     };
     let vector = |values: [f64; 3]| Vector3::new(values[0], values[1], values[2]);
     let point = |values: [f64; 3]| Point3::new(values[0], values[1], values[2]);
-    match geometry {
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
             let direction = normalize(std::array::from_fn(|index| end[index] - start[index]))?;
@@ -117,7 +117,8 @@ pub(in super::super) fn revolved_section_surface(
                 half_angle: radial_rate.abs().atan2(axial_rate.abs()),
             })
         }
-        SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Arc { center, radius, .. }
+        | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             let (on_axis, radial) = project(center);
             let major_radius = dot(radial, radial).sqrt();
@@ -136,7 +137,7 @@ pub(in super::super) fn revolved_section_surface(
                     center: point(center),
                     axis: vector(axis),
                     ref_direction: vector(reference),
-                    radius: radius.0,
+                    radius: radius.get(),
                 })
             } else {
                 Some(SurfaceGeometry::Torus {
@@ -144,7 +145,7 @@ pub(in super::super) fn revolved_section_surface(
                     axis: vector(axis),
                     ref_direction: vector(reference),
                     major_radius,
-                    minor_radius: radius.0,
+                    minor_radius: radius.get(),
                 })
             }
         }
@@ -156,8 +157,8 @@ pub(in super::super) fn placed_section_geometry_curve(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
 ) -> Option<CurveGeometry> {
-    match geometry {
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
@@ -166,7 +167,7 @@ pub(in super::super) fn placed_section_geometry_curve(
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             })
         }
-        SketchGeometry::ReferenceLine { origin, direction } => {
+        SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let origin = section_point_in_model(transform, [origin.u, origin.v]);
             let direction = normalize([
                 direction.u * transform.u_axis()[0] + direction.v * transform.v_axis()[0],
@@ -178,7 +179,8 @@ pub(in super::super) fn placed_section_geometry_curve(
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             })
         }
-        SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Arc { center, radius, .. }
+        | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(CurveGeometry::Circle {
                 center: Point3::new(center[0], center[1], center[2]),
@@ -192,7 +194,7 @@ pub(in super::super) fn placed_section_geometry_curve(
                     transform.u_axis()[1],
                     transform.u_axis()[2],
                 ),
-                radius: radius.0,
+                radius: radius.get(),
             })
         }
         _ => None,

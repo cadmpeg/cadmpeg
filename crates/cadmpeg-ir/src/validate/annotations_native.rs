@@ -161,7 +161,7 @@ pub(super) fn check_native_links(
         if let crate::features::FeatureDefinition::HelixNativeAxis {
             axis_native_ref: target,
             ..
-        } = &feature.definition
+        } = feature.evaluation.definition()
         {
             if !native_ids.contains(target.as_str()) {
                 findings.push(Finding {
@@ -214,7 +214,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(sketch.id.0.clone()),
+                    entity: Some(sketch.id.as_str().to_owned()),
                 });
             }
         }
@@ -226,7 +226,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(sketch.id.0.clone()),
+                    entity: Some(sketch.id.as_str().to_owned()),
                 });
             }
         }
@@ -238,12 +238,12 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(constraint.id.0.clone()),
+                    entity: Some(constraint.id.as_str().to_owned()),
                 });
             }
         }
-        if let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
-            &constraint.definition
+        if let crate::sketches::SketchConstraintDefinitionInput::Native { operands, .. } =
+            constraint.definition.kind()
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
@@ -252,7 +252,7 @@ pub(super) fn check_native_links(
                             check: Check::NativeLinks,
                             severity: Severity::Error,
                             message: format!("operand native_ref `{target}` does not resolve"),
-                            entity: Some(constraint.id.0.clone()),
+                            entity: Some(constraint.id.as_str().to_owned()),
                         });
                     }
                 }
@@ -266,12 +266,13 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(constraint.id.0.clone()),
+                    entity: Some(constraint.id.as_str().to_owned()),
                 });
             }
         }
-        if let crate::sketches::SpatialSketchConstraintDefinition::Native { operands, .. } =
-            &constraint.definition
+        if let crate::sketches::SpatialSketchConstraintDefinitionInput::Native {
+            operands, ..
+        } = constraint.definition.kind()
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
@@ -280,7 +281,7 @@ pub(super) fn check_native_links(
                             check: Check::NativeLinks,
                             severity: Severity::Error,
                             message: format!("operand native_ref `{target}` does not resolve"),
-                            entity: Some(constraint.id.0.clone()),
+                            entity: Some(constraint.id.as_str().to_owned()),
                         });
                     }
                 }

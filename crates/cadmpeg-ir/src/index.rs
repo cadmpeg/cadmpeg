@@ -352,7 +352,7 @@ mod tests {
             vec![NativeRecord::new(native_id, Map::new()).expect("valid native identity")],
         );
         ir.native.0.insert("test".into(), namespace);
-        let model_id = "test:model#0";
+        let model_id = "test:fixture:model#0";
         ir.model.parameters.push(crate::features::DesignParameter {
             id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
             owner: None,
@@ -361,7 +361,7 @@ mod tests {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: crate::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -383,7 +383,7 @@ mod tests {
     fn typed_lookup_indexes_are_lazy_and_preserve_last_duplicate() {
         let mut ir = CadIr::empty();
         let parameter_id =
-            crate::features::ParameterId::mint("test:parameter#0").expect("identity grammar");
+            crate::features::ParameterId::mint("test:test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
                 id: parameter_id.clone(),
@@ -393,7 +393,7 @@ mod tests {
                 expression: expression.into(),
                 display: None,
                 value: None,
-                dependencies: Vec::new(),
+                dependencies: crate::features::DistinctMembers::default(),
                 properties: std::collections::BTreeMap::new(),
                 pmi: None,
                 native_ref: None,

@@ -130,14 +130,14 @@ fn curve_expression_helix_feature_definition(
         return None;
     };
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
-    let pitch = cadmpeg_ir::features::HelixPitch::new(Length(axial_pitch))?;
+    let pitch = cadmpeg_ir::features::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Helix {
-        axis_origin: *center,
-        axis_direction: *axis,
-        radius: Length(helix.radius),
+        axis_origin: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
+        radius: cadmpeg_ir::features::PositiveLength::new(helix.radius)?,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions: helix.revolutions,
-        start_angle: Angle(helix.start_angle),
+        revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
+        start_angle: Angle::new(helix.start_angle)?,
         clockwise: helix.clockwise,
         segment_turns: None,
         construction_style: None,
@@ -246,7 +246,7 @@ pub(crate) fn transfer_curve_expression_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     dimension_parameters: &BTreeMap<String, ParameterId>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let ordinal_base = ir
         .model
         .features
@@ -466,21 +466,23 @@ pub(crate) fn transfer_curve_expression_features(
                 expression: assignment.expression.clone(),
                 display: None,
                 value: assignment.value.as_ref().and_then(|value| match value {
-                    crate::curve::CurveExpressionValue::Number(value) => {
-                        Some(ParameterValue::Real(*value))
-                    }
-                    crate::curve::CurveExpressionValue::Length(value) => {
-                        Some(ParameterValue::Length(cadmpeg_ir::features::Length(*value)))
-                    }
-                    crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians())),
+                    crate::curve::CurveExpressionValue::Number(value) => Some(
+                        ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(*value)?),
                     ),
+                    crate::curve::CurveExpressionValue::Length(value) => Some(
+                        ParameterValue::Length(cadmpeg_ir::features::Length::new(*value)?),
+                    ),
+                    crate::curve::CurveExpressionValue::Angle(value) => {
+                        Some(ParameterValue::Angle(cadmpeg_ir::features::Angle::new(
+                            value.to_radians(),
+                        )?))
+                    }
                     crate::curve::CurveExpressionValue::Quantity(_) => None,
                     crate::curve::CurveExpressionValue::String(value) => {
                         Some(ParameterValue::String(value.clone()))
                     }
                 }),
-                dependencies,
+                dependencies: dependencies.into_iter().collect(),
                 properties,
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
@@ -542,16 +544,21 @@ pub(crate) fn transfer_curve_expression_features(
                 ProceduralCurve::new(procedural_id, procedural_definition),
             );
         }
-        let definition = match helix {
-            Some(helix) => neutral_helix.unwrap_or_else(|| IrFeatureDefinition::HelixNativeAxis {
-                axis_native_ref: curve_expression_record_id(record),
-                axial_rise: Length(helix.height),
-                pitch: Length(helix.height / helix.revolutions),
-                revolutions: helix.revolutions,
-                start_angle: Angle(helix.start_angle),
-                clockwise: helix.clockwise,
-            }),
-            None => IrFeatureDefinition::Native {
+        let definition = neutral_helix
+            .or_else(|| {
+                let helix = helix?;
+                Some(IrFeatureDefinition::HelixNativeAxis {
+                    axis_native_ref: cadmpeg_ir::NonEmptyString::new(curve_expression_record_id(
+                        record,
+                    ))?,
+                    axial_rise: Length::new(helix.height)?,
+                    pitch: Length::new(helix.height / helix.revolutions)?,
+                    revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
+                    start_angle: Angle::new(helix.start_angle)?,
+                    clockwise: helix.clockwise,
+                })
+            })
+            .unwrap_or_else(|| IrFeatureDefinition::Native {
                 kind: "CurveFromEquation".into(),
                 parameters: BTreeMap::from([
                     ("entity_id".to_string(), record.entity_id.to_string()),
@@ -560,14 +567,13 @@ pub(crate) fn transfer_curve_expression_features(
                         record.assignments.len().to_string(),
                     ),
                 ]),
-            },
-        };
+            });
         ir.model.features.push(Feature {
             id: feature_id,
             ordinal,
             name: Some(format!("Curve Equation {}", record.entity_id)),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("crv_fr_eqn".to_string()),
             source_text: Some(
@@ -578,13 +584,15 @@ pub(crate) fn transfer_curve_expression_features(
                     .collect::<Vec<_>>()
                     .join("\n"),
             ),
-            source_content,
-            outputs: Vec::new(),
-            definition,
+            source_content: source_content.try_into().map_err(|message: &'static str| {
+                cadmpeg_core::CodecError::Malformed(message.into())
+            })?,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(curve_expression_record_id(record)),
         });
     }
-    transferred_parameter_count
+    Ok(transferred_parameter_count)
 }
 
 #[cfg(test)]

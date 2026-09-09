@@ -39,13 +39,13 @@ use crate::decode::sweep::{
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
+    AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
     RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -64,19 +64,20 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         offset: 40,
     };
     let points = BTreeMap::from([(1, [0.0, -2.0]), (2, [0.0, 2.0]), (3, [0.0, 0.0])]);
-    let Some(SketchGeometry::Arc {
+    let Some(SketchGeometryDefinition::Arc {
         center,
         radius,
         start_angle,
         end_angle,
     }) = section_arc_geometry(&points, &segment)
+        .map(cadmpeg_ir::sketches::SketchGeometry::into_definition)
     else {
         panic!("complete arc");
     };
     assert_eq!(center, cadmpeg_ir::math::Point2::new(0.0, 0.0));
-    assert_eq!(radius, Length(2.0));
-    assert!((start_angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!((end_angle.0 - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert_eq!(radius, Length::new(2.0).expect("finite length fixture"));
+    assert!((start_angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((end_angle.get() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
 #[test]
@@ -121,12 +122,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
     };
     let profiles = resolved_profile_chains(
         &definition,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
-    assert_eq!(profiles[0][0].entity.0, "creo:featdefs:sketch_entity#40:10");
+    assert_eq!(
+        profiles[0][0].entity.as_str(),
+        "creo:featdefs:sketch_entity#40:10"
+    );
     assert!(!profiles[0][0].reversed);
     assert!(profiles[0][1].reversed);
 
@@ -141,7 +145,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     assert!(resolved_profile_chains(
         &incomplete,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     )
     .is_empty());
@@ -155,7 +159,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
     assert!(resolved_profile_chains(
         &definition,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32]),
     )
     .is_empty());
@@ -193,7 +197,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .retain(|row| row.external_id != 13);
     let profiles = resolved_profile_chains(
         &incomplete_trim_graph,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
@@ -246,7 +250,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let arc_profile = resolved_profile_chains(
         &arcs,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10, 11]),
     );
     assert_eq!(arc_profile.len(), 1);
@@ -286,7 +290,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let segment_profile = resolved_profile_chains(
         &segment_graph,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10, 11, 12, 13, 20]),
     );
     assert_eq!(segment_profile.len(), 1);
@@ -297,9 +301,12 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
 #[test]
 fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
-    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    let line = |start: [f64; 2], end: [f64; 2]| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .expect("valid test fixture")
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),
@@ -449,15 +456,18 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ]);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: Angle(std::f64::consts::TAU),
+            angle: cadmpeg_ir::features::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("valid test fixture"),
         },
     };
 
     assert_eq!(
         full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)),
         Some(RevolutionAxis {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("finite point fixture"),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .expect("valid direction fixture"),
             reference: None,
         })
     );
@@ -499,13 +509,17 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             Some(&full_turn),
         ),
         Some(RevolutionAxis {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("finite point fixture"),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .expect("valid direction fixture"),
             reference: None,
         })
     );
     let partial = RevolveExtent::OneSided {
-        termination: AngularTermination::Angle { angle: Angle(1.0) },
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::features::PositiveAngle::new(1.0).expect("valid test fixture"),
+        },
     };
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
     if let SurfaceGeometry::Cone { origin, .. } = &mut ir.model.surfaces[1].geometry {
@@ -677,6 +691,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
 
     let IrFeatureDefinition::Extrude { op, solid, .. } =
         schema_feature_definition(&scan, &ir, 822, None, "Extrude 822")
+            .expect("valid test fixture")
     else {
         panic!("schema numbered extrude definition");
     };
@@ -817,10 +832,11 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!((derivative[0] - 1.0).abs() < 1.0e-12);
         assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
-    assert!(matches!(
-        saved_spline_sketch_geometry(&spline),
-        Some(SketchGeometry::Nurbs { curve }) if curve.degree() == 3
-    ));
+    assert!(
+        matches!(saved_spline_sketch_geometry(&spline).map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
+            Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
+        )
+    );
     let definition = crate::feature::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(917),
@@ -1020,8 +1036,10 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
     let surface = revolved_nurbs_surface(
         &directrix,
         &RevolutionAxis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite point fixture"),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("valid direction fixture"),
             reference: None,
         },
     )
@@ -1052,12 +1070,13 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     )
     .expect("valid section frame");
     let axis = RevolutionAxis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            .unwrap(),
         reference: None,
     };
-    let spline = SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    let spline = SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::new(
             2,
             vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
             vec![
@@ -1070,7 +1089,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             false,
         )
         .unwrap(),
-    };
+    );
     let segment = crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false)
         .expect("valid profile entity");
     let surface =

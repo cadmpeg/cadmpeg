@@ -10,8 +10,8 @@ use crate::records::{
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::HashMap;
 
@@ -44,7 +44,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
         relation_owner_markers(&relation, &markers),
         vec![&owner, &point]
     );
-    let Some(SketchConstraintDefinition::Native { operands, .. }) =
+    let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
         typed_marker_relation_definition(&relation, &markers, &HashMap::new())
     else {
         panic!("native relation");
@@ -126,7 +126,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
 
 #[test]
 fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     relation.local_id = Some(7);
@@ -152,19 +152,21 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
         (second.id.as_str(), &second),
     ]);
     let first_entity = SketchEntity::new(
-        SketchEntityId("first-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#first-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(first.id.clone()));
     let second_entity = SketchEntity::new(
-        SketchEntityId("second-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(second.id.clone()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
@@ -178,10 +180,13 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
             &markers,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id().clone()),
-            second: SketchLocus::Entity(second_entity.id().clone()),
-            axis: SketchCoordinateAxis::V,
+        Some(SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(first_entity.id().clone()),
+                SketchLocus::Entity(second_entity.id().clone()),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
 }
@@ -205,13 +210,15 @@ fn object_index_collision_remains_a_forward_curve_operand() {
     let markers = HashMap::from([(relation.id.as_str(), &relation), (line.id.as_str(), &line)]);
     let loci = HashMap::from([(
         line.id.clone(),
-        vec![SketchLocus::Entity(SketchEntityId("line-entity".into()))],
+        vec![SketchLocus::Entity(
+            SketchEntityId::mint("synthetic:test:id#line-entity").unwrap(),
+        )],
     )]);
 
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::Horizontal {
-            entity: SketchEntityId("line-entity".into()),
+        Some(SketchConstraintDefinitionInput::Horizontal {
+            entity: SketchEntityId::mint("synthetic:test:id#line-entity").unwrap(),
         })
     );
 }
@@ -247,19 +254,23 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     let loci = HashMap::from([
         (
             ignored_arc.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("ignored-entity".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#ignored-entity").unwrap(),
+            )],
         ),
         (
             operand_arc.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("operand-entity".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
+            )],
         ),
     ]);
 
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::ArcAngle {
-            entity: SketchEntityId("operand-entity".into()),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
+        Some(SketchConstraintDefinitionInput::ArcAngle {
+            entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
+            angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
 }
@@ -300,23 +311,29 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
     let loci = HashMap::from([
         (
             center.id.clone(),
-            vec![SketchLocus::Center(SketchEntityId("arc".into()))],
+            vec![SketchLocus::Center(
+                SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
+            )],
         ),
         (
             first.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
+            )],
         ),
         (
             second.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
+            )],
         ),
     ]);
 
     assert_eq!(
         relation_operand_loci(&relation, &markers, &loci),
         Some(vec![
-            SketchLocus::Entity(SketchEntityId("first-point".into())),
-            SketchLocus::Entity(SketchEntityId("second-point".into())),
+            SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
+            SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second-point").unwrap()),
         ])
     );
 }
@@ -349,21 +366,28 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
     let loci = HashMap::from([
         (
             collision.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("collision".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#collision").unwrap(),
+            )],
         ),
         (
             operand.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("operand".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#operand").unwrap(),
+            )],
         ),
     ]);
 
-    let Some(SketchConstraintDefinition::Native {
+    let Some(SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     }) = typed_marker_relation_definition(&relation, &markers, &loci)
     else {
         panic!("native fallback");
     };
-    assert_eq!(entities, [SketchEntityId("operand".into())]);
+    assert_eq!(
+        entities,
+        [SketchEntityId::mint("synthetic:test:id#operand").unwrap()]
+    );
     assert_eq!(operands.len(), 2);
 }
 
@@ -384,8 +408,8 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
         (relation.id.as_str(), &relation),
         (curve.id.as_str(), &curve),
     ]);
-    let exact = SketchEntityId("exact".into());
-    let incident = SketchEntityId("incident".into());
+    let exact = SketchEntityId::mint("synthetic:test:id#exact").unwrap();
+    let incident = SketchEntityId::mint("synthetic:test:id#incident").unwrap();
     let loci = HashMap::from([(
         curve.id.clone(),
         vec![
@@ -396,8 +420,8 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
     let entity = |id: SketchEntityId, native_ref: Option<&str>, start, end| {
         SketchEntity::new(
             id,
-            SketchId("sketch".into()),
-            SketchGeometry::Line { start, end },
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
         .with_native_ref(native_ref.map(str::to_string))
     };
@@ -414,12 +438,12 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &entities,
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Vertical { entity: exact })
+        Some(SketchConstraintDefinitionInput::Vertical { entity: exact })
     );
 }
 
@@ -449,29 +473,30 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         (point.id.as_str(), &point),
         (radius.id.as_str(), &radius),
     ]);
-    let point_id = SketchEntityId("point-entity".into());
+    let point_id = SketchEntityId::mint("synthetic:test:id#point-entity").unwrap();
     let loci = HashMap::from([(
         point.id.clone(),
         vec![SketchLocus::Entity(point_id.clone())],
     )]);
     let point_entity = SketchEntity::new(
         point_id.clone(),
-        SketchId("sketch".into()),
-        SketchGeometry::Point {
+        SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(point.id.clone()));
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Fixed {
+        Some(SketchConstraintDefinitionInput::Fixed {
             entity: point_id.clone(),
         })
     );
@@ -503,18 +528,20 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         ),
         (
             second.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("second-entity".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
+            )],
         ),
     ]);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &[point_entity],
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
 
@@ -522,8 +549,8 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
 fn resolved_wrong_family_relation_is_inactive() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::EllipseAngle180);
-    let entity_id = SketchEntityId("line".into());
-    let definition = SketchConstraintDefinition::Native {
+    let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
+    let definition = SketchConstraintDefinitionInput::Native {
         native_kind: "sldprt:marker-relation:34".into(),
         native_state: None,
         native_flags: None,
@@ -534,11 +561,12 @@ fn resolved_wrong_family_relation_is_inactive() {
     };
     let entities = vec![SketchEntity::new(
         entity_id,
-        SketchId("sketch".into()),
-        SketchGeometry::Line {
+        SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )];
 
     assert!(marker_relation_is_inactive(
@@ -553,10 +581,10 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
     let ids = [
-        SketchEntityId("first".into()),
-        SketchEntityId("second".into()),
+        SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+        SketchEntityId::mint("synthetic:test:id#second").unwrap(),
     ];
-    let definition = SketchConstraintDefinition::Native {
+    let definition = SketchConstraintDefinitionInput::Native {
         native_kind: "sldprt:marker-relation:9".into(),
         native_state: None,
         native_flags: None,
@@ -568,8 +596,8 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let point = |id: SketchEntityId, position| {
         SketchEntity::new(
             id,
-            SketchId("sketch".into()),
-            SketchGeometry::Point { position },
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
@@ -594,12 +622,12 @@ fn horizontal_relation_requires_one_line_or_two_points() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     let entity = |id: &str, geometry| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
             geometry,
         )
     };
-    let definition = |entities| SketchConstraintDefinition::Native {
+    let definition = |entities| SketchConstraintDefinitionInput::Native {
         native_kind: "sldprt:marker-relation:4".into(),
         native_state: None,
         native_flags: None,
@@ -609,17 +637,19 @@ fn horizontal_relation_requires_one_line_or_two_points() {
         operands: Vec::new(),
     };
     let point = entity(
-        "point",
-        SketchGeometry::Point {
+        "synthetic:test:id#point",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let line = entity(
-        "line",
-        SketchGeometry::Line {
+        "synthetic:test:id#line",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(marker_relation_is_inactive(
@@ -634,20 +664,24 @@ fn horizontal_relation_requires_one_line_or_two_points() {
     ));
     assert!(!marker_relation_is_inactive(
         &relation,
-        &definition(vec![point.id().clone(), SketchEntityId("second".into())]),
+        &definition(vec![
+            point.id().clone(),
+            SketchEntityId::mint("synthetic:test:id#second").unwrap()
+        ]),
         &[
             point,
             entity(
-                "second",
-                SketchGeometry::Point {
+                "synthetic:test:id#second",
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
         ],
     ));
     assert!(marker_relation_is_inactive(
         &relation,
-        &SketchConstraintDefinition::Native {
+        &SketchConstraintDefinitionInput::Native {
             native_kind: "sldprt:marker-relation:4".into(),
             native_state: None,
             native_flags: None,

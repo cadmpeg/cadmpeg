@@ -22,7 +22,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
@@ -60,7 +60,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let Some((section_center, radius)) =
             resolved_circular_extrusion_profile(scan, ir, transform, feature_id, &sketch_id)
         else {
@@ -286,13 +288,20 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             tolerance: None,
         });
         face_ids.push(side_face);
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: face_ids,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                face_ids,
+                Vec::new(),
+                Vec::new(),
+            ) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    continue;
+                }
+            },
+        );
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -327,13 +336,13 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
     ) {
         if let [profile] = sketch.profiles.as_slice() {
             if let [entity_use] = profile.as_slice() {
-                if let Some(SketchGeometry::Circle { center, radius }) =
+                if let Some(SketchGeometryDefinition::Circle { center, radius }) =
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
-                    .map(|entity| &entity.geometry)
+                    .map(|entity| entity.geometry.definition())
                 {
-                    return Some(([center.u, center.v], radius.0));
+                    return Some(([center.u, center.v], radius.get()));
                 }
             }
         }

@@ -2,7 +2,7 @@
 
 use crate::records::SketchInputEntity;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchLocus};
+use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchLocus};
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -690,19 +690,19 @@ pub(super) fn quantize(point: Point2, quantum: f64) -> (i64, i64) {
 
 pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
     let locus = |point, locus| (point, locus);
-    match &entity.geometry {
-        SketchGeometry::Point { position } => {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Point { position } => {
             vec![locus(*position, SketchLocus::Entity(entity.id().clone()))]
         }
-        SketchGeometry::Line { start, end } => vec![
+        SketchGeometryDefinition::Line { start, end } => vec![
             locus(*start, SketchLocus::Start(entity.id().clone())),
             locus(*end, SketchLocus::End(entity.id().clone())),
         ],
-        SketchGeometry::ReferenceLine { .. } => Vec::new(),
-        SketchGeometry::Circle { center, .. } => {
+        SketchGeometryDefinition::ReferenceLine { .. } => Vec::new(),
+        SketchGeometryDefinition::Circle { center, .. } => {
             vec![locus(*center, SketchLocus::Center(entity.id().clone()))]
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -713,22 +713,25 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             if let Some([start, end]) = bounds {
                 let point = |parameter: f64| {
                     Point2::new(
-                        center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                            - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                        center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
+                            - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
                         center.v
-                            + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                            + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                            + major_angle.get().sin() * major_radius.get() * parameter.cos()
+                            + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                     )
                 };
                 loci.push(locus(
-                    point(start.0),
+                    point(start.get()),
                     SketchLocus::Start(entity.id().clone()),
                 ));
-                loci.push(locus(point(end.0), SketchLocus::End(entity.id().clone())));
+                loci.push(locus(
+                    point(end.get()),
+                    SketchLocus::End(entity.id().clone()),
+                ));
             }
             loci
         }
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -737,20 +740,20 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             locus(*center, SketchLocus::Center(entity.id().clone())),
             locus(
                 Point2::new(
-                    center.u + radius.0 * start_angle.0.cos(),
-                    center.v + radius.0 * start_angle.0.sin(),
+                    center.u + radius.get() * start_angle.get().cos(),
+                    center.v + radius.get() * start_angle.get().sin(),
                 ),
                 SketchLocus::Start(entity.id().clone()),
             ),
             locus(
                 Point2::new(
-                    center.u + radius.0 * end_angle.0.cos(),
-                    center.v + radius.0 * end_angle.0.sin(),
+                    center.u + radius.get() * end_angle.get().cos(),
+                    center.v + radius.get() * end_angle.get().sin(),
                 ),
                 SketchLocus::End(entity.id().clone()),
             ),
         ],
-        SketchGeometry::Hyperbola {
+        SketchGeometryDefinition::Hyperbola {
             center,
             major_angle,
             major_radius,
@@ -759,11 +762,11 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         } => {
             let mut loci = vec![locus(*center, SketchLocus::Center(entity.id().clone()))];
             let point = |parameter: f64| {
-                let x = major_radius.0 * parameter.cosh();
-                let y = minor_radius.0 * parameter.sinh();
+                let x = major_radius.get() * parameter.cosh();
+                let y = minor_radius.get() * parameter.sinh();
                 Point2::new(
-                    center.u + x * major_angle.0.cos() - y * major_angle.0.sin(),
-                    center.v + x * major_angle.0.sin() + y * major_angle.0.cos(),
+                    center.u + x * major_angle.get().cos() - y * major_angle.get().sin(),
+                    center.v + x * major_angle.get().sin() + y * major_angle.get().cos(),
                 )
             };
             if let Some([start, end]) = bounds {
@@ -775,17 +778,17 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             }
             loci
         }
-        SketchGeometry::Parabola {
+        SketchGeometryDefinition::Parabola {
             vertex,
             axis_angle,
             focal_length,
             bounds,
         } => {
             let point = |parameter: f64| {
-                let x = parameter * parameter / (4.0 * focal_length.0);
+                let x = parameter * parameter / (4.0 * focal_length.get());
                 Point2::new(
-                    vertex.u + x * axis_angle.0.cos() - parameter * axis_angle.0.sin(),
-                    vertex.v + x * axis_angle.0.sin() + parameter * axis_angle.0.cos(),
+                    vertex.u + x * axis_angle.get().cos() - parameter * axis_angle.get().sin(),
+                    vertex.v + x * axis_angle.get().sin() + parameter * axis_angle.get().cos(),
                 )
             };
             match bounds {
@@ -796,7 +799,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 None => Vec::new(),
             }
         }
-        SketchGeometry::Nurbs { curve } => {
+        SketchGeometryDefinition::Nurbs { curve } => {
             let control_points = curve.control_points();
             vec![
                 locus(control_points[0], SketchLocus::Start(entity.id().clone())),
@@ -806,18 +809,18 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 ),
             ]
         }
-        SketchGeometry::Text { .. }
-        | SketchGeometry::ExternalReference { .. }
-        | SketchGeometry::Native { .. } => Vec::new(),
+        SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => Vec::new(),
     }
 }
 
 pub(super) fn locus_key(locus: &SketchLocus) -> (&str, u8) {
     match locus {
-        SketchLocus::Entity(entity) => (&entity.0, 0),
-        SketchLocus::Start(entity) => (&entity.0, 1),
-        SketchLocus::End(entity) => (&entity.0, 2),
-        SketchLocus::Center(entity) => (&entity.0, 3),
+        SketchLocus::Entity(entity) => (entity.as_str(), 0),
+        SketchLocus::Start(entity) => (entity.as_str(), 1),
+        SketchLocus::End(entity) => (entity.as_str(), 2),
+        SketchLocus::Center(entity) => (entity.as_str(), 3),
     }
 }
 

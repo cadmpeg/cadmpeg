@@ -439,12 +439,10 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             &[],
         );
         assert!(matches!(
-            features.as_slice(),
-            [Feature {
-                definition: FeatureDefinition::DatumAxis { .. },
+            features.as_slice(), [Feature {
+                evaluation,
                 ..
-            }]
-        ));
+            }] if matches!((evaluation.definition(),), (FeatureDefinition::DatumAxis { .. },))));
     }
 }
 

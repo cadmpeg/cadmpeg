@@ -128,13 +128,21 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Combine {
-            target: cadmpeg_ir::features::BodySelection::Native(
-                "Design1/BulkStream.dat:design-record#96".into(),
-            ),
-            tools: cadmpeg_ir::features::BodySelection::NativeSet(vec![
-                "Design1/BulkStream.dat:design-record#92".into(),
-                "Design1/BulkStream.dat:design-record#94".into(),
-            ]),
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                cadmpeg_ir::features::BodySelection::Native(
+                    "Design1/BulkStream.dat:design-record#96".into(),
+                ),
+                cadmpeg_ir::features::BodySelection::NativeSet(
+                    vec![
+                        "Design1/BulkStream.dat:design-record#92".into(),
+                        "Design1/BulkStream.dat:design-record#94".into(),
+                    ]
+                    .try_into()
+                    .unwrap()
+                )
+            )
+            .unwrap(),
+
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
         })

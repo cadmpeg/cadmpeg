@@ -19,7 +19,8 @@ use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -137,13 +138,13 @@ pub(super) fn resolve_two_center_semicircle_profile(
         .iter()
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                SketchGeometry::Line { .. }
-                    | SketchGeometry::Arc { .. }
-                    | SketchGeometry::Circle { .. }
-                    | SketchGeometry::Ellipse { .. }
-                    | SketchGeometry::Nurbs { .. }
-                    | SketchGeometry::Native { .. }
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+                    | SketchGeometryDefinition::Arc { .. }
+                    | SketchGeometryDefinition::Circle { .. }
+                    | SketchGeometryDefinition::Ellipse { .. }
+                    | SketchGeometryDefinition::Nurbs { .. }
+                    | SketchGeometryDefinition::Native { .. }
             )
         })
         .collect::<Vec<_>>();
@@ -159,8 +160,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
     }
     let points = entities
         .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((entity.native_ref.clone()?, position)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => {
+                Some((entity.native_ref.clone()?, position))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -271,40 +274,42 @@ pub(super) fn resolve_two_center_semicircle_profile(
     };
     let (first_refs, first_endpoints) = order_endpoints(first.2, &first.3, first.4);
     let (second_refs, second_endpoints) = order_endpoints(second.2, &second.3, second.4);
-    let set_arc = |entity: &mut SketchEntity,
-                   center: Point2,
-                   radius: f64,
-                   refs: &[String; 2],
-                   endpoints: [Point2; 2],
-                   reverse: bool| {
-        let (start_ref, end_ref, start, end) = if reverse {
-            (&refs[1], &refs[0], endpoints[1], endpoints[0])
-        } else {
-            (&refs[0], &refs[1], endpoints[0], endpoints[1])
+    let arc =
+        |center: Point2, radius: f64, refs: &[String; 2], endpoints: [Point2; 2], reverse: bool| {
+            let (start_ref, end_ref, start, end) = if reverse {
+                (&refs[1], &refs[0], endpoints[1], endpoints[0])
+            } else {
+                (&refs[0], &refs[1], endpoints[0], endpoints[1])
+            };
+            let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center,
+                radius: Length::new(radius)?,
+                start_angle: Angle::new((start.v - center.v).atan2(start.u - center.u))?,
+                end_angle: Angle::new((end.v - center.v).atan2(end.u - center.u))?,
+            })
+            .ok()?;
+            Some((geometry, vec![start_ref.clone(), end_ref.clone()]))
         };
-        entity.construction = false;
-        entity.endpoint_refs = vec![start_ref.clone(), end_ref.clone()];
-        entity.geometry = SketchGeometry::Arc {
-            center,
-            radius: Length(radius),
-            start_angle: Angle((start.v - center.v).atan2(start.u - center.u)),
-            end_angle: Angle((end.v - center.v).atan2(end.u - center.u)),
-        };
+    let Some((first_geometry, first_endpoint_refs)) =
+        arc(first.2, first.5, &first_refs, first_endpoints, false)
+    else {
+        return;
     };
+    let Some((second_geometry, second_endpoint_refs)) =
+        arc(second.2, second.5, &second_refs, second_endpoints, true)
+    else {
+        return;
+    };
+
     let Some(first_entity) = entities
         .iter_mut()
         .find(|entity| entity.native_ref.as_deref() == Some(first.0.as_str()))
     else {
         return;
     };
-    set_arc(
-        first_entity,
-        first.2,
-        first.5,
-        &first_refs,
-        first_endpoints,
-        false,
-    );
+    first_entity.construction = false;
+    first_entity.endpoint_refs = first_endpoint_refs;
+    first_entity.geometry = first_geometry;
     let sketch = first_entity.sketch.clone();
     let Some(second_entity) = entities
         .iter_mut()
@@ -312,18 +317,13 @@ pub(super) fn resolve_two_center_semicircle_profile(
     else {
         return;
     };
-    set_arc(
-        second_entity,
-        second.2,
-        second.5,
-        &second_refs,
-        second_endpoints,
-        true,
-    );
+    second_entity.construction = false;
+    second_entity.endpoint_refs = second_endpoint_refs;
+    second_entity.geometry = second_geometry;
     let sketch_key = sketch
-        .0
+        .as_str()
         .rsplit_once('#')
-        .map_or(sketch.0.as_str(), |(_, key)| key);
+        .map_or(sketch.as_str(), |(_, key)| key);
     for (index, (start_ref, end_ref, start, end)) in [
         (
             &first_refs[0],
@@ -343,11 +343,17 @@ pub(super) fn resolve_two_center_semicircle_profile(
     {
         entities.push(
             SketchEntity::new(
-                SketchEntityId(format!(
+                match SketchEntityId::mint(format!(
                     "sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"
-                )),
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                },
                 sketch.clone(),
-                SketchGeometry::Line { start, end },
+                match SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }) {
+                    Ok(geometry) => geometry,
+                    Err(_) => continue,
+                },
             )
             .with_endpoint_refs(vec![start_ref.clone(), end_ref.clone()]),
         );
@@ -403,7 +409,7 @@ pub(super) fn tangent_bounded_curve(
     }
     let cross = tangent[0] * chord[1] - tangent[1] * chord[0];
     if cross.abs() <= tolerance * chord_length {
-        return Some(SketchGeometry::Line { start, end });
+        return SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     }
     let normal = [-tangent[1], tangent[0]];
     let denominator = 2.0 * (chord[0] * normal[0] + chord[1] * normal[1]);
@@ -420,12 +426,13 @@ pub(super) fn tangent_bounded_curve(
     let first = (start.v - center.v).atan2(start.u - center.u);
     let second = (end.v - center.v).atan2(end.u - center.u);
     let (start_angle, end_angle, _) = minor_arc_angles(first, second);
-    Some(SketchGeometry::Arc {
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center,
-        radius: Length(radius),
-        start_angle: Angle(start_angle),
-        end_angle: Angle(end_angle),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(start_angle)?,
+        end_angle: Angle::new(end_angle)?,
     })
+    .ok()
 }
 
 pub(super) fn slot_curve_and_center_indices(
@@ -612,9 +619,9 @@ pub(super) fn resolve_slot_marker_arcs(
         .iter()
         .copied()
         .filter(|index| {
-            matches!(
-                entities[*index].geometry,
-                SketchGeometry::Native { ref native_kind }
+            matches!((
+                entities[*index].geometry).definition(),
+                SketchGeometryDefinition::Native { ref native_kind }
                     if native_kind == "sldprt:marker-geometry:2"
             )
         })
@@ -622,12 +629,22 @@ pub(super) fn resolve_slot_marker_arcs(
     let resolved_arcs = cycle_entities
         .iter()
         .copied()
-        .filter(|index| matches!(entities[*index].geometry, SketchGeometry::Arc { .. }))
+        .filter(|index| {
+            matches!(
+                (entities[*index].geometry).definition(),
+                SketchGeometryDefinition::Arc { .. }
+            )
+        })
         .collect::<Vec<_>>();
     let lines = cycle_entities
         .iter()
         .copied()
-        .filter(|index| matches!(entities[*index].geometry, SketchGeometry::Line { .. }))
+        .filter(|index| {
+            matches!(
+                (entities[*index].geometry).definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .count();
     let ([target], [resolved_arc]) = (native_arcs.as_slice(), resolved_arcs.as_slice()) else {
         return;
@@ -684,8 +701,10 @@ pub(super) fn resolve_slot_marker_arcs(
     }
     let point_positions = entities
         .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((entity.native_ref.as_deref()?, position)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => {
+                Some((entity.native_ref.as_deref()?, position))
+            }
             _ => None,
         })
         .collect::<HashMap<_, _>>();
@@ -702,7 +721,9 @@ pub(super) fn resolve_slot_marker_arcs(
     else {
         return;
     };
-    let SketchGeometry::Arc { center: used, .. } = entities[*resolved_arc].geometry else {
+    let SketchGeometryDefinition::Arc { center: used, .. } =
+        *(entities[*resolved_arc].geometry).definition()
+    else {
         return;
     };
     let remaining = centers
@@ -729,9 +750,9 @@ fn closed_cycle_marker_arc_geometry(
     circular_witnesses: &[CircularArcWitness],
     tolerance: f64,
 ) -> Option<SketchGeometry> {
-    if !matches!(
-        target.geometry,
-        SketchGeometry::Native { ref native_kind }
+    if !matches!((
+        target.geometry).definition(),
+        SketchGeometryDefinition::Native { ref native_kind }
             if native_kind == "sldprt:marker-geometry:2"
     ) || target.construction
         || target.endpoint_refs.len() != 2
@@ -790,7 +811,10 @@ fn closed_cycle_marker_arc_geometry(
                 !entity.construction
                     && entity.sketch == target.sketch
                     && entity.endpoint_refs.len() == 2
-                    && matches!(entity.geometry, SketchGeometry::Line { .. })
+                    && matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Line { .. }
+                    )
                     && entity
                         .endpoint_refs
                         .iter()
@@ -799,8 +823,14 @@ fn closed_cycle_marker_arc_geometry(
                         .endpoint_refs
                         .iter()
                         .any(|endpoint| witness_endpoints.contains(&endpoint.as_str()))
-                    && match (entity.endpoint_refs.as_slice(), &entity.geometry) {
-                        ([first_ref, second_ref], SketchGeometry::Line { start, end }) => {
+                    && match (
+                        entity.endpoint_refs.as_slice(),
+                        entity.geometry.definition(),
+                    ) {
+                        (
+                            [first_ref, second_ref],
+                            SketchGeometryDefinition::Line { start, end },
+                        ) => {
                             let (Some(first), Some(second)) = (
                                 point_by_ref.get(first_ref.as_str()),
                                 point_by_ref.get(second_ref.as_str()),
@@ -865,15 +895,17 @@ fn closed_cycle_marker_arc_geometry(
 pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
     let points = entities
         .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((entity.native_ref.clone()?, position)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => {
+                Some((entity.native_ref.clone()?, position))
+            }
             _ => None,
         })
         .collect::<HashMap<_, _>>();
     let point_records = entities
         .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => {
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => {
                 Some((entity.sketch.clone(), entity.native_ref.clone()?, position))
             }
             _ => None,
@@ -883,9 +915,9 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         .iter()
         .enumerate()
         .filter_map(|(index, entity)| {
-            if !matches!(
-                entity.geometry,
-                SketchGeometry::Native { ref native_kind }
+            if !matches!((
+                entity.geometry).definition(),
+                SketchGeometryDefinition::Native { ref native_kind }
                     if native_kind == "sldprt:marker-geometry:2"
             ) {
                 return None;
@@ -913,7 +945,9 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         .iter()
         .enumerate()
         .filter_map(|(index, entity)| {
-            let SketchGeometry::Arc { center, radius, .. } = entity.geometry else {
+            let SketchGeometryDefinition::Arc { center, radius, .. } =
+                *entity.geometry.definition()
+            else {
                 return None;
             };
             let [start, end] = entity.endpoint_refs.as_slice() else {
@@ -924,14 +958,16 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
                 sketch: entity.sketch.clone(),
                 endpoints: [start.clone(), end.clone()],
                 center,
-                radius: radius.0,
+                radius: radius.get(),
             })
         })
         .collect::<Vec<_>>();
     let point_by_ref = entities
         .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((entity.native_ref.as_deref()?, position)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => {
+                Some((entity.native_ref.as_deref()?, position))
+            }
             _ => None,
         })
         .collect::<HashMap<_, _>>();
@@ -958,9 +994,9 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         .enumerate()
         .filter_map(|(index, entity)| {
             (entity.endpoint_refs.len() == 2
-                && matches!(
-                    entity.geometry,
-                    SketchGeometry::Native { ref native_kind }
+                && matches!((
+                    entity.geometry).definition(),
+                    SketchGeometryDefinition::Native { ref native_kind }
                         if native_kind == "sldprt:marker-geometry:2"
                 ))
             .then_some(index)
@@ -1031,12 +1067,12 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         entities[index].geometry = geometry;
     }
     for entity in entities {
-        let SketchGeometry::Arc {
+        let SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             ..
-        } = entity.geometry
+        } = *entity.geometry.definition()
         else {
             continue;
         };
@@ -1047,8 +1083,8 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             continue;
         };
         let geometry_start = Point2::new(
-            center.u + radius.0 * start_angle.0.cos(),
-            center.v + radius.0 * start_angle.0.sin(),
+            center.u + radius.get() * start_angle.get().cos(),
+            center.v + radius.get() * start_angle.get().sin(),
         );
         let first_distance = (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
         let second_distance = (geometry_start.u - second.u).hypot(geometry_start.v - second.v);
@@ -1076,7 +1112,11 @@ fn closed_marker_profiles_with_policy(
     let mut profiles = entities
         .iter()
         .filter(|entity| {
-            !entity.construction && matches!(entity.geometry, SketchGeometry::Circle { .. })
+            !entity.construction
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. }
+                )
         })
         .map(|entity| {
             vec![SketchEntityUse {
@@ -1092,8 +1132,8 @@ fn closed_marker_profiles_with_policy(
             !entity.construction
                 && entity.endpoint_refs.len() == 2
                 && matches!(
-                    entity.geometry,
-                    SketchGeometry::Line { .. } | SketchGeometry::Arc { .. }
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. }
                 )
         })
         .collect::<Vec<_>>();
@@ -1246,18 +1286,16 @@ pub(super) fn sketch_plane_frames(
     let mut frames_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let frame = match feature.definition {
+            let frame = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    SketchPlaneFrame::native(principal_sketch_frame(plane))
+                    SketchPlaneFrame::native(principal_sketch_frame(*plane))
                 }
-                cadmpeg_ir::features::FeatureDefinition::DatumPlane {
-                    origin,
-                    normal,
-                    u_axis,
-                } => SketchPlaneFrame::from_frame(
-                    (origin, normal, u_axis),
-                    feature_u_axis_source(feature),
-                ),
+                cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame } => {
+                    SketchPlaneFrame::from_frame(
+                        (frame.origin(), frame.normal(), frame.u_axis()),
+                        feature_u_axis_source(feature),
+                    )
+                }
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
@@ -1271,7 +1309,7 @@ pub(super) fn sketch_plane_frames(
                 let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
                     reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(reference)),
                     distance,
-                } = &feature.definition
+                } = feature.evaluation.definition()
                 else {
                     return None;
                 };
@@ -1280,9 +1318,9 @@ pub(super) fn sketch_plane_frames(
                     feature.id.clone(),
                     SketchPlaneFrame {
                         origin: Point3::new(
-                            frame.origin.x + frame.normal.x * distance.0,
-                            frame.origin.y + frame.normal.y * distance.0,
-                            frame.origin.z + frame.normal.z * distance.0,
+                            frame.origin.x + frame.normal.x * distance.get(),
+                            frame.origin.y + frame.normal.y * distance.get(),
+                            frame.origin.z + frame.normal.z * distance.get(),
                         ),
                         ..frame
                     },
@@ -1317,16 +1355,12 @@ pub(super) fn lane_sketch_plane_frames(
         else {
             continue;
         };
-        let frame = match feature.definition {
+        let frame = match feature.evaluation.definition() {
             FeatureDefinition::DatumPrincipalPlane { plane } => {
-                SketchPlaneFrame::native(principal_sketch_frame(plane))
+                SketchPlaneFrame::native(principal_sketch_frame(*plane))
             }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => SketchPlaneFrame::from_frame(
-                (origin, normal, u_axis),
+            FeatureDefinition::DatumPlane { frame } => SketchPlaneFrame::from_frame(
+                (frame.origin(), frame.normal(), frame.u_axis()),
                 feature_u_axis_source(feature),
             ),
             _ => continue,

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
+
 #![allow(clippy::unwrap_used)]
 
 use crate::records::operand_tag::NativeOperandTag;
+const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
+
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -22,9 +25,9 @@ fn encoder_writes_source_less_curved_sketches() {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-        SketchId, SketchLocus,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse,
+        SketchGeometryDefinition, SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -34,32 +37,36 @@ fn encoder_writes_source_less_curved_sketches() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SketchId("synthetic:test:sketch#curves".into());
+    let sketch_id = SketchId::mint("synthetic:test:sketch#curves").unwrap();
     let geometries = vec![
-        SketchGeometry::Circle {
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-        },
-        SketchGeometry::Arc {
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(8.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
-        },
-        SketchGeometry::Arc {
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(16.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(std::f64::consts::PI),
-            end_angle: Angle(std::f64::consts::TAU),
-        },
-        SketchGeometry::Ellipse {
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(std::f64::consts::TAU).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(0.0, 8.0),
-            major_angle: Angle(0.4),
-            major_radius: Length(3.0),
-            minor_radius: Length(1.5),
+            major_angle: Angle::new(0.4).unwrap(),
+            major_radius: Length::new(3.0).unwrap(),
+            minor_radius: Length::new(1.5).unwrap(),
             bounds: None,
-        },
-        SketchGeometry::Nurbs {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
             curve: cadmpeg_ir::geometry::PcurveNurbs::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -72,102 +79,127 @@ fn encoder_writes_source_less_curved_sketches() {
                 false,
             )
             .unwrap(),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(6.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(18.0, 0.0),
             end: Point2::new(14.0, 0.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(24.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
-        },
-        SketchGeometry::Line {
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(24.0, -2.0),
             end: Point2::new(24.0, 2.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(8.0, 0.0),
-            radius: Length(3.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
-        },
-        SketchGeometry::Line {
+            radius: Length::new(3.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(5.0, 0.0),
             end: Point2::new(11.0, 0.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(40.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-        SketchGeometry::Line {
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(40.0, 2.0),
             end: Point2::new(42.0, 0.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(30.0, 0.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(34.0, 0.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(30.0, 4.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(41.0, 1.0),
-        },
-        SketchGeometry::Circle {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(8.0, 2.0),
-            radius: Length(2.0),
-        },
-        SketchGeometry::Line {
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(50.0, 0.0),
             end: Point2::new(54.0, 0.0),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(54.0, 4.0),
             end: Point2::new(50.0, 4.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(52.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
-        },
-        SketchGeometry::Arc {
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(52.0, 4.0),
-            radius: Length(2.0),
-            start_angle: Angle(std::f64::consts::PI),
-            end_angle: Angle(std::f64::consts::TAU),
-        },
-        SketchGeometry::Circle {
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(std::f64::consts::TAU).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(8.0, 0.0),
-            radius: Length(2.0),
-        },
-        SketchGeometry::Ellipse {
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(60.0, 0.0),
-            major_angle: Angle(0.0),
-            major_radius: Length(3.0),
-            minor_radius: Length(1.5),
-            bounds: Some([Angle(0.0), Angle(std::f64::consts::FRAC_PI_2)]),
-        },
-        SketchGeometry::Line {
+            major_angle: Angle::new(0.0).unwrap(),
+            major_radius: Length::new(3.0).unwrap(),
+            minor_radius: Length::new(1.5).unwrap(),
+            bounds: Some([
+                Angle::new(0.0).unwrap(),
+                Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            ]),
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(60.0, 1.5),
             end: Point2::new(63.0, 0.0),
-        },
+        })
+        .unwrap(),
     ];
     let entity_ids = geometries
         .into_iter()
         .enumerate()
         .map(|(index, geometry)| {
-            let id = SketchEntityId(format!("synthetic:test:sketch-entity#curve-{index:02}"));
+            let id = SketchEntityId::mint(format!("synthetic:test:sketch-entity#curve-{index:02}"))
+                .unwrap();
             ir.model.sketch_entities.push(SketchEntity::new(
                 id.clone(),
                 sketch_id.clone(),
@@ -190,12 +222,13 @@ fn encoder_writes_source_less_curved_sketches() {
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             profile(&[0]),
             profile(&[1, 5]),
             profile(&[2, 6]),
@@ -209,7 +242,8 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[4]),
             profile(&[22]),
             profile(&[23, 24]),
-        ],
+        ])
+        .unwrap(),
         native_ref: None,
     });
     let feature_id = FeatureId::mint("synthetic:test:feature#curves").expect("identity grammar");
@@ -218,15 +252,17 @@ fn encoder_writes_source_less_curved_sketches() {
         ordinal: 0,
         name: Some("Curves".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: None,
     });
     let distance_parameter =
@@ -252,7 +288,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "D10",
             "4mm",
             None,
-            ParameterValue::Length(Length(4.0)),
+            ParameterValue::Length(Length::new(4.0).unwrap()),
         ),
         (
             point_line_parameter.clone(),
@@ -260,7 +296,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "D11",
             "4mm",
             None,
-            ParameterValue::Length(Length(4.0)),
+            ParameterValue::Length(Length::new(4.0).unwrap()),
         ),
         (
             line_line_parameter.clone(),
@@ -268,7 +304,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "D12",
             "4mm",
             None,
-            ParameterValue::Length(Length(4.0)),
+            ParameterValue::Length(Length::new(4.0).unwrap()),
         ),
         (
             horizontal_parameter.clone(),
@@ -276,7 +312,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "H1",
             "4mm",
             None,
-            ParameterValue::Length(Length(4.0)),
+            ParameterValue::Length(Length::new(4.0).unwrap()),
         ),
         (
             vertical_parameter.clone(),
@@ -284,7 +320,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "V1",
             "4mm",
             None,
-            ParameterValue::Length(Length(4.0)),
+            ParameterValue::Length(Length::new(4.0).unwrap()),
         ),
         (
             angle_parameter.clone(),
@@ -292,7 +328,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "A1",
             "90deg",
             None,
-            ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2)),
+            ParameterValue::Angle(Angle::new(std::f64::consts::FRAC_PI_2).unwrap()),
         ),
         (
             radius_parameter.clone(),
@@ -300,7 +336,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "R1",
             "R2mm",
             Some(DimensionDisplay::Radius),
-            ParameterValue::Length(Length(2.0)),
+            ParameterValue::Length(Length::new(2.0).unwrap()),
         ),
         (
             diameter_parameter.clone(),
@@ -308,7 +344,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "DIA1",
             "<MOD-DIAM>4mm",
             Some(DimensionDisplay::Diameter),
-            ParameterValue::Length(Length(4.0)),
+            ParameterValue::Length(Length::new(4.0).unwrap()),
         ),
     ] {
         ir.model.parameters.push(DesignParameter {
@@ -319,19 +355,22 @@ fn encoder_writes_source_less_curved_sketches() {
             expression: expression.into(),
             display,
             value: Some(value),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
         });
     }
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#arc-angle".into()),
+        id: SketchConstraintId::mint("synthetic:test:constraint#arc-angle").unwrap(),
         sketch: sketch_id.clone(),
-        definition: SketchConstraintDefinition::ArcAngle {
-            entity: entity_ids[1].clone(),
-            angle: Angle(std::f64::consts::PI),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::ArcAngle {
+                entity: entity_ids[1].clone(),
+                angle: Angle::new(std::f64::consts::PI).unwrap(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -344,12 +383,15 @@ fn encoder_writes_source_less_curved_sketches() {
         native_ref: None,
     });
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#arc-angle-ellipse".into()),
+        id: SketchConstraintId::mint("synthetic:test:constraint#arc-angle-ellipse").unwrap(),
         sketch: sketch_id.clone(),
-        definition: SketchConstraintDefinition::EllipseAngle {
-            entity: entity_ids[23].clone(),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::EllipseAngle {
+                entity: entity_ids[23].clone(),
+                angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -364,28 +406,28 @@ fn encoder_writes_source_less_curved_sketches() {
     for (suffix, definition) in [
         (
             "collinear",
-            SketchConstraintDefinition::Collinear {
+            SketchConstraintDefinitionInput::Collinear {
                 first: entity_ids[5].clone(),
                 second: entity_ids[6].clone(),
             },
         ),
         (
             "concentric",
-            SketchConstraintDefinition::Concentric {
+            SketchConstraintDefinitionInput::Concentric {
                 first: entity_ids[1].clone(),
                 second: entity_ids[9].clone(),
             },
         ),
         (
             "coradial",
-            SketchConstraintDefinition::Coradial {
+            SketchConstraintDefinitionInput::Coradial {
                 first: entity_ids[1].clone(),
                 second: entity_ids[22].clone(),
             },
         ),
         (
             "dimension-angle",
-            SketchConstraintDefinition::Angle {
+            SketchConstraintDefinitionInput::Angle {
                 first: entity_ids[5].clone(),
                 second: entity_ids[8].clone(),
                 parameter: angle_parameter,
@@ -393,14 +435,14 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "dimension-diameter",
-            SketchConstraintDefinition::Diameter {
+            SketchConstraintDefinitionInput::Diameter {
                 entity: entity_ids[17].clone(),
                 parameter: diameter_parameter,
             },
         ),
         (
             "dimension-horizontal",
-            SketchConstraintDefinition::HorizontalDistance {
+            SketchConstraintDefinitionInput::HorizontalDistance {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[14].clone()),
                 parameter: horizontal_parameter,
@@ -408,14 +450,14 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "dimension-line-line",
-            SketchConstraintDefinition::Distance {
+            SketchConstraintDefinitionInput::Distance {
                 entities: vec![entity_ids[18].clone(), entity_ids[19].clone()],
                 parameter: line_line_parameter,
             },
         ),
         (
             "dimension-point-line",
-            SketchConstraintDefinition::DistanceLoci {
+            SketchConstraintDefinitionInput::DistanceLoci {
                 first: SketchLocus::Entity(entity_ids[15].clone()),
                 second: SketchLocus::Entity(entity_ids[5].clone()),
                 parameter: point_line_parameter,
@@ -423,7 +465,7 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "dimension-vertical",
-            SketchConstraintDefinition::VerticalDistance {
+            SketchConstraintDefinitionInput::VerticalDistance {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[15].clone()),
                 parameter: vertical_parameter,
@@ -431,7 +473,7 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "distance",
-            SketchConstraintDefinition::DistanceLoci {
+            SketchConstraintDefinitionInput::DistanceLoci {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[14].clone()),
                 parameter: distance_parameter,
@@ -439,74 +481,81 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "equal-arcs",
-            SketchConstraintDefinition::Equal {
+            SketchConstraintDefinitionInput::Equal {
                 first: entity_ids[1].clone(),
                 second: entity_ids[2].clone(),
             },
         ),
         (
             "equal-lines",
-            SketchConstraintDefinition::Equal {
+            SketchConstraintDefinitionInput::Equal {
                 first: entity_ids[5].clone(),
                 second: entity_ids[6].clone(),
             },
         ),
         (
             "horizontal-points",
-            SketchConstraintDefinition::SameCoordinate {
-                first: SketchLocus::Entity(entity_ids[13].clone()),
-                second: SketchLocus::Entity(entity_ids[14].clone()),
-                axis: SketchCoordinateAxis::V,
+            SketchConstraintDefinitionInput::SameCoordinate {
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(entity_ids[13].clone()),
+                    SketchLocus::Entity(entity_ids[14].clone()),
+                    SketchCoordinateAxis::V,
+                )
+                .unwrap(),
             },
         ),
         (
             "midpoint",
-            SketchConstraintDefinition::Midpoint {
+            SketchConstraintDefinitionInput::Midpoint {
                 point: SketchLocus::Entity(entity_ids[16].clone()),
                 entity: entity_ids[12].clone(),
             },
         ),
         (
             "parallel",
-            SketchConstraintDefinition::Parallel {
+            SketchConstraintDefinitionInput::Parallel {
                 first: entity_ids[5].clone(),
                 second: entity_ids[6].clone(),
             },
         ),
         (
             "perpendicular",
-            SketchConstraintDefinition::Perpendicular {
+            SketchConstraintDefinitionInput::Perpendicular {
                 first: entity_ids[5].clone(),
                 second: entity_ids[8].clone(),
             },
         ),
         (
             "radius",
-            SketchConstraintDefinition::Radius {
+            SketchConstraintDefinitionInput::Radius {
                 entity: entity_ids[0].clone(),
                 parameter: radius_parameter,
             },
         ),
         (
             "tangent",
-            SketchConstraintDefinition::Tangent {
+            SketchConstraintDefinitionInput::Tangent {
                 first: entity_ids[5].clone(),
                 second: entity_ids[17].clone(),
             },
         ),
         (
             "vertical-points",
-            SketchConstraintDefinition::SameCoordinate {
-                first: SketchLocus::Entity(entity_ids[13].clone()),
-                second: SketchLocus::Entity(entity_ids[15].clone()),
-                axis: SketchCoordinateAxis::U,
+            SketchConstraintDefinitionInput::SameCoordinate {
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(entity_ids[13].clone()),
+                    SketchLocus::Entity(entity_ids[15].clone()),
+                    SketchCoordinateAxis::U,
+                )
+                .unwrap(),
             },
         ),
     ] {
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!("synthetic:test:constraint#{suffix}")),
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{suffix}")).unwrap(),
             sketch: sketch_id.clone(),
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -536,8 +585,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Coradial { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Coradial { .. }
         )));
     assert!(decoded
         .ir()
@@ -545,8 +594,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::EllipseAngle { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::EllipseAngle { .. }
         )));
     assert!(decoded
         .ir()
@@ -554,8 +603,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::DistanceLoci { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::DistanceLoci { .. }
         )));
     assert!(decoded
         .ir()
@@ -563,11 +612,12 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Radius { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Radius { .. }
         )));
     assert!(decoded.ir().model.parameters.iter().any(|parameter| {
-        parameter.name == "D10" && parameter.value == Some(ParameterValue::Length(Length(4.0)))
+        parameter.name == "D10"
+            && parameter.value == Some(ParameterValue::Length(Length::new(4.0).unwrap()))
     }));
     assert!(decoded.ir().model.parameters.iter().any(|parameter| {
         parameter.name == "R1" && parameter.display == Some(DimensionDisplay::Radius)
@@ -591,18 +641,18 @@ fn encoder_writes_source_less_curved_sketches() {
                 .sketch_constraints
                 .iter()
                 .any(|constraint| matches!(
-                    (expected, &constraint.definition),
-                    ("line-line", SketchConstraintDefinition::Distance { .. })
-                        | (
-                            "horizontal",
-                            SketchConstraintDefinition::HorizontalDistance { .. }
-                        )
-                        | (
-                            "vertical",
-                            SketchConstraintDefinition::VerticalDistance { .. }
-                        )
-                        | ("angle", SketchConstraintDefinition::Angle { .. })
-                        | ("diameter", SketchConstraintDefinition::Diameter { .. })
+                    (expected, constraint.definition.kind()),
+                    (
+                        "line-line",
+                        SketchConstraintDefinitionInput::Distance { .. }
+                    ) | (
+                        "horizontal",
+                        SketchConstraintDefinitionInput::HorizontalDistance { .. }
+                    ) | (
+                        "vertical",
+                        SketchConstraintDefinitionInput::VerticalDistance { .. }
+                    ) | ("angle", SketchConstraintDefinitionInput::Angle { .. })
+                        | ("diameter", SketchConstraintDefinitionInput::Diameter { .. })
                 )),
             "missing regenerated {expected} dimension"
         );
@@ -666,11 +716,11 @@ fn encoder_writes_source_less_curved_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::ArcAngle {
-                    angle: Angle(value),
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::ArcAngle {
+                    angle: value,
                     ..
-                } if (value - std::f64::consts::PI).abs() < 1.0e-12
+                } if (value.get() - std::f64::consts::PI).abs() < 1.0e-12
             )
         }));
     for expected in [
@@ -696,8 +746,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Parallel { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Parallel { .. }
         )));
     assert!(decoded
         .ir()
@@ -705,8 +755,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Perpendicular { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Perpendicular { .. }
         )));
     assert!(decoded
         .ir()
@@ -714,8 +764,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Collinear { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Collinear { .. }
         )));
     assert!(decoded
         .ir()
@@ -723,8 +773,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Concentric { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Concentric { .. }
         )));
     assert!(
         decoded
@@ -733,8 +783,8 @@ fn encoder_writes_source_less_curved_sketches() {
             .sketch_constraints
             .iter()
             .filter(|constraint| matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Equal { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Equal { .. }
             ))
             .count()
             >= 2
@@ -751,23 +801,19 @@ fn encoder_writes_source_less_curved_sketches() {
             .sketch_constraints
             .iter()
             .any(|constraint| {
-                matches!(
-                    (&constraint.definition, definition),
+                match (constraint.definition.kind(), definition) {
                     (
-                        SketchConstraintDefinition::SameCoordinate {
-                            axis: SketchCoordinateAxis::V,
-                            ..
-                        },
-                        "horizontal_points"
-                    ) | (
-                        SketchConstraintDefinition::SameCoordinate {
-                            axis: SketchCoordinateAxis::U,
-                            ..
-                        },
-                        "vertical_points"
-                    ) | (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
-                        | (SketchConstraintDefinition::Tangent { .. }, "tangent")
-                )
+                        SketchConstraintDefinitionInput::SameCoordinate { relation },
+                        "horizontal_points",
+                    ) => relation.axis() == SketchCoordinateAxis::V,
+                    (
+                        SketchConstraintDefinitionInput::SameCoordinate { relation },
+                        "vertical_points",
+                    ) => relation.axis() == SketchCoordinateAxis::U,
+                    (SketchConstraintDefinitionInput::Midpoint { .. }, "midpoint")
+                    | (SketchConstraintDefinitionInput::Tangent { .. }, "tangent") => true,
+                    _ => false,
+                }
             }));
     }
     assert_eq!(
@@ -776,7 +822,10 @@ fn encoder_writes_source_less_curved_sketches() {
             .model
             .sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+            ))
             .count(),
         3
     );
@@ -786,7 +835,10 @@ fn encoder_writes_source_less_curved_sketches() {
             .model
             .sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Arc { .. }
+            ))
             .count(),
         7
     );
@@ -795,13 +847,19 @@ fn encoder_writes_source_less_curved_sketches() {
         .model
         .sketch_entities
         .iter()
-        .any(|entity| matches!(entity.geometry, SketchGeometry::Ellipse { .. })));
+        .any(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Ellipse { .. }
+        )));
     assert!(decoded
         .ir()
         .model
         .sketch_entities
         .iter()
-        .any(|entity| matches!(entity.geometry, SketchGeometry::Nurbs { .. })));
+        .any(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Nurbs { .. }
+        )));
 
     let parameter = ir
         .model
@@ -810,7 +868,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .find(|parameter| parameter.name == "D10")
         .expect("source distance parameter");
     parameter.expression = "5mm".into();
-    parameter.value = Some(ParameterValue::Length(Length(5.0)));
+    parameter.value = Some(ParameterValue::Length(Length::new(5.0).unwrap()));
     let error = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -824,7 +882,9 @@ fn encoder_writes_source_less_curved_sketches() {
 fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId,
+    };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     ir.model.bodies[0].name = None;
@@ -834,26 +894,28 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
     for (ordinal, name) in ["Profile", "Profile"].into_iter().enumerate() {
-        let sketch_id = SketchId(format!("synthetic:test:sketch#named-{ordinal}"));
+        let sketch_id = SketchId::mint(format!("synthetic:test:sketch#named-{ordinal}")).unwrap();
         ir.model.sketches.push(Sketch {
             id: sketch_id.clone(),
             name: Some(name.into()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, ordinal as f64),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, ordinal as f64),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: None,
         });
         ir.model.sketch_entities.push(SketchEntity::new(
-            SketchEntityId(format!("synthetic:test:sketch-entity#named-{ordinal}")),
+            SketchEntityId::mint(format!("synthetic:test:sketch-entity#named-{ordinal}")).unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(ordinal as f64, ordinal as f64 + 1.0),
-            },
+            })
+            .unwrap(),
         ));
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#named-{ordinal}"))
@@ -861,15 +923,17 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             ordinal: ordinal as u64,
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                },
+            ),
             native_ref: None,
         });
     }
@@ -898,7 +962,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         .model
         .features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some(sketch),
@@ -913,7 +977,8 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
         Angle, BodySelection, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind, RadiusSpec,
+        FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind,
+        PatternTransform, RadiusSpec,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
@@ -931,39 +996,43 @@ fn encoder_writes_source_less_native_features() {
         ordinal: 0,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "BossExtrude".into(),
-            parameters: BTreeMap::from([("Depth".into(), "25mm".into())]),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "BossExtrude".into(),
+                parameters: BTreeMap::from([("Depth".into(), "25mm".into())]),
+            },
+        ),
         native_ref: None,
     });
     let definitions = vec![
         FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Resolved {
                     edges: vec![ir.model.edges[0].id.clone()],
                     native: "edge-a,edge-b".into(),
                 },
                 radius: RadiusSpec::Constant {
-                    radius: Length(3.0),
+                    radius: cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
                 },
                 tangency_weight: None,
-            }],
+            }),
         },
         FeatureDefinition::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
-                edges: EdgeSelection::Native("edge-c".into()),
-                spec: ChamferSpec::TwoDistances {
-                    first: Length(1.0),
-                    second: Length(2.0),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::ChamferGroup {
+                    edges: EdgeSelection::Native("edge-c".into()),
+                    spec: ChamferSpec::TwoDistances {
+                        first: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                        second: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                    },
                 },
-            }],
+            ),
             flip_direction: false,
         },
         FeatureDefinition::Shell {
@@ -972,7 +1041,7 @@ fn encoder_writes_source_less_native_features() {
                 faces: vec![ir.model.faces[0].id.clone()],
                 native: "face-a".into(),
             },
-            thickness: Some(Length(1.5)),
+            thickness: Some(cadmpeg_ir::features::PositiveLength::new(1.5).unwrap()),
             outward: Some(true),
             mode: None,
             join: None,
@@ -984,19 +1053,26 @@ fn encoder_writes_source_less_native_features() {
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native("face-c".into()),
                 pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: Vector3::new(0.0, 0.0, 1.0),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                     plane: None,
                 }),
             },
-            angle: Some(Angle(0.2)),
+            angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.2).unwrap()),
             outward: Some(false),
         },
         FeatureDefinition::Combine {
-            target: BodySelection::Resolved {
-                bodies: vec![ir.model.bodies[0].id.clone()],
-                native: "body-a".into(),
-            },
-            tools: BodySelection::Native("body-b,body-c".into()),
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::Resolved {
+                    bodies: vec![ir.model.bodies[0].id.clone()],
+                    native: "body-a".into(),
+                },
+                BodySelection::Native("body-b,body-c".into()),
+            )
+            .unwrap(),
+
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         },
@@ -1007,14 +1083,16 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::MoveFace {
             faces: FaceSelection::Native("face-e".into()),
             motion: FaceMotion::Rotate {
-                axis_origin: Point3::new(1.0, 2.0, 3.0),
-                axis_dir: Vector3::new(0.0, 1.0, 0.0),
-                angle: Angle(0.4),
+                axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .unwrap(),
+                axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
+                angle: Angle::new(0.4).unwrap(),
             },
         },
         FeatureDefinition::Dome {
             faces: FaceSelection::Native("face-f".into()),
-            height: Some(Length(4.0)),
+            height: Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
             elliptical: Some(true),
             reverse: Some(false),
         },
@@ -1024,17 +1102,25 @@ fn encoder_writes_source_less_native_features() {
             face: Some(FaceSelection::Native("face-g".into())),
             direction: None,
             placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
-                position: Point3::new(3.0, 4.0, 5.0),
-                direction: Vector3::new(0.0, 0.0, -1.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 5.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, -1.0,
+                ))
+                .unwrap(),
             }]),
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
-                diameter: Length(8.0),
-                angle: Angle(1.4),
-            }),
-            exit_kind: None,
-            diameter: Some(Length(5.0)),
+            shape: cadmpeg_ir::features::HoleShape::new(
+                cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
+                    diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(1.4).unwrap(),
+                }),
+                None,
+                Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+            )
+            .unwrap(),
+
             extent: Some(LinearTermination::Blind {
-                length: Length(20.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(20.0).unwrap(),
             }),
             bottom: None,
             taper_angle: None,
@@ -1048,37 +1134,40 @@ fn encoder_writes_source_less_native_features() {
             ordinal: index as u64 + 1,
             name: Some(format!("Direct {index}")),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
     let patterns = [
-        PatternKind::Linear {
+        PatternKind::new(PatternTransform::Linear {
             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-            spacing: Length(10.0),
+            spacing: Length::new(10.0).unwrap(),
             count: 3,
             second: Some(cadmpeg_ir::features::LinearPatternDirection {
                 direction: Vector3::new(0.0, 1.0, 0.0),
-                spacing: Length(20.0),
+                spacing: Length::new(20.0).unwrap(),
                 count: 4,
             }),
-        },
-        PatternKind::Circular {
+        })
+        .unwrap(),
+        PatternKind::new(PatternTransform::Circular {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_dir: Vector3::new(0.0, 0.0, 1.0),
-            angle: Angle(std::f64::consts::TAU),
+            angle: Angle::new(std::f64::consts::TAU).unwrap(),
             count: 6,
-        },
-        PatternKind::Mirror {
+        })
+        .unwrap(),
+        PatternKind::new(PatternTransform::Mirror {
             plane_origin: Point3::new(0.0, 0.0, 0.0),
             plane_normal: Vector3::new(1.0, 0.0, 0.0),
-        },
+        })
+        .unwrap(),
     ];
     for (index, pattern) in patterns.into_iter().enumerate() {
         ir.model.features.push(Feature {
@@ -1087,16 +1176,18 @@ fn encoder_writes_source_less_native_features() {
             ordinal: index as u64 + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
-            dependencies: vec![seed_id.clone()],
+            dependencies: (vec![seed_id.clone()]).try_into().unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Pattern {
-                seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
-                pattern,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Pattern {
+                    seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
+                    pattern,
+                },
+            ),
             native_ref: None,
         });
     }
@@ -1117,19 +1208,19 @@ fn encoder_writes_source_less_native_features() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(25.0),
+                        length: actual_length,
                     },
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }
+        } if actual_length.get() == 25.0
     ));
     assert_eq!(
         sldprt_native(decoded.ir()).feature_histories[0].features[0].xml_tag,
@@ -1148,85 +1239,71 @@ fn encoder_writes_source_less_native_features() {
         })
         .collect::<std::collections::HashSet<_>>();
     assert_eq!(source_ids.len(), native_features.len());
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Fillet { .. })));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        feature.definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
-                second: Some(cadmpeg_ir::features::LinearPatternDirection {
-                    direction: Vector3 {
-                        x: 0.0,
-                        y: 1.0,
-                        z: 0.0
-                    },
-                    spacing: Length(20.0),
-                    count: 4,
-                }),
-                ..
-            },
-            ..
-        }
+        feature.evaluation.definition(),
+        FeatureDefinition::Fillet { .. }
     )));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Chamfer { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Shell { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Draft { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Combine { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::DeleteFace { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::MoveFace { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Dome { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Hole { .. })));
+    assert!(decoded.ir().model.features.iter().any(
+        |feature| matches!(&(feature.evaluation.definition()),
+            FeatureDefinition::Pattern {
+                pattern: admitted_pattern,
+                ..
+            } if matches!(admitted_pattern.definition(), PatternTransform::Linear {
+                    second: Some(cadmpeg_ir::features::LinearPatternDirection {
+                        direction: Vector3 {
+                            x: 0.0,
+                            y: 1.0,
+                            z: 0.0
+                        },
+                        spacing: actual_spacing,
+                        count: 4,
+                    }),
+                    ..
+                } if actual_spacing.get() == 20.0)
+        )
+    ));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Chamfer { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Shell { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Draft { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Combine { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::DeleteFace { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::MoveFace { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Dome { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Hole { .. }
+    )));
     assert_eq!(
         decoded
             .ir()
             .model
             .features
             .iter()
-            .filter(|feature| matches!(feature.definition, FeatureDefinition::Pattern { .. }))
+            .filter(|feature| matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Pattern { .. }
+            ))
             .count(),
         3
     );
@@ -1248,17 +1325,26 @@ fn semantic_writer_round_trips_flex_operations() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Flex { axis, mode } = &mut ir_edit.model.features[0].definition
-        else {
+        let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
+        let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
+        let FeatureDefinition::Flex { axis, mode } = &mut updated_ir_edit_definition else {
             panic!("typed flex feature");
         };
-        assert_eq!(*axis, Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)));
+        assert_eq!(
+            axis.map(cadmpeg_ir::features::FeatureDirection3::get),
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+        );
         assert!(matches!(
             mode,
             FlexMode::Bending { angle }
-                if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+                if (angle.get() - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
         ));
-        *mode = FlexMode::Twisting { angle: Angle(0.75) };
+        *mode = FlexMode::Twisting {
+            angle: Angle::new(0.75).unwrap(),
+        };
+        updated_ir_edit_evaluation
+            .set_definition(updated_ir_edit_definition)
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1276,12 +1362,12 @@ fn semantic_writer_round_trips_flex_operations() {
         "Flex"
     );
     assert!(matches!(
-        &regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Flex {
             axis,
             mode: FlexMode::Twisting { angle },
-        } if *axis == Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
-            && (angle.0 - 0.75).abs() < 1.0e-12
+        } if axis.map(cadmpeg_ir::features::FeatureDirection3::get) == Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+            && (angle.get() - 0.75).abs() < 1.0e-12
     ));
 }
 
@@ -1305,19 +1391,30 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
-        if let FeatureDefinition::Flex { mode, .. } = &mut feature.definition {
-            *mode = match feature.name.as_deref().unwrap() {
-                "Bend" => FlexMode::Bending { angle: Angle(0.1) },
-                "Twist" => FlexMode::Twisting { angle: Angle(0.2) },
-                "Taper" => FlexMode::Tapering { factor: 2.0 },
-                "Stretch" => FlexMode::Stretching {
-                    distance: Length(12.0),
-                },
-                name => panic!("unexpected flex {name}"),
-            };
-        } else {
-            panic!("untyped flex feature");
-        }
+        feature
+            .evaluation
+            .try_edit(|definition, _| {
+                if let FeatureDefinition::Flex { mode, .. } = definition {
+                    *mode = match feature.name.as_deref().unwrap() {
+                        "Bend" => FlexMode::Bending {
+                            angle: Angle::new(0.1).unwrap(),
+                        },
+                        "Twist" => FlexMode::Twisting {
+                            angle: Angle::new(0.2).unwrap(),
+                        },
+                        "Taper" => FlexMode::Tapering {
+                            factor: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+                        },
+                        "Stretch" => FlexMode::Stretching {
+                            distance: Length::new(12.0).unwrap(),
+                        },
+                        name => panic!("unexpected flex {name}"),
+                    };
+                } else {
+                    panic!("untyped flex feature");
+                }
+            })
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1335,19 +1432,19 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .model
         .features
         .iter()
-        .map(|feature| &feature.definition)
+        .map(|feature| feature.evaluation.definition())
         .collect::<Vec<_>>();
     assert!(
-        matches!(modes[0], FeatureDefinition::Flex { mode: FlexMode::Bending { angle }, .. } if (angle.0 - 0.1).abs() < 1.0e-12)
+        matches!(modes[0], FeatureDefinition::Flex { mode: FlexMode::Bending { angle }, .. } if (angle.get() - 0.1).abs() < 1.0e-12)
     );
     assert!(
-        matches!(modes[1], FeatureDefinition::Flex { mode: FlexMode::Twisting { angle }, .. } if (angle.0 - 0.2).abs() < 1.0e-12)
+        matches!(modes[1], FeatureDefinition::Flex { mode: FlexMode::Twisting { angle }, .. } if (angle.get() - 0.2).abs() < 1.0e-12)
     );
     assert!(
-        matches!(modes[2], FeatureDefinition::Flex { mode: FlexMode::Tapering { factor }, .. } if (*factor - 2.0).abs() < 1.0e-12)
+        matches!(modes[2], FeatureDefinition::Flex { mode: FlexMode::Tapering { factor }, .. } if (factor.get() - 2.0).abs() < EPS_SCALAR_ROUND_TRIP)
     );
     assert!(
-        matches!(modes[3], FeatureDefinition::Flex { mode: FlexMode::Stretching { distance }, .. } if (distance.0 - 12.0).abs() < 1.0e-12)
+        matches!(modes[3], FeatureDefinition::Flex { mode: FlexMode::Stretching { distance }, .. } if (distance.get() - 12.0).abs() < 1.0e-12)
     );
 }
 
@@ -1372,7 +1469,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.features.len(), 4);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Flex {
             axis: None,
             mode: FlexMode::Bending { .. },
@@ -1383,11 +1480,11 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         .enumerate()
     {
         assert!(matches!(
-            decoded.ir().model.features[index + 1].definition,
+            decoded.ir().model.features[index + 1].evaluation.definition(),
             FeatureDefinition::Flex {
                 axis: Some(_),
                 mode: FlexMode::Unresolved(Some(actual)),
-            } if actual == form
+            } if *actual == form
         ));
     }
 
@@ -1480,10 +1577,12 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
                 FeatureSourceContent::Parameter(_),
             ] if prefix == "prefix" && suffix == "suffix"
         ));
-        let FeatureSourceContent::Text(prefix) = &mut neutral_macro.source_content[0] else {
+        let mut source_content = neutral_macro.source_content.to_vec();
+        let FeatureSourceContent::Text(prefix) = &mut source_content[0] else {
             unreachable!()
         };
         *prefix = "lead & more".into();
+        neutral_macro.source_content = source_content.try_into().unwrap();
         let neutral_definition = ir_edit
             .model
             .features

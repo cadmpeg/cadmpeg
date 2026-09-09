@@ -133,10 +133,12 @@ pub(crate) fn bind_feature_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
-    bind_extrusion_operations(features, histories, lanes, form_padding);
-    bind_revolution_operations(features, histories, lanes, form_padding);
-    bind_sweep_operations(features, histories, lanes, form_padding);
+) -> Result<(), cadmpeg_core::CodecError> {
+    bind_extrusion_operations(features, histories, lanes, form_padding)?;
+    bind_revolution_operations(features, histories, lanes, form_padding)?;
+    bind_sweep_operations(features, histories, lanes, form_padding)?;
+
+    Ok(())
 }
 
 /// Project revolution Boolean form words from declared and compact objects.
@@ -145,40 +147,54 @@ pub(crate) fn bind_revolution_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let FeatureDefinition::Revolve { op, .. } = &mut feature.definition else {
-            continue;
-        };
-        if *op != BooleanOp::Unresolved {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Revolve { op, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            if *op != BooleanOp::Unresolved {
+                break 'feature_edit;
+            }
+            let Some(history) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| history_features.get(native).copied())
+            else {
+                break 'feature_edit;
+            };
+            let mut operations = lanes.iter().filter_map(|lane| {
+                let name = feature_object_name(history, lane)?;
+                revolution_operation(
+                    history.input_class.as_deref(),
+                    feature_operation_code(
+                        lane,
+                        name,
+                        history.input_class.as_deref(),
+                        form_padding,
+                    )?,
+                )
+            });
+            let Some(first) = operations.next() else {
+                break 'feature_edit;
+            };
+            if operations.all(|operation| operation == first) {
+                *op = first;
+            }
         }
-        let Some(history) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| history_features.get(native).copied())
-        else {
-            continue;
-        };
-        let mut operations = lanes.iter().filter_map(|lane| {
-            let name = feature_object_name(history, lane)?;
-            revolution_operation(
-                history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
-            )
-        });
-        let Some(first) = operations.next() else {
-            continue;
-        };
-        if operations.all(|operation| operation == first) {
-            *op = first;
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Project compact solid-sweep Boolean operation discriminators.
@@ -187,55 +203,73 @@ pub(crate) fn bind_sweep_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let FeatureDefinition::Sweep { mode, .. } = &mut feature.definition else {
-            continue;
-        };
-        if *mode != cadmpeg_ir::features::SweepMode::Unresolved {
-            continue;
-        }
-        let Some(history) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| history_features.get(native).copied())
-        else {
-            continue;
-        };
-        let mut operations = lanes.iter().filter_map(|lane| {
-            let name = feature_object_name(history, lane)?;
-            match (
-                history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
-            ) {
-                (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
-                _ => None,
-            }
-        });
-        let Some(first) = operations.next() else {
-            continue;
-        };
-        if operations.all(|operation| operation == first) {
-            *mode = match first {
-                BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::BooleanKind::Join,
-                },
-                BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::BooleanKind::Cut,
-                },
-                BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::BooleanKind::Intersect,
-                },
-                BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::NewBody,
-                BooleanOp::Unresolved => continue,
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
+                break 'feature_edit;
             };
+            shape
+                .try_edit(|_, _, mode| {
+                    if *mode != cadmpeg_ir::features::SweepMode::Unresolved {
+                        return;
+                    }
+                    let Some(history) = feature
+                        .native_ref
+                        .as_deref()
+                        .and_then(|native| history_features.get(native).copied())
+                    else {
+                        return;
+                    };
+                    let mut operations = lanes.iter().filter_map(|lane| {
+                        let name = feature_object_name(history, lane)?;
+                        match (
+                            history.input_class.as_deref(),
+                            feature_operation_code(
+                                lane,
+                                name,
+                                history.input_class.as_deref(),
+                                form_padding,
+                            )?,
+                        ) {
+                            (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
+                            _ => None,
+                        }
+                    });
+                    let Some(first) = operations.next() else {
+                        return;
+                    };
+                    if operations.all(|operation| operation == first) {
+                        *mode = match first {
+                            BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
+                                op: cadmpeg_ir::features::BooleanKind::Join,
+                            },
+                            BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
+                                op: cadmpeg_ir::features::BooleanKind::Cut,
+                            },
+                            BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
+                                op: cadmpeg_ir::features::BooleanKind::Intersect,
+                            },
+                            BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::NewBody,
+                            BooleanOp::Unresolved => return,
+                        };
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Inline extrusion trailer fields: the family word and operation byte.
@@ -322,7 +356,7 @@ pub(crate) fn bind_extrusion_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -332,36 +366,50 @@ pub(crate) fn bind_extrusion_operations(
         .map(|feature| (feature.id.as_str(), *feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let FeatureDefinition::Extrude { op, .. } = &mut feature.definition else {
-            continue;
-        };
-        if *op != BooleanOp::Unresolved {
-            continue;
-        }
-        let Some(history) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| history_by_id.get(native).copied())
-        else {
-            continue;
-        };
-        let mut operations = lanes.iter().filter_map(|lane| {
-            let name = feature_object_name(history, lane)?;
-            if let Some(operation) = feature_inline_operation(lane, name) {
-                return Some(operation);
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Extrude { op, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            if *op != BooleanOp::Unresolved {
+                break 'feature_edit;
             }
-            extrusion_operation(
-                history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
-            )
-        });
-        let Some(first) = operations.next() else {
-            continue;
-        };
-        if operations.all(|operation| operation == first) {
-            *op = first;
+            let Some(history) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| history_by_id.get(native).copied())
+            else {
+                break 'feature_edit;
+            };
+            let mut operations = lanes.iter().filter_map(|lane| {
+                let name = feature_object_name(history, lane)?;
+                if let Some(operation) = feature_inline_operation(lane, name) {
+                    return Some(operation);
+                }
+                extrusion_operation(
+                    history.input_class.as_deref(),
+                    feature_operation_code(
+                        lane,
+                        name,
+                        history.input_class.as_deref(),
+                        form_padding,
+                    )?,
+                )
+            });
+            let Some(first) = operations.next() else {
+                break 'feature_edit;
+            };
+            if operations.all(|operation| operation == first) {
+                *op = first;
+            }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -378,7 +426,7 @@ pub(crate) fn inherit_configuration_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let history_by_id = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -386,56 +434,65 @@ pub(crate) fn inherit_configuration_operations(
         .collect::<HashMap<_, _>>();
     let base_definitions = base_features
         .iter()
-        .map(|feature| (&feature.id, &feature.definition))
+        .map(|feature| (&feature.id, feature.evaluation.definition()))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let Some(base_definition) = base_definitions.get(&feature.id) else {
-            continue;
-        };
-        let Some(history) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| history_by_id.get(native).copied())
-        else {
-            continue;
-        };
-        let operation_kind = match (&feature.definition, *base_definition) {
-            (
-                FeatureDefinition::Extrude { op, .. },
-                FeatureDefinition::Extrude { op: base_op, .. },
-            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
-                OperationKind::Extrusion
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(base_definition) = base_definitions.get(&feature.id) else {
+                break 'feature_edit;
+            };
+            let Some(history) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| history_by_id.get(native).copied())
+            else {
+                break 'feature_edit;
+            };
+            let operation_kind = match (&definition, *base_definition) {
+                (
+                    FeatureDefinition::Extrude { op, .. },
+                    FeatureDefinition::Extrude { op: base_op, .. },
+                ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                    OperationKind::Extrusion
+                }
+                (
+                    FeatureDefinition::Revolve { op, .. },
+                    FeatureDefinition::Revolve { op: base_op, .. },
+                ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                    OperationKind::Revolution
+                }
+                _ => break 'feature_edit,
+            };
+            if lanes
+                .iter()
+                .any(|lane| operation_carrier_present(operation_kind, history, lane, form_padding))
+            {
+                break 'feature_edit;
             }
-            (
-                FeatureDefinition::Revolve { op, .. },
-                FeatureDefinition::Revolve { op: base_op, .. },
-            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
-                OperationKind::Revolution
+            match (&mut definition, operation_kind, *base_definition) {
+                (
+                    FeatureDefinition::Extrude { op, .. },
+                    OperationKind::Extrusion,
+                    FeatureDefinition::Extrude { op: base_op, .. },
+                )
+                | (
+                    FeatureDefinition::Revolve { op, .. },
+                    OperationKind::Revolution,
+                    FeatureDefinition::Revolve { op: base_op, .. },
+                ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                    *op = *base_op;
+                }
+                _ => {}
             }
-            _ => continue,
-        };
-        if lanes
-            .iter()
-            .any(|lane| operation_carrier_present(operation_kind, history, lane, form_padding))
-        {
-            continue;
         }
-        match (&mut feature.definition, operation_kind, *base_definition) {
-            (
-                FeatureDefinition::Extrude { op, .. },
-                OperationKind::Extrusion,
-                FeatureDefinition::Extrude { op: base_op, .. },
-            )
-            | (
-                FeatureDefinition::Revolve { op, .. },
-                OperationKind::Revolution,
-                FeatureDefinition::Revolve { op: base_op, .. },
-            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
-                *op = *base_op;
-            }
-            _ => {}
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn operation_carrier_present(

@@ -7808,7 +7808,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
             (None, None) => None,
             (Some(anchor), Some(rotation)) => Some(TextPlacement {
                 anchor,
-                rotation: Angle(rotation),
+                rotation: Angle::new(rotation).ok_or("sketch text rotation must be finite")?,
             }),
             _ => return Err("sketch text anchor and rotation must occur together".into()),
         };
@@ -7905,7 +7905,7 @@ impl From<SketchText> for SketchTextSerde {
             width_factor,
             color: text.color,
             anchor: placement.map(|value| value.anchor),
-            rotation: placement.map(|value| value.rotation.0),
+            rotation: placement.map(|value| value.rotation.get()),
             horizontal_alignment: alignment.map(|value| value.horizontal),
             vertical_alignment: alignment.map(|value| value.vertical),
             first_reference,

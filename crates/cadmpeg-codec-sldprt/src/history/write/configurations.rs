@@ -151,7 +151,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
-    );
+    )?;
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
     project_configuration_sketch_states(
@@ -159,7 +159,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut current_annotations,
-    );
+    )?;
     let current_parameter_hash =
         configuration_parameter_value_hash(&current_projection.model.configurations);
     let current_feature_hash =
@@ -223,7 +223,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
-    );
+    )?;
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
     project_configuration_sketch_states(
@@ -231,7 +231,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut projected_annotations,
-    );
+    )?;
     if configuration_parameter_value_hash(&projected.model.configurations)
         != configuration_parameter_value_hash(&ir.model.configurations)
         || configuration_feature_state_hash(&projected.model.configurations)
@@ -338,9 +338,9 @@ pub(crate) fn patch_configuration_parameter_scalars(
                 continue;
             };
             let encoded = match value {
-                ParameterValue::Length(value) => value.0 / 1000.0,
-                ParameterValue::Angle(value) => value.0,
-                ParameterValue::Real(value) => *value,
+                ParameterValue::Length(value) => value.get() / 1000.0,
+                ParameterValue::Angle(value) => value.get(),
+                ParameterValue::Real(value) => value.get(),
                 ParameterValue::Integer(value) => exact_integer_f64(*value).ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT configuration parameter {} cannot be represented by a native scalar",
@@ -402,12 +402,10 @@ pub(crate) fn sync_neutral_configurations(
     let desired_ids = configurations
         .iter()
         .map(|configuration| {
-            configuration.native_ref.clone().unwrap_or_else(|| {
-                format!(
-                    "sldprt:generated:configuration#{}",
-                    configuration.id.as_str()
-                )
-            })
+            configuration
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| generated_configuration_record_id(&configuration.id))
         })
         .collect::<std::collections::HashSet<_>>();
     let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
@@ -470,12 +468,10 @@ pub(crate) fn sync_neutral_configurations(
             native.feature_histories[0]
                 .configurations
                 .push(Configuration {
-                    id: configuration.native_ref.clone().unwrap_or_else(|| {
-                        format!(
-                            "sldprt:generated:configuration#{}",
-                            configuration.id.as_str()
-                        )
-                    }),
+                    id: configuration
+                        .native_ref
+                        .clone()
+                        .unwrap_or_else(|| generated_configuration_record_id(&configuration.id)),
                     parent,
                     ordinal: configuration.ordinal,
                     source_index: configuration.source_index,
@@ -546,4 +542,27 @@ pub(crate) fn native_configuration_slot_owners(
             .or_insert_with(|| Some(configuration.id.clone()));
     }
     owners
+}
+
+fn generated_configuration_record_id(id: &cadmpeg_ir::features::ConfigurationId) -> String {
+    format!(
+        "sldprt:generated:configuration#{}",
+        id.as_str().replace('%', "%25").replace('#', "%23")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn generated_configuration_identity_escapes_embedded_separators() {
+        let id =
+            cadmpeg_ir::features::ConfigurationId::mint("test:model:configuration#original%23key")
+                .expect("fixture identity");
+        let record = super::generated_configuration_record_id(&id);
+        assert_eq!(
+            record,
+            "sldprt:generated:configuration#test:model:configuration%23original%2523key"
+        );
+        assert!(cadmpeg_ir::ids::is_valid_identity(&record));
+    }
 }

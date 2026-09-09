@@ -50,10 +50,7 @@ pub(crate) fn arrangement_region_containing_points(
     });
     let boundary = boundary_matches.next();
     if boundary.is_some() && boundary_matches.next().is_none() {
-        return Some(SketchProfileRegion::Trimmed {
-            outer_boundary: boundary?.boundary.clone(),
-            hole_boundaries: Vec::new(),
-        });
+        return SketchProfileRegion::trimmed(boundary?.boundary.clone(), Vec::new()).ok();
     }
     let mut interior_matches = faces.iter().filter(|face| {
         points.iter().all(|point| {
@@ -65,13 +62,10 @@ pub(crate) fn arrangement_region_containing_points(
         })
     });
     let interior = interior_matches.next()?;
-    interior_matches
-        .next()
-        .is_none()
-        .then(|| SketchProfileRegion::Trimmed {
-            outer_boundary: interior.boundary.clone(),
-            hole_boundaries: Vec::new(),
-        })
+    if interior_matches.next().is_some() {
+        return None;
+    }
+    SketchProfileRegion::trimmed(interior.boundary.clone(), Vec::new()).ok()
 }
 
 pub(crate) fn sketch_arrangement_faces(
@@ -81,7 +75,7 @@ pub(crate) fn sketch_arrangement_faces(
     budget: &WorkBudget<'_>,
 ) -> Option<Vec<SketchArrangementFace>> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
-    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry};
+    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
     let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
@@ -91,8 +85,10 @@ pub(crate) fn sketch_arrangement_faces(
             .iter()
             .filter(|entity| entity.sketch == sketch.id && !entity.construction)
             .filter(|entity| {
-                matches!(&entity.geometry, SketchGeometry::Circle { .. })
-                    || sketch_geometry_parameter_range(&entity.geometry).is_some()
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. }
+                ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
             })
             .map(|entity| SketchEntityUse {
                 entity: entity.id().clone(),
@@ -108,7 +104,7 @@ pub(crate) fn sketch_arrangement_faces(
     };
     for use_ in candidate_uses {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        if let SketchGeometry::Circle { center, radius } = entity.geometry {
+        if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
             circles.push((use_, center, radius));
             continue;
         }
@@ -121,17 +117,17 @@ pub(crate) fn sketch_arrangement_faces(
         }
         pending.push(SketchProfileBoundaryUse {
             entity: entity.id().clone(),
-            parameter_range: range,
+            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
             reversed: use_.reversed,
         });
     }
     for (use_, center, radius) in circles {
-        if !radius.0.is_finite() || radius.0 <= tolerance {
+        if radius.get() <= tolerance {
             return None;
         }
         let mut angles = nodes
             .iter()
-            .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
+            .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
             .map(|point| {
                 (point.v - center.v)
                     .atan2(point.u - center.u)
@@ -139,7 +135,7 @@ pub(crate) fn sketch_arrangement_faces(
             })
             .collect::<Vec<_>>();
         angles.sort_by(f64::total_cmp);
-        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
         if angles.len() < 2 {
             let additional = if angles.is_empty() {
                 vec![0.0, std::f64::consts::PI]
@@ -150,15 +146,15 @@ pub(crate) fn sketch_arrangement_faces(
                 arrangement_node(
                     &mut nodes,
                     Point2::new(
-                        center.u + radius.0 * angle.cos(),
-                        center.v + radius.0 * angle.sin(),
+                        center.u + radius.get() * angle.cos(),
+                        center.v + radius.get() * angle.sin(),
                     ),
                     tolerance,
                 );
             }
             angles = nodes
                 .iter()
-                .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
+                .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
                 .map(|point| {
                     (point.v - center.v)
                         .atan2(point.u - center.u)
@@ -166,7 +162,7 @@ pub(crate) fn sketch_arrangement_faces(
                 })
                 .collect::<Vec<_>>();
             angles.sort_by(f64::total_cmp);
-            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
         }
         if angles.len() < 2 {
             return None;
@@ -180,7 +176,7 @@ pub(crate) fn sketch_arrangement_faces(
             let range = [start, end];
             pending.push(SketchProfileBoundaryUse {
                 entity: use_.entity.clone(),
-                parameter_range: range,
+                parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
                 reversed: use_.reversed,
             });
         }
@@ -192,7 +188,7 @@ pub(crate) fn sketch_arrangement_faces(
             .find(|entity| entity.id() == &boundary.entity)?;
         let parameters = arrangement_split_parameters(
             &entity.geometry,
-            boundary.parameter_range,
+            boundary.parameter_range.endpoints(),
             &nodes,
             tolerance,
         )?;
@@ -201,7 +197,8 @@ pub(crate) fn sketch_arrangement_faces(
             split_pending.push((
                 SketchProfileBoundaryUse {
                     entity: boundary.entity.clone(),
-                    parameter_range: range,
+                    parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range)
+                        .ok()?,
                     reversed: boundary.reversed,
                 },
                 profile_use_polyline(entity, range, boundary.reversed, tolerance)?,
@@ -456,7 +453,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     shared_nodes: &[usize],
     tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if shared_nodes.len() != 1 {
         return false;
@@ -473,13 +470,12 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     else {
         return false;
     };
-    let (center, radius) = match arc_entity.geometry {
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            (center, radius.0)
-        }
+    let (center, radius) = match *arc_entity.geometry.definition() {
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => (center, radius.get()),
         _ => return false,
     };
-    let SketchGeometry::Nurbs { curve } = &nurbs_entity.geometry else {
+    let SketchGeometryDefinition::Nurbs { curve } = nurbs_entity.geometry.definition() else {
         return false;
     };
     if curve.periodic() {
@@ -489,7 +485,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
         .weights()
         .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
         || sketch_geometry_parameter_range(&nurbs_entity.geometry)
-            != Some(nurbs.boundary.parameter_range)
+            != Some(nurbs.boundary.parameter_range.endpoints())
     {
         return false;
     }
@@ -536,7 +532,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     shared_nodes: &[usize],
     tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if shared_nodes.len() != 1 {
         return false;
@@ -553,10 +549,10 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     else {
         return false;
     };
-    let SketchGeometry::Line { start, end } = line_entity.geometry else {
+    let SketchGeometryDefinition::Line { start, end } = *line_entity.geometry.definition() else {
         return false;
     };
-    let SketchGeometry::Nurbs { curve } = &nurbs_entity.geometry else {
+    let SketchGeometryDefinition::Nurbs { curve } = nurbs_entity.geometry.definition() else {
         return false;
     };
     if curve.periodic() {
@@ -571,7 +567,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     let Some(domain) = sketch_geometry_parameter_range(&nurbs_entity.geometry) else {
         return false;
     };
-    if nurbs.boundary.parameter_range != domain {
+    if nurbs.boundary.parameter_range.endpoints() != domain {
         return false;
     }
     let shared = nodes[shared_nodes[0]];
@@ -763,11 +759,11 @@ fn arrangement_split_parameters(
     nodes: &[Point2],
     tolerance: f64,
 ) -> Option<Vec<f64>> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut parameters = vec![range[0], range[1]];
-    match geometry {
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let direction = Point2::new(end.u - start.u, end.v - start.v);
             let length_squared = direction.u * direction.u + direction.v * direction.v;
             if length_squared <= tolerance * tolerance {
@@ -785,9 +781,9 @@ fn arrangement_split_parameters(
                 }
             }
         }
-        SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometryDefinition::Arc { center, radius, .. } => {
             for point in nodes {
-                if (point_distance(*point, *center) - radius.0).abs() > tolerance {
+                if (point_distance(*point, *center) - radius.get()).abs() > tolerance {
                     continue;
                 }
                 let angle = (point.v - center.v).atan2(point.u - center.u);
@@ -901,10 +897,10 @@ fn arrangement_edges_coincident(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if left.boundary.entity == right.boundary.entity
-        && left.boundary.parameter_range == right.boundary.parameter_range
+        && left.boundary.parameter_range.endpoints() == right.boundary.parameter_range.endpoints()
     {
         return true;
     }
@@ -920,11 +916,16 @@ fn arrangement_edges_coincident(
     else {
         return false;
     };
-    match (&left_entity.geometry, &right_entity.geometry) {
-        (SketchGeometry::Line { .. }, SketchGeometry::Line { .. }) => {
+    match (
+        left_entity.geometry.definition(),
+        right_entity.geometry.definition(),
+    ) {
+        (SketchGeometryDefinition::Line { .. }, SketchGeometryDefinition::Line { .. }) => {
             let left_midpoint = sketch_geometry_point(
                 &left_entity.geometry,
-                (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
+                (left.boundary.parameter_range.endpoints()[0]
+                    + left.boundary.parameter_range.endpoints()[1])
+                    * 0.5,
             );
             left_midpoint
                 .zip(right.polyline.last().copied())
@@ -933,38 +934,46 @@ fn arrangement_edges_coincident(
                 })
         }
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: left_center,
                 radius: left_radius,
             }
-            | SketchGeometry::Arc {
+            | SketchGeometryDefinition::Arc {
                 center: left_center,
                 radius: left_radius,
                 ..
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: right_center,
                 radius: right_radius,
             }
-            | SketchGeometry::Arc {
+            | SketchGeometryDefinition::Arc {
                 center: right_center,
                 radius: right_radius,
                 ..
             },
         ) => {
             point_distance(*left_center, *right_center) <= tolerance
-                && (left_radius.0 - right_radius.0).abs() <= tolerance
-                && ((left.boundary.parameter_range[1] - left.boundary.parameter_range[0]).abs()
-                    - (right.boundary.parameter_range[1] - right.boundary.parameter_range[0]).abs())
+                && (left_radius.get() - right_radius.get()).abs() <= tolerance
+                && ((left.boundary.parameter_range.endpoints()[1]
+                    - left.boundary.parameter_range.endpoints()[0])
+                    .abs()
+                    - (right.boundary.parameter_range.endpoints()[1]
+                        - right.boundary.parameter_range.endpoints()[0])
+                        .abs())
                 .abs()
-                    <= tolerance / left_radius.0
+                    <= tolerance / left_radius.get()
                 && sketch_geometry_point(
                     &left_entity.geometry,
-                    (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
+                    (left.boundary.parameter_range.endpoints()[0]
+                        + left.boundary.parameter_range.endpoints()[1])
+                        * 0.5,
                 )
                 .zip(sketch_geometry_point(
                     &right_entity.geometry,
-                    (right.boundary.parameter_range[0] + right.boundary.parameter_range[1]) * 0.5,
+                    (right.boundary.parameter_range.endpoints()[0]
+                        + right.boundary.parameter_range.endpoints()[1])
+                        * 0.5,
                 ))
                 .is_some_and(|(left, right)| point_distance(left, right) <= tolerance)
         }
@@ -1021,7 +1030,7 @@ fn arrangement_edge_tubes(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> Option<Vec<CertifiedCurveTube>> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let entity = entities
         .iter()
@@ -1032,25 +1041,24 @@ fn arrangement_edge_tubes(
         .flat_map(|point| [point.u.abs(), point.v.abs()])
         .fold(1.0_f64, f64::max);
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
-    match &entity.geometry {
-        SketchGeometry::Line { .. } => Some(vec![CertifiedCurveTube {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => Some(vec![CertifiedCurveTube {
             start: edge.polyline[0],
             end: *edge.polyline.last()?,
             error: 0.0,
         }]),
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            certified_arc_tubes(
-                *center,
-                radius.0,
-                edge.boundary.parameter_range[0],
-                edge.boundary.parameter_range[1],
-                target_error,
-            )
-        }
-        SketchGeometry::Nurbs { curve }
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => certified_arc_tubes(
+            *center,
+            radius.get(),
+            edge.boundary.parameter_range.endpoints()[0],
+            edge.boundary.parameter_range.endpoints()[1],
+            target_error,
+        ),
+        SketchGeometryDefinition::Nurbs { curve }
             if !curve.periodic()
                 && sketch_geometry_parameter_range(&entity.geometry)
-                    == Some(edge.boundary.parameter_range) =>
+                    == Some(edge.boundary.parameter_range.endpoints()) =>
         {
             certified_nurbs_tubes(curve, target_error)
         }
@@ -1062,22 +1070,23 @@ fn arrangement_analytic_segment(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<ProfileBoundarySegment> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let entity = entities
         .iter()
         .find(|entity| entity.id() == &edge.boundary.entity)?;
-    match &entity.geometry {
-        SketchGeometry::Line { .. } => Some(ProfileBoundarySegment::Line {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => Some(ProfileBoundarySegment::Line {
             start: edge.polyline[0],
             end: *edge.polyline.last()?,
         }),
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
             Some(ProfileBoundarySegment::Arc {
                 center: *center,
-                radius: radius.0,
-                start_angle: edge.boundary.parameter_range[0],
-                end_angle: edge.boundary.parameter_range[1],
+                radius: radius.get(),
+                start_angle: edge.boundary.parameter_range.endpoints()[0],
+                end_angle: edge.boundary.parameter_range.endpoints()[1],
             })
         }
         _ => None,
@@ -1087,20 +1096,20 @@ fn arrangement_analytic_segment(
 fn sketch_geometry_parameter_range(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
 ) -> Option<[f64; 2]> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry {
-        SketchGeometry::Line { .. } => Some([0.0, 1.0]),
-        SketchGeometry::Arc {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => Some([0.0, 1.0]),
+        SketchGeometryDefinition::Arc {
             start_angle,
             end_angle,
             ..
-        } => Some([start_angle.0, end_angle.0]),
-        SketchGeometry::Ellipse {
+        } => Some([start_angle.get(), end_angle.get()]),
+        SketchGeometryDefinition::Ellipse {
             bounds: Some([start, end]),
             ..
-        } => Some([start.0, end.0]),
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => Some([
+        } => Some([start.get(), end.get()]),
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => Some([
             curve.knots()[curve.degree() as usize],
             curve.knots()[curve.control_points().len()],
         ]),
@@ -1145,19 +1154,18 @@ fn sketch_geometry_speed_bound(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     range: [f64; 2],
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry {
-        SketchGeometry::Line { start, end } => Some(point_distance(*start, *end)),
-        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-            Some(radius.0)
-        }
-        SketchGeometry::Ellipse {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some(point_distance(*start, *end)),
+        SketchGeometryDefinition::Circle { radius, .. }
+        | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
+        SketchGeometryDefinition::Ellipse {
             major_radius,
             minor_radius,
             ..
-        } => Some(major_radius.0.max(minor_radius.0)),
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
+        } => Some(major_radius.get().max(minor_radius.get())),
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
         _ if range[0] == range[1] => None,
         _ => None,
     }
@@ -1167,42 +1175,43 @@ fn sketch_geometry_point(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     parameter: f64,
 ) -> Option<Point2> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry {
-        SketchGeometry::Line { start, end } => Some(Point2::new(
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some(Point2::new(
             start.u + parameter * (end.u - start.u),
             start.v + parameter * (end.v - start.v),
         )),
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            Some(Point2::new(
-                center.u + radius.0 * parameter.cos(),
-                center.v + radius.0 * parameter.sin(),
-            ))
-        }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => Some(Point2::new(
+            center.u + radius.get() * parameter.cos(),
+            center.v + radius.get() * parameter.sin(),
+        )),
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
             minor_radius,
             ..
         } => {
-            let (axis_sine, axis_cosine) = major_angle.0.sin_cos();
+            let (axis_sine, axis_cosine) = major_angle.get().sin_cos();
             Some(Point2::new(
-                center.u + major_radius.0 * parameter.cos() * axis_cosine
-                    - minor_radius.0 * parameter.sin() * axis_sine,
+                center.u + major_radius.get() * parameter.cos() * axis_cosine
+                    - minor_radius.get() * parameter.sin() * axis_sine,
                 center.v
-                    + major_radius.0 * parameter.cos() * axis_sine
-                    + minor_radius.0 * parameter.sin() * axis_cosine,
+                    + major_radius.get() * parameter.cos() * axis_sine
+                    + minor_radius.get() * parameter.sin() * axis_cosine,
             ))
         }
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => cadmpeg_ir::eval::nurbs_pcurve_uv(
-            curve.degree(),
-            curve.knots(),
-            curve.control_points(),
-            curve.weights(),
-            parameter,
-        ),
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            cadmpeg_ir::eval::nurbs_pcurve_uv(
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
+                parameter,
+            )
+        }
         _ => None,
     }
 }
@@ -1213,7 +1222,7 @@ fn point_on_profile_boundary_use(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
         return false;
@@ -1221,13 +1230,19 @@ fn point_on_profile_boundary_use(
     if !point_on_sketch_entity(point, entity, tolerance) {
         return false;
     }
-    match &entity.geometry {
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
             let angle = (point.v - center.v).atan2(point.u - center.u);
-            directed_angle_parameter(angle, use_.parameter_range[0], use_.parameter_range[1])
-                .is_some_and(|parameter| {
-                    parameter >= -tolerance / radius.0 && parameter <= 1.0 + tolerance / radius.0
-                })
+            directed_angle_parameter(
+                angle,
+                use_.parameter_range.endpoints()[0],
+                use_.parameter_range.endpoints()[1],
+            )
+            .is_some_and(|parameter| {
+                parameter >= -tolerance / radius.get()
+                    && parameter <= 1.0 + tolerance / radius.get()
+            })
         }
         _ => true,
     }
@@ -1311,13 +1326,14 @@ pub(crate) fn region_containing_points(
     };
     let closure_matches = (0..boundaries.len()).filter_map(region).collect::<Vec<_>>();
     if let [(outer, holes)] = closure_matches.as_slice() {
-        return Some(SketchProfileRegion::Loops {
-            outer: u32::try_from(*outer).ok()?,
-            holes: holes
+        return SketchProfileRegion::loops(
+            u32::try_from(*outer).ok()?,
+            holes
                 .iter()
                 .map(|hole| u32::try_from(*hole).ok())
                 .collect::<Option<Vec<_>>>()?,
-        });
+        )
+        .ok();
     }
     if projected.iter().any(|point| {
         sketch.profiles.iter().any(|profile| {
@@ -1358,10 +1374,7 @@ pub(crate) fn region_containing_points(
         .into_iter()
         .map(|candidate| u32::try_from(candidate).ok())
         .collect::<Option<Vec<_>>>()?;
-    Some(SketchProfileRegion::Loops {
-        outer: u32::try_from(outer).ok()?,
-        holes,
-    })
+    SketchProfileRegion::loops(u32::try_from(outer).ok()?, holes).ok()
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -1593,14 +1606,14 @@ fn profile_boundary(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> Option<ProfileBoundary> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let [use_] = profile {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        if let SketchGeometry::Circle { center, radius } = entity.geometry {
+        if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
             return Some(ProfileBoundary::Circle {
                 center,
-                radius: radius.0,
+                radius: radius.get(),
             });
         }
     }
@@ -1620,7 +1633,7 @@ fn certified_profile_loop(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> Option<CertifiedProfileLoop> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let scale = entities
         .iter()
@@ -1637,19 +1650,25 @@ fn certified_profile_loop(
     let mut previous_end = None;
     for use_ in profile {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        let mut entity_tubes = match &entity.geometry {
-            SketchGeometry::Line { start, end } => vec![CertifiedCurveTube {
+        let mut entity_tubes = match entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => vec![CertifiedCurveTube {
                 start: *start,
                 end: *end,
                 error: 0.0,
             }],
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center,
                 radius,
                 start_angle,
                 end_angle,
-            } => certified_arc_tubes(*center, radius.0, start_angle.0, end_angle.0, target_error)?,
-            SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            } => certified_arc_tubes(
+                *center,
+                radius.get(),
+                start_angle.get(),
+                end_angle.get(),
+                target_error,
+            )?,
+            SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
                 certified_nurbs_tubes(curve, target_error)?
             }
             _ => return None,
@@ -1857,14 +1876,14 @@ fn circular_arc_profile_segments(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> Option<Vec<ProfileBoundarySegment>> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut segments = Vec::with_capacity(profile.len());
     let mut previous_end = None;
     for use_ in profile {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        let segment = match entity.geometry {
-            SketchGeometry::Line { start, end } => {
+        let segment = match *entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => {
                 let [start, end] = if use_.reversed {
                     [end, start]
                 } else {
@@ -1872,20 +1891,20 @@ fn circular_arc_profile_segments(
                 };
                 ProfileBoundarySegment::Line { start, end }
             }
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center,
                 radius,
                 start_angle,
                 end_angle,
             } => {
                 let (start_angle, end_angle) = if use_.reversed {
-                    (end_angle.0, start_angle.0)
+                    (end_angle.get(), start_angle.get())
                 } else {
-                    (start_angle.0, end_angle.0)
+                    (start_angle.get(), end_angle.get())
                 };
                 ProfileBoundarySegment::Arc {
                     center,
-                    radius: radius.0,
+                    radius: radius.get(),
                     start_angle,
                     end_angle,
                 }
@@ -1910,13 +1929,13 @@ fn line_profile_vertices(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> Option<Vec<Point2>> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut vertices = Vec::with_capacity(profile.len());
     let mut previous_end = None;
     for use_ in profile {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        let SketchGeometry::Line { start, end } = entity.geometry else {
+        let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
             return None;
         };
         let [start, end] = if use_.reversed {
@@ -2544,10 +2563,10 @@ pub(crate) fn point_on_sketch_entity(
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match &entity.geometry {
-        SketchGeometry::Line { start, end } => {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let dx = end.u - start.u;
             let dy = end.v - start.v;
             let length_squared = dx * dx + dy * dy;
@@ -2560,42 +2579,47 @@ pub(crate) fn point_on_sketch_entity(
             }
             point_distance(point, Point2::new(start.u + t * dx, start.v + t * dy)) <= tolerance
         }
-        SketchGeometry::Circle { center, radius } => {
-            (point_distance(point, *center) - radius.0).abs() <= tolerance
+        SketchGeometryDefinition::Circle { center, radius } => {
+            (point_distance(point, *center) - radius.get()).abs() <= tolerance
         }
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             end_angle,
         } => {
-            let radial_error = (point_distance(point, *center) - radius.0).abs();
+            let radial_error = (point_distance(point, *center) - radius.get()).abs();
             if radial_error > tolerance {
                 return false;
             }
             let angle = (point.v - center.v).atan2(point.u - center.u);
-            angle_in_sweep(angle, start_angle.0, end_angle.0, tolerance / radius.0)
+            angle_in_sweep(
+                angle,
+                start_angle.get(),
+                end_angle.get(),
+                tolerance / radius.get(),
+            )
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
             minor_radius,
             bounds,
-        } if major_radius.0 > 0.0 && minor_radius.0 > 0.0 => {
+        } if major_radius.get() > 0.0 && minor_radius.get() > 0.0 => {
             let du = point.u - center.u;
             let dv = point.v - center.v;
-            let cosine = major_angle.0.cos();
-            let sine = major_angle.0.sin();
+            let cosine = major_angle.get().cos();
+            let sine = major_angle.get().sin();
             let local_u = du * cosine + dv * sine;
             let local_v = -du * sine + dv * cosine;
-            let parameter = (local_v / minor_radius.0).atan2(local_u / major_radius.0);
+            let parameter = (local_v / minor_radius.get()).atan2(local_u / major_radius.get());
             let boundary = Point2::new(
-                center.u + major_radius.0 * parameter.cos() * cosine
-                    - minor_radius.0 * parameter.sin() * sine,
+                center.u + major_radius.get() * parameter.cos() * cosine
+                    - minor_radius.get() * parameter.sin() * sine,
                 center.v
-                    + major_radius.0 * parameter.cos() * sine
-                    + minor_radius.0 * parameter.sin() * cosine,
+                    + major_radius.get() * parameter.cos() * sine
+                    + minor_radius.get() * parameter.sin() * cosine,
             );
             if point_distance(point, boundary) > tolerance {
                 return false;
@@ -2604,13 +2628,13 @@ pub(crate) fn point_on_sketch_entity(
                 None => true,
                 Some([start, end]) => angle_in_sweep(
                     parameter,
-                    start.0,
-                    end.0,
-                    tolerance / major_radius.0.min(minor_radius.0),
+                    start.get(),
+                    end.get(),
+                    tolerance / major_radius.get().min(minor_radius.get()),
                 ),
             }
         }
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
                 curve.degree(),
                 curve.knots(),
@@ -2646,7 +2670,7 @@ pub(crate) fn closed_sketch_profiles(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
 ) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
-    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry};
+    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
     if !linear_tolerance.is_finite() || linear_tolerance <= 0.0 {
         return Vec::new();
@@ -2656,8 +2680,9 @@ pub(crate) fn closed_sketch_profiles(
         .filter(|entity| &entity.sketch == sketch && !entity.construction)
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                SketchGeometry::Circle { .. } | SketchGeometry::Ellipse { bounds: None, .. }
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+                    | SketchGeometryDefinition::Ellipse { bounds: None, .. }
             )
         })
         .map(|entity| {
@@ -2751,10 +2776,12 @@ pub(crate) fn closed_sketch_profiles(
             .iter()
             .any(|node| adjacency[node].len() != 2)
         {
-            if component
-                .iter()
-                .all(|edge| matches!(edges[*edge].0.geometry, SketchGeometry::Line { .. }))
-            {
+            if component.iter().all(|edge| {
+                matches!(
+                    (edges[*edge].0.geometry).definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
+            }) {
                 let branched_profiles = branched_line_profiles(
                     &component,
                     &edges,
@@ -3124,8 +3151,8 @@ fn tangent_nested_line_profile(
                 .iter()
                 .find(|(entity, _)| entity.id() == &use_.entity)?
                 .0;
-            match entity.geometry {
-                cadmpeg_ir::sketches::SketchGeometry::Line { start, end } => {
+            match *entity.geometry.definition() {
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => {
                     Some(if use_.reversed { end } else { start })
                 }
                 _ => None,
@@ -3140,26 +3167,26 @@ fn tangent_nested_line_profile(
 pub(crate) fn sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SketchEntity,
 ) -> Option<[Point2; 2]> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match &entity.geometry {
-        SketchGeometry::Line { start, end } => Some([*start, *end]),
-        SketchGeometry::Arc {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some([*start, *end]),
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             end_angle,
         } => Some([
             Point2::new(
-                center.u + radius.0 * start_angle.0.cos(),
-                center.v + radius.0 * start_angle.0.sin(),
+                center.u + radius.get() * start_angle.get().cos(),
+                center.v + radius.get() * start_angle.get().sin(),
             ),
             Point2::new(
-                center.u + radius.0 * end_angle.0.cos(),
-                center.v + radius.0 * end_angle.0.sin(),
+                center.u + radius.get() * end_angle.get().cos(),
+                center.v + radius.get() * end_angle.get().sin(),
             ),
         ]),
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -3167,16 +3194,16 @@ pub(crate) fn sketch_entity_endpoints(
             bounds: Some([start_angle, end_angle]),
         } => {
             let point_at = |parameter: f64| {
-                let x = major_radius.0 * parameter.cos();
-                let y = minor_radius.0 * parameter.sin();
+                let x = major_radius.get() * parameter.cos();
+                let y = minor_radius.get() * parameter.sin();
                 Point2::new(
-                    center.u + x * major_angle.0.cos() - y * major_angle.0.sin(),
-                    center.v + x * major_angle.0.sin() + y * major_angle.0.cos(),
+                    center.u + x * major_angle.get().cos() - y * major_angle.get().sin(),
+                    center.v + x * major_angle.get().sin() + y * major_angle.get().cos(),
                 )
             };
-            Some([point_at(start_angle.0), point_at(end_angle.0)])
+            Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start_parameter = curve.knots()[curve.degree() as usize];
             let end_parameter = curve.knots()[curve.control_points().len()];
             Some([

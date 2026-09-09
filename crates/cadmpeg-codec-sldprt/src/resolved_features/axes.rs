@@ -250,7 +250,7 @@ pub(super) fn typed_linear_pattern_dimensions(
     let spacing = crate::history::parse_positive_dimension_length_mm(parameter(
         "ParallelPlaneDistanceDim_c",
     )?)?;
-    Some((Length(spacing), count))
+    Some((Length::new(spacing)?, count))
 }
 
 #[cfg(test)]
@@ -1030,7 +1030,7 @@ pub(crate) fn bind_profile_revolution_axes(
     lanes: &[FeatureInputLane],
     sketches: &[Sketch],
     surfaces: &[Surface],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let native_by_id = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1048,7 +1048,8 @@ pub(crate) fn bind_profile_revolution_axes(
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
     for (feature_index, feature) in model_features.iter().enumerate() {
-        let FeatureDefinition::Revolve { construction, .. } = &feature.definition else {
+        let FeatureDefinition::Revolve { construction, .. } = feature.evaluation.definition()
+        else {
             continue;
         };
         if construction.axis().is_some() {
@@ -1057,7 +1058,7 @@ pub(crate) fn bind_profile_revolution_axes(
         let Some(profile) = construction.profile() else {
             continue;
         };
-        let (profile_native, sketch_id) = match profile {
+        let (profile_native, sketch_id) = match profile.as_ref() {
             cadmpeg_ir::features::ProfileRef::Feature(profile_id) => {
                 let Some(&profile_index) = model_by_id.get(profile_id) else {
                     continue;
@@ -1065,7 +1066,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 let profile_feature = &model_features[profile_index];
                 let FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                } = &profile_feature.definition
+                } = profile_feature.evaluation.definition()
                 else {
                     continue;
                 };
@@ -1077,7 +1078,7 @@ pub(crate) fn bind_profile_revolution_axes(
             cadmpeg_ir::features::ProfileRef::Sketch(sketch_id) => {
                 let mut owners = model_features.iter().filter(|candidate| {
                     matches!(
-                    &candidate.definition,
+                    candidate.evaluation.definition(),
                     FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
                     } if candidate == sketch_id
@@ -1119,7 +1120,7 @@ pub(crate) fn bind_profile_revolution_axes(
             construction.extent(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                 termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
-            }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
+            }) if (angle.get().abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
         ) {
             surfaces
         } else {
@@ -1153,14 +1154,19 @@ pub(crate) fn bind_profile_revolution_axes(
     }
 
     for (index, axis) in assignments {
-        if let FeatureDefinition::Revolve { construction, .. } =
-            &mut model_features[index].definition
-        {
+        let mut definition = model_features[index].evaluation.definition().clone();
+        if let FeatureDefinition::Revolve { construction, .. } = &mut definition {
             if construction.axis().is_none() {
                 construction.set_axis(Some(axis));
             }
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(super) fn profile_roster_construction_axis(
@@ -1241,8 +1247,12 @@ pub(super) fn profile_roster_construction_axis(
     let length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
     (length.is_finite() && length > EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9).then_some(
         cadmpeg_ir::features::RevolutionAxis {
-            origin: start,
-            direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+            origin: cadmpeg_ir::features::FinitePoint3::new(start)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                delta.x / length,
+                delta.y / length,
+                delta.z / length,
+            ))?,
             reference: None,
         },
     )
@@ -1277,16 +1287,16 @@ fn profile_generated_surface_axis(
         origin.y - axis.origin.y,
         origin.z - axis.origin.z,
     );
-    let perpendicular = origin_offset.cross(axis.direction);
+    let perpendicular = origin_offset.cross(axis.direction.get());
     if perpendicular.norm() <= LINE_TOLERANCE {
-        axis.origin = origin;
+        axis.origin = cadmpeg_ir::features::FinitePoint3::new(origin)?;
     } else {
-        let projection = origin_offset.dot(axis.direction);
-        axis.origin = Point3::new(
+        let projection = origin_offset.dot(axis.direction.get());
+        axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             axis.origin.x + projection * axis.direction.x,
             axis.origin.y + projection * axis.direction.y,
             axis.origin.z + projection * axis.direction.z,
-        );
+        ))?;
     }
     let curve_endpoints = markers
         .iter()
@@ -1403,8 +1413,8 @@ pub(super) fn common_generated_surface_axis(
         origin.z - origin_projection * direction.z,
     );
     Some(cadmpeg_ir::features::RevolutionAxis {
-        origin,
-        direction,
+        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
         reference: None,
     })
 }

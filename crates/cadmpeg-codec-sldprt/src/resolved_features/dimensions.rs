@@ -29,7 +29,9 @@ use crate::records::{
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
 use std::collections::{HashMap, HashSet};
 
 const EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8: f64 = 1.0e-8;
@@ -574,12 +576,13 @@ fn transformed_dimensioned_arc(
         && sweep > SKETCH_ANGLE_TOLERANCE
         && sweep <= std::f64::consts::PI + SKETCH_ANGLE_TOLERANCE)
         .then_some((
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center,
-                radius: Length(radius),
-                start_angle: Angle(start_angle),
-                end_angle: Angle(end_angle),
-            },
+                radius: Length::new(radius)?,
+                start_angle: Angle::new(start_angle)?,
+                end_angle: Angle::new(end_angle)?,
+            })
+            .ok()?,
             endpoints.map_or_else(Vec::new, Vec::from),
         ))
 }
@@ -592,7 +595,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -601,7 +604,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -648,8 +651,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         return None;
                     };
                     let radius = match parameter.display {
-                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                         None => return None,
                     };
                     if !(radius.is_finite() && radius > 0.0) {
@@ -717,8 +720,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             };
             let radius = match parameter.and_then(|parameter| parameter.display) {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                 None => continue,
             };
             if !(radius.is_finite() && radius > 0.0) {
@@ -760,13 +763,13 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .is_none()
                 && entities.iter().any(|entity| {
                     entity.sketch == *sketch
-                        && match &entity.geometry {
-                            SketchGeometry::Circle {
+                        && match entity.geometry.definition() {
+                            SketchGeometryDefinition::Circle {
                                 center: existing,
                                 radius: existing_radius,
                             } => {
                                 quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
-                                    && same_dimension_length(existing_radius.0, radius)
+                                    && same_dimension_length(existing_radius.get(), radius)
                             }
                             _ => false,
                         }
@@ -781,31 +784,41 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     else {
                         continue;
                     };
-                    let SketchGeometry::Arc {
+                    let SketchGeometryDefinition::Arc {
                         radius: arc_radius, ..
-                    } = &geometry
+                    } = geometry.definition()
                     else {
                         unreachable!("dimensioned arc helper emits an arc");
                     };
-                    if !same_dimension_length(arc_radius.0, radius) {
+                    if !same_dimension_length(arc_radius.get(), radius) {
                         continue;
                     }
                     (geometry, endpoint_refs)
                 } else {
                     (
-                        SketchGeometry::Circle {
+                        match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                             center,
-                            radius: cadmpeg_ir::features::Length(radius),
+                            radius: cadmpeg_ir::features::Length::new(radius).ok_or_else(|| {
+                                cadmpeg_core::CodecError::Malformed(
+                                    "SolidWorks projected length must be finite".into(),
+                                )
+                            })?,
+                        }) {
+                            Ok(geometry) => geometry,
+                            Err(_) => continue,
                         },
                         Vec::new(),
                     )
                 };
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
                         relation.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     sketch.clone(),
                     geometry,
                 )
@@ -816,6 +829,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             );
         }
     }
+
+    Ok(())
 }
 
 /// Materialize a circle dimension when its point operand already has one
@@ -831,13 +846,13 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -907,13 +922,18 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 .filter(|entity| {
                     entity.sketch == **sketch
                         && entity.native_ref.as_deref() == Some(marker_id)
-                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                        && matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Point { .. }
+                        )
                 })
                 .collect::<Vec<_>>();
             let [center_entity] = centers.as_slice() else {
                 continue;
             };
-            let SketchGeometry::Point { position: center } = center_entity.geometry else {
+            let SketchGeometryDefinition::Point { position: center } =
+                *center_entity.geometry.definition()
+            else {
                 continue;
             };
             let construction = native_dimensioned_circle_construction_state(
@@ -950,22 +970,32 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             };
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
-                    && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
+                    && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
                         if quantize(*existing, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
-                            && same_dimension_length(existing_radius.0, radius))
+                            && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;
             }
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
                         relation.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     (*sketch).clone(),
-                    SketchGeometry::Circle {
+                    match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                         center,
-                        radius: Length(radius),
+                        radius: Length::new(radius).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
+                    }) {
+                        Ok(geometry) => geometry,
+                        Err(_) => continue,
                     },
                 )
                 .with_construction(construction)
@@ -974,6 +1004,8 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             );
         }
     }
+
+    Ok(())
 }
 
 pub(super) fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -1135,8 +1167,8 @@ pub(super) fn radial_dimension_radius(
         return None;
     };
     let radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     (radius.is_finite() && radius > 0.0).then_some(radius)
@@ -1192,7 +1224,10 @@ fn reconcile_direct_circle_dimension_carriers(
                     entity.sketch == *sketch_id
                         && entity.native_ref.as_deref() == Some(marker.id.as_str())
                         && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
-                        && matches!(entity.geometry, SketchGeometry::Circle { .. })
+                        && matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Circle { .. }
+                        )
                 })
                 .collect::<Vec<_>>();
             let [typed_entity] = typed_entities.as_slice() else {
@@ -1208,7 +1243,10 @@ fn reconcile_direct_circle_dimension_carriers(
         .iter()
         .filter(|entity| {
             entity.sketch == *sketch_id
-                && matches!(entity.geometry, SketchGeometry::Native { .. })
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
                 && entity
                     .native_ref
                     .as_deref()
@@ -1223,32 +1261,40 @@ fn reconcile_direct_circle_dimension_carriers(
     if removed.is_empty() {
         return;
     }
-    entities.retain(|entity| !removed.contains_key(entity.id()));
     if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
-        for profile in &mut sketch.profiles {
-            let usages = std::mem::take(profile);
-            let mut present = usages
-                .iter()
-                .filter(|usage| !removed.contains_key(&usage.entity))
-                .map(|usage| usage.entity.clone())
-                .collect::<HashSet<_>>();
-            let mut updated = Vec::with_capacity(usages.len());
-            for usage in usages {
-                let Some(replacement) = removed.get(&usage.entity) else {
-                    updated.push(usage);
-                    continue;
-                };
-                if present.insert(replacement.clone()) {
-                    updated.push(SketchEntityUse {
-                        entity: replacement.clone(),
-                        reversed: usage.reversed,
-                    });
+        if sketch
+            .profiles
+            .edit(|profiles| {
+                for profile in profiles.iter_mut() {
+                    let usages = std::mem::take(profile);
+                    let mut present = usages
+                        .iter()
+                        .filter(|usage| !removed.contains_key(&usage.entity))
+                        .map(|usage| usage.entity.clone())
+                        .collect::<HashSet<_>>();
+                    let mut updated = Vec::with_capacity(usages.len());
+                    for usage in usages {
+                        let Some(replacement) = removed.get(&usage.entity) else {
+                            updated.push(usage);
+                            continue;
+                        };
+                        if present.insert(replacement.clone()) {
+                            updated.push(SketchEntityUse {
+                                entity: replacement.clone(),
+                                reversed: usage.reversed,
+                            });
+                        }
+                    }
+                    *profile = updated;
                 }
-            }
-            *profile = updated;
+                profiles.retain(|profile| !profile.is_empty());
+            })
+            .is_err()
+        {
+            return;
         }
-        sketch.profiles.retain(|profile| !profile.is_empty());
     }
+    entities.retain(|entity| !removed.contains_key(entity.id()));
 }
 
 /// Materialize marker-only circles whose radial witnesses have exact radial
@@ -1259,7 +1305,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -1279,7 +1325,10 @@ pub(crate) fn project_marker_dimensioned_circles(
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             },
-        ) = (feature.native_ref.as_deref(), &feature.definition)
+        ) = (
+            feature.native_ref.as_deref(),
+            feature.evaluation.definition(),
+        )
         else {
             continue;
         };
@@ -1313,17 +1362,22 @@ pub(crate) fn project_marker_dimensioned_circles(
         let native_carriers = entities
             .iter()
             .filter(|entity| entity.sketch == *sketch_id)
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Native { .. }))
+            .filter(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
+            })
             .collect::<Vec<_>>();
         let has_resolved_curves = entities.iter().any(|entity| {
             entity.sketch == *sketch_id
                 && matches!(
-                    entity.geometry,
-                    SketchGeometry::Line { .. }
-                        | SketchGeometry::Arc { .. }
-                        | SketchGeometry::Circle { .. }
-                        | SketchGeometry::Ellipse { .. }
-                        | SketchGeometry::Nurbs { .. }
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                        | SketchGeometryDefinition::Arc { .. }
+                        | SketchGeometryDefinition::Circle { .. }
+                        | SketchGeometryDefinition::Ellipse { .. }
+                        | SketchGeometryDefinition::Nurbs { .. }
                 )
         });
         let circle_only_carrier = match native_carriers.as_slice() {
@@ -1415,10 +1469,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     else {
                         continue;
                     };
-                    for profile in &mut sketch.profiles {
-                        profile.retain(|usage| usage.entity != removed);
-                    }
-                    sketch.profiles.retain(|profile| !profile.is_empty());
+                    sketch.profiles.retain_uses(|usage| usage.entity != removed);
                     let feature_key = feature
                         .id
                         .as_str()
@@ -1427,16 +1478,25 @@ pub(crate) fn project_marker_dimensioned_circles(
                     for (index, ((parameter, _), radius)) in
                         radial_dimensions.iter().copied().zip(radii).enumerate()
                     {
-                        let entity_id = SketchEntityId(format!(
+                        let Ok(entity_id) = SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"
-                        ));
+                        )) else {
+                            continue;
+                        };
                         entities.push(
                             SketchEntity::new(
                                 entity_id.clone(),
                                 sketch_id.clone(),
-                                SketchGeometry::Circle {
+                                match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center,
-                                    radius: Length(radius),
+                                    radius: Length::new(radius).ok_or_else(|| {
+                                        cadmpeg_core::CodecError::Malformed(
+                                            "SolidWorks projected length must be finite".into(),
+                                        )
+                                    })?,
+                                }) {
+                                    Ok(geometry) => geometry,
+                                    Err(_) => continue,
                                 },
                             )
                             .with_construction(
@@ -1452,10 +1512,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                             )
                             .with_geometry_ref(parameter.native_ref.clone()),
                         );
-                        sketch.profiles.push(vec![SketchEntityUse {
+                        sketch.profiles.push_single(SketchEntityUse {
                             entity: entity_id,
                             reversed: false,
-                        }]);
+                        });
                     }
                     continue;
                 }
@@ -1489,7 +1549,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                 entities.iter().any(|entity| {
                     entity.sketch == *sketch_id
                         && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
-                        && matches!(entity.geometry, SketchGeometry::Native { .. })
+                        && matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Native { .. }
+                        )
                 })
             })
             .collect::<Vec<_>>();
@@ -1536,7 +1599,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                     let [(u, v)] = centers.as_slice() else {
                         return None;
                     };
-                    Some(Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM))
+                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                        center: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
+                        radius: Length::new(*radius)?,
+                    })
+                    .ok()
                 })
                 .collect::<Vec<_>>();
             if transformed.len() == pairs.len() {
@@ -1583,30 +1650,24 @@ pub(crate) fn project_marker_dimensioned_circles(
                 else {
                     continue;
                 };
-                for profile in &mut sketch.profiles {
-                    profile.retain(|usage| !removed.contains(&usage.entity));
-                }
-                sketch.profiles.retain(|profile| !profile.is_empty());
-                for (index, center) in transformed.into_iter().enumerate() {
-                    let entity_id = SketchEntityId(format!(
+                sketch
+                    .profiles
+                    .retain_uses(|usage| !removed.contains(&usage.entity));
+                for (index, geometry) in transformed.into_iter().enumerate() {
+                    let Ok(entity_id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
-                    ));
+                    )) else { continue };
                     entities.push(
-                        SketchEntity::new(
-                            entity_id.clone(),
-                            sketch_id.clone(),
-                            SketchGeometry::Circle {
-                                center,
-                                radius: Length(*radius),
-                            },
-                        )
-                        .with_native_ref((index == pairs.len() - 1).then(|| carrier_ref.clone()))
-                        .with_geometry_ref(parameter.native_ref.clone()),
+                        SketchEntity::new(entity_id.clone(), sketch_id.clone(), geometry)
+                            .with_native_ref(
+                                (index == pairs.len() - 1).then(|| carrier_ref.clone()),
+                            )
+                            .with_geometry_ref(parameter.native_ref.clone()),
                     );
-                    sketch.profiles.push(vec![SketchEntityUse {
+                    sketch.profiles.push_single(SketchEntityUse {
                         entity: entity_id,
                         reversed: false,
-                    }]);
+                    });
                 }
                 continue 'feature;
             }
@@ -1689,7 +1750,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                         };
                         Some((
                             record,
-                            Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
+                            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                                center: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
+                                radius: Length::new(record.6)?,
+                            })
+                            .ok()?,
                         ))
                     })
                     .collect::<Vec<_>>();
@@ -1717,8 +1782,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                                     carrier_refs.contains(reference)
                                         || (center_refs.contains(reference)
                                             && !matches!(
-                                                entity.geometry,
-                                                SketchGeometry::Point { .. }
+                                                *entity.geometry.definition(),
+                                                SketchGeometryDefinition::Point { .. }
                                             ))
                                 })
                         })
@@ -1729,41 +1794,35 @@ pub(crate) fn project_marker_dimensioned_circles(
                     else {
                         continue;
                     };
-                    for profile in &mut sketch.profiles {
-                        profile.retain(|usage| !removed.contains(&usage.entity));
-                    }
-                    sketch.profiles.retain(|profile| !profile.is_empty());
-                    for (record, center) in transformed {
+                    sketch
+                        .profiles
+                        .retain_uses(|usage| !removed.contains(&usage.entity));
+                    for (record, geometry) in transformed {
                         let lane_key = record
                             .0
                             .id
                             .rsplit_once('#')
                             .map_or(record.0.id.as_str(), |(_, key)| key);
-                        let entity_id = SketchEntityId(format!(
+                        let Ok(entity_id) = SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#radial-circle:{lane_key}:{}",
                             record.1
-                        ));
+                        )) else {
+                            continue;
+                        };
                         entities.push(
-                            SketchEntity::new(
-                                entity_id.clone(),
-                                sketch_id.clone(),
-                                SketchGeometry::Circle {
-                                    center,
-                                    radius: Length(record.6),
-                                },
-                            )
-                            .with_construction(record.2)
-                            .with_native_ref(Some(format!(
-                                "sldprt:feature-input:sketch-entity#{lane_key}:{}",
-                                record.1
-                            )))
-                            .with_geometry_ref(record.5.native_ref.clone()),
+                            SketchEntity::new(entity_id.clone(), sketch_id.clone(), geometry)
+                                .with_construction(record.2)
+                                .with_native_ref(Some(format!(
+                                    "sldprt:feature-input:sketch-entity#{lane_key}:{}",
+                                    record.1
+                                )))
+                                .with_geometry_ref(record.5.native_ref.clone()),
                         );
                         if !record.2 {
-                            sketch.profiles.push(vec![SketchEntityUse {
+                            sketch.profiles.push_single(SketchEntityUse {
                                 entity: entity_id,
                                 reversed: false,
-                            }]);
+                            });
                         }
                     }
                     continue;
@@ -1847,9 +1906,9 @@ pub(crate) fn project_marker_dimensioned_circles(
             };
             if entities.iter().any(|entity| {
                 entity.sketch == *sketch_id
-                    && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
+                    && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
                         if quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
-                            && same_dimension_length(existing_radius.0, radius))
+                            && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;
             }
@@ -1858,28 +1917,39 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .as_str()
                 .rsplit_once('#')
                 .map_or(feature.id.as_str(), |(_, key)| key);
-            let entity_id = SketchEntityId(format!(
+            let Ok(entity_id) = SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#marker-circle:{}:{}",
                 feature_key, parameter.ordinal
-            ));
+            )) else {
+                continue;
+            };
             entities.push(
                 SketchEntity::new(
                     entity_id.clone(),
                     sketch_id.clone(),
-                    SketchGeometry::Circle {
+                    match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                         center,
-                        radius: Length(radius),
+                        radius: Length::new(radius).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
+                    }) {
+                        Ok(geometry) => geometry,
+                        Err(_) => continue,
                     },
                 )
                 .with_construction(construction)
                 .with_geometry_ref(parameter.native_ref.clone()),
             );
-            sketch.profiles.push(vec![SketchEntityUse {
+            sketch.profiles.push_single(SketchEntityUse {
                 entity: entity_id,
                 reversed: false,
-            }]);
+            });
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

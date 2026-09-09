@@ -421,15 +421,20 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
         };
         let value = match unit.dimension {
             PmDcUnitDimension::Length => {
-                ParameterValue::Length(Length(parameter.model_value * 10.0))
+                Length::new(parameter.model_value * 10.0).map(ParameterValue::Length)
             }
-            PmDcUnitDimension::Angle => ParameterValue::Angle(Angle(parameter.model_value)),
-            PmDcUnitDimension::Dimensionless => ParameterValue::Real(parameter.model_value),
+            PmDcUnitDimension::Angle => {
+                Angle::new(parameter.model_value).map(ParameterValue::Angle)
+            }
+            PmDcUnitDimension::Dimensionless => {
+                cadmpeg_ir::features::FiniteReal::new(parameter.model_value)
+                    .map(ParameterValue::Real)
+            }
         };
-        if !parameter.model_value.is_finite() {
+        let Some(value) = value else {
             unresolved += 1;
             continue;
-        }
+        };
         projected.push(DesignParameter {
             id: parameter_id(parameter),
             owner: None,
@@ -438,7 +443,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
             expression,
             display: None,
             value: Some(value),
-            dependencies,
+            dependencies: dependencies.into_iter().collect(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter.id()),
@@ -1236,32 +1241,48 @@ mod tests {
         assert_eq!(unresolved, 0);
         assert_eq!(parameters[0].expression, "24 in");
         assert_eq!(parameters[1].expression, "width");
-        assert_eq!(parameters[1].dependencies, vec![parameters[0].id.clone()]);
+        assert_eq!(
+            parameters[1].dependencies.as_slice(),
+            vec![parameters[0].id.clone()]
+        );
         assert_eq!(
             parameters[0].value,
-            Some(ParameterValue::Length(Length(609.6)))
+            Some(ParameterValue::Length(
+                Length::new(609.6).expect("finite length fixture")
+            ))
         );
     }
 
     #[test]
     fn rejects_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
-            id: ParameterId::mint(name).expect("identity grammar"),
+            id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: name.into(),
             expression: name.into(),
             display: None,
-            value: Some(ParameterValue::Real(1.0)),
-            dependencies,
+            value: Some(ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(1.0).expect("finite scalar fixture"),
+            )),
+            dependencies: (dependencies).try_into().expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
         };
         let parameters = vec![
-            make("a", vec![ParameterId::mint("b").expect("identity grammar")]),
-            make("b", vec![ParameterId::mint("a").expect("identity grammar")]),
-            make("c", vec![ParameterId::mint("a").expect("identity grammar")]),
+            make(
+                "a",
+                vec![ParameterId::mint("synthetic:test:id#b").expect("identity grammar")],
+            ),
+            make(
+                "b",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
+            make(
+                "c",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
             make("d", Vec::new()),
         ];
         let (closed, rejected) = close_parameter_graph(parameters);
@@ -1271,7 +1292,7 @@ mod tests {
                 .into_iter()
                 .map(|parameter| parameter.id.into_string())
                 .collect::<Vec<_>>(),
-            ["d"]
+            ["synthetic:test:id#d"]
         );
     }
 }

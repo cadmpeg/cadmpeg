@@ -246,18 +246,24 @@ pub(crate) fn attach_free_vertices(
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: ir
-            .model
-            .vertices
-            .iter()
-            .map(|vertex| vertex.id.clone())
-            .collect(),
-    });
+    ir.model.shells.push(
+        match Shell::new(
+            shell_id,
+            region_id,
+            Vec::new(),
+            Vec::new(),
+            ir.model
+                .vertices
+                .iter()
+                .map(|vertex| vertex.id.clone())
+                .collect(),
+        ) {
+            Ok(shell) => shell,
+            Err(_) => {
+                return;
+            }
+        },
+    );
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -809,12 +815,9 @@ mod route_tests {
         Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
         ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{
-        CurveId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
-    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-    use cadmpeg_ir::topology::Shell;
     use cadmpeg_ir::unknown::UnknownRecord;
 
     #[test]
@@ -955,14 +958,8 @@ mod route_tests {
         let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(&mut valid, &[]));
 
-        let mut invalid = CadIr::empty();
-        invalid.model.shells.push(Shell {
-            id: ShellId::mint("catia:test:shell#invalid").expect("identity grammar"),
-            region: RegionId::mint("catia:test:region#missing").expect("identity grammar"),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        let mut invalid =
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test");
         assert!(!neutral_model_is_admissible(&mut invalid, &[]));
     }
 

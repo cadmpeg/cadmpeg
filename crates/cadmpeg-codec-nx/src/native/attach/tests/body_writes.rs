@@ -437,6 +437,6 @@ fn repeated_body_identity_builds_output_lineage() {
 
     let results = &result.ir().model.feature_result_topologies;
     assert_eq!(results.len(), 2);
-    assert_eq!(results[0].bodies, results[1].bodies);
+    assert_eq!(results[0].bodies(), results[1].bodies());
     assert_ne!(results[0].native_ref, results[1].native_ref);
 }

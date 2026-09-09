@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocumentReference, JointConnector, JointLimits, JointOperand,
@@ -242,7 +243,7 @@ pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
-) -> Result<Vec<AssemblyJoint>, cadmpeg_core::CodecError> {
+) -> Result<Vec<AssemblyJoint>, CodecError> {
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
         let Some(stream) = native_stream(&occurrence.id) else {
@@ -302,10 +303,12 @@ pub(crate) fn project_assembly_joints(
         };
         let (angular_limits, linear_limits) = match limits {
             Some(limits) => {
-                let projected = JointLimits::Both {
-                    minimum: limits.minimum(),
-                    maximum: limits.maximum(),
-                };
+                let projected = JointLimits::new(Some(limits.minimum()), Some(limits.maximum()))
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "joint limits minimum/maximum must be finite and ordered".into(),
+                        )
+                    })?;
                 match limits.kind {
                     DesignAssemblyLimitKind::Angular => (Some(projected), None),
                     DesignAssemblyLimitKind::Linear => (None, Some(projected)),
@@ -317,12 +320,20 @@ pub(crate) fn project_assembly_joints(
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
         let second_frame = super::components::neutral_transform(frames[1].transform)?;
+        let angle = cadmpeg_ir::features::FiniteReal::new(alignment.angle())
+            .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
+        let [x, y, z] = alignment.offset().map(|value| {
+            cadmpeg_ir::features::FiniteReal::new(value * 10.0).ok_or_else(|| {
+                CodecError::Malformed("joint translation_offset must be finite".into())
+            })
+        });
+        let translation_offset = [x?, y?, z?];
         joints.entry(id.as_str().to_owned()).or_insert_with(|| {
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
-                    angle: Some(alignment.angle()),
-                    translation_offset: Some(alignment.offset().map(|value| value * 10.0)),
+                    angle: Some(angle),
+                    translation_offset: Some(translation_offset),
                     angular_limits,
                     linear_limits,
                 },
@@ -397,7 +408,9 @@ fn project_qualified_operands(
                     &crate::records::feature::DesignFeatureKind::ComponentInsert,
                 )?;
                 let feature = unique_feature(features, &target_scope.id)?;
-                let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
+                let FeatureDefinition::InsertComponent { occurrence } =
+                    feature.evaluation.definition()
+                else {
                     return None;
                 };
                 Some(JointOperand::occurrence(
@@ -432,7 +445,7 @@ fn project_joint_origin_operand(
     )?;
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::DatumCoordinateSystem { .. }
         ) {
             return None;
@@ -560,18 +573,21 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
-            id: FeatureId::mint(format!("test:model:feature#{native_ref}"))
-                .expect("identity grammar"),
+            id: FeatureId::mint(format!(
+                "test:model:feature#{}",
+                native_ref.replace('#', ":")
+            ))
+            .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         }
     }
@@ -998,10 +1014,13 @@ mod tests {
             feature(
                 &origin_scope.id,
                 FeatureDefinition::DatumCoordinateSystem {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    x_axis: Vector3::new(1.0, 0.0, 0.0),
-                    y_axis: Vector3::new(0.0, 1.0, 0.0),
-                    z_axis: Vector3::new(0.0, 0.0, 1.0),
+                    frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .unwrap(),
                 },
             ),
         ];

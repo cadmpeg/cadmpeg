@@ -48,16 +48,20 @@ fn encoder_writes_source_less_datum_features() {
         .for_each(|edge| edge.param_range = None);
     let definitions = [
         FeatureDefinition::DatumPlane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         },
         FeatureDefinition::DatumAxis {
-            origin: Point3::new(4.0, 5.0, 6.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .unwrap(),
         },
         FeatureDefinition::DatumPoint {
-            position: Point3::new(7.0, 8.0, 9.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
             construction: None,
         },
     ];
@@ -68,13 +72,13 @@ fn encoder_writes_source_less_datum_features() {
             ordinal: ordinal as u64,
             name: Some(format!("Datum {ordinal}")),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -88,15 +92,15 @@ fn encoder_writes_source_less_datum_features() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::DatumPlane { .. }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::DatumAxis { .. }
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
+        decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::DatumPoint { .. }
     ));
 }
@@ -122,7 +126,9 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            (vec![ir.model.bodies[0].id.clone()]).try_into().unwrap(),
+        ),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -137,7 +143,9 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            cadmpeg_ir::features::DistinctMembers::default(),
+        ),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -331,7 +339,9 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+                (vec![body.clone()]).try_into().unwrap(),
+            ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -627,16 +637,18 @@ fn encoder_writes_source_less_neutral_parameters() {
         ordinal: 0,
         name: Some("Equation".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::from([("EquationSet".into(), "Global".into())]),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "EquationDriven".into(),
-            parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "EquationDriven".into(),
+                parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
+            },
+        ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
@@ -648,7 +660,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         expression: "D1@Sketch1 * 2".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1238,7 +1250,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .model
         .shells
         .iter()
-        .all(|shell| shell.faces.len() == 1));
+        .all(|shell| shell.faces().len() == 1));
     assert!(regenerated.ir().model.regions.iter().all(|region| {
         regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag
@@ -1621,7 +1633,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
             .find(|parameter| parameter.name == "Depth")
             .unwrap();
         parameter.expression = "20mm".into();
-        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -1671,7 +1683,7 @@ fn semantic_writer_preserves_dimension_attributes() {
         assert_eq!(parameter.properties["Driven"], "true");
         assert_eq!(parameter.properties["EquationId"], "D1@Boss");
         parameter.expression = "20mm".into();
-        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -1711,10 +1723,13 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
         assert_eq!(parameter.expression, "Width * 2");
-        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(24.0))));
+        assert_eq!(
+            parameter.value,
+            Some(ParameterValue::Length(Length::new(24.0).unwrap()))
+        );
         assert_eq!(parameter.properties["Value"], "24mm");
         parameter.expression = "Width * 3".into();
-        parameter.value = Some(ParameterValue::Length(Length(36.0)));
+        parameter.value = Some(ParameterValue::Length(Length::new(36.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -1729,7 +1744,10 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         .unwrap();
     let parameter = &regenerated.ir().model.parameters[0];
     assert_eq!(parameter.expression, "Width * 3");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(36.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(36.0).unwrap()))
+    );
     assert_eq!(parameter.properties["Value"], "36mm");
     assert_eq!(parameter.properties["EquationId"], "D1@Boss");
 }

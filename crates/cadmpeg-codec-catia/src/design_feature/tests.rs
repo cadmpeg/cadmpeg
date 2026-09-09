@@ -45,17 +45,19 @@ fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObje
 
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {
-        id: FeatureId::mint(id).expect("identity grammar"),
+        id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::StoredGeometry,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::StoredGeometry,
+        ),
         native_ref: Some(native_ref.to_string()),
     }
 }
@@ -169,13 +171,13 @@ fn entity_record(
 
 #[test]
 fn compact_self_owned_operation_root_remains_an_identity_anchor() {
-    let mut object = design_object("operation-object", None);
+    let mut object = design_object("synthetic:test:object#operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
 
     let mut record = object_record(
         "operation-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(1),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -223,13 +225,13 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
 
 #[test]
 fn malformed_compact_root_does_not_promote_an_operation() {
-    let mut object = design_object("operation-object", None);
+    let mut object = design_object("synthetic:test:object#operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
 
     let mut record = object_record(
         "operation-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(1),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -278,16 +280,16 @@ fn malformed_compact_root_does_not_promote_an_operation() {
 
 fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
     cadmpeg_ir::features::DesignParameter {
-        id: ParameterId::mint(id.to_string()).expect("identity grammar"),
+        id: ParameterId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         owner: None,
         ordinal: 99,
         name: id.to_string(),
         expression: "1 mm".to_string(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(1.0),
+            cadmpeg_ir::features::Length::new(1.0).unwrap(),
         )),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(native_ref.to_string()),
@@ -296,30 +298,42 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
 
 #[test]
 fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
-    let mut source = design_object("source-object", None);
+    let mut source = design_object("synthetic:test:object#source-object", None);
     let mut unresolved = payload_relation("unresolved-object", 6);
     unresolved.target_design_object = None;
     source.relations = vec![
-        payload_relation("first-object", 0),
-        payload_relation("first-object", 1),
-        payload_relation("second-child", 2),
-        payload_relation("forward-object", 3),
-        storage_relation("storage-object"),
-        payload_relation("source-object", 5),
+        payload_relation("synthetic:test:object#first-object", 0),
+        payload_relation("synthetic:test:object#first-object", 1),
+        payload_relation("synthetic:test:object#second-child", 2),
+        payload_relation("synthetic:test:object#forward-object", 3),
+        storage_relation("synthetic:test:object#storage-object"),
+        payload_relation("synthetic:test:object#source-object", 5),
         unresolved,
-        payload_relation("broken-object", 7),
-        payload_relation("cycle-first", 8),
+        payload_relation("synthetic:test:object#broken-object", 7),
+        payload_relation("synthetic:test:object#cycle-first", 8),
     ];
-    let broken = design_object("broken-object", Some("missing-object"));
-    let cycle_first = design_object("cycle-first", Some("cycle-second"));
-    let cycle_second = design_object("cycle-second", Some("cycle-first"));
+    let broken = design_object(
+        "synthetic:test:object#broken-object",
+        Some("missing-object"),
+    );
+    let cycle_first = design_object(
+        "synthetic:test:object#cycle-first",
+        Some("synthetic:test:object#cycle-second"),
+    );
+    let cycle_second = design_object(
+        "synthetic:test:object#cycle-second",
+        Some("synthetic:test:object#cycle-first"),
+    );
     let native = CatiaNative {
         design_objects: vec![
-            design_object("first-object", None),
-            design_object("second-object", None),
-            design_object("second-child", Some("second-object")),
-            design_object("forward-object", None),
-            design_object("storage-object", None),
+            design_object("synthetic:test:object#first-object", None),
+            design_object("synthetic:test:object#second-object", None),
+            design_object(
+                "synthetic:test:object#second-child",
+                Some("synthetic:test:object#second-object"),
+            ),
+            design_object("synthetic:test:object#forward-object", None),
+            design_object("synthetic:test:object#storage-object", None),
             broken,
             cycle_first,
             cycle_second,
@@ -329,11 +343,15 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     };
     let mut ir = CadIr::empty();
     for (id, native_ref, ordinal) in [
-        ("first-feature", "first-object", 10),
-        ("second-feature", "second-object", 15),
-        ("source-feature", "source-object", 20),
-        ("forward-feature", "forward-object", 30),
-        ("storage-feature", "storage-object", 5),
+        ("first-feature", "synthetic:test:object#first-object", 10),
+        ("second-feature", "synthetic:test:object#second-object", 15),
+        ("source-feature", "synthetic:test:object#source-object", 20),
+        (
+            "forward-feature",
+            "synthetic:test:object#forward-object",
+            30,
+        ),
+        ("storage-feature", "synthetic:test:object#storage-object", 5),
     ] {
         let mut item = feature(id, native_ref);
         item.ordinal = ordinal;
@@ -342,24 +360,24 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([
             (
-                "first-object".to_string(),
-                FeatureId::mint("first-feature").expect("identity grammar"),
+                "synthetic:test:object#first-object".to_string(),
+                FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
             ),
             (
-                "second-object".to_string(),
-                FeatureId::mint("second-feature").expect("identity grammar"),
+                "synthetic:test:object#second-object".to_string(),
+                FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar"),
             ),
             (
-                "source-object".to_string(),
-                FeatureId::mint("source-feature").expect("identity grammar"),
+                "synthetic:test:object#source-object".to_string(),
+                FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"),
             ),
             (
-                "forward-object".to_string(),
-                FeatureId::mint("forward-feature").expect("identity grammar"),
+                "synthetic:test:object#forward-object".to_string(),
+                FeatureId::mint("synthetic:test:id#forward-feature").expect("identity grammar"),
             ),
             (
-                "storage-object".to_string(),
-                FeatureId::mint("storage-feature").expect("identity grammar"),
+                "synthetic:test:object#storage-object".to_string(),
+                FeatureId::mint("synthetic:test:id#storage-feature").expect("identity grammar"),
             ),
         ]),
         ..DesignFeatureTransfer::default()
@@ -371,29 +389,31 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id == FeatureId::mint("source-feature").expect("identity grammar"))
+        .find(|feature| {
+            feature.id
+                == FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar")
+        })
         .unwrap();
     assert_eq!(
-        source.dependencies,
+        source.dependencies.as_slice(),
         [
-            FeatureId::mint("first-feature").expect("identity grammar"),
-            FeatureId::mint("second-feature").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar")
         ]
     );
-    assert!(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| feature.id
-                != FeatureId::mint("source-feature").expect("identity grammar"))
-            .all(|feature| feature.dependencies.is_empty())
-    );
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.id
+            != FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"))
+        .all(|feature| feature.dependencies.is_empty()));
 }
 
 #[test]
 fn transfers_admitted_native_operations_with_exact_parentage() {
     let mut parent = native_operation_object(
-        "parent-object",
+        "synthetic:test:object#parent-object",
         None,
         1,
         "parent-record",
@@ -402,8 +422,8 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     );
     parent.first_field_byte_offset = 10;
     let mut child = native_operation_object(
-        "child-object",
-        Some("parent-object"),
+        "synthetic:test:object#child-object",
+        Some("synthetic:test:object#parent-object"),
         2,
         "child-record",
         "EdgeFillet",
@@ -431,7 +451,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
                 ),
                 object_record(
                     "child-record",
-                    Some("parent-object"),
+                    Some("synthetic:test:object#parent-object"),
                     Some(2),
                     Some(1),
                     Some("EdgeFillet"),
@@ -450,16 +470,16 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     assert_eq!(ir.model.features[1].ordinal, 20);
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::mint("parent-object:feature").expect("identity grammar"))
+        Some(&FeatureId::mint("synthetic:test:feature#parent-object").expect("identity grammar"))
     );
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
     ));
     assert!(matches!(
-        ir.model.features[1].definition,
+        ir.model.features[1].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Fillet
         }
@@ -482,19 +502,44 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
 #[test]
 fn maps_each_admitted_operation_class_to_its_neutral_family() {
     let cases = [
-        ("prism-one", "Prism_ThickThin1", "prism-one-record", 1_u32),
-        ("prism-two", "Prism_ThickThin2", "prism-two-record", 2_u32),
         (
-            "end-limit",
+            "synthetic:test:object#prism-one",
+            "Prism_ThickThin1",
+            "prism-one-record",
+            1_u32,
+        ),
+        (
+            "synthetic:test:object#prism-two",
+            "Prism_ThickThin2",
+            "prism-two-record",
+            2_u32,
+        ),
+        (
+            "synthetic:test:object#end-limit",
             "Prism_EndLimit_Length",
             "end-limit-record",
             3_u32,
         ),
-        ("revolution", "Revol_ThickThin1", "revolution-record", 4_u32),
-        ("sweep", "Sweep_ThickThin1", "sweep-record", 5_u32),
-        ("fillet", "EdgeFillet", "fillet-record", 6_u32),
         (
-            "circular-pattern",
+            "synthetic:test:object#revolution",
+            "Revol_ThickThin1",
+            "revolution-record",
+            4_u32,
+        ),
+        (
+            "synthetic:test:object#sweep",
+            "Sweep_ThickThin1",
+            "sweep-record",
+            5_u32,
+        ),
+        (
+            "synthetic:test:object#fillet",
+            "EdgeFillet",
+            "fillet-record",
+            6_u32,
+        ),
+        (
+            "synthetic:test:object#circular-pattern",
             "CircPattern_RadialNumber",
             "circular-pattern-record",
             7_u32,
@@ -552,7 +597,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
         match feature.source_tag.as_deref() {
             Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Extrude
                     }
@@ -560,22 +605,19 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             }
             Some("Revol_ThickThin1") => {
                 assert!(matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Revolve
                     }
                 ));
             }
             Some("Sweep_ThickThin1") => {
-                let FeatureDefinition::Sweep {
-                    section,
-                    path,
-                    mode,
-                    ..
-                } = &feature.definition
+                let FeatureDefinition::Sweep { shape, path, .. } = feature.evaluation.definition()
                 else {
                     panic!("expected a typed unresolved sweep");
                 };
+                let section = shape.section();
+                let mode = shape.mode();
                 assert!(matches!(
                     section,
                     cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
@@ -588,20 +630,21 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             }
             Some("EdgeFillet") => {
                 assert!(matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Fillet
                     }
                 ));
             }
             Some("CircPattern_RadialNumber") => {
-                let FeatureDefinition::Pattern { seeds, pattern } = &feature.definition else {
+                let FeatureDefinition::Pattern { seeds, pattern } = feature.evaluation.definition()
+                else {
                     panic!("expected a typed unresolved circular pattern");
                 };
                 assert!(seeds.is_empty());
                 assert!(matches!(
-                    pattern,
-                    cadmpeg_ir::features::PatternKind::UnresolvedCircular
+                    (pattern).definition(),
+                    cadmpeg_ir::features::PatternTransform::UnresolvedCircular
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),
@@ -612,7 +655,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
 #[test]
 fn transfers_exact_definition_values_as_typed_feature_properties() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -665,7 +708,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
                 ),
                 object_record(
                     "definition-record",
-                    Some("operation-object"),
+                    Some("synthetic:test:object#operation-object"),
                     Some(1),
                     Some(1),
                     None,
@@ -681,7 +724,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
@@ -748,7 +791,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
 #[test]
 fn transfers_exact_definition_chains_as_typed_feature_properties() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -806,7 +849,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
                 ),
                 object_record(
                     "definition-chain-record",
-                    Some("operation-object"),
+                    Some("synthetic:test:object#operation-object"),
                     Some(1),
                     Some(1),
                     None,
@@ -822,7 +865,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
@@ -901,7 +944,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
 #[test]
 fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -909,7 +952,10 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         "operation-entry",
     );
     operation.first_field_byte_offset = 10;
-    let mut descendant = design_object("descendant-object", Some("operation-object"));
+    let mut descendant = design_object(
+        "synthetic:test:object#descendant-object",
+        Some("synthetic:test:object#operation-object"),
+    );
     descendant.first_field_byte_offset = 20;
     descendant
         .definition_chain_values
@@ -962,7 +1008,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
@@ -1022,7 +1068,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
 #[test]
 fn orders_exact_feature_parameters_by_serialized_field_position() {
     let operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -1039,7 +1085,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     );
     let mut late_parameter_record = object_record(
         "late-parameter-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(3),
         Some(1),
         None,
@@ -1051,7 +1097,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     }
     let mut early_parameter_record = object_record(
         "early-parameter-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(2),
         Some(1),
         None,
@@ -1095,7 +1141,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     ir.model.parameters.push(document_parameter);
 
     let transfer = transfer_design_features(&mut ir, &native, None);
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(
         ir.model
@@ -1109,17 +1155,26 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
             .collect::<Vec<_>>(),
         vec![
             (
-                ParameterId::mint("late-parameter".to_string()).expect("identity grammar"),
-                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
+                ParameterId::mint("synthetic:test:id#late-parameter".to_string())
+                    .expect("identity grammar"),
+                Some(
+                    FeatureId::mint("synthetic:test:feature#operation-object")
+                        .expect("identity grammar")
+                ),
                 1,
             ),
             (
-                ParameterId::mint("early-parameter".to_string()).expect("identity grammar"),
-                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
+                ParameterId::mint("synthetic:test:id#early-parameter".to_string())
+                    .expect("identity grammar"),
+                Some(
+                    FeatureId::mint("synthetic:test:feature#operation-object")
+                        .expect("identity grammar")
+                ),
                 0,
             ),
             (
-                ParameterId::mint("document-parameter".to_string()).expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#document-parameter".to_string())
+                    .expect("identity grammar"),
                 None,
                 0,
             ),
@@ -1143,7 +1198,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
 #[test]
 fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let mut parent = native_operation_object(
-        "parent-operation",
+        "synthetic:test:object#parent-operation",
         None,
         1,
         "parent-record",
@@ -1152,8 +1207,8 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     parent.first_field_byte_offset = 10;
     let mut child = native_operation_object(
-        "child-operation",
-        Some("parent-operation"),
+        "synthetic:test:object#child-operation",
+        Some("synthetic:test:object#parent-operation"),
         2,
         "child-record",
         "Prism_ThickThin2",
@@ -1170,7 +1225,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     let child_record = object_record(
         "child-record",
-        Some("parent-operation"),
+        Some("synthetic:test:object#parent-operation"),
         Some(2),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -1178,7 +1233,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     let mut parameter_record = object_record(
         "parameter-record",
-        Some("child-operation"),
+        Some("synthetic:test:object#child-operation"),
         Some(3),
         Some(2),
         None,
@@ -1208,13 +1263,16 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         .push(parameter("parameter", "parameter-entity"));
 
     let transfer = transfer_design_features(&mut ir, &native, None);
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
-    let child_feature = FeatureId::mint("child-operation:feature").expect("identity grammar");
+    let child_feature =
+        FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
     assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::mint("parent-operation:feature").expect("identity grammar"))
+        Some(
+            &FeatureId::mint("synthetic:test:feature#parent-operation").expect("identity grammar")
+        )
     );
     assert_eq!(
         ir.model.features[1]
@@ -1229,20 +1287,22 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
 fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Prism_ThickThin1".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Prism_ThickThin1".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Prism_ThickThin1".into(),
+                parameters: BTreeMap::new(),
+            },
+        ),
         native_ref: Some("native-feature".to_string()),
     });
     let mut first = parameter("first", "first-native");
@@ -1256,17 +1316,20 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         &mut ir,
         &HashMap::from([
             (
-                ParameterId::mint("first".to_string()).expect("identity grammar"),
-                FeatureId::mint("feature").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#first".to_string()).expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
             (
-                ParameterId::mint("second".to_string()).expect("identity grammar"),
-                FeatureId::mint("feature").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#second".to_string())
+                    .expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
         ]),
-    );
+    )
+    .unwrap();
 
-    let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
+    let FeatureDefinition::Native { parameters, .. } = ir.model.features[0].evaluation.definition()
+    else {
         panic!("expected an opaque native operation");
     };
     assert_eq!(
@@ -1282,20 +1345,22 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("pattern-feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("CircPattern_RadialNumber".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::UnresolvedCircular,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_CIRCULAR,
+            },
+        ),
         native_ref: Some("pattern-feature".to_string()),
     });
     let mut value = parameter("pattern-parameter", "pattern-native");
@@ -1307,10 +1372,12 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     assign_native_operation_parameter_values(
         &mut ir,
         &HashMap::from([(
-            ParameterId::mint("pattern-parameter".to_string()).expect("identity grammar"),
-            FeatureId::mint("pattern-feature").expect("identity grammar"),
+            ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
+                .expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         )]),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         ir.model.features[0]
@@ -1323,7 +1390,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
 
 #[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
-    let owner = FeatureId::mint("feature").expect("identity grammar");
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let mut ir = CadIr::empty();
     let mut first = parameter("first", "first-native");
     first.owner = Some(owner.clone());
@@ -1360,7 +1427,7 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
 #[test]
 fn does_not_promote_an_unadmitted_helper_owner_class() {
     let object = native_operation_object(
-        "helper-object",
+        "synthetic:test:object#helper-object",
         None,
         1,
         "helper-record",
@@ -1517,24 +1584,26 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:parameter".to_string())
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint(
+                "synthetic:test:id#synthetic:parameter".to_string(),
+            )
+            .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
@@ -1693,21 +1762,23 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:child-parameter".to_string())
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint(
+                "synthetic:test:id#synthetic:child-parameter".to_string(),
+            )
+            .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(child_entity_id),
         });
 
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
@@ -1751,8 +1822,8 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         assert!(ir.model.sketches.is_empty());
         assert_eq!(ir.model.features.len(), 1);
         assert_eq!(
-            ir.model.features[0].definition,
-            FeatureDefinition::DatumPrincipalPlane { plane }
+            ir.model.features[0].evaluation.definition(),
+            &FeatureDefinition::DatumPrincipalPlane { plane }
         );
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class));
         assert_eq!(
@@ -1909,7 +1980,7 @@ fn normalizes_scopes_containing_only_unnamed_parameters() {
     let mut ir = CadIr::empty();
     for owner in [
         None,
-        Some(FeatureId::mint("feature").expect("identity grammar")),
+        Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
     ] {
         for id in ["first", "second"] {
             let mut value = parameter(id, "native");

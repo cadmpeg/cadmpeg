@@ -18,7 +18,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .iter()
         .find(|shell| Some(&shell.id) == source_region.void_shells().next())
         .unwrap()
-        .faces
+        .faces()
         .iter()
         .all(|face_id| decoded
             .ir()
@@ -61,7 +61,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .iter()
         .find(|shell| shell.id == region.shells[1])
         .unwrap();
-    assert!(void_shell.faces.iter().all(|face_id| {
+    assert!(void_shell.faces().iter().all(|face_id| {
         round_trip
             .ir()
             .model

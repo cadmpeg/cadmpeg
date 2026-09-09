@@ -143,19 +143,19 @@ fn neutral_feature(
         ordinal,
         name: Some(name.into()),
         suppressed: None,
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(format!("sldprt:history:feature#{id}")),
     }
 }
 
 fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinition {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind};
 
     FeatureDefinition::Hole {
         profile: None,
@@ -163,9 +163,13 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
         face: None,
         direction: None,
         placements: None,
-        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-        exit_kind: None,
-        diameter: Some(Length(diameter)),
+        shape: cadmpeg_ir::features::HoleShape::new(
+            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+            None,
+            Some(cadmpeg_ir::features::PositiveLength::new(diameter).unwrap()),
+        )
+        .unwrap(),
+
         extent: None,
         bottom: None,
         taper_angle: None,

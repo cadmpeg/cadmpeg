@@ -73,10 +73,15 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some("Round"))
             .unwrap();
-        let FeatureDefinition::Fillet { groups } = &mut feature.definition else {
-            panic!("typed fillet");
-        };
-        groups[0].edges = EdgeSelection::Native("changed".into());
+        feature
+            .evaluation
+            .try_edit(|definition, _| {
+                let FeatureDefinition::Fillet { groups } = definition else {
+                    panic!("typed fillet");
+                };
+                groups[0].edges = EdgeSelection::Native("changed".into());
+            })
+            .unwrap();
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -170,10 +175,12 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some("UpTo"))
             .unwrap();
+        let updated_feature_evaluation = &mut feature.evaluation;
+        let mut updated_feature_definition = updated_feature_evaluation.definition().clone();
         let FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
-        } = &mut feature.definition
+        } = &mut updated_feature_definition
         else {
             panic!("typed extrusion");
         };
@@ -181,6 +188,9 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             panic!("to-face termination");
         };
         *face = FaceSelection::Native("changed".into());
+        updated_feature_evaluation
+            .set_definition(updated_feature_definition)
+            .unwrap();
     }
 
     let error = crate::test_support::plan_inherited_write(

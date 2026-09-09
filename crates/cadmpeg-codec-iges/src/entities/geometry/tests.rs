@@ -1129,8 +1129,8 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 5.0]));
-    assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
-    assert!(result.ir().model.shells[0].free_vertices.is_empty());
+    assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
+    assert!(result.ir().model.shells[0].free_vertices().is_empty());
     assert_eq!(
         result.ir().model.curves[0]
             .source_object

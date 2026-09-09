@@ -61,7 +61,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         start_angle,
         clockwise,
         ..
-    } = &result.ir().model.features[0].definition
+    } = result.ir().model.features[0].evaluation.definition()
     else {
         panic!("complete curve-equation frame transfers a neutral helix");
     };
@@ -71,10 +71,10 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(axis_direction.x.abs() <= EPS_HELIX_FEATURE);
     assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
     assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((radius.0 - 5.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((pitch.get().0 - 71.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((*revolutions - 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!(start_angle.0.abs() <= EPS_HELIX_FEATURE);
+    assert!((radius.get() - 5.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((pitch.get() - 71.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((revolutions.get() - 1.0).abs() <= EPS_HELIX_FEATURE);
+    assert!(start_angle.get().abs() <= EPS_HELIX_FEATURE);
     assert!(!clockwise);
     assert_eq!(
         result
@@ -97,11 +97,13 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(result.ir().model.parameters[0].name, "r");
     assert_eq!(
         result.ir().model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+        ))
     );
     assert_eq!(result.ir().model.parameters[2].name, "theta");
     assert_eq!(
-        result.ir().model.parameters[2].dependencies,
+        result.ir().model.parameters[2].dependencies.as_slice(),
         [result.ir().model.parameters[1].id.clone()]
     );
     assert_eq!(
@@ -112,7 +114,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         .properties
         .contains_key("external_dependencies"));
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        result.ir().model.features[0].source_content.as_slice(),
         result
             .ir()
             .model
@@ -175,12 +177,12 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
     assert_eq!(r.name, "r");
     assert_eq!(r.ordinal, 1);
     assert_eq!(r.value, None);
-    assert_eq!(r.dependencies, std::slice::from_ref(&a.id));
+    assert_eq!(r.dependencies.as_slice(), std::slice::from_ref(&a.id));
     assert_eq!(a.ordinal, 0);
     assert!(!r.properties.contains_key("external_dependencies"));
     assert_eq!(theta.properties["independent_variables"], "T");
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        result.ir().model.features[0].source_content.as_slice(),
         result
             .ir()
             .model
@@ -263,11 +265,21 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
             .map(|parameter| parameter.value.as_ref())
             .collect::<Vec<_>>(),
         [
-            Some(&cadmpeg_ir::features::ParameterValue::Real(100.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(10.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(11.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(1.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(101.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(100.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(10.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(11.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(101.0).unwrap()
+            )),
         ]
     );
 
@@ -377,19 +389,27 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
         .collect::<BTreeMap<_, _>>();
     assert_eq!(
         values["x"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(6.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(6.0).unwrap()
+        ))
     );
     assert_eq!(
         values["y"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(4.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(4.0).unwrap()
+        ))
     );
     assert_eq!(
         values["sum"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(10.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(10.0).unwrap()
+        ))
     );
     assert_eq!(
         values["product"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(24.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(24.0).unwrap()
+        ))
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
@@ -435,13 +455,13 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(
         values["x"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(6.0)
+            cadmpeg_ir::features::Length::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(4.0)
+            cadmpeg_ir::features::Length::new(4.0).unwrap()
         ))
     );
 
@@ -549,12 +569,16 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     assert_eq!(copy.name, "copy");
     assert_eq!(
         copy.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(6.0).unwrap()
+        ))
     );
     assert_eq!(present.name, "present");
     assert_eq!(
         present.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()
+        ))
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
@@ -597,7 +621,9 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(parameter.name, "result");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(6.0).unwrap()
+        ))
     );
     assert_eq!(parameter.properties["external_dependencies"], "d42");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
@@ -717,7 +743,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     assert_eq!(second["target"]["row"], "2");
     assert!(second["target"]["column"].is_null());
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        result.ir().model.features[0].source_content.as_slice(),
         [cadmpeg_ir::features::FeatureSourceContent::Parameter(
             parameter.id.clone()
         )]
@@ -780,12 +806,15 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         .find(|parameter| parameter.name == "result")
         .expect("relation parameter");
 
-    assert_eq!(relation.dependencies, std::slice::from_ref(&dimension.id));
+    assert_eq!(
+        relation.dependencies.as_slice(),
+        std::slice::from_ref(&dimension.id)
+    );
     assert!(!relation.properties.contains_key("external_dependencies"));
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
+            cadmpeg_ir::features::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -905,13 +934,13 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     assert_eq!(
         parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.8)
+            cadmpeg_ir::features::Length::new(50.8).unwrap()
         ))
     );
     let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
         panic!("dimensioned copy");
     };
-    assert!((copy.0 - 76.2).abs() < 1.0e-12);
+    assert!((copy.get() - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
@@ -936,7 +965,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
         panic!("angle parameter");
     };
-    assert!((angle.0 - 2.0f64.atan()).abs() < 1.0e-12);
+    assert!((angle.get() - 2.0f64.atan()).abs() < 1.0e-12);
     assert_eq!(parameters[4].properties["declared_unit"], "C");
     assert_eq!(
         parameters[4].properties["evaluated_dimension"],
@@ -966,7 +995,10 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(parameters[2].properties["activation"], "inactive");
     assert_eq!(parameters[3].properties["activation"], "active");
     assert_eq!(parameters[3].value, None);
-    assert_eq!(parameters[3].dependencies, [parameters[1].id.clone()]);
+    assert_eq!(
+        parameters[3].dependencies.as_slice(),
+        [parameters[1].id.clone()]
+    );
     assert!(!parameters[3]
         .properties
         .contains_key("ambiguous_dependencies"));

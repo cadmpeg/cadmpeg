@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+const EPS_SKETCH_ANGLE: f64 = 1.0e-12;
+
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -15,7 +17,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_rejects_retained_sketch_constraint_edits() {
-    use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition, SketchConstraintId};
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+    };
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
     let decoded = SldprtCodec
@@ -29,9 +33,12 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         .model
         .sketch_constraints
         .push(SketchConstraint {
-            id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+            id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
             sketch,
-            definition: SketchConstraintDefinition::Horizontal { entity },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::Horizontal { entity },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -79,11 +86,11 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: None }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -92,8 +99,10 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed spatial path".into());
-    decoded.ir_mut().model.features[1].definition =
-        FeatureDefinition::SpatialSketch { sketch: None };
+    decoded.ir_mut().model.features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::SpatialSketch { sketch: None })
+        .unwrap();
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -115,14 +124,14 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .features
         .iter()
         .all(|feature| matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::SpatialSketch { sketch: None }
         )));
 }
 
 #[test]
 fn semantic_writer_applies_line_sketch_edits() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -133,15 +142,20 @@ fn semantic_writer_applies_line_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-            panic!("line sketch entity");
-        };
-        if entity.endpoint_refs[0] == point_ref {
-            start.u += 1.0;
-        }
-        if entity.endpoint_refs[1] == point_ref {
-            end.u += 1.0;
-        }
+        entity
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Line { start, end } = definition else {
+                    panic!("line sketch entity");
+                };
+                if entity.endpoint_refs[0] == point_ref {
+                    start.u += 1.0;
+                }
+                if entity.endpoint_refs[1] == point_ref {
+                    end.u += 1.0;
+                }
+            })
+            .unwrap();
     }
 
     let mut written = Vec::new();
@@ -159,8 +173,8 @@ fn semantic_writer_applies_line_sketch_edits() {
         .model
         .sketch_entities
         .iter()
-        .flat_map(|entity| match &entity.geometry {
-            SketchGeometry::Line { start, end } => [start.u, end.u],
+        .flat_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => [start.u, end.u],
             _ => panic!("line sketch entity"),
         })
         .filter(|value| (*value - 1.0).abs() < 1.0e-12)
@@ -170,7 +184,7 @@ fn semantic_writer_applies_line_sketch_edits() {
 
 #[test]
 fn semantic_writer_applies_compressed_line_sketch_edits() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -183,15 +197,20 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-            panic!("line sketch entity");
-        };
-        if entity.endpoint_refs[0] == point_ref {
-            start.v += 2.0;
-        }
-        if entity.endpoint_refs[1] == point_ref {
-            end.v += 2.0;
-        }
+        entity
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Line { start, end } = definition else {
+                    panic!("line sketch entity");
+                };
+                if entity.endpoint_refs[0] == point_ref {
+                    start.v += 2.0;
+                }
+                if entity.endpoint_refs[1] == point_ref {
+                    end.v += 2.0;
+                }
+            })
+            .unwrap();
     }
 
     let mut written = Vec::new();
@@ -224,8 +243,8 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
         .model
         .sketch_entities
         .iter()
-        .flat_map(|entity| match &entity.geometry {
-            SketchGeometry::Line { start, end } => [start.v, end.v],
+        .flat_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => [start.v, end.v],
             _ => panic!("line sketch entity"),
         })
         .filter(|value| (*value - 2.0).abs() < 1.0e-12)
@@ -235,7 +254,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
 
 #[test]
 fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -246,11 +265,15 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let SketchGeometry::Line { start, .. } = &mut ir_edit.model.sketch_entities[0].geometry
-        else {
-            panic!("line sketch entity");
-        };
-        start.u += 1.0;
+        ir_edit.model.sketch_entities[0]
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Line { start, .. } = definition else {
+                    panic!("line sketch entity");
+                };
+                start.u += 1.0;
+            })
+            .unwrap();
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -269,7 +292,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
 #[test]
 fn semantic_writer_applies_circle_sketch_edits() {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -280,13 +303,16 @@ fn semantic_writer_applies_circle_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let SketchGeometry::Circle { center, radius } =
-            &mut ir_edit.model.sketch_entities[0].geometry
-        else {
-            panic!("circle sketch entity");
-        };
-        center.u = 250.0;
-        *radius = Length(750.0);
+        ir_edit.model.sketch_entities[0]
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Circle { center, radius } = definition else {
+                    panic!("circle sketch entity");
+                };
+                center.u = 250.0;
+                *radius = Length::new(750.0).unwrap();
+            })
+            .unwrap();
     }
 
     let mut written = Vec::new();
@@ -300,18 +326,18 @@ fn semantic_writer_applies_circle_sketch_edits() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.sketch_entities[0].geometry,
-        SketchGeometry::Circle {
+        (regenerated.ir().model.sketch_entities[0].geometry).definition(),
+        SketchGeometryDefinition::Circle {
             center: cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 },
-            radius: Length(750.0),
-        }
+            radius: actual_radius,
+        } if actual_radius.get() == 750.0
     ));
 }
 
 #[test]
 fn semantic_writer_applies_ellipse_sketch_edits() {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -322,20 +348,25 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let SketchGeometry::Ellipse {
-            center,
-            major_angle,
-            major_radius,
-            minor_radius,
-            ..
-        } = &mut ir_edit.model.sketch_entities[0].geometry
-        else {
-            panic!("ellipse sketch entity");
-        };
-        center.v = 125.0;
-        *major_angle = Angle(0.25);
-        *major_radius = Length(1500.0);
-        *minor_radius = Length(500.0);
+        ir_edit.model.sketch_entities[0]
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Ellipse {
+                    center,
+                    major_angle,
+                    major_radius,
+                    minor_radius,
+                    ..
+                } = definition
+                else {
+                    panic!("ellipse sketch entity");
+                };
+                center.v = 125.0;
+                *major_angle = Angle::new(0.25).unwrap();
+                *major_radius = Length::new(1500.0).unwrap();
+                *minor_radius = Length::new(500.0).unwrap();
+            })
+            .unwrap();
     }
 
     let mut written = Vec::new();
@@ -349,21 +380,21 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.sketch_entities[0].geometry,
-        SketchGeometry::Ellipse {
+        regenerated.ir().model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Ellipse {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 },
-            major_angle: Angle(angle),
-            major_radius: Length(1500.0),
-            minor_radius: Length(500.0),
+            major_angle: angle,
+            major_radius: actual_major_radius,
+            minor_radius: actual_minor_radius,
             bounds: None,
-        } if (angle - 0.25).abs() < 1.0e-12
+        } if ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && actual_major_radius.get() == 1500.0 && actual_minor_radius.get() == 500.0
     ));
 }
 
 #[test]
 fn semantic_writer_applies_bounded_arc_sketch_edits() {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -378,38 +409,52 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             .model
             .sketch_entities
             .iter_mut()
-            .find(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+            .find(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Arc { .. }
+                )
+            })
             .expect("arc sketch entity");
-        let SketchGeometry::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } = &mut arc.geometry
-        else {
-            unreachable!();
-        };
-        center.u = 100.0;
-        *radius = Length(800.0);
-        *start_angle = Angle(0.25);
-        *end_angle = Angle(1.25);
+        arc.geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } = definition
+                else {
+                    unreachable!();
+                };
+                center.u = 100.0;
+                *radius = Length::new(800.0).unwrap();
+                *start_angle = Angle::new(0.25).unwrap();
+                *end_angle = Angle::new(1.25).unwrap();
+            })
+            .unwrap();
         let endpoint_refs = arc.endpoint_refs.clone();
         let endpoints = [
             cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
             cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
         ];
         for entity in &mut ir_edit.model.sketch_entities {
-            let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-                continue;
-            };
-            for (reference, target) in endpoint_refs.iter().zip(endpoints) {
-                if entity.endpoint_refs[0] == *reference {
-                    *start = target;
-                }
-                if entity.endpoint_refs[1] == *reference {
-                    *end = target;
-                }
-            }
+            entity
+                .geometry
+                .edit(|definition| {
+                    let SketchGeometryDefinition::Line { start, end } = definition else {
+                        return;
+                    };
+                    for (reference, target) in endpoint_refs.iter().zip(endpoints) {
+                        if entity.endpoint_refs[0] == *reference {
+                            *start = target;
+                        }
+                        if entity.endpoint_refs[1] == *reference {
+                            *end = target;
+                        }
+                    }
+                })
+                .unwrap();
         }
     }
 
@@ -423,25 +468,20 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert!(regenerated
-        .ir()
-        .model
-        .sketch_entities
-        .iter()
-        .any(|entity| matches!(
-            entity.geometry,
-            SketchGeometry::Arc {
+    assert!(regenerated.ir().model.sketch_entities.iter().any(
+        |entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Arc {
                 center: cadmpeg_ir::math::Point2 { u: 100.0, v: 0.0 },
-                radius: Length(800.0),
-                start_angle: Angle(start),
-                end_angle: Angle(end),
-            } if (start - 0.25).abs() < 1.0e-12 && (end - 1.25).abs() < 1.0e-12
+                radius: actual_radius,
+                start_angle: start,
+                end_angle: end,
+            } if ((start.get() - 0.25).abs() < EPS_SKETCH_ANGLE && (end.get() - 1.25).abs() < EPS_SKETCH_ANGLE) && actual_radius.get() == 800.0
         )));
 }
 
 #[test]
 fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -451,15 +491,20 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        let SketchGeometry::Nurbs { curve } = &mut entity.geometry else {
-            continue;
-        };
-        curve
-            .edit_control_points(|points| points[1].v += 250.0)
+        entity
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Nurbs { curve } = definition else {
+                    return;
+                };
+                curve
+                    .edit_control_points(|points| points[1].v += 250.0)
+                    .unwrap();
+                if curve.weights().is_some() {
+                    curve.edit_weights(|weights| weights[1] = 0.75).unwrap();
+                }
+            })
             .unwrap();
-        if curve.weights().is_some() {
-            curve.edit_weights(|weights| weights[1] = 0.75).unwrap();
-        }
     }
 
     let mut written = Vec::new();
@@ -477,8 +522,10 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .model
         .sketch_entities
         .iter()
-        .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Nurbs { curve } => Some((curve.control_points(), curve.weights())),
+        .filter_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Nurbs { curve } => {
+                Some((curve.control_points(), curve.weights()))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -700,7 +747,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         Vector3::new(0.0, 0.0, -1.0),
     ];
     let mesh = Tessellation::from_decoded(
-        "synthetic:test:indexed-tessellation",
+        "synthetic:test:tessellation#indexed",
         vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),

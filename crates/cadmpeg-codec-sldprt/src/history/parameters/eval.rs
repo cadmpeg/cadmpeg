@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-expression parser and arithmetic.
 
-use cadmpeg_ir::features::{Angle, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{Angle, FiniteReal, Length, ParameterId, ParameterValue};
 use std::collections::HashMap;
 
 use super::ParameterAliasView;
@@ -158,7 +158,7 @@ impl<'a> ParameterExpressionParser<'a> {
                 return function.apply(&arguments);
             }
             if token.eq_ignore_ascii_case("pi") {
-                return Some(ParameterValue::Real(std::f64::consts::PI));
+                return Some(ParameterValue::Real(FiniteReal::new(std::f64::consts::PI)?));
             }
         }
         let referenced = |token: &str| {
@@ -256,9 +256,9 @@ impl<'a> ParameterExpressionParser<'a> {
 
 pub(crate) fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
     Some(match value {
-        ParameterValue::Length(Length(value)) => ParameterValue::Length(Length(-*value)),
-        ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(-*value)),
-        ParameterValue::Real(value) => ParameterValue::Real(-*value),
+        ParameterValue::Length(value) => ParameterValue::Length(Length::new(-value.get())?),
+        ParameterValue::Angle(value) => ParameterValue::Angle(Angle::new(-value.get())?),
+        ParameterValue::Real(value) => ParameterValue::Real(FiniteReal::new(-value.get())?),
         ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_neg()?),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
     })
@@ -271,11 +271,11 @@ pub(crate) fn add_parameter_values(
 ) -> Option<ParameterValue> {
     let sign = if subtract { -1.0 } else { 1.0 };
     Some(match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right))) => {
-            ParameterValue::Length(Length(left + sign * right))
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => {
+            ParameterValue::Length(Length::new(left.get() + sign * right.get())?)
         }
-        (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right))) => {
-            ParameterValue::Angle(Angle(left + sign * right))
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => {
+            ParameterValue::Angle(Angle::new(left.get() + sign * right.get())?)
         }
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => {
             let right = if subtract {
@@ -285,9 +285,9 @@ pub(crate) fn add_parameter_values(
             };
             ParameterValue::Integer(left.checked_add(right)?)
         }
-        (left, right) => ParameterValue::Real(
+        (left, right) => ParameterValue::Real(FiniteReal::new(
             real_parameter_value(&left)? + sign * real_parameter_value(&right)?,
-        ),
+        )?),
     })
 }
 
@@ -304,15 +304,15 @@ pub(crate) fn compare_parameter_values(
         return None;
     }
     let ordering = match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right)))
-        | (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right)))
-        | (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left.cmp(right),
         (ParameterValue::Real(left), ParameterValue::Integer(right)) => {
-            compare_integer_real(*right, *left)?.reverse()
+            compare_integer_real(*right, left.get())?.reverse()
         }
         (ParameterValue::Integer(left), ParameterValue::Real(right)) => {
-            compare_integer_real(*left, *right)?
+            compare_integer_real(*left, right.get())?
         }
         (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left.cmp(right),
         (ParameterValue::String(left), ParameterValue::String(right)) => left.cmp(right),
@@ -366,11 +366,9 @@ pub(crate) fn conditional_parameter_value(
         }
         (ParameterValue::Real(_), ParameterValue::Integer(_))
         | (ParameterValue::Integer(_), ParameterValue::Real(_)) => {
-            Some(ParameterValue::Real(real_parameter_value(if *condition {
-                &when_true
-            } else {
-                &when_false
-            })?))
+            Some(ParameterValue::Real(FiniteReal::new(
+                real_parameter_value(if *condition { &when_true } else { &when_false })?,
+            )?))
         }
         _ => None,
     }
@@ -385,40 +383,40 @@ pub(crate) fn multiply_parameter_values(
         return None;
     }
     match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right))) if divide => {
-            Some(ParameterValue::Real(left / right))
-        }
-        (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right))) if divide => {
-            Some(ParameterValue::Real(left / right))
-        }
-        (ParameterValue::Length(Length(left)), right) => {
-            Some(ParameterValue::Length(Length(if divide {
-                left / real_parameter_value(&right)?
+        (ParameterValue::Length(left), ParameterValue::Length(right)) if divide => Some(
+            ParameterValue::Real(FiniteReal::new(left.get() / right.get())?),
+        ),
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) if divide => Some(
+            ParameterValue::Real(FiniteReal::new(left.get() / right.get())?),
+        ),
+        (ParameterValue::Length(left), right) => {
+            Some(ParameterValue::Length(Length::new(if divide {
+                left.get() / real_parameter_value(&right)?
             } else {
-                left * real_parameter_value(&right)?
-            })))
+                left.get() * real_parameter_value(&right)?
+            })?))
         }
-        (ParameterValue::Angle(Angle(left)), right) => {
-            Some(ParameterValue::Angle(Angle(if divide {
-                left / real_parameter_value(&right)?
+        (ParameterValue::Angle(left), right) => {
+            Some(ParameterValue::Angle(Angle::new(if divide {
+                left.get() / real_parameter_value(&right)?
             } else {
-                left * real_parameter_value(&right)?
-            })))
+                left.get() * real_parameter_value(&right)?
+            })?))
         }
-        (left, ParameterValue::Length(Length(right))) if !divide => Some(ParameterValue::Length(
-            Length(real_parameter_value(&left)? * right),
+        (left, ParameterValue::Length(right)) if !divide => Some(ParameterValue::Length(
+            Length::new(real_parameter_value(&left)? * right.get())?,
         )),
-        (left, ParameterValue::Angle(Angle(right))) if !divide => Some(ParameterValue::Angle(
-            Angle(real_parameter_value(&left)? * right),
-        )),
+        (left, ParameterValue::Angle(right)) if !divide => Some(ParameterValue::Angle(Angle::new(
+            real_parameter_value(&left)? * right.get(),
+        )?)),
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) if !divide => {
             Some(ParameterValue::Integer(left.checked_mul(right)?))
         }
-        (left, right) => Some(ParameterValue::Real(if divide {
+        (left, right) => Some(ParameterValue::Real(FiniteReal::new(if divide {
             real_parameter_value(&left)? / real_parameter_value(&right)?
         } else {
             real_parameter_value(&left)? * real_parameter_value(&right)?
-        })),
+        })?)),
     }
 }
 
@@ -442,7 +440,9 @@ pub(crate) fn exponentiate_parameter_value(
                 _ => None,
             };
         }
-        return Some(ParameterValue::Real(integer_power_real(*base, *exponent)));
+        return Some(ParameterValue::Real(FiniteReal::new(integer_power_real(
+            *base, *exponent,
+        ))?));
     }
 
     let exponent = real_parameter_value(exponent)?;
@@ -450,14 +450,16 @@ pub(crate) fn exponentiate_parameter_value(
         ParameterValue::Length(value) if exponent == 1.0 => ParameterValue::Length(*value),
         ParameterValue::Angle(value) if exponent == 1.0 => ParameterValue::Angle(*value),
         ParameterValue::Length(_) | ParameterValue::Angle(_) if exponent == 0.0 => {
-            ParameterValue::Real(1.0)
+            ParameterValue::Real(FiniteReal::new(1.0)?)
         }
-        ParameterValue::Real(base) => ParameterValue::Real(base.powf(exponent)),
+        ParameterValue::Real(base) => {
+            ParameterValue::Real(FiniteReal::new(base.get().powf(exponent))?)
+        }
         ParameterValue::Integer(base) => {
             if exponent.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&exponent) {
                 ParameterValue::Integer(base.checked_pow(exponent as u32)?)
             } else {
-                ParameterValue::Real((*base as f64).powf(exponent))
+                ParameterValue::Real(FiniteReal::new((*base as f64).powf(exponent))?)
             }
         }
         ParameterValue::Length(_)
@@ -547,10 +549,10 @@ impl ParameterFunction {
             Some(argument)
         };
         let angle = || {
-            let ParameterValue::Angle(Angle(value)) = unary()? else {
+            let ParameterValue::Angle(value) = unary()? else {
                 return None;
             };
-            Some(*value)
+            Some(value.get())
         };
         Some(match self {
             Self::Iif => {
@@ -564,39 +566,53 @@ impl ParameterFunction {
                 );
             }
             Self::Abs => match unary()? {
-                ParameterValue::Length(Length(value)) => {
-                    ParameterValue::Length(Length(value.abs()))
+                ParameterValue::Length(value) => {
+                    ParameterValue::Length(Length::new(value.get().abs())?)
                 }
-                ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(value.abs())),
-                ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
+                ParameterValue::Angle(value) => {
+                    ParameterValue::Angle(Angle::new(value.get().abs())?)
+                }
+                ParameterValue::Real(value) => {
+                    ParameterValue::Real(FiniteReal::new(value.get().abs())?)
+                }
                 ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
                 ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
             },
-            Self::Sin => ParameterValue::Real(angle()?.sin()),
-            Self::Cos => ParameterValue::Real(angle()?.cos()),
-            Self::Tan => ParameterValue::Real(angle()?.tan()),
-            Self::Sec => ParameterValue::Real(angle()?.cos().recip()),
-            Self::Cosec => ParameterValue::Real(angle()?.sin().recip()),
-            Self::Cotan => ParameterValue::Real(angle()?.tan().recip()),
-            Self::Arcsin => ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.asin())),
-            Self::Arccos => ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.acos())),
-            Self::Atn => ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.atan())),
+            Self::Sin => ParameterValue::Real(FiniteReal::new(angle()?.sin())?),
+            Self::Cos => ParameterValue::Real(FiniteReal::new(angle()?.cos())?),
+            Self::Tan => ParameterValue::Real(FiniteReal::new(angle()?.tan())?),
+            Self::Sec => ParameterValue::Real(FiniteReal::new(angle()?.cos().recip())?),
+            Self::Cosec => ParameterValue::Real(FiniteReal::new(angle()?.sin().recip())?),
+            Self::Cotan => ParameterValue::Real(FiniteReal::new(angle()?.tan().recip())?),
+            Self::Arcsin => {
+                ParameterValue::Angle(Angle::new(real_parameter_value(unary()?)?.asin())?)
+            }
+            Self::Arccos => {
+                ParameterValue::Angle(Angle::new(real_parameter_value(unary()?)?.acos())?)
+            }
+            Self::Atn => ParameterValue::Angle(Angle::new(real_parameter_value(unary()?)?.atan())?),
             Self::Arcsec => {
-                ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.recip().acos()))
+                ParameterValue::Angle(Angle::new(real_parameter_value(unary()?)?.recip().acos())?)
             }
             Self::Arccosec => {
-                ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.recip().asin()))
+                ParameterValue::Angle(Angle::new(real_parameter_value(unary()?)?.recip().asin())?)
             }
             Self::Arccotan => {
-                ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.recip().atan()))
+                ParameterValue::Angle(Angle::new(real_parameter_value(unary()?)?.recip().atan())?)
             }
-            Self::Exp => ParameterValue::Real(real_parameter_value(unary()?)?.exp()),
-            Self::Log => ParameterValue::Real(real_parameter_value(unary()?)?.ln()),
-            Self::Sqr => ParameterValue::Real(real_parameter_value(unary()?)?.sqrt()),
+            Self::Exp => {
+                ParameterValue::Real(FiniteReal::new(real_parameter_value(unary()?)?.exp())?)
+            }
+            Self::Log => {
+                ParameterValue::Real(FiniteReal::new(real_parameter_value(unary()?)?.ln())?)
+            }
+            Self::Sqr => {
+                ParameterValue::Real(FiniteReal::new(real_parameter_value(unary()?)?.sqrt())?)
+            }
             Self::Int => match unary()? {
                 ParameterValue::Integer(value) => ParameterValue::Integer(*value),
                 ParameterValue::Real(value) => {
-                    let value = value.trunc();
+                    let value = value.get().trunc();
                     if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
                         return None;
                     }
@@ -611,9 +627,6 @@ impl ParameterFunction {
             },
             Self::Sgn => {
                 let value = parameter_numeric_value(unary()?)?;
-                if !value.is_finite() {
-                    return None;
-                }
                 ParameterValue::Integer(match value.partial_cmp(&0.0)? {
                     std::cmp::Ordering::Less => -1,
                     std::cmp::Ordering::Equal => 0,
@@ -621,13 +634,12 @@ impl ParameterFunction {
                 })
             }
         })
-        .filter(parameter_value_is_finite)
     }
 }
 
 pub(crate) fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
     match value {
-        ParameterValue::Real(value) => Some(*value),
+        ParameterValue::Real(value) => Some(value.get()),
         ParameterValue::Integer(value) => Some(*value as f64),
         _ => None,
     }
@@ -635,9 +647,9 @@ pub(crate) fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
 
 pub(crate) fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
     match value {
-        ParameterValue::Length(Length(value))
-        | ParameterValue::Angle(Angle(value))
-        | ParameterValue::Real(value) => Some(*value),
+        ParameterValue::Length(value) => Some(value.get()),
+        ParameterValue::Angle(value) => Some(value.get()),
+        ParameterValue::Real(value) => Some(value.get()),
         ParameterValue::Integer(value) => Some(*value as f64),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => None,
     }
@@ -649,6 +661,26 @@ pub(crate) fn exact_integer_f64(value: i64) -> Option<f64> {
     ((encoded as i128) == i128::from(value)).then_some(encoded)
 }
 
-pub(crate) fn parameter_value_is_finite(value: &ParameterValue) -> bool {
-    parameter_numeric_value(value).is_none_or(f64::is_finite)
+#[cfg(test)]
+mod tests {
+    use super::{
+        add_parameter_values, exponentiate_parameter_value, multiply_parameter_values,
+        ParameterFunction,
+    };
+    use cadmpeg_ir::features::{FiniteReal, ParameterValue};
+
+    #[test]
+    fn real_arithmetic_rejects_non_finite_results_at_construction() {
+        let largest = ParameterValue::Real(FiniteReal::new(f64::MAX).unwrap());
+        let two = ParameterValue::Integer(2);
+        assert!(add_parameter_values(largest.clone(), largest.clone(), false).is_none());
+        assert!(multiply_parameter_values(largest.clone(), two.clone(), false).is_none());
+        assert!(exponentiate_parameter_value(&largest, &two).is_none());
+        assert!(ParameterFunction::Exp.apply(&[largest]).is_none());
+        let negative = ParameterValue::Real(FiniteReal::new(-1.0).unwrap());
+        assert!(ParameterFunction::Log
+            .apply(std::slice::from_ref(&negative))
+            .is_none());
+        assert!(ParameterFunction::Sqr.apply(&[negative]).is_none());
+    }
 }

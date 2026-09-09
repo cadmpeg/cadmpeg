@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design primitives transfer unit tests.
 
+const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
+
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent};
@@ -66,24 +68,25 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         )
         .expect("core operations");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Revolution"),
         cadmpeg_ir::features::FeatureDefinition::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Join
-        } if matches!(construction.profile(), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+        } if matches!(construction.profile().map(std::ops::Deref::deref), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle }
-                }) if (angle.0 - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
     assert!(matches!(
         definition("Fillet"),
@@ -92,9 +95,9 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         }
         if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::All,
-            radius: cadmpeg_ir::features::RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(2.0) },
+            radius: cadmpeg_ir::features::RadiusSpec::Constant { radius: actual_radius },
             tangency_weight: None,
-        }])
+        }] if actual_radius.get() == 2.0)
     ));
     assert!(matches!(
         definition("Chamfer"),
@@ -102,18 +105,18 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
             groups,
             flip_direction: true,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: cadmpeg_ir::features::Length(1.5), angle }, ..
-        }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12)
+            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: actual_distance, angle }, ..
+        }] if ((angle.get() - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12) && actual_distance.get() == 1.5)
     ));
     assert!(matches!(
         definition("LegacyChamfer"),
         cadmpeg_ir::features::FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
                 spec: cadmpeg_ir::features::ChamferSpec::Distance {
-                    distance: cadmpeg_ir::features::Length(0.75)
+                    distance: actual_distance
                 },
                 ..
-            }])
+            }] if actual_distance.get() == 0.75)
     ));
     assert!(matches!(
         definition("Profileless"),
@@ -130,14 +133,15 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn document(target: &str, replacement: Option<&str>) -> String {
@@ -297,14 +301,15 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
     }
 
     fn flip_direction(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
-        let definition = &result
+        let definition = result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Chamfer"))
             .expect("chamfer")
-            .definition;
+            .evaluation
+            .definition();
         match definition {
             FeatureDefinition::Chamfer { flip_direction, .. } => *flip_direction,
             definition => panic!("unexpected chamfer definition: {definition:?}"),
@@ -333,14 +338,15 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
 #[test]
 fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Extrusion"))
             .expect("extrusion feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     let base_properties = [
@@ -494,14 +500,15 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let part_design_flags = [
@@ -813,14 +820,15 @@ fn transfers_non_default_revolution_branches() {
         )
         .expect("revolution branches");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("ToFirst"),
@@ -846,8 +854,8 @@ fn transfers_non_default_revolution_branches() {
         definition("TwoAngles"),
         FeatureDefinition::Revolve { construction, .. }
             if matches!(construction.extent(), Some(RevolveExtent::TwoSided { first: AngularTermination::Angle { angle: first }, second: AngularTermination::Angle { angle: second } })
-                if (first.0 - 120_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES
-                    && (second.0 - 30_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES)
+                if (first.get() - 120_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES
+                    && (second.get() - 30_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES)
     ));
     assert!(matches!(
         definition("Midplane"),
@@ -871,7 +879,7 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("Standalone"),
         FeatureDefinition::Revolve { construction, op: BooleanOp::NewBody }
-            if matches!(construction.profile(), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+            if matches!(construction.profile().map(std::ops::Deref::deref), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
                 && construction.axis().is_some_and(|axis| axis.direction.z == 1.0
                     && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":AxisLink")))
                 && matches!(construction.extent(), Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }))
@@ -917,42 +925,37 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
         .expect("primitives");
     assert_eq!(result.ir().ir_version(), cadmpeg_ir::IR_VERSION);
     let feature = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("primitive")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         feature("Box"),
         cadmpeg_ir::features::FeatureDefinition::Primitive {
-            solid: cadmpeg_ir::features::PrimitiveSolid::Box {
-                length: cadmpeg_ir::features::Length(10.0),
-                width: cadmpeg_ir::features::Length(20.0),
-                height: cadmpeg_ir::features::Length(30.0),
-            },
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
-        }
+            solid, op: cadmpeg_ir::features::BooleanOp::NewBody } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
+                length: actual_length,
+                width: actual_width,
+                height: actual_height,
+            } if actual_length.get() == 10.0 && actual_width.get() == 20.0 && actual_height.get() == 30.0)
     ));
     assert!(matches!(
         feature("AddCylinder"),
         cadmpeg_ir::features::FeatureDefinition::Primitive {
-            solid: cadmpeg_ir::features::PrimitiveSolid::Cylinder {
-                angle: cadmpeg_ir::features::Angle(angle),
+            solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
+                angle,
                 ..
-            },
-            op: cadmpeg_ir::features::BooleanOp::Join,
-        } if (angle - std::f64::consts::PI).abs() < 1.0e-12
+            } if (angle.get() - std::f64::consts::PI).abs() < 1.0e-12)
     ));
     assert!(matches!(
         feature("CutCone"),
         cadmpeg_ir::features::FeatureDefinition::Primitive {
-            solid: cadmpeg_ir::features::PrimitiveSolid::Cone { .. },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-        }
+            solid, op: cadmpeg_ir::features::BooleanOp::Cut } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
     assert!(result.report().losses.is_empty());
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
@@ -1027,43 +1030,44 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
         )
         .expect("parametric curves");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Helix"),
         cadmpeg_ir::features::FeatureDefinition::Helix {
-            radius: cadmpeg_ir::features::Length(3.0),
+            radius: actual_radius,
             shape: cadmpeg_ir::features::HelixShape::Conical {
                 pitch,
-                cone_angle: cadmpeg_ir::features::Angle(angle),
+                cone_angle: angle,
             },
-            revolutions: 5.0,
+            revolutions,
             clockwise: true,
-            segment_turns: Some(0.5),
+            segment_turns: Some(segment_turns),
             construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Corrected),
             ..
-        } if (pitch.get().0 - 4.0).abs() < 1.0e-12
-            && (*angle - 12_f64.to_radians()).abs() < 1.0e-12
+        } if segment_turns.get() == 0.5 && revolutions.get() == 5.0 && ((pitch.get() - 4.0).abs() < EPS_SCALAR_ROUND_TRIP
+            && (angle.get() - 12_f64.to_radians()).abs() < 1.0e-12) && actual_radius.get() == 3.0
     ));
     assert!(matches!(
         definition("Spiral"),
         cadmpeg_ir::features::FeatureDefinition::Helix {
-            radius: cadmpeg_ir::features::Length(5.0),
+            radius: actual_radius,
             shape: cadmpeg_ir::features::HelixShape::Spiral {
-                radial_growth: cadmpeg_ir::features::Length(2.0),
+                radial_growth: actual_radial_growth,
             },
-            revolutions: 3.5,
-            segment_turns: Some(0.25),
+            revolutions,
+            segment_turns: Some(segment_turns),
             construction_style: None,
             ..
-        }
+        } if segment_turns.get() == 0.25 && revolutions.get() == 3.5 && actual_radius.get() == 5.0 && actual_radial_growth.get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1115,14 +1119,15 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         )
         .expect("helical sweeps");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(
         matches!(definition("Spring"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
@@ -1131,7 +1136,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
-        && construction.turns == 2.5 && construction.tolerance == Some(0.25)
+        && construction.turns.get() == 2.5 && construction.tolerance.map(cadmpeg_ir::features::PositiveReal::get) == Some(0.25)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
@@ -1139,9 +1144,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         construction,
         op: cadmpeg_ir::features::BooleanOp::Intersect,
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
-        && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0
+        && construction.pitch.get() == 0.0 && construction.travel.radial_growth().get() == 2.0
         && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-        && construction.tolerance == Some(0.1)
+        && construction.tolerance.map(cadmpeg_ir::features::PositiveReal::get) == Some(0.1)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(result.report().losses.is_empty());
@@ -1376,14 +1381,15 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let decode = |document: &str| {
@@ -1450,7 +1456,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
                 FeatureDefinition::Helix {
                     segment_turns: Some(value),
                     ..
-                } if *value == 1.0
+                } if value.get() == 1.0
             )),
             ("AdditiveHelix", "Mode") => assert!(matches!(
                 definition(&result, object),
@@ -1479,7 +1485,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
             ("AdditiveHelix", "Tolerance") => assert!(matches!(
                 definition(&result, object),
                 FeatureDefinition::HelicalSweep { construction, .. }
-                    if construction.tolerance == Some(0.1)
+                    if construction.tolerance.map(cadmpeg_ir::features::PositiveReal::get) == Some(0.1)
             )),
             ("AdditiveHelix", "AllowMultiFace") => assert!(matches!(
                 definition(&result, object),
@@ -1643,23 +1649,24 @@ fn transfers_remaining_partdesign_analytic_primitives() {
         )
         .expect("remaining primitives");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(
-        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Ellipsoid { x_radius, y_radius, z_radius, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if x_radius.0 == 5.0 && y_radius.0 == 5.0 && z_radius.0 == 3.0)
+        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
     );
     assert!(
-        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Prism { sides: 7, circumradius, height }, op: cadmpeg_ir::features::BooleanOp::Cut } if circumradius.0 == 4.0 && height.0 == 9.0)
+        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Cut } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides: 7, circumradius, height } if circumradius.get() == 4.0 && height.get() == 9.0))
     );
     assert!(
-        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Wedge { xmin, ymax, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if xmin.0 == -2.0 && ymax.0 == 6.0)
+        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if xmin.get() == -2.0 && ymax.get() == 6.0))
     );
     assert!(result.report().losses.is_empty());
 }
@@ -1697,7 +1704,7 @@ fn rejects_nested_and_duplicate_design_scalar_and_vector_roots() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature");
         assert!(matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Native { .. }
         ));
     }
@@ -1747,14 +1754,15 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
                 &DecodeOptions::default(),
             )
             .expect("PartDesign revolution selector");
-        let definition = &result
+        let definition = result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Revolution"))
             .expect("Revolution feature")
-            .definition;
+            .evaluation
+            .definition();
         if expected_native {
             assert!(matches!(
                 definition,

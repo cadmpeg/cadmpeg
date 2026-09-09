@@ -1013,7 +1013,7 @@ impl CodecBackend for FcstdCodec {
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
-                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
                 ir.model.entity_count() as u64,
                 &mut admitted_entities,
@@ -1176,7 +1176,7 @@ fn semantic_losses(
         .features
         .iter()
         .filter_map(|feature| {
-            let definition = match &feature.definition {
+            let definition = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
                     operation.as_ref()
                 }
@@ -1218,7 +1218,7 @@ fn semantic_losses(
         })
         .collect::<Vec<_>>());
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
-        let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
             return None;
         };
         Some(
@@ -1237,8 +1237,8 @@ fn semantic_losses(
         )
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
-        let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
-            &constraint.definition
+        let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
+            constraint.definition.kind()
         else {
             return None;
         };

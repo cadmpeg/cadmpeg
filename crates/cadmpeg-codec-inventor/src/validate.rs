@@ -636,7 +636,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch does not resolve to its PmDc source record".into(),
-                Some(sketch.id.0.clone()),
+                Some(sketch.id.as_str().to_owned()),
             ));
         }
     }
@@ -653,7 +653,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch entity does not resolve to its PmDc source records".into(),
-                Some(entity.id().0.clone()),
+                Some(entity.id().as_str().to_owned()),
             ));
         }
     }
@@ -667,7 +667,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Check::NativeLinks,
                 "Inventor neutral sketch constraint does not resolve to its PmDc source record"
                     .into(),
-                Some(constraint.id.0.clone()),
+                Some(constraint.id.as_str().to_owned()),
             ));
         }
     }
@@ -974,7 +974,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
-        let (expected_class, output_slot) = match &feature.definition {
+        let (expected_class, output_slot) = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::Extrude { .. } => {
                 ("3111a90cd0118b83000819b00524dc09", 26)
             }
@@ -1065,7 +1065,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             })
             .collect::<Vec<_>>();
         if expected_bodies.len() != items.references().len()
-            || expected_bodies != result.bodies.iter().map(String::as_str).collect::<Vec<_>>()
+            || expected_bodies
+                != result
+                    .bodies()
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
         {
             findings.push(finding(
                 Check::NativeLinks,

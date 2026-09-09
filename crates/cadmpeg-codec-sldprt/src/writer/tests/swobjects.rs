@@ -146,7 +146,7 @@ fn semantic_writer_emits_face_records_deterministically() {
 #[test]
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         LinearTermination, ProfileRef,
     };
 
@@ -156,31 +156,33 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved("native:missing-owner".into()),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(10.0),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Unresolved("native:missing-owner".into()),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::Join,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::Join,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
 
@@ -197,13 +199,13 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::features::{
         Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureId, Length, LinearTermination, PathRef, ProfileRef,
-        RevolveExtent,
+        FeatureDefinition, FeatureId, LinearTermination, PathRef, ProfileRef, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -213,35 +215,42 @@ fn encoder_writes_source_less_line_sketches() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SketchId("synthetic:test:sketch#profile".into());
+    let sketch_id = SketchId::mint("synthetic:test:sketch#profile").unwrap();
     let points = [
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
         Point2::new(0.0, 10.0),
     ];
     let entity_ids = (0..3)
-        .map(|index| SketchEntityId(format!("synthetic:test:sketch-entity#line-{index}")))
+        .map(|index| {
+            SketchEntityId::mint(format!("synthetic:test:sketch-entity#line-{index}")).unwrap()
+        })
         .collect::<Vec<_>>();
     for index in 0..3 {
         ir.model.sketch_entities.push(SketchEntity::new(
             entity_ids[index].clone(),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: points[index],
                 end: points[(index + 1) % 3],
-            },
+            })
+            .unwrap(),
         ));
     }
     for index in 0..3 {
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!("synthetic:test:constraint#coincident-{index}")),
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#coincident-{index}"))
+                .unwrap(),
             sketch: sketch_id.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci {
-                loci: vec![
-                    SketchLocus::End(entity_ids[index].clone()),
-                    SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
-                ],
-            },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::CoincidentLoci {
+                    loci: vec![
+                        SketchLocus::End(entity_ids[index].clone()),
+                        SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
+                    ],
+                },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -257,27 +266,28 @@ fn encoder_writes_source_less_line_sketches() {
     for (suffix, definition) in [
         (
             "fixed",
-            SketchConstraintDefinition::Fixed {
+            SketchConstraintDefinitionInput::Fixed {
                 entity: entity_ids[1].clone(),
             },
         ),
         (
             "horizontal",
-            SketchConstraintDefinition::Horizontal {
+            SketchConstraintDefinitionInput::Horizontal {
                 entity: entity_ids[0].clone(),
             },
         ),
         (
             "vertical",
-            SketchConstraintDefinition::Vertical {
+            SketchConstraintDefinitionInput::Vertical {
                 entity: entity_ids[2].clone(),
             },
         ),
     ] {
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!("synthetic:test:constraint#{suffix}")),
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{suffix}")).unwrap(),
             sketch: sketch_id.clone(),
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -291,30 +301,33 @@ fn encoder_writes_source_less_line_sketches() {
         });
     }
     ir.model.sketch_entities.push(SketchEntity::new(
-        SketchEntityId("synthetic:test:sketch-entity#point".into()),
+        SketchEntityId::mint("synthetic:test:sketch-entity#point").unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 5.0),
-        },
+        })
+        .unwrap(),
     ));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![entity_ids
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![entity_ids
             .iter()
             .cloned()
             .map(|entity| SketchEntityUse {
                 entity,
                 reversed: false,
             })
-            .collect()],
+            .collect()])
+        .unwrap(),
         native_ref: None,
     });
     let sketch_feature_id =
@@ -324,15 +337,17 @@ fn encoder_writes_source_less_line_sketches() {
         ordinal: 0,
         name: Some("Profile".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: None,
     });
     let profile = ProfileRef::Sketch(sketch_id.clone());
@@ -340,14 +355,20 @@ fn encoder_writes_source_less_line_sketches() {
     let generated = [
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolveConstruction::new(
-                Some(profile.clone()),
+                Some((profile.clone()).try_into().unwrap()),
                 Some(cadmpeg_ir::features::RevolutionAxis {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    direction: Vector3::new(0.0, 1.0, 0.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 1.0, 0.0,
+                    ))
+                    .unwrap(),
                     reference: None,
                 }),
                 Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(1.2) },
+                    termination: AngularTermination::Angle {
+                        angle: cadmpeg_ir::features::PositiveAngle::new(1.2).unwrap(),
+                    },
                 }),
                 Some(true),
                 None,
@@ -357,22 +378,27 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
-            sections: Vec::new(),
+            shape: cadmpeg_ir::features::SweepShape::new(
+                cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
+                Vec::new(),
+                cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Join,
+                },
+            )
+            .unwrap(),
+
             path: Some(path.clone()),
-            mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Join,
-            },
+
             orientation: None,
             transition: None,
             transformation: None,
             path_tangent: false,
             linearize: false,
-            twist: Some(Angle(0.3)),
+            twist: Some(Angle::new(0.3).unwrap()),
             path_extent: None,
             guide_rail: None,
             taper: None,
-            scale: Some(1.5),
+            scale: Some(cadmpeg_ir::features::PositiveReal::new(1.5).unwrap()),
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Loft {
@@ -391,11 +417,16 @@ fn encoder_writes_source_less_line_sketches() {
         },
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
-                profile: Some(profile),
-                direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-                thickness: Some(Length(2.5)),
+                profile: Some((profile).try_into().unwrap()),
+                direction: Some(
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
+                ),
+                thickness: Some(cadmpeg_ir::features::PositiveLength::new(2.5).unwrap()),
                 side: Some(cadmpeg_ir::features::RibSide::Centered),
-                draft: cadmpeg_ir::features::RibDraft::Angle(Angle(0.1)),
+                draft: cadmpeg_ir::features::RibDraft::Angle(
+                    cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap(),
+                ),
             },
             op: BooleanOp::Join,
         },
@@ -407,13 +438,13 @@ fn encoder_writes_source_less_line_sketches() {
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -424,34 +455,39 @@ fn encoder_writes_source_less_line_sketches() {
         ordinal: 1,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch_id),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: Vector3::new(0.0, 0.0, 1.0),
-                source: None,
-            },
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(12.0),
-                    },
-                    draft: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(sketch_id),
+                direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
+                    source: None,
                 },
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
+                        },
+                        draft: None,
+                    },
+                },
+                op: BooleanOp::Join,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::Join,
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
     ir.model
@@ -517,8 +553,8 @@ fn encoder_writes_source_less_line_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Horizontal { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Horizontal { .. }
             )
         }));
     assert!(decoded
@@ -528,8 +564,8 @@ fn encoder_writes_source_less_line_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Vertical { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Vertical { .. }
             )
         }));
     assert!(decoded
@@ -539,8 +575,8 @@ fn encoder_writes_source_less_line_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Fixed { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Fixed { .. }
             )
         }));
     assert_eq!(
@@ -549,80 +585,81 @@ fn encoder_writes_source_less_line_sketches() {
             .model
             .sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            ))
             .count(),
         3
     );
-    assert!(decoded
-        .ir()
-        .model
-        .sketch_entities
-        .iter()
-        .any(|entity| matches!(
-            entity.geometry,
-            SketchGeometry::Point { position }
+    assert!(decoded.ir().model.sketch_entities.iter().any(
+        |entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position }
                 if (position.u - 4.0).abs() < 1.0e-12
                     && (position.v - 5.0).abs() < 1.0e-12
-        )));
+        )
+    ));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(12.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: BooleanOp::Join,
             ..
-        }
+        } if actual_length.get() == 12.0
     )));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Revolve { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Sweep { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Loft { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Rib { .. })));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Revolve { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Sweep { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Loft { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Rib { .. }
+    )));
     {
         let mut ir_edit = decoded.ir_mut();
         let point = ir_edit
             .model
             .sketch_entities
             .iter_mut()
-            .find_map(|entity| match &mut entity.geometry {
-                SketchGeometry::Point { position } => Some(position),
-                _ => None,
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
             })
             .unwrap();
-        point.u = 7.0;
-        point.v = 8.0;
+        point
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Point { position } = definition else {
+                    panic!("point geometry")
+                };
+                position.u = 7.0;
+                position.v = 8.0;
+            })
+            .unwrap();
     }
     let mut rewritten = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -634,17 +671,13 @@ fn encoder_writes_source_less_line_sketches() {
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
-    assert!(rewritten
-        .ir()
-        .model
-        .sketch_entities
-        .iter()
-        .any(|entity| matches!(
-            entity.geometry,
-            SketchGeometry::Point { position }
+    assert!(rewritten.ir().model.sketch_entities.iter().any(
+        |entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position }
                 if (position.u - 7.0).abs() < 1.0e-12
                     && (position.v - 8.0).abs() < 1.0e-12
-        )));
+        )
+    ));
 }
 
 #[test]
@@ -653,7 +686,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-        SpatialSketchId,
+        SpatialSketchGeometryDefinition, SpatialSketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -663,8 +696,9 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#path".into());
-    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
+    let entity_id =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     let start = Point3::new(1.25, -2.5, 3.75);
     let end = Point3::new(4.5, 5.25, -6.0);
     let second_start = Point3::new(-7.0, 8.5, 9.25);
@@ -681,41 +715,49 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
-            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#a-point").unwrap(),
             sketch_id.clone(),
-            SpatialSketchGeometry::Point { position: point },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                position: point,
+            })
+            .unwrap(),
         ));
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
             entity_id,
             sketch_id.clone(),
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         ));
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
-            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#second-line")
+                .unwrap(),
             sketch_id.clone(),
-            SpatialSketchGeometry::Line {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                 start: second_start,
                 end: second_end,
-            },
+            })
+            .unwrap(),
         ));
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            },
+        ),
         native_ref: None,
     });
 
@@ -731,42 +773,49 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
 
     assert_eq!(regenerated.ir().model.spatial_sketches.len(), 1);
     assert_eq!(regenerated.ir().model.spatial_sketch_entities.len(), 3);
+    assert!(
+        matches!(*regenerated.ir().model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Point { position }
+                if (position.x - point.x).abs() < 1.0e-12
+                    && (position.y - point.y).abs() < 1.0e-12
+                    && (position.z - point.z).abs() < 1.0e-12
+        )
+    );
+    assert!(
+        matches!(*regenerated.ir().model.spatial_sketch_entities[1].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line {
+                start: regenerated_start,
+                end: regenerated_end,
+            } if regenerated_start == start && regenerated_end == end
+        )
+    );
+    assert!(
+        matches!(*regenerated.ir().model.spatial_sketch_entities[2].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line {
+                start: regenerated_start,
+                end: regenerated_end,
+            } if regenerated_start == second_start && regenerated_end == second_end
+        )
+    );
     assert!(matches!(
-        regenerated.ir().model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
-            if (position.x - point.x).abs() < 1.0e-12
-                && (position.y - point.y).abs() < 1.0e-12
-                && (position.z - point.z).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        regenerated.ir().model.spatial_sketch_entities[1].geometry,
-        SpatialSketchGeometry::Line {
-            start: regenerated_start,
-            end: regenerated_end,
-        } if regenerated_start == start && regenerated_end == end
-    ));
-    assert!(matches!(
-        regenerated.ir().model.spatial_sketch_entities[2].geometry,
-        SpatialSketchGeometry::Line {
-            start: regenerated_start,
-            end: regenerated_end,
-        } if regenerated_start == second_start && regenerated_end == second_end
-    ));
-    assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(_) }
     ));
 
     let edited_start = Point3::new(13.0, 14.0, 15.0);
     let edited_end = Point3::new(-16.0, 17.0, 18.0);
     let edited_point = Point3::new(19.0, -20.0, 21.5);
-    regenerated.ir_mut().model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Point {
-        position: edited_point,
-    };
-    regenerated.ir_mut().model.spatial_sketch_entities[2].geometry = SpatialSketchGeometry::Line {
-        start: edited_start,
-        end: edited_end,
-    };
+    regenerated.ir_mut().model.spatial_sketch_entities[0].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+            position: edited_point,
+        })
+        .unwrap();
+    regenerated.ir_mut().model.spatial_sketch_entities[2].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+            start: edited_start,
+            end: edited_end,
+        })
+        .unwrap();
     let mut rewritten = Vec::new();
     crate::test_support::plan_inherited_write(
         regenerated.ir(),
@@ -778,59 +827,68 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
     assert_eq!(rewritten.ir().model.spatial_sketch_entities.len(), 3);
-    assert!(matches!(
-        rewritten.ir().model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
-            if (position.x - edited_point.x).abs() < 1.0e-12
-                && (position.y - edited_point.y).abs() < 1.0e-12
-                && (position.z - edited_point.z).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        rewritten.ir().model.spatial_sketch_entities[2].geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == edited_start && end == edited_end
-    ));
+    assert!(
+        matches!(*rewritten.ir().model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Point { position }
+                if (position.x - edited_point.x).abs() < 1.0e-12
+                    && (position.y - edited_point.y).abs() < 1.0e-12
+                    && (position.z - edited_point.z).abs() < 1.0e-12
+        )
+    );
+    assert!(
+        matches!(*rewritten.ir().model.spatial_sketch_entities[2].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == edited_start && end == edited_end
+        )
+    );
 }
 
 #[test]
 fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let sketch_id = SketchId("synthetic:test:sketch#profile".into());
-    let entity_id = SketchEntityId("synthetic:test:sketch-entity#line".into());
+    let sketch_id = SketchId::mint("synthetic:test:sketch#profile").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#line").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+        id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
         sketch: sketch_id,
-        definition: SketchConstraintDefinition::Horizontal { entity: entity_id },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Horizontal { entity: entity_id },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,

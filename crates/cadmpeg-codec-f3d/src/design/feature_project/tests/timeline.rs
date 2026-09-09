@@ -197,7 +197,10 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         .expect("later feature");
     assert_eq!(earlier_feature.ordinal, 0);
     assert_eq!(later_feature.ordinal, 2);
-    assert_eq!(later_feature.dependencies, [earlier_feature.id.clone()]);
+    assert_eq!(
+        later_feature.dependencies.as_slice(),
+        [earlier_feature.id.clone()]
+    );
 
     let unrelated = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
@@ -405,7 +408,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         .find(|feature| feature.native_ref.as_deref() == Some(successor.id.as_str()))
         .expect("projected successor");
     assert_eq!(
-        successor_feature.dependencies,
+        successor_feature.dependencies.as_slice(),
         [predecessor_feature.id.clone()]
     );
     assert_eq!(parameters.len(), 1);
@@ -499,7 +502,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     assert_eq!(feature.ordinal, 0);
     assert_eq!(feature.native_ref.as_deref(), Some(origin.id.as_str()));
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::DatumCoordinateSystem { .. }
     ));
     assert_ne!(
@@ -870,7 +873,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
     ];
     let rotation = crate::design::feature_project::matrix_axis_angle(&transform)
         .expect("nonidentity rotation");
-    assert!((rotation.angle.0 - angle).abs() <= 1.0e-12);
+    assert!((rotation.angle.get() - angle).abs() <= 1.0e-12);
     assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
     assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
     assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
@@ -1012,7 +1015,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("f3d:native/BulkStream.dat:scope#22"))
         .expect("successor feature");
-    assert_eq!(successor.dependencies, [predecessor.id.clone()]);
+    assert_eq!(successor.dependencies.as_slice(), [predecessor.id.clone()]);
     assert!(predecessor.ordinal < successor.ordinal);
     let width = parameters
         .iter()
@@ -1022,5 +1025,5 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("successor Depth parameter");
-    assert_eq!(depth.dependencies, [width.id.clone()]);
+    assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
 }

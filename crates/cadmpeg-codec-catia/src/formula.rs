@@ -275,7 +275,7 @@ pub(crate) fn transfer_parameters(
                                         TypedParameterEvaluation::Unset => None,
                                         TypedParameterEvaluation::Value(value) => Some(value),
                                     },
-                                    dependencies,
+                                    dependencies: dependencies.into_iter().collect(),
                                     properties: parameter_properties(
                                         parameter_type.as_str(),
                                         Some(output_value.binding.value.as_str()),
@@ -638,7 +638,7 @@ fn definition_chain_parameter_candidate(
             expression,
             display: None,
             value,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties,
             pmi: None,
             native_ref: Some(entity.id.clone()),
@@ -736,7 +736,7 @@ fn collect_legacy_parameters(
                         expression,
                         display: None,
                         value,
-                        dependencies: Vec::new(),
+                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         properties: parameter_properties(parameter_type.as_str(), None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
@@ -791,7 +791,7 @@ fn collect_legacy_parameters(
                         expression: parameter_expression(&value),
                         display: None,
                         value: Some(value),
-                        dependencies: Vec::new(),
+                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         properties: parameter_properties("String", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
@@ -846,7 +846,7 @@ fn collect_legacy_parameters(
                         expression: parameter_expression(&value),
                         display: None,
                         value: Some(value),
-                        dependencies: Vec::new(),
+                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         properties: parameter_properties("Integer", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
@@ -904,7 +904,7 @@ fn collect_legacy_parameters(
                 }
             }
             candidate.parameter.expression = evaluation.expression.to_string();
-            candidate.parameter.dependencies = evaluation.dependencies;
+            candidate.parameter.dependencies = evaluation.dependencies.into_iter().collect();
             candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
             transfer.formulas += 1;
         }
@@ -1155,7 +1155,7 @@ fn typed_entity_parameter_candidate(
             expression,
             display: None,
             value,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: parameter_properties(
                 parameter_type.as_str(),
                 Some(parameter.binding.value.as_str()),
@@ -1336,7 +1336,7 @@ fn relation_program_output_candidate(
                 TypedParameterEvaluation::Unset => None,
                 TypedParameterEvaluation::Value(value) => Some(value),
             },
-            dependencies: dependencies.clone(),
+            dependencies: dependencies.iter().cloned().collect(),
             properties: parameter_properties(
                 parameter_type.as_str(),
                 Some(output_value.binding.value.as_str()),
@@ -1425,9 +1425,15 @@ enum TypedParameterEvaluation {
 
 fn parameter_expression(value: &ParameterValue) -> String {
     match value {
-        ParameterValue::Length(Length(value)) => format!("{value} mm"),
-        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
-        ParameterValue::Real(value) => value.to_string(),
+        ParameterValue::Length(value) => {
+            let value = value.get();
+            format!("{value} mm")
+        }
+        ParameterValue::Angle(value) => {
+            let value = value.get();
+            format!("{value} rad")
+        }
+        ParameterValue::Real(value) => value.get().to_string(),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => string_literal_expression(value).unwrap_or_default(),
@@ -1713,27 +1719,31 @@ impl EvaluatedFormulaString {
 impl EvaluatedFormulaValue {
     fn from_parameter_value(value: &ParameterValue) -> Self {
         match value {
-            ParameterValue::Length(Length(value)) => {
+            ParameterValue::Length(value) => {
+                let value = value.get();
+
                 Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                    *value,
+                    value,
                     FormulaDimension::LENGTH,
-                    finite_integrality(*value),
-                    Some(*value),
+                    finite_integrality(value),
+                    Some(value),
                 ))
             }
-            ParameterValue::Angle(Angle(value)) => {
+            ParameterValue::Angle(value) => {
+                let value = value.get();
+
                 Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                    *value,
+                    value,
                     FormulaDimension::ANGLE,
-                    finite_integrality(*value),
-                    Some(*value),
+                    finite_integrality(value),
+                    Some(value),
                 ))
             }
             ParameterValue::Real(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                *value,
+                value.get(),
                 FormulaDimension::SCALAR,
-                finite_integrality(*value),
-                Some(*value),
+                finite_integrality(value.get()),
+                Some(value.get()),
             )),
             ParameterValue::Integer(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
                 *value as f64,
@@ -3306,9 +3316,11 @@ fn typed_parameter_evaluation(
         return None;
     }
     let value = match parameter_type {
-        FormulaParameterType::Length => ParameterValue::Length(Length(value)),
-        FormulaParameterType::Angle => ParameterValue::Angle(Angle(value)),
-        FormulaParameterType::Real => ParameterValue::Real(value),
+        FormulaParameterType::Length => ParameterValue::Length(Length::new(value)?),
+        FormulaParameterType::Angle => ParameterValue::Angle(Angle::new(value)?),
+        FormulaParameterType::Real => {
+            ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(value)?)
+        }
         FormulaParameterType::Integer => {
             if value.fract() != 0.0 || value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
                 return None;
@@ -3347,14 +3359,15 @@ mod parser_tests {
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
             parameter: DesignParameter {
-                id: ParameterId::mint("parameter".to_string()).expect("identity grammar"),
+                id: ParameterId::mint("synthetic:test:id#parameter".to_string())
+                    .expect("identity grammar"),
                 owner: None,
                 ordinal: 0,
                 name: "Value".to_string(),
                 expression: String::new(),
                 display: None,
                 value: None,
-                dependencies: Vec::new(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: Some("native-parameter".to_string()),
@@ -3610,8 +3623,8 @@ mod parser_tests {
             ),
             Some((
                 FormulaParameterType::Length,
-                TypedParameterEvaluation::Value(ParameterValue::Length(Length(12.5)))
-            ))
+                TypedParameterEvaluation::Value(ParameterValue::Length(actual_length))
+            )) if actual_length.get() == 12.5
         ));
         assert!(matches!(
             typed_parameter_evaluation(
