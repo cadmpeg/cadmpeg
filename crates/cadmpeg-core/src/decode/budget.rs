@@ -14,7 +14,7 @@ use super::policy::{
 #[derive(Debug)]
 pub(crate) struct DecodeBudget {
     /// Policy applied to this budget.
-    pub(super) policy: DecodePolicy,
+    policy: DecodePolicy,
     input_bytes: u64,
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
@@ -27,6 +27,11 @@ pub(crate) struct DecodeBudget {
 }
 
 impl DecodeBudget {
+    /// Returns the policy applied to this budget.
+    pub(super) fn policy(&self) -> &DecodePolicy {
+        &self.policy
+    }
+
     pub(crate) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
         Self {
             policy,
