@@ -1477,9 +1477,20 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
                 .map(|value| (value.state_id, value.vertex_slot())),
             resolution
         );
+        let mut plane_inputs: [serde_json::Value; 3] = std::array::from_fn(|_| wire.clone());
+        if let Some((_, slot)) = resolution {
+            for (ordinal, input) in plane_inputs.iter_mut().enumerate() {
+                input["resolved_vertex_slot"] = if slot == 0 {
+                    ordinal as i64
+                } else {
+                    slot - ordinal as i64
+                }
+                .into();
+            }
+        }
         let plane_wire = serde_json::json!({
             "kind": "three_point", "placement_record_index": 9,
-            "inputs": [wire.clone(), wire.clone(), wire]
+            "inputs": plane_inputs
         });
         let plane: DesignWorkPlaneConstruction =
             serde_json::from_value(plane_wire.clone()).expect("three-point plane");
@@ -1885,3 +1896,5 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
     invalid["carrier"]["selection"]["identity_record_index"] = 11.into();
     assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
 }
+
+mod three_point_planes;

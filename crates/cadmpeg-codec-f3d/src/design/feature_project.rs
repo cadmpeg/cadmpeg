@@ -1854,17 +1854,9 @@ pub(crate) fn work_point_recipe_state_id(
 }
 
 pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
-    let crate::records::feature::DesignWorkPlaneConstruction { inputs, .. } =
-        scope.work_plane_construction()?;
-    let state = inputs[0].resolution?.state_id;
-    inputs
-        .iter()
-        .all(|recipe| {
-            recipe
-                .resolution
-                .is_some_and(|resolution| resolution.state_id == state)
-        })
-        .then_some(state)
+    scope.work_plane_construction()?.inputs()[0]
+        .resolution
+        .map(|resolution| resolution.state_id)
 }
 
 fn project_work_point_construction(
@@ -1981,7 +1973,6 @@ fn project_work_plane(
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    use crate::records::feature::DesignWorkPlaneConstruction;
     use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily, VertexSelection};
 
     let origin = Point3::new(
@@ -1991,7 +1982,7 @@ fn project_work_plane(
     );
     let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
     let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
-    let Some(DesignWorkPlaneConstruction { inputs, .. }) = scope.work_plane_construction() else {
+    let Some(construction) = scope.work_plane_construction() else {
         return FeatureDefinition::DatumPlane {
             origin,
             normal,
@@ -2009,7 +2000,8 @@ fn project_work_plane(
         .split_once('#')
         .map_or(feature_id.as_str(), |(_, key)| key);
     let prefix = ids::history_input_prefix(feature_key, state_id);
-    let points = inputs
+    let points = construction
+        .inputs()
         .iter()
         .map(|recipe| {
             Some(VertexSelection::Historical {

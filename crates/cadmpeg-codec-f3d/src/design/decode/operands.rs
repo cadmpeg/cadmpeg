@@ -531,10 +531,10 @@ pub fn bind_work_plane_constructions(
         };
         let placement_record_index = *placement_record_index;
         if let Some(frame) = scope.work_plane_frame_mut() {
-            frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
-                placement_record_index,
-                inputs: Box::new(inputs),
-            });
+            frame.work_plane_construction = Some(
+                DesignWorkPlaneConstruction::try_new(placement_record_index, Box::new(inputs))
+                    .map_err(|error| CodecError::malformed(error.to_string()))?,
+            );
         }
     }
     Ok(())
@@ -547,13 +547,9 @@ pub fn bind_vertex_recipe_candidates(
 ) {
     for scope in scopes {
         let scope_id = scope.id.clone();
-        if let Some(DesignWorkPlaneConstruction { inputs, .. }) =
-            scope.work_plane_construction_mut()
-        {
-            for recipe in inputs.iter_mut() {
-                for reference in &mut recipe.recipe_references {
-                    bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
-                }
+        if let Some(construction) = scope.work_plane_construction_mut() {
+            for reference in construction.recipe_references_mut() {
+                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
             }
         }
         let Some(construction) = scope.work_point_construction_mut() else {

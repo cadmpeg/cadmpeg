@@ -2765,14 +2765,10 @@ pub(crate) fn bind_vertex_recipe_history(
     {
         let transform = scope.work_plane_transform();
         let scope_id = scope.id.clone();
-        let Some(crate::records::feature::DesignWorkPlaneConstruction { inputs, .. }) =
-            scope.work_plane_construction_mut()
-        else {
+        let Some(construction) = scope.work_plane_construction_mut() else {
             continue;
         };
-        for recipe in inputs.iter_mut() {
-            recipe.resolution = None;
-        }
+        construction.clear_resolution();
         let Some(state_id) = input_states.get(&scope_id).copied() else {
             continue;
         };
@@ -2782,7 +2778,8 @@ pub(crate) fn bind_vertex_recipe_history(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let candidates = inputs
+        let candidates = construction
+            .inputs()
             .iter()
             .map(|recipe| vertex_recipe_candidate(recipe, topology))
             .collect::<Option<Vec<_>>>();
@@ -2794,20 +2791,20 @@ pub(crate) fn bind_vertex_recipe_history(
             continue;
         };
         let [first, second, third] = candidates;
-        if first.0 == second.0
-            || first.0 == third.0
-            || second.0 == third.0
-            || !three_point_plane_matches(
-                transform.map(crate::records::SketchPlacementMatrix::rows),
-                [first.1, second.1, third.1],
-            )
-        {
+        if !three_point_plane_matches(
+            transform.map(crate::records::SketchPlacementMatrix::rows),
+            [first.1, second.1, third.1],
+        ) {
             continue;
         }
-        for (recipe, (vertex, _)) in inputs.iter_mut().zip(candidates) {
-            recipe.resolution =
-                crate::records::feature::DesignVertexResolution::new(state_id, vertex);
-        }
+        let [Some(first), Some(second), Some(third)] = candidates.map(|(vertex, _)| {
+            crate::records::feature::DesignVertexResolution::new(state_id, vertex)
+        }) else {
+            continue;
+        };
+        construction
+            .try_set_resolution([first, second, third])
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
 }
