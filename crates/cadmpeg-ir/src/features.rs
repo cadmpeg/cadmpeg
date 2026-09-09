@@ -1633,11 +1633,11 @@ impl Feature {
             ordinal,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: FeatureContent::default(),
             evaluation: FeatureEvaluation::from_definition(definition),
             native_ref: None,
         }
