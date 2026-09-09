@@ -1986,7 +1986,7 @@ pub(crate) enum PlacementRejection {
     MissingRecord,
     InvalidDefinition,
     InvalidPlacement,
-    InvalidMetadata,
+    InvalidMetadata { definition: u32 },
 }
 
 /// The local affine placement of a subfigure or network instance.
@@ -3273,10 +3273,9 @@ pub(super) fn project(
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
             placement_rejections
                 .entry(entry.sequence)
-                .or_insert(if definition.is_none() {
-                    PlacementRejection::InvalidDefinition
-                } else {
-                    PlacementRejection::InvalidMetadata
+                .or_insert(match definition {
+                    Some(definition) => PlacementRejection::InvalidMetadata { definition },
+                    None => PlacementRejection::InvalidDefinition,
                 });
             losses.push(entity_loss(
                 entry,
@@ -3401,10 +3400,12 @@ pub(super) fn project(
             decoded.insert(*sequence);
         } else {
             placement_rejections.entry(*sequence).or_insert(
-                if !decoded.contains(&instance.definition) {
-                    PlacementRejection::InvalidDefinition
+                if decoded.contains(&instance.definition) {
+                    PlacementRejection::InvalidMetadata {
+                        definition: instance.definition,
+                    }
                 } else {
-                    PlacementRejection::InvalidMetadata
+                    PlacementRejection::InvalidDefinition
                 },
             );
             losses.push(entity_loss(

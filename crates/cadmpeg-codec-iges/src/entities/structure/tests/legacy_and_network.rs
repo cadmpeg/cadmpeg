@@ -1250,3 +1250,32 @@ fn decode_reports_occurrence_issue_for_rejected_subfigure_definition() {
         serde_json::json!(["malformed_placement"])
     );
 }
+
+#[test]
+fn invalid_network_metadata_does_not_hide_a_rejected_definition() {
+    let source = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETDEF".into(),
+            status: "00000100",
+            parameters: "320,0,6HNETDEF,0,0,3HREF,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,1,0,0,0,1,,,,2HNI,0,-1;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas()["product_occurrences"].is_empty());
+    assert_eq!(
+        native.arenas()["product_occurrence_expansion"][0].fields()["issues"],
+        serde_json::json!(["malformed_placement"])
+    );
+}

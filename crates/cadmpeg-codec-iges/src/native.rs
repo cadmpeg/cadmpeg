@@ -5150,7 +5150,9 @@ pub(crate) fn store(
                     PlacementRejection::MissingRecord
                     | PlacementRejection::InvalidDefinition
                     | PlacementRejection::InvalidPlacement => Some(*sequence),
-                    PlacementRejection::InvalidMetadata => None,
+                    PlacementRejection::InvalidMetadata { definition } => {
+                        (!occurrence_definitions.contains_key(definition)).then_some(*sequence)
+                    }
                 },
             ));
         }
