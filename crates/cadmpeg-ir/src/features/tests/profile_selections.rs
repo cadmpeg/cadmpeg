@@ -7,8 +7,8 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
     let sketch = SketchId("test:sketch#one".into());
     let spatial = SpatialSketchId("test:spatial-sketch#one".into());
     let entity = SketchEntityId("test:sketch-entity#one".into());
-    let state = FeatureInputTopologyId::mint("test:input#one").unwrap();
-    let face = HistoricalFaceId::mint("test:face#one").unwrap();
+    let state = FeatureInputTopologyId::mint("test:model:feature-input#one").unwrap();
+    let face = HistoricalFaceId::mint("test:model:historical-face#one").unwrap();
     let profiles = [
         (
             ProfileRef::sketch_profiles(sketch.clone(), vec![1, 0]).unwrap(),
@@ -82,8 +82,8 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
     let spatial = SpatialSketchId("test:spatial-sketch#one".into());
     let entity = SketchEntityId("test:sketch-entity#one".into());
     let spatial_entity = SpatialSketchEntityId("test:spatial-entity#one".into());
-    let state = FeatureInputTopologyId::mint("test:input#one").unwrap();
-    let edge = HistoricalEdgeId::mint("test:edge#one").unwrap();
+    let state = FeatureInputTopologyId::mint("test:model:feature-input#one").unwrap();
+    let edge = HistoricalEdgeId::mint("test:model:historical-edge#one").unwrap();
     let paths = [
         (
             PathRef::sketch_curves(sketch.clone(), vec![entity.clone()]).unwrap(),
