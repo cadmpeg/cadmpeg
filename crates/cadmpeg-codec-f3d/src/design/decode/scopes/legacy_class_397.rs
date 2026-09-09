@@ -35,8 +35,10 @@ impl Class397SymmetricFrame {
         direction: u32,
         side_extent_discriminators: [u32; 2],
     ) -> Option<DesignExtrudeExtent> {
-        (direction == 3 && side_extent_discriminators == [1, 1])
-            .then_some(DesignExtrudeExtent::SymmetricDistance)
+        match (self, direction, side_extent_discriminators) {
+            (Self(()), 3, [1, 1]) => Some(DesignExtrudeExtent::SymmetricDistance),
+            _ => None,
+        }
     }
 }
 
