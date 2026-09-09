@@ -29,7 +29,7 @@ pub(crate) enum ReferenceKind {
     Color,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Resolution {
     Resolved(u32),
     OutOfRange,
@@ -48,19 +48,6 @@ impl Resolution {
             Self::EvenSequence(sequence) => sequence,
             Self::OutOfRange | Self::Dangling => None,
         }
-    }
-}
-
-impl std::fmt::Debug for Resolution {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Resolved(_) => "Resolved",
-            Self::OutOfRange => "OutOfRange",
-            Self::EvenSequence(_) => "EvenSequence",
-            Self::Dangling => "Dangling",
-            Self::WrongType(_) => "WrongType",
-            Self::Cyclic(_) => "Cyclic",
-        })
     }
 }
 
@@ -538,11 +525,17 @@ pub(crate) fn resolved_structure_sequence(
 }
 
 pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<String> {
-    let mut counts = BTreeMap::<String, usize>::new();
+    let mut counts = BTreeMap::<&str, usize>::new();
     for edge in graph.values().flatten() {
-        *counts
-            .entry(format!("{:?}", edge.resolution).to_lowercase())
-            .or_default() += 1;
+        let key = match edge.resolution {
+            Resolution::Resolved(_) => "resolved",
+            Resolution::OutOfRange => "outofrange",
+            Resolution::EvenSequence(_) => "evensequence",
+            Resolution::Dangling => "dangling",
+            Resolution::WrongType(_) => "wrongtype",
+            Resolution::Cyclic(_) => "cyclic",
+        };
+        *counts.entry(key).or_default() += 1;
     }
     counts
         .into_iter()
