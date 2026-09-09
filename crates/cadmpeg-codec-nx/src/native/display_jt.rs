@@ -761,24 +761,31 @@ impl JtVertexVersion {
     }
 }
 
+/// A finite fraction in the inclusive range zero through one.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct JtReflectivity(f32);
+pub(crate) struct JtUnitFraction(f32);
 
-impl TryFrom<f32> for JtReflectivity {
+impl TryFrom<f32> for JtUnitFraction {
     type Error = &'static str;
     fn try_from(value: f32) -> Result<Self, Self::Error> {
         if value.is_finite() && (0.0..=1.0).contains(&value) {
             Ok(Self(value))
         } else {
-            Err("reflectivity: expected a finite fraction in 0..=1")
+            Err("unit_fraction: expected a finite fraction in 0..=1")
         }
+    }
+}
+
+impl From<JtUnitFraction> for f32 {
+    fn from(value: JtUnitFraction) -> Self {
+        value.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum JtMaterialVersion {
     One,
-    Two(JtReflectivity),
+    Two(JtUnitFraction),
 }
 
 impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
@@ -786,7 +793,7 @@ impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
     fn try_from((version, reflectivity): (u16, Option<f32>)) -> Result<Self, Self::Error> {
         match (version, reflectivity) {
             (1, None) => Ok(Self::One),
-            (2, Some(value)) => Ok(Self::Two(JtReflectivity::try_from(value)?)),
+            (2, Some(value)) => Ok(Self::Two(JtUnitFraction::try_from(value).map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?)),
             _ => Err("version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1"),
         }
     }
@@ -796,7 +803,7 @@ impl JtMaterialVersion {
     fn into_wire(self) -> (u16, Option<f32>) {
         match self {
             Self::One => (1, None),
-            Self::Two(value) => (2, Some(value.0)),
+            Self::Two(value) => (2, Some(value.into())),
         }
     }
 }
@@ -853,7 +860,7 @@ pub struct DisplayJtTriStripShapeNode {
     /// Expected in-memory byte size of the late-loaded LOD.
     pub memory_byte_len: u32,
     /// Qualitative compression level in the inclusive range zero through one.
-    pub compression_level: f32,
+    pub compression_level: JtUnitFraction,
     /// Vertex-shape data version.
     vertex_version: JtVertexVersion,
     /// Packed vertex-channel binding mask.
@@ -908,7 +915,9 @@ impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
             node_count_range: wire.node_count_range,
             polygon_count_range: wire.polygon_count_range,
             memory_byte_len: wire.memory_byte_len,
-            compression_level: wire.compression_level,
+            compression_level: JtUnitFraction::try_from(wire.compression_level).map_err(|_| {
+                "DisplayJtTriStripShapeNode.compression_level: expected a finite fraction in 0..=1"
+            })?,
             vertex_version,
             vertex_bindings: wire.vertex_bindings,
             vertex_quantization_bits: wire.vertex_quantization_bits,
@@ -933,7 +942,7 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
             node_count_range: value.node_count_range,
             polygon_count_range: value.polygon_count_range,
             memory_byte_len: value.memory_byte_len,
-            compression_level: value.compression_level,
+            compression_level: value.compression_level.into(),
             vertex_version,
             vertex_bindings: value.vertex_bindings,
             vertex_quantization_bits: value.vertex_quantization_bits,
@@ -1749,7 +1758,7 @@ pub(crate) struct ParsedJtTriStripShapeNode {
     pub(crate) node_count_range: [i32; 2],
     pub(crate) polygon_count_range: [i32; 2],
     pub(crate) memory_byte_len: u32,
-    pub(crate) compression_level: f32,
+    pub(crate) compression_level: JtUnitFraction,
     vertex_version: JtVertexVersion,
     pub(crate) vertex_bindings: u64,
     pub(crate) vertex_quantization_bits: u8,
@@ -1789,7 +1798,7 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
         (range[0] >= 0 && range[0] <= range[1]).then_some(range)
     };
     let compression_level =
-        f32_at(jt_family::COMPRESSION_LEVEL).filter(|value| (0.0..=1.0).contains(value))?;
+        JtUnitFraction::try_from(View::f32_le_at(family, jt_family::COMPRESSION_LEVEL)?).ok()?;
     let area = f32_at(jt_family::AREA).filter(|value| *value >= 0.0)?;
     let vertex_version = View::u16_le_at(family, jt_family::VERTEX_VERSION)?;
     if !matches!(vertex_version, 1 | 2) {
@@ -5429,7 +5438,7 @@ mod tests {
             node_count_range: [0, 0],
             polygon_count_range: [0, 0],
             memory_byte_len: 0,
-            compression_level: 0.0,
+            compression_level: 0.0.try_into().unwrap(),
             vertex_version: super::JtVertexVersion::One,
             vertex_bindings: 2,
             vertex_quantization_bits: 0,
@@ -5443,6 +5452,22 @@ mod tests {
             serde_json::from_value::<DisplayJtTriStripShapeNode>(node_wire.clone()).unwrap(),
             node
         );
+        for level in [0.0, 1.0] {
+            let mut wire = node_wire.clone();
+            wire["compression_level"] = serde_json::json!(level);
+            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire).is_ok());
+        }
+        for level in [-0.25, 1.25] {
+            let mut wire = node_wire.clone();
+            wire["compression_level"] = serde_json::json!(level);
+            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("compression_level"));
+        }
+        for level in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(super::JtUnitFraction::try_from(level).is_err());
+        }
         for (version, bindings) in [(1, Some(4)), (2, None), (3, None)] {
             let mut wire = node_wire.clone();
             wire["vertex_version"] = version.into();
@@ -5755,7 +5780,7 @@ mod tests {
         assert_eq!(node.node_count_range, [9, 10]);
         assert_eq!(node.polygon_count_range, [11, 12]);
         assert_eq!(node.memory_byte_len, 4096);
-        assert_eq!(node.compression_level, 0.75);
+        assert_eq!(f32::from(node.compression_level), 0.75);
         assert_eq!(node.vertex_version.into_wire().0, 2);
         assert_eq!(node.vertex_bindings, 0x102);
         assert_eq!(node.vertex_quantization_bits, 24);
