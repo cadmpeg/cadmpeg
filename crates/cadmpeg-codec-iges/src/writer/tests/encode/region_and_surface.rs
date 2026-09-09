@@ -98,8 +98,6 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
     assert_eq!(voids, std::slice::from_ref(&source_outer));
 
     let entities = crate::writer::brep_entities(
-        &ir,
-        crate::IgesVersion::V5_3,
         crate::writer::validate_brep_topology(&ir, crate::IgesVersion::V5_3).unwrap(),
     )
     .unwrap();
