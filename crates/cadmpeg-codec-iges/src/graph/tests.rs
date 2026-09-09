@@ -94,14 +94,14 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             .iter()
             .map(|edge| edge.resolution)
             .collect::<Vec<_>>(),
-        vec![Resolution::Resolved, Resolution::OutOfRange]
+        vec![Resolution::Resolved(maximum), Resolution::OutOfRange]
     );
     assert_eq!(
         graph[&2]
             .iter()
             .map(|edge| edge.resolution)
             .collect::<Vec<_>>(),
-        vec![Resolution::Resolved, Resolution::OutOfRange]
+        vec![Resolution::Resolved(maximum), Resolution::OutOfRange]
     );
 }
 
@@ -156,7 +156,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
         .iter()
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
-    assert_eq!(edge.resolution, Resolution::Resolved);
+    assert_eq!(edge.resolution, Resolution::Resolved(maximum));
 
     let mut source = directory_entry(1, 116);
     source.transform = i64::from(maximum) + 1;
@@ -166,7 +166,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::OutOfRange);
-    assert!(edge.target.is_none());
+    assert!(edge.resolution.target_sequence().is_none());
 }
 
 #[test]
@@ -180,8 +180,7 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
                 vec![ReferenceEdge {
                     origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
                     raw_pointer: i64::from(target),
-                    target: Some(target),
-                    resolution: Resolution::Resolved,
+                    resolution: Resolution::Resolved(target),
                     expected: ReferenceExpectation::Type {
                         entity_type: 124,
                         forms: vec![],

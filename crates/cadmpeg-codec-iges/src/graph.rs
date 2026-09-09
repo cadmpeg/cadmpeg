@@ -29,15 +29,68 @@ pub(crate) enum ReferenceKind {
     Color,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Resolution {
-    Resolved,
+    Resolved(u32),
     OutOfRange,
-    EvenSequence,
+    EvenSequence(Option<u32>),
     Dangling,
-    WrongType,
-    Cyclic,
+    WrongType(u32),
+    Cyclic(u32),
+}
+
+impl Resolution {
+    fn target_sequence(self) -> Option<u32> {
+        match self {
+            Self::Resolved(sequence) | Self::WrongType(sequence) | Self::Cyclic(sequence) => {
+                Some(sequence)
+            }
+            Self::EvenSequence(sequence) => sequence,
+            Self::OutOfRange | Self::Dangling => None,
+        }
+    }
+}
+
+impl std::fmt::Debug for Resolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Resolved(_) => "Resolved",
+            Self::OutOfRange => "OutOfRange",
+            Self::EvenSequence(_) => "EvenSequence",
+            Self::Dangling => "Dangling",
+            Self::WrongType(_) => "WrongType",
+            Self::Cyclic(_) => "Cyclic",
+        })
+    }
+}
+
+impl Serialize for Resolution {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self {
+            Self::Resolved(_) => "resolved",
+            Self::OutOfRange => "out_of_range",
+            Self::EvenSequence(_) => "even_sequence",
+            Self::Dangling => "dangling",
+            Self::WrongType(_) => "wrong_type",
+            Self::Cyclic(_) => "cyclic",
+        })
+    }
+}
+
+fn classify(
+    target_sequence: Option<u32>,
+    target: Option<&DirectoryEntry>,
+    accepts: impl FnOnce(&DirectoryEntry) -> bool,
+) -> Resolution {
+    match (target_sequence, target) {
+        (None, _) => Resolution::OutOfRange,
+        (Some(sequence), target) if sequence % 2 == 0 => {
+            Resolution::EvenSequence(target.map(|entry| entry.sequence))
+        }
+        (Some(_), None) => Resolution::Dangling,
+        (Some(_), Some(entry)) if !accepts(entry) => Resolution::WrongType(entry.sequence),
+        (Some(sequence), Some(_)) => Resolution::Resolved(sequence),
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,7 +127,6 @@ impl Serialize for ReferenceOrigin {
 pub(crate) struct ReferenceEdge {
     origin: ReferenceOrigin,
     raw_pointer: i64,
-    target: Option<u32>,
     resolution: Resolution,
     expected: ReferenceExpectation,
 }
@@ -104,14 +156,20 @@ impl Serialize for ReferenceEdge {
 
 impl ReferenceEdge {
     pub(crate) fn target(&self) -> Option<String> {
-        self.target
+        self.resolution
+            .target_sequence()
             .map(|sequence| format!("iges:entity:directory#{sequence}"))
     }
 
     pub(crate) fn resolved_target_sequence_for(&self, kind: ReferenceKind) -> Option<u32> {
-        (self.origin == ReferenceOrigin::Directory(kind) && self.resolution == Resolution::Resolved)
-            .then_some(self.target)
-            .flatten()
+        match (self.origin, self.resolution) {
+            (ReferenceOrigin::Directory(actual), Resolution::Resolved(sequence))
+                if actual == kind =>
+            {
+                Some(sequence)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -196,17 +254,7 @@ impl<'a> ParameterResolver<'a> {
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Option<u32> {
         let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
-        let resolution = if target_sequence.is_none() {
-            Resolution::OutOfRange
-        } else if target_sequence.is_some_and(|sequence| sequence % 2 == 0) {
-            Resolution::EvenSequence
-        } else if target.is_none() {
-            Resolution::Dangling
-        } else if target.is_some_and(|entry| !accepts(entry)) {
-            Resolution::WrongType
-        } else {
-            Resolution::Resolved
-        };
+        let resolution = classify(target_sequence, target, accepts);
         self.edges
             .borrow_mut()
             .entry(source)
@@ -216,14 +264,12 @@ impl<'a> ParameterResolver<'a> {
                     index: parameter_index,
                 },
                 raw_pointer,
-                target: target.map(|entry| entry.sequence),
                 resolution,
                 expected,
             });
-        if resolution == Resolution::Resolved {
-            target_sequence
-        } else {
-            None
+        match resolution {
+            Resolution::Resolved(sequence) => Some(sequence),
+            _ => None,
         }
     }
 
@@ -404,11 +450,7 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
         .filter_map(|(source, values)| {
             values
                 .iter()
-                .find(|edge| {
-                    edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)
-                        && edge.resolution == Resolution::Resolved
-                })
-                .and_then(|edge| edge.target)
+                .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
                 .map(|target| (*source, target))
         })
         .collect::<BTreeMap<_, _>>();
@@ -455,24 +497,12 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                     let target = candidate
                         .target_sequence
                         .and_then(|value| index.get(&value).copied());
-                    let resolution = if candidate.target_sequence.is_none() {
-                        Resolution::OutOfRange
-                    } else if candidate
-                        .target_sequence
-                        .is_some_and(|value| value % 2 == 0)
-                    {
-                        Resolution::EvenSequence
-                    } else if target.is_none() {
-                        Resolution::Dangling
-                    } else if target.is_some_and(|value| !accepts(candidate.kind, entry, value)) {
-                        Resolution::WrongType
-                    } else {
-                        Resolution::Resolved
-                    };
+                    let resolution = classify(candidate.target_sequence, target, |value| {
+                        accepts(candidate.kind, entry, value)
+                    });
                     ReferenceEdge {
                         origin: ReferenceOrigin::Directory(candidate.kind),
                         raw_pointer: candidate.raw_pointer,
-                        target: target.map(|value| value.sequence),
                         resolution,
                         expected: expected(candidate.kind, entry),
                     }
@@ -488,7 +518,9 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                 .iter_mut()
                 .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         }) {
-            edge.resolution = Resolution::Cyclic;
+            if let Resolution::Resolved(sequence) = edge.resolution {
+                edge.resolution = Resolution::Cyclic(sequence);
+            }
         }
     }
     graph
@@ -542,7 +574,7 @@ pub(crate) fn losses(
             let records = &records;
             edges
                 .iter()
-                .filter(|edge| edge.resolution != Resolution::Resolved)
+                .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
                 .map(move |edge| {
                     let parameter_location = edge.origin.parameter_index().and_then(|index| {
                         let record = records.get(source)?;
