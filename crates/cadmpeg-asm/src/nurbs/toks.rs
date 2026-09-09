@@ -7,6 +7,7 @@
 //! positions. Token positions identify fields within a record payload without
 //! depending on serialized byte offsets.
 
+#[cfg(any(test, feature = "test-support"))]
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{checked_knot_layout, BsplineMarker, Nullable};
 use crate::sab::Token;
