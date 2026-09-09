@@ -808,6 +808,23 @@ pub struct LoopRing {
 }
 
 impl LoopRing {
+    /// Construct a ring containing one coedge.
+    pub fn single(coedge: CoedgeId) -> Self {
+        Self {
+            coedges: vec![coedge],
+            vertex_uses: Vec::new(),
+        }
+    }
+
+    /// Append a distinct coedge in traversal order.
+    pub fn try_push(&mut self, coedge: CoedgeId) -> Result<(), LoopRingError> {
+        if self.coedges.contains(&coedge) {
+            return Err(LoopRingError("loop ring coedges must be distinct".into()));
+        }
+        self.coedges.push(coedge);
+        Ok(())
+    }
+
     /// Build a nonempty ring of distinct coedges whose anchors belong to that ring.
     pub fn new(
         coedges: Vec<CoedgeId>,
@@ -1607,6 +1624,18 @@ mod tests {
         with_topology_serialization, AnchoredVertexUse, Coedge, CoedgeUseCurve, Loop, LoopBoundary,
         LoopRing,
     };
+
+    #[test]
+    fn incremental_loop_ring_keeps_order_and_rejects_duplicates() {
+        let first = super::CoedgeId::mint("test:model:coedge#0").unwrap();
+        let second = super::CoedgeId::mint("test:model:coedge#1").unwrap();
+        let mut ring = LoopRing::single(first.clone());
+        ring.try_push(second.clone()).unwrap();
+        assert_eq!(ring.coedges(), &[first.clone(), second]);
+        let before = ring.clone();
+        assert!(ring.try_push(first).is_err());
+        assert_eq!(ring, before);
+    }
 
     #[test]
     fn loop_ring_rejects_empty_or_duplicate_coedges_and_foreign_anchors() {

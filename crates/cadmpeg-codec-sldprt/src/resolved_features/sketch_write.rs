@@ -106,7 +106,7 @@ pub(super) fn sketch_brep(
         let loop_id =
             LoopId::mint(format!("{prefix}:loop:{profile_index}")).expect("identity grammar");
         face_loops.push(loop_id.clone());
-        let mut coedge_ids = Vec::new();
+        let mut ring: Option<cadmpeg_ir::topology::LoopRing> = None;
         for (use_index, entity_use) in profile.iter().enumerate() {
             let entity = entities.get(&entity_use.entity).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -175,7 +175,12 @@ pub(super) fn sketch_brep(
                 end: end_vertex,
                 tolerance: None,
             });
-            coedge_ids.push(coedge_id.clone());
+            match &mut ring {
+                Some(ring) => ring
+                    .try_push(coedge_id.clone())
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                None => ring = Some(cadmpeg_ir::topology::LoopRing::single(coedge_id.clone())),
+            }
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
@@ -193,10 +198,9 @@ pub(super) fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
-                    .expect("valid loop ring"),
-            ),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("sketch profile has no coedges")
+            })?),
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -243,8 +247,7 @@ pub(super) fn sketch_brep(
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(vec![coedge_id], Vec::new())
-                    .expect("valid loop ring"),
+                cadmpeg_ir::topology::LoopRing::single(coedge_id),
             ),
         });
         face_loops.push(loop_id);
