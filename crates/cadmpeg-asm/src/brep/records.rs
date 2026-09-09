@@ -237,9 +237,10 @@ impl FaceSidedness {
     }
 }
 
+/// Serialized face sidedness with the native and normalized senses.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct FaceSidednessWire {
+pub struct FaceSidednessWire {
     id: String,
     face: FaceId,
     record_index: u32,
