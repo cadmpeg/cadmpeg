@@ -832,7 +832,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         )
         .unwrap(),
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
-            entity: neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
+            entity: neutral_sketch_curve_id(&sketch_id, 586, 0),
             reversed: false,
         }]])
         .unwrap(),
@@ -884,7 +884,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         reversed: false,
     });
     let point_entity = SketchEntity::new(
-        neutral_sketch_point_id(&sketch_id, 587).unwrap(),
+        neutral_sketch_point_id(&sketch_id, 587),
         sketch_id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.5, 1.0),
@@ -892,7 +892,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         .unwrap(),
     );
     let line_entity = SketchEntity::new(
-        neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
+        neutral_sketch_curve_id(&sketch_id, 586, 0),
         sketch_id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),

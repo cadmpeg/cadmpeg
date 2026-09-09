@@ -896,7 +896,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         .unwrap()
     };
     let points = [point(40, 0.0), point(41, 2.0)];
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let entities = points
         .iter()
         .map(|point| {
@@ -938,7 +938,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     ));
 
     let spatial_sketch = SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement).unwrap(),
+        id: neutral_spatial_sketch_id(&placement),
         name: None,
         configuration: None,
         visible: None,

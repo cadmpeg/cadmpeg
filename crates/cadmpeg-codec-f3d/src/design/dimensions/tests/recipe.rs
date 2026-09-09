@@ -107,7 +107,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         program: vec![-1],
         matching_edge_operand_ids: Vec::new(),
     };
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let line = |name: &str, start, end| {
         SketchEntity::new(
             SketchEntityId::mint(name).unwrap(),

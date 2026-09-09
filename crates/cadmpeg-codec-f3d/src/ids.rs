@@ -381,16 +381,17 @@ pub(crate) fn neutral_parameter_id_parts(
 /// The neutral planar-sketch key for a sketch `placement`.
 pub(crate) fn neutral_sketch_id(
     placement: &DesignSketchPlacement,
-) -> Option<cadmpeg_ir::sketches::SketchId> {
-    cadmpeg_ir::sketches::SketchId::mint(sketch_placement_id("sketch", placement)).ok()
+) -> cadmpeg_ir::sketches::SketchId {
+    cadmpeg_ir::sketches::SketchId::mint(sketch_placement_id("sketch", placement))
+        .expect("identity grammar")
 }
 
 /// The neutral spatial-sketch key for a sketch `placement`.
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchId> {
+) -> cadmpeg_ir::sketches::SpatialSketchId {
     cadmpeg_ir::sketches::SpatialSketchId::mint(sketch_placement_id("spatial-sketch", placement))
-        .ok()
+        .expect("identity grammar")
 }
 
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
@@ -409,14 +410,14 @@ fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> Stri
 pub(crate) fn neutral_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
-) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+) -> cadmpeg_ir::sketches::SketchEntityId {
     cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
         "sketch-entity",
         sketch.as_str(),
         'p',
         persistent_id,
     ))
-    .ok()
+    .expect("identity grammar")
 }
 
 /// The neutral planar-sketch curve-entity key under `sketch`.
@@ -424,28 +425,28 @@ pub(crate) fn neutral_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     primary_id: u64,
     secondary_id: u64,
-) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+) -> cadmpeg_ir::sketches::SketchEntityId {
     cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_curve(
         "sketch-entity",
         sketch.as_str(),
         primary_id,
         secondary_id,
     ))
-    .ok()
+    .expect("identity grammar")
 }
 
 /// The neutral planar-sketch text-entity key under `sketch`.
 pub(crate) fn neutral_sketch_text_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
-) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+) -> cadmpeg_ir::sketches::SketchEntityId {
     cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
         "sketch-entity",
         sketch.as_str(),
         't',
         persistent_id,
     ))
-    .ok()
+    .expect("identity grammar")
 }
 
 /// The source-local neutral key for a planar sketch record that has no
@@ -453,14 +454,14 @@ pub(crate) fn neutral_sketch_text_id(
 pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
-) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+) -> cadmpeg_ir::sketches::SketchEntityId {
     cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
         "sketch-entity",
         sketch.as_str(),
         'x',
         u64::from(record_index),
     ))
-    .ok()
+    .expect("identity grammar")
 }
 
 /// The neutral spatial-sketch curve-entity key under `sketch`.
@@ -468,14 +469,14 @@ pub(crate) fn neutral_spatial_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     primary_id: u64,
     secondary_id: u64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
     cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_curve(
         "spatial-sketch-entity",
         sketch.as_str(),
         primary_id,
         secondary_id,
     ))
-    .ok()
+    .expect("identity grammar")
 }
 
 /// The neutral spatial-sketch point-entity key under `sketch`.
@@ -988,17 +989,11 @@ mod tests {
     #[test]
     fn identityless_sketch_geometry_uses_a_disjoint_source_record_namespace() {
         let sketch = cadmpeg_ir::sketches::SketchId::mint("f3d:model:sketch#example").unwrap();
-        let persistent = neutral_sketch_text_id(&sketch, 42).unwrap();
-        let source_record = neutral_sketch_record_id(&sketch, 42).unwrap();
+        let persistent = neutral_sketch_text_id(&sketch, 42);
+        let source_record = neutral_sketch_record_id(&sketch, 42);
         assert_ne!(persistent, source_record);
-        assert_eq!(
-            source_record,
-            neutral_sketch_record_id(&sketch, 42).unwrap()
-        );
-        assert_ne!(
-            source_record,
-            neutral_sketch_record_id(&sketch, 43).unwrap()
-        );
+        assert_eq!(source_record, neutral_sketch_record_id(&sketch, 42));
+        assert_ne!(source_record, neutral_sketch_record_id(&sketch, 43));
     }
 
     #[test]

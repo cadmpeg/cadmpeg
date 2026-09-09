@@ -3939,15 +3939,11 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            let Some(planar) = crate::ids::neutral_sketch_id(entity) else {
-                continue;
-            };
+            let planar = crate::ids::neutral_sketch_id(entity);
             if planar_sketches.contains(planar.as_str()) {
                 note(planar.as_str(), "sketch");
             }
-            let Some(spatial) = crate::ids::neutral_spatial_sketch_id(entity) else {
-                continue;
-            };
+            let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if spatial_sketches.contains(spatial.as_str()) {
                 note(spatial.as_str(), "spatial_sketch");
             }

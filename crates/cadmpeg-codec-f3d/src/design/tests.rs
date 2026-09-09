@@ -178,20 +178,17 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
 
     let sketch = SketchId::mint("f3d:model:sketch#Design/A@10").unwrap();
     let other_sketch = SketchId::mint("f3d:model:sketch#Design/A@11").unwrap();
-    let point = neutral_sketch_point_id(&sketch, 42).unwrap();
-    let same_point = neutral_sketch_point_id(&sketch, 42).unwrap();
-    let curve = neutral_sketch_curve_id(&sketch, 42, 0).unwrap();
-    let same_curve = neutral_sketch_curve_id(&sketch, 42, 0).unwrap();
+    let point = neutral_sketch_point_id(&sketch, 42);
+    let same_point = neutral_sketch_point_id(&sketch, 42);
+    let curve = neutral_sketch_curve_id(&sketch, 42, 0);
+    let same_curve = neutral_sketch_curve_id(&sketch, 42, 0);
 
     assert_eq!(point, same_point);
     assert_eq!(curve, same_curve);
     assert_ne!(point, curve);
-    assert_ne!(curve, neutral_sketch_curve_id(&sketch, 42, 1).unwrap());
-    assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42).unwrap());
-    assert_ne!(
-        curve,
-        neutral_sketch_curve_id(&other_sketch, 42, 0).unwrap()
-    );
+    assert_ne!(curve, neutral_sketch_curve_id(&sketch, 42, 1));
+    assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42));
+    assert_ne!(curve, neutral_sketch_curve_id(&other_sketch, 42, 0));
 
     let spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@10").unwrap();
     let other_spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@11").unwrap();
@@ -200,8 +197,8 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
         crate::ids::neutral_spatial_sketch_point_id(&other_spatial, 42).unwrap()
     );
     assert_ne!(
-        crate::ids::neutral_spatial_sketch_curve_id(&spatial, 42, 0).unwrap(),
-        crate::ids::neutral_spatial_sketch_curve_id(&other_spatial, 42, 0).unwrap()
+        crate::ids::neutral_spatial_sketch_curve_id(&spatial, 42, 0),
+        crate::ids::neutral_spatial_sketch_curve_id(&other_spatial, 42, 0)
     );
 }
 
