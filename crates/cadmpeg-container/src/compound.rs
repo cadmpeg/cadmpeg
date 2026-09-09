@@ -378,7 +378,7 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn stream(&self, path: &str) -> Option<&CompoundStreamEntry> {
         match self.entry(path) {
             Some(CompoundEntry::Stream(entry)) => Some(entry),
-            _ => None,
+            Some(CompoundEntry::Storage(_)) | None => None,
         }
     }
 
