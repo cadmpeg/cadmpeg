@@ -34,6 +34,8 @@ pub enum FreecadLossCode {
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
     SourceGuiSchemaUnverified,
+    /// A parameter-space curve could not enter neutral geometry.
+    PcurveNotTransferred,
 }
 
 impl FreecadLossCode {
@@ -47,6 +49,7 @@ impl FreecadLossCode {
         Self::AppearanceTopologyColorCountMismatch,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
+        Self::PcurveNotTransferred,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -62,6 +65,7 @@ impl FreecadLossCode {
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
+            Self::PcurveNotTransferred => "pcurve.not-transferred",
         }
     }
 
@@ -75,7 +79,8 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::AppearanceTopologyColorCountMismatch
             | Self::SourceDialectUnverified
-            | Self::SourceGuiSchemaUnverified => Severity::Warning,
+            | Self::SourceGuiSchemaUnverified
+            | Self::PcurveNotTransferred => Severity::Warning,
         }
     }
 
@@ -84,9 +89,9 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::SketchNativeGeometry | Self::SketchNativeConstraint => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::SketchNativeGeometry
+            | Self::SketchNativeConstraint
+            | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
@@ -144,6 +149,7 @@ mod tests {
                 "appearance.topology-color-count-mismatch",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
+                "pcurve.not-transferred",
             ]
         );
     }

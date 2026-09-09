@@ -861,6 +861,7 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
+        let mut topology_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
@@ -987,8 +988,13 @@ impl CodecBackend for FcstdCodec {
             }
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            let topology_occurrences =
-                topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
+            let topology_occurrences = topology_transfer::transfer(
+                ctx,
+                &mut ir,
+                &shape_payloads,
+                &graph.properties,
+                &mut topology_losses,
+            )?;
             cycle_affected_design_objects = design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1122,6 +1128,7 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
+        losses.extend(topology_losses);
         losses.extend(dialect::FcstdDialect::dialect_loss(dialects.primary()));
         ctx.admit_entities(
             ir.model.entity_count() as u64,
