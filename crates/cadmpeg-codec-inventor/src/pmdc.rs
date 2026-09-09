@@ -421,3 +421,69 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
         .filter_map(|(key, value)| value.map(|value| (key, value)))
         .collect()
 }
+
+type PairedMapItems<V> = ([u32; 2], Vec<(PmDcReference, V)>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcPairedMapWire<V>",
+    into = "PmDcPairedMapWire<V>",
+    bound(
+        serialize = "V: Serialize + Clone",
+        deserialize = "V: Deserialize<'de>"
+    )
+)]
+pub(crate) struct PmDcPairedMap<V> {
+    items: Option<PairedMapItems<V>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcPairedMapWire<V> {
+    metadata: Option<[u32; 2]>,
+    entries: Vec<(PmDcReference, V)>,
+}
+
+impl<V> PmDcPairedMap<V> {
+    pub(crate) fn new(
+        metadata: Option<[u32; 2]>,
+        entries: Vec<(PmDcReference, V)>,
+    ) -> Option<Self> {
+        Some(Self {
+            items: paired_items(metadata, entries)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    pub(crate) fn entries(&self) -> &[(PmDcReference, V)] {
+        self.items
+            .as_ref()
+            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
+    }
+}
+
+impl<V> From<PmDcPairedMap<V>> for PmDcPairedMapWire<V> {
+    fn from(value: PmDcPairedMap<V>) -> Self {
+        match value.items {
+            None => Self {
+                metadata: None,
+                entries: Vec::new(),
+            },
+            Some((metadata, entries)) => Self {
+                metadata: Some(metadata),
+                entries,
+            },
+        }
+    }
+}
+
+impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
+    type Error = String;
+
+    fn try_from(wire: PmDcPairedMapWire<V>) -> Result<Self, Self::Error> {
+        Self::new(wire.metadata, wire.entries)
+            .ok_or_else(|| "PmDc map metadata disagrees with length".to_owned())
+    }
+}
