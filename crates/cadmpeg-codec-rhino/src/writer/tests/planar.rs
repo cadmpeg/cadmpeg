@@ -129,7 +129,7 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
             .model
             .edges
             .iter()
-            .all(|edge| edge.param_range == Some([2.0, 3.0])));
+            .all(|edge| edge.param_range() == Some([2.0, 3.0])));
         let shared = decoded
             .ir()
             .model
@@ -193,7 +193,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         assert_eq!(decoded.ir().model.edges.len(), 6, "{version:?}");
         assert_eq!(decoded.ir().model.vertices.len(), 4, "{version:?}");
         for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
-            assert_eq!(actual.param_range, expected.param_range, "{version:?}");
+            assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
             assert_eq!(
                 decoded
                     .ir()

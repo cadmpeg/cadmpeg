@@ -336,7 +336,7 @@ impl<'a> WritableModel<'a> {
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
         for edge in ordered_edges {
-            let curve_id = edge.curve.as_ref().ok_or_else(|| {
+            let curve_id = edge.curve().as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "edge {} has no writable curve",
                     edge.id.as_str()
@@ -356,7 +356,7 @@ impl<'a> WritableModel<'a> {
                     curve.id.as_str()
                 )));
             }
-            let domain = edge.param_range.ok_or_else(|| {
+            let domain = edge.param_range().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "edge {} has no parameter range",
                     edge.id.as_str()
@@ -850,7 +850,7 @@ mod tests {
         let model = WritableModel::try_new(&ir).expect("writable adjacent faces");
         for (position, edge) in model.edges.iter().enumerate() {
             assert_eq!(edge.source.id, ir.model.edges[position].id);
-            assert_eq!(Some(edge.domain), ir.model.edges[position].param_range);
+            assert_eq!(Some(edge.domain), ir.model.edges[position].param_range());
             for coedge in &edge.uses {
                 assert_eq!(model.coedges[*coedge].edge, position);
             }

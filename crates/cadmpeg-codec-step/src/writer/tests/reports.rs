@@ -52,10 +52,9 @@ fn edgeless_doc() -> CadIr {
     });
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         end: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
@@ -218,7 +217,7 @@ fn writer_reports_unrepresented_topology_metadata() {
         Some(cadmpeg_ir::units::PositiveScalar::new(0.02).expect("positive finite tolerance"));
     ir.model.vertices[0].tolerance =
         Some(cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"));
-    let edge_curve = ir.model.edges[0].curve.clone().expect("edge curve");
+    let edge_curve = ir.model.edges[0].curve().clone().expect("edge curve");
     let coedge = ir
         .model
         .coedges
@@ -226,10 +225,11 @@ fn writer_reports_unrepresented_topology_metadata() {
         .find(|coedge| !coedge.pcurves.is_empty())
         .expect("pcurve-backed coedge");
     coedge.pcurves[0].isoparametric = Some(true);
-    coedge.pcurves[0].parameter_range = Some([0.0, 1.0]);
+    coedge.pcurves[0].parameter_range =
+        Some(cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap());
     coedge.use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
         curve: edge_curve,
-        parameter_range: [0.0, 1.0],
+        parameter_range: cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
 
     let report = write_step(
@@ -1417,7 +1417,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     }));
 
     let mut nested_unknown = unit_cube();
-    let curve_id = nested_unknown.model.edges[0].curve.clone().unwrap();
+    let curve_id = nested_unknown.model.edges[0].curve().clone().unwrap();
     nested_unknown
         .model
         .curves

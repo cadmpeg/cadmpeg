@@ -380,7 +380,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
-            .filter_map(|edge| edge.curve.as_ref().map(|id| id.as_str().to_owned()))
+            .filter_map(|edge| edge.curve().as_ref().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let points = model
             .vertices

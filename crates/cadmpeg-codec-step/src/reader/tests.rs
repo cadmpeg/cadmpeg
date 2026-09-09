@@ -857,7 +857,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
         .expect("omitted-name intersection edge");
     assert_eq!(
-        edge.curve.as_ref().map(CurveId::as_str),
+        edge.curve().as_ref().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
     assert!(decoded.ir().model.coedges.iter().any(|coedge| {

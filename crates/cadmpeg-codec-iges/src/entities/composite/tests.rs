@@ -580,10 +580,10 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
-        curve: Some(curve_id.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some([0.0, 1.0]))
+            .unwrap(),
         start: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
         end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
-        param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
 
@@ -662,10 +662,10 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#base-edge").expect("identity grammar"),
-        curve: Some(base_id.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(base_id.clone()), Some([0.0, 1.0]))
+            .unwrap(),
         start: VertexId::mint("test:model:vertex#base-start").expect("identity grammar"),
         end: VertexId::mint("test:model:vertex#base-end").expect("identity grammar"),
-        param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
 
@@ -767,18 +767,21 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([5.0, 6.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
-            param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0]))
+                .unwrap(),
             start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-            param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ]);
@@ -845,10 +848,13 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         ]);
         ir.model.edges.push(Edge {
             id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([index as f64, end]),
+            )
+            .unwrap(),
             start: start_vertex,
             end: end_vertex,
-            param_range: Some([index as f64, end]),
             tolerance: None,
         });
     }
@@ -901,10 +907,10 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
-        curve: Some(bounded.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(bounded.clone()), Some([0.0, 2.0]))
+            .unwrap(),
         start: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
         end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
-        param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
 
@@ -1377,12 +1383,11 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
     for (index, curve) in [first_id, second_id].into_iter().enumerate() {
         ir.model.edges.push(Edge {
             id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
-            curve: Some(curve),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
             start: VertexId::mint(format!("test:model:vertex#start-{index}"))
                 .expect("identity grammar"),
             end: VertexId::mint(format!("test:model:vertex#end-{index}"))
                 .expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
     }
@@ -1679,10 +1684,10 @@ fn decode_projects_mixed_degree_composite_pcurve() {
             .edges
             .iter()
             .find(|edge| edge
-                .curve
+                .curve()
                 .as_ref()
                 .is_some_and(|id| id.as_str() == "iges:model:curve#D7"))
-            .and_then(|edge| edge.param_range),
+            .and_then(|edge| edge.param_range()),
         Some([0.0, 2.0])
     );
     let face = result

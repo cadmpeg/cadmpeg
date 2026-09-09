@@ -46,7 +46,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         ir.model
             .edges
             .iter_mut()
-            .for_each(|edge| edge.param_range = None);
+            .for_each(|edge| edge.set_param_range(None).unwrap());
     };
 
     let mut base = cadmpeg_ir::examples::unit_cube();

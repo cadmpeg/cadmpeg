@@ -933,7 +933,7 @@ pub(crate) fn validate_source_less_design_links(
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
                 if effective_range.iter().any(|value| !value.is_finite())
-                    || use_curve.parameter_range != effective_range
+                    || use_curve.parameter_range.endpoints() != effective_range
                 {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",

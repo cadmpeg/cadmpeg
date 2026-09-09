@@ -194,7 +194,11 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
         .flat_map(|coedge| &coedge.pcurves)
         .find(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
         .expect("stale trimmed pcurve use");
-    assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
+    assert_eq!(
+        use_.parameter_range
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+        Some([0.0, 1.0])
+    );
 }
 
 #[test]

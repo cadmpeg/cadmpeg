@@ -488,7 +488,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_some() && edge.param_range.is_some()));
+        .all(|edge| edge.curve().is_some() && edge.param_range().is_some()));
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking

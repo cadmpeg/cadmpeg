@@ -69,18 +69,21 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, 1.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#open-occurrence").expect("identity grammar"),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
+                .unwrap(),
             start: VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         },
     ]);

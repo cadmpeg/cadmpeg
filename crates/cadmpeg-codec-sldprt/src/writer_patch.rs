@@ -290,11 +290,11 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
             .model
             .edges
             .iter()
-            .map(|v| (&v.id, &v.curve, &v.start, &v.end, v.param_range))
+            .map(|v| (&v.id, v.curve(), &v.start, &v.end, v.param_range()))
             .eq(native
                 .edges
                 .iter()
-                .map(|v| (&v.id, &v.curve, &v.start, &v.end, v.param_range)))
+                .map(|v| (&v.id, v.curve(), &v.start, &v.end, v.param_range())))
         && ir
             .model
             .vertices

@@ -319,12 +319,11 @@ fn add_face(
         });
         model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
                 .expect("identity grammar"),
             end: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
                 .expect("identity grammar"),
-            param_range: None,
             tolerance: None,
         });
         model.coedges.push(Coedge {
@@ -527,10 +526,9 @@ fn add_cylindrical_patch_face(
         });
         model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: vertex_ids[index].clone(),
             end: vertex_ids[next].clone(),
-            param_range: None,
             tolerance: None,
         });
         model.coedges.push(Coedge {

@@ -1655,7 +1655,7 @@ fn plane_boundary_edge(
         .edges(&format!("iges:model:edge#D{boundary_sequence}"))
         .ok_or(PlaneBoundaryError::MissingEdge)?;
     let curve_id = source_edge
-        .curve
+        .curve()
         .as_ref()
         .ok_or(PlaneBoundaryError::MissingCurve)?;
     let curve = index
@@ -1676,7 +1676,7 @@ fn plane_boundary_edge(
                 transform: Transform::identity(),
             },
             source_is_certified_simple,
-            source_edge.param_range,
+            source_edge.param_range(),
             &mut active,
         )
     {

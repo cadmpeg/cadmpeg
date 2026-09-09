@@ -382,10 +382,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     };
                     ir.model.edges.push(Edge {
                         id: edge_id.clone(),
-                        curve: Some(curve_id),
+                        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                            Some(curve_id),
+                            param_range,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                         start: vertices[index].clone(),
                         end: vertices[next].clone(),
-                        param_range,
                         tolerance: None,
                     });
                     arena.push(edge_id);
@@ -418,10 +421,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 });
                 ir.model.edges.push(Edge {
                     id: edge_id.clone(),
-                    curve: Some(curve_id),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                        Some(curve_id),
+                        Some([0.0, length]),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     start: bottom_vertices[index].clone(),
                     end: top_vertices[index].clone(),
-                    param_range: Some([0.0, length]),
                     tolerance: None,
                 });
                 vertical_edges.push(edge_id);

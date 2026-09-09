@@ -491,10 +491,10 @@ pub(super) fn emit_topology(
         }
         ir.model.edges.push(Edge {
             id: id.clone(),
-            curve,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
+                .map_err(CodecError::malformed)?,
             start,
             end,
-            param_range,
             tolerance: decoded_tolerance(fields.tolerance),
         });
         edges.insert(node.xmt, id);
@@ -503,7 +503,7 @@ pub(super) fn emit_topology(
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve().clone()?)))
         .collect();
     let mut faces = BTreeMap::new();
     for node in graph
@@ -666,7 +666,7 @@ pub(super) fn emit_topology(
                     carrier.fit_tolerance(),
                     adaptive_geometry_budget,
                 )?;
-                let curve = index.edges(edge.as_str())?.curve.as_ref()?;
+                let curve = index.edges(edge.as_str())?.curve().as_ref()?;
                 let parameter_range = parameter_range?;
                 let Some((candidate_geometry, candidate_range, _)) =
                     intersection_pcurves.get(&(curve.clone(), support.clone()))
@@ -849,12 +849,17 @@ pub(super) fn emit_topology(
             sense: fields.sense,
             pcurves: pcurve
                 .into_iter()
-                .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
-                    pcurve,
-                    isoparametric: None,
-                    parameter_range: attached_pcurve_use_range,
+                .map(|pcurve| {
+                    Ok(cadmpeg_ir::topology::PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                        parameter_range: (attached_pcurve_use_range)
+                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .transpose()
+                            .map_err(CodecError::malformed)?,
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, CodecError>>()?,
             use_curve: None,
         });
         if let Some(loop_xmt) = fields.loop_xmt {

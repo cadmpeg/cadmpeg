@@ -1261,10 +1261,11 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     });
     brep.edges.push(Edge {
         id: EdgeId::mint(id(7)).expect("identity grammar"),
-        curve: Some(CurveId::mint(id(21)).expect("identity grammar")),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
+            CurveId::mint(id(21)).expect("identity grammar"),
+        )),
         start: VertexId::mint(id(8)).expect("identity grammar"),
         end: VertexId::mint(id(9)).expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     });
     for slot in [8, 9] {

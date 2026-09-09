@@ -185,7 +185,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         }
     }
     for e in &ir.model.edges {
-        if let Some(c) = &e.curve {
+        if let Some(c) = e.curve() {
             if ids.curves(c.as_str()).is_none() {
                 ref_error(findings, e.id.as_str(), "curve", c.as_str());
             }

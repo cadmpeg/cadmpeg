@@ -491,10 +491,13 @@ pub(crate) fn transfer_closed_face_topology(
         }
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(oriented_curve.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(oriented_curve.clone()),
+                param_range,
+            )
+            .ok()?,
             start: oriented_vertices[0].clone(),
             end: oriented_vertices[1].clone(),
-            param_range,
             tolerance: Some(
                 const {
                     cadmpeg_ir::units::PositiveScalar::new(MODEL_POINT_TOLERANCE)
@@ -641,23 +644,36 @@ pub(crate) fn transfer_closed_face_topology(
                 };
                 let (curve, parameter_range) = occurrence.oriented_curve.as_ref()?;
                 let (first_curve, _) = first_occurrence.oriented_curve.as_ref()?;
-                let use_curve =
-                    (curve != first_curve).then(|| cadmpeg_ir::topology::CoedgeUseCurve {
+                let use_curve = if curve != first_curve {
+                    Some(cadmpeg_ir::topology::CoedgeUseCurve {
                         curve: curve.clone(),
-                        parameter_range: *parameter_range,
-                    });
+                        parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
+                            *parameter_range,
+                        )
+                        .ok()?,
+                    })
+                } else {
+                    None
+                };
                 let pcurves = occurrence
                     .pcurve
                     .as_ref()
-                    .map(|pcurve| PcurveUse {
-                        pcurve: pcurve.id.clone(),
-                        isoparametric: None,
-                        parameter_range: if occurrence_vertex_pairs[occurrence_index].2 {
-                            Some(pcurve.parameter_range)
+                    .map(|pcurve| {
+                        let range = if occurrence_vertex_pairs[occurrence_index].2 {
+                            pcurve.parameter_range
                         } else {
-                            Some([pcurve.parameter_range[1], pcurve.parameter_range[0]])
-                        },
+                            [pcurve.parameter_range[1], pcurve.parameter_range[0]]
+                        };
+                        cadmpeg_ir::geometry::DirectedParameterRange::new(range).map(|range| {
+                            PcurveUse {
+                                pcurve: pcurve.id.clone(),
+                                isoparametric: None,
+                                parameter_range: Some(range),
+                            }
+                        })
                     })
+                    .transpose()
+                    .ok()?
                     .into_iter()
                     .collect();
                 let coedge_id = coedge_ids[member_index].clone();

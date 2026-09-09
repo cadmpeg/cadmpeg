@@ -405,16 +405,16 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(model.vertices.len(), 4);
     assert_eq!(model.edges.len(), 6);
     assert_eq!(model.curves.len(), 6);
-    assert!(model.edges.iter().all(|edge| edge.curve.is_some()));
-    assert!(model.edges.iter().all(|edge| edge.param_range.is_some()));
+    assert!(model.edges.iter().all(|edge| edge.curve().is_some()));
+    assert!(model.edges.iter().all(|edge| edge.param_range().is_some()));
     for edge in &model.edges {
-        let [start_parameter, end_parameter] = edge.param_range.expect("line edge range");
+        let [start_parameter, end_parameter] = edge.param_range().expect("line edge range");
         assert_eq!(start_parameter, 0.0);
         assert!(end_parameter > 0.0);
         let curve = model
             .curves
             .iter()
-            .find(|curve| Some(&curve.id) == edge.curve.as_ref())
+            .find(|curve| Some(&curve.id) == edge.curve().as_ref())
             .expect("edge curve");
         let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) = curve.geometry else {
             panic!("edge line: {curve:#?}");
@@ -486,7 +486,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .expect("pcurve edge");
-        assert_eq!(pcurve.parameter_range(), edge.param_range);
+        assert_eq!(pcurve.parameter_range(), edge.param_range());
     }
     assert_eq!(model.shells.len(), 1);
     assert_eq!(model.regions.len(), 1);

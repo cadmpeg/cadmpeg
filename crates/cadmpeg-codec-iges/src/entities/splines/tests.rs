@@ -141,7 +141,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         ),
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
+    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 2.0]));
     assert!(result
         .report()
         .losses

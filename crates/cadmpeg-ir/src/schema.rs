@@ -504,7 +504,7 @@ impl EntitySchema for crate::topology::Shell {
 impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
 impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
 impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
-impl_entity_schema!(crate::topology::Edge, Edge, id; id, curve, start, end, param_range, tolerance);
+impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, start, end, tolerance);
 impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
 impl_entity_schema!(crate::topology::Point, Point, id; id, position, source_object);
 impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);

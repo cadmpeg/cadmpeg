@@ -940,10 +940,12 @@ fn attach_standalone_wires(
         ]);
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id),
+            carrier: match cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)) {
+                Ok(carrier) => carrier,
+                Err(_) => return false,
+            },
             start: vertex_ids[0].clone(),
             end: vertex_ids[1].clone(),
-            param_range: Some(range),
             tolerance: None,
         });
         edge_ids.push(edge_id);
@@ -1671,7 +1673,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .iter()
         .enumerate()
         .filter_map(|(edge_index, edge)| {
-            let curve_id = edge.curve.as_ref()?;
+            let curve_id = edge.curve().as_ref()?;
             let curve_index = *curve_indices.get(curve_id)?;
             let CurveGeometry::Procedural {
                 construction,
@@ -2401,7 +2403,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
-            ir.model.edges[edge_index].param_range = Some(resolved.block.parameters.range);
+            ir.model.edges[edge_index]
+                .set_param_range(Some(resolved.block.parameters.range))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural = &mut ir.model.procedural_curves[procedure_index];
             if procedural.try_replace_definition(definition, None).is_err() {
                 continue;
@@ -2989,7 +2993,7 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &wires,
         ));
-        assert_eq!(ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([-4.0, 9.0]));
         let expected_start = Point3::new(1.0, -0.4, -0.2);
         let expected_end = Point3::new(1.0, 7.4, 10.2);
         for (actual, expected) in [
@@ -3270,12 +3274,15 @@ mod tests {
         ir.model.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#standard-edge".to_string())
                 .expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, 1.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("catia:test:vertex#vertex%231".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%230".to_string())
                 .expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         let support_ids = [
@@ -3375,7 +3382,7 @@ mod tests {
         assert_eq!(ir.model.coedges[0].pcurves.len(), 0);
         assert_eq!(ir.model.coedges[1].pcurves.len(), 0);
         assert_eq!(ir.model.curves.len(), 1);
-        assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
+        assert_eq!(ir.model.edges[0].curve().as_ref(), Some(&curve_id));
         let ProceduralCurveDefinition::SurfaceCurve { family } =
             ir.model.procedural_curves[0].definition()
         else {
@@ -3400,7 +3407,7 @@ mod tests {
         )
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
-        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
     }
 
     #[test]
@@ -3592,12 +3599,11 @@ mod tests {
         ir.model.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#standard-plane-edge".to_string())
                 .expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
             start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%231".to_string())
                 .expect("identity grammar"),
-            param_range: None,
             tolerance: None,
         });
         let plane = SurfaceGeometry::Plane(
@@ -3655,7 +3661,7 @@ mod tests {
         )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
-        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
         let ProceduralCurveDefinition::Intersection { context, .. } =
             ir.model.procedural_curves[0].definition()
         else {

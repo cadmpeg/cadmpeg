@@ -224,14 +224,14 @@ impl CompositeIndex {
         }
         let mut edges = BTreeMap::new();
         for edge in &ir.model.edges {
-            if let Some(curve) = &edge.curve {
+            if let Some(curve) = &edge.curve() {
                 edges
                     .entry(curve.clone())
                     .or_insert_with(Vec::new)
                     .push(CompositeEdge {
                         start: edge.start.clone(),
                         end: edge.end.clone(),
-                        param_range: edge.param_range,
+                        param_range: edge.param_range(),
                     });
             }
         }
@@ -971,11 +971,11 @@ fn bounded_edge_for_curve(
             ir.model
                 .edges
                 .iter()
-                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                .filter(|edge| edge.curve().as_ref() == Some(curve_id))
                 .map(|edge| CompositeEdge {
                     start: edge.start.clone(),
                     end: edge.end.clone(),
-                    param_range: edge.param_range,
+                    param_range: edge.param_range(),
                 })
                 .collect(),
         ),
@@ -1341,10 +1341,9 @@ fn project_native_composite(
     });
     ir.model.edges.push(Edge {
         id: edge_id.clone(),
-        curve: Some(curve_id.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
         start: start_vertex.clone(),
         end: end_vertex.clone(),
-        param_range: None,
         tolerance: None,
     });
     index.add_model_entity(
@@ -1744,10 +1743,13 @@ fn project_with_type_130_policy(
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, cursor]),
+            )
+            .map_err(CodecError::malformed)?,
             start: start_vertex.clone(),
             end: end_vertex.clone(),
-            param_range: Some([0.0, cursor]),
             tolerance: None,
         });
         index.add_model_entity(

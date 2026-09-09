@@ -166,10 +166,13 @@ pub(super) fn sketch_brep(
             });
             ir.model.edges.push(Edge {
                 id: edge_id.clone(),
-                curve: Some(curve_id),
+                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                    Some(curve_id),
+                    Some(generated.param_range),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
                 start: start_vertex,
                 end: end_vertex,
-                param_range: Some(generated.param_range),
                 tolerance: None,
             });
             coedge_ids.push(coedge_id.clone());
@@ -222,10 +225,9 @@ pub(super) fn sketch_brep(
             CoedgeId::mint(format!("{prefix}:point-coedge:{ordinal}")).expect("identity grammar");
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: None,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
             start: vertex_id.clone(),
             end: vertex_id,
-            param_range: None,
             tolerance: None,
         });
         ir.model.coedges.push(Coedge {

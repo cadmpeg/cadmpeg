@@ -58,7 +58,7 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
         assert_eq!(decoded.ir().model.edges.len(), edge_count, "{version:?}");
         assert_eq!(decoded.ir().model.vertices.len(), edge_count, "{version:?}");
         for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
-            assert_eq!(actual.param_range, expected.param_range, "{version:?}");
+            assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
         }
         assert!(
             cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok(),
@@ -192,10 +192,13 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
         });
         ir.model.edges.push(Edge {
             id: edge_ids[index].clone(),
-            curve: Some(curve_ids[index].clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_ids[index].clone()),
+                Some([0.0, length]),
+            )
+            .unwrap(),
             start: vertex_ids[index].clone(),
             end: vertex_ids[(index + 1) % points.len()].clone(),
-            param_range: Some([0.0, length]),
             tolerance: None,
         });
         ir.model.coedges.push(Coedge {
@@ -293,10 +296,13 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         });
         ir.model.edges.push(Edge {
             id: edge_ids[index].clone(),
-            curve: Some(curve_ids[index].clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_ids[index].clone()),
+                Some([0.0, length]),
+            )
+            .unwrap(),
             start: vertex_ids[index].clone(),
             end: vertex_ids[next_index].clone(),
-            param_range: Some([0.0, length]),
             tolerance: None,
         });
         ir.model.coedges.push(Coedge {
@@ -475,10 +481,13 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         });
         ir.model.edges.push(Edge {
             id: edge_ids[index].clone(),
-            curve: Some(curve_ids[index].clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_ids[index].clone()),
+                Some([2.0, 3.0]),
+            )
+            .unwrap(),
             start: vertex_ids[start].clone(),
             end: vertex_ids[end].clone(),
-            param_range: Some([2.0, 3.0]),
             tolerance: None,
         });
     }
@@ -643,10 +652,13 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         });
         ir.model.edges.push(Edge {
             id: edge_ids[index].clone(),
-            curve: Some(curve_ids[index].clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_ids[index].clone()),
+                Some([2.0, 2.0 + length]),
+            )
+            .unwrap(),
             start: vertex_ids[start].clone(),
             end: vertex_ids[end].clone(),
-            param_range: Some([2.0, 2.0 + length]),
             tolerance: None,
         });
     }
@@ -808,7 +820,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
     for (index, (domain, control_points, weights, origin, direction)) in
         edge_data.into_iter().enumerate()
     {
-        ir.model.edges[index].param_range = Some(domain);
+        ir.model.edges[index].set_param_range(Some(domain)).unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
@@ -905,7 +917,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
     for (index, (domain, control_points, weights, origin, direction)) in
         edge_data.into_iter().enumerate()
     {
-        ir.model.edges[index].param_range = Some(domain);
+        ir.model.edges[index].set_param_range(Some(domain)).unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
@@ -973,7 +985,7 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .expect("fixture edge");
-        let domain = edge.param_range.expect("fixture edge domain");
+        let domain = edge.param_range().expect("fixture edge domain");
         let (start, end) = if coedge.sense == cadmpeg_ir::topology::Sense::Forward {
             (&edge.start, &edge.end)
         } else {

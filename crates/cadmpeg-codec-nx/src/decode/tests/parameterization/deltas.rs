@@ -97,7 +97,7 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
         Some(0.3)
     );
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve().as_ref(),
         Some(&result.ir().model.curves[0].id)
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -306,7 +306,7 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.3, 0.7]));
+    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.3, 0.7]));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -329,7 +329,7 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
         .unwrap();
 
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve().as_ref(),
         Some(&result.ir().model.curves[0].id)
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
