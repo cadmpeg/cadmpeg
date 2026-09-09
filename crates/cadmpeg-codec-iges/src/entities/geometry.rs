@@ -639,41 +639,45 @@ impl Affine {
     }
 
     pub(crate) fn compose(self, local: Self) -> Option<Self> {
-        let mut rows = [[0.0; 4]; 3];
-        for (row, values) in rows.iter_mut().enumerate() {
+        let rows = self.rows();
+        let local_rows = local.rows();
+        let mut composed = [[0.0; 4]; 3];
+        for (row, values) in composed.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate().take(3) {
                 *value = (0..3)
-                    .map(|index| self.rows()[row][index] * local.rows()[index][column])
+                    .map(|index| rows[row][index] * local_rows[index][column])
                     .sum();
             }
-            values[3] = self.rows()[row][3]
+            values[3] = rows[row][3]
                 + (0..3)
-                    .map(|index| self.rows()[row][index] * local.rows()[index][3])
+                    .map(|index| rows[row][index] * local_rows[index][3])
                     .sum::<f64>();
         }
-        Self::new(rows)
+        Self::new(composed)
     }
 
     pub(super) fn point(self, point: Point3) -> Point3 {
+        let rows = self.rows();
         let values = [point.x, point.y, point.z];
         let coordinate = |row: usize| {
-            self.rows()[row][3]
+            rows[row][3]
                 + values
                     .iter()
                     .enumerate()
-                    .map(|(column, value)| self.rows()[row][column] * value)
+                    .map(|(column, value)| rows[row][column] * value)
                     .sum::<f64>()
         };
         Point3::new(coordinate(0), coordinate(1), coordinate(2))
     }
 
     pub(super) fn vector(self, vector: Vector3) -> Vector3 {
+        let rows = self.rows();
         let values = [vector.x, vector.y, vector.z];
         let coordinate = |row: usize| {
             values
                 .iter()
                 .enumerate()
-                .map(|(column, value)| self.rows()[row][column] * value)
+                .map(|(column, value)| rows[row][column] * value)
                 .sum::<f64>()
         };
         Vector3::new(coordinate(0), coordinate(1), coordinate(2))
