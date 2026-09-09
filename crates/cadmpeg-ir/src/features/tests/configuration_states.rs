@@ -7,7 +7,7 @@ use crate::math::Point3;
 
 #[test]
 fn configuration_output_members_are_distinct_and_empty_active_states_remain_valid() {
-    let body = BodyId::mint("test:body#one").unwrap();
+    let body = BodyId::mint("test:model:body#one").unwrap();
     assert!(DistinctMembers::try_from(vec![body.clone(), body.clone()]).is_err());
     for evaluation in [
         ConfigurationEvaluation::Suppressed,
