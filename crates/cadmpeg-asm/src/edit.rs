@@ -360,15 +360,7 @@ impl AsmEditSet {
         }
         let encoded = format!("{packed:0width$}");
         let start = offset + 1 + length_width;
-        let output = bytes.get_mut(start..start + width).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "{} record {} decimal-color text is truncated",
-                record.head(),
-                record.index
-            ))
-        })?;
-        output.copy_from_slice(encoded.as_bytes());
-        Ok(())
+        Self::patch_bytes_at(bytes, start, encoded.as_bytes())
     }
 
     fn patch_bytes_at(bytes: &mut [u8], offset: usize, payload: &[u8]) -> Result<(), CodecError> {
