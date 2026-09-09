@@ -716,18 +716,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             tolerance: None,
         });
         ir.model.shells.push(
-            match Shell::new(
+            Shell::new(
                 shell_id.clone(),
                 region_id.clone(),
                 shell_faces,
                 Vec::new(),
                 Vec::new(),
-            ) {
-                Ok(shell) => shell,
-                Err(_) => {
-                    continue;
-                }
-            },
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         ir.model.regions.push(Region {
             id: region_id.clone(),
