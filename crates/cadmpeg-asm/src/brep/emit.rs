@@ -113,6 +113,8 @@ fn emit_carrier_surface(
         source_object: None,
     });
     if let Some(procedural) = procedural_surface_defs.remove(&i) {
+        let support_start = out.surfaces.len();
+        let curve_start = out.curves.len();
         let (definition, cache) = procedural.into_parts();
         let definition = match definition {
             DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
@@ -395,6 +397,16 @@ fn emit_carrier_surface(
                 format,
             ),
         };
+        out.procedural_support_sources.extend(
+            out.surfaces[support_start..]
+                .iter()
+                .map(|surface| (i, surface.id.clone())),
+        );
+        out.procedural_curve_child_sources.extend(
+            out.curves[curve_start..]
+                .iter()
+                .map(|curve| (i, curve.id.clone())),
+        );
         let cache_fit_tolerance = match cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
             ProceduralSurfaceCache::Revision => None,
@@ -3737,6 +3749,7 @@ pub(crate) fn emit_faces(
         loops: kept_loops,
         ..
     } = reach;
+    let subshell_shells = subshell_ancestor_shells(records, by_index);
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
     for r in records {
@@ -3766,7 +3779,11 @@ pub(crate) fn emit_faces(
             }
             out.faces.push(Face {
                 id: FaceId::mint(id(format, i)).expect("identity grammar"),
-                shell: ShellId::mint(id(format, owner)).expect("identity grammar"),
+                shell: ShellId::mint(id(
+                    format,
+                    subshell_shells.get(&owner).copied().unwrap_or(owner),
+                ))
+                .expect("identity grammar"),
                 surface: SurfaceId::mint(id(format, surface)).expect("identity grammar"),
                 sense,
                 loops: loops.into(),
@@ -3946,29 +3963,6 @@ pub(crate) fn emit_containers(
         ));
     }
     Ok(())
-}
-
-/// Project subshell-owned faces onto their nearest shell ancestor, since the
-/// neutral IR has no subshell arena.
-pub(crate) fn project_subshell_faces(
-    out: &mut AsmBrep,
-    records: &[Record],
-    by_index: &HashMap<i64, &Record>,
-    format: IdFormat<'_>,
-) {
-    let subshell_shells = subshell_ancestor_shells(records, by_index);
-    for face in &mut out.faces {
-        let native_owner = face
-            .id
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, index)| index.parse::<i64>().ok())
-            .and_then(|index| by_index.get(&index))
-            .and_then(|record| record.ref_at(5));
-        if let Some(shell) = native_owner.and_then(|owner| subshell_shells.get(&owner)) {
-            face.shell = ShellId::mint(id(format, *shell)).expect("identity grammar");
-        }
-    }
 }
 
 /// Emit direct and inherited entity attributes and derive the link, tag, and
