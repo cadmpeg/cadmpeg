@@ -452,6 +452,7 @@ mod tests {
                 "legacy.string-encoding-retained",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
+                "geometry.section-spline-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
