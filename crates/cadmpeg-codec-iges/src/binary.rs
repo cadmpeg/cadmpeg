@@ -8,6 +8,7 @@
 //! Parameter Data owners.  The original Binary image remains the source image
 //! passed to the reader, so normalization does not replace source fidelity.
 
+use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -64,16 +65,34 @@ struct BinaryDirectory {
     offset: u32,
     entity_type: i64,
     parameter_pointer: i64,
-    values: [BinaryValue; 16],
+    values: [BinaryValue; 15],
 }
 
 impl BinaryDirectory {
     fn new(offset: u32, values: [BinaryValue; 16]) -> Result<Self, CodecError> {
+        let [entity_type, parameter_pointer, structure, line_font, level, view, transform, label_display, status, line_weight, color, form, reserved_first, reserved_second, label, subscript] =
+            values;
         Ok(Self {
             offset,
-            entity_type: integer_value(&values[0], "Directory entity type")?,
-            parameter_pointer: pointer_value(&values[1], "Directory Parameter Data")?,
-            values,
+            entity_type: integer_value(&entity_type, "Directory entity type")?,
+            parameter_pointer: pointer_value(&parameter_pointer, "Directory Parameter Data")?,
+            values: [
+                entity_type,
+                structure,
+                line_font,
+                level,
+                view,
+                transform,
+                label_display,
+                status,
+                line_weight,
+                color,
+                form,
+                reserved_first,
+                reserved_second,
+                label,
+                subscript,
+            ],
         })
     }
 
@@ -998,34 +1017,82 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
         let values = &directory_record.values;
         let first = [
-            render_field(&values[0], FieldRendering::Plain)?,
+            render_field(
+                &values[DirectoryFieldSlot::EntityType.slot()],
+                FieldRendering::Plain,
+            )?,
             render_field(
                 &BinaryValue::Pointer(i64::from(parameter_starts[index])),
                 FieldRendering::Plain,
             )?,
-            render_field(&values[2], FieldRendering::Plain)?,
-            render_field(&values[3], FieldRendering::Plain)?,
-            render_field(&values[4], FieldRendering::Plain)?,
-            render_field(&values[5], FieldRendering::Plain)?,
-            render_field(&values[6], FieldRendering::Plain)?,
-            render_field(&values[7], FieldRendering::Plain)?,
-            render_field(&values[8], FieldRendering::Status)?,
+            render_field(
+                &values[DirectoryFieldSlot::Structure.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::LineFont.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::Level.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::View.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::Transform.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::LabelDisplay.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::Status.slot()],
+                FieldRendering::Status,
+            )?,
         ];
         let second = [
-            render_field(&values[0], FieldRendering::Plain)?,
-            render_field(&values[9], FieldRendering::Plain)?,
-            render_field(&values[10], FieldRendering::Plain)?,
+            render_field(
+                &values[DirectoryFieldSlot::EntityType.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::LineWeight.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::Color.slot()],
+                FieldRendering::Plain,
+            )?,
             render_field(
                 &BinaryValue::Integer(i64::try_from(parameter_counts[index]).map_err(|_| {
                     malformed("normalized Parameter Data line count exceeds signed range")
                 })?),
                 FieldRendering::Plain,
             )?,
-            render_field(&values[11], FieldRendering::Plain)?,
-            render_field(&values[12], FieldRendering::Plain)?,
-            render_field(&values[13], FieldRendering::Plain)?,
-            render_field(&values[14], FieldRendering::Plain)?,
-            render_field(&values[15], FieldRendering::Plain)?,
+            render_field(
+                &values[DirectoryFieldSlot::Form.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::ReservedFirst.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::ReservedSecond.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::Label.slot()],
+                FieldRendering::Plain,
+            )?,
+            render_field(
+                &values[DirectoryFieldSlot::Subscript.slot()],
+                FieldRendering::Plain,
+            )?,
         ];
         let mut first_data = [b' '; CARD_DATA_WIDTH];
         let mut second_data = [b' '; CARD_DATA_WIDTH];

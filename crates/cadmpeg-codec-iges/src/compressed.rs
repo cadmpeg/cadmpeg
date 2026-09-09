@@ -7,6 +7,7 @@
 //! the four redundant Directory Entry fields and the fixed-card sequence
 //! fields, then delegates all semantic work to the existing parser.
 
+use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
@@ -16,67 +17,55 @@ const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
 const MAX_SEQUENCE: u32 = 9_999_999;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompressedField {
-    EntityType,
-    Structure,
-    LineFont,
-    Level,
-    View,
-    Transform,
-    LabelDisplay,
-    Status,
-    LineWeight,
-    Color,
+    Shared(DirectoryFieldSlot),
     ParameterLineCount,
-    Form,
-    ReservedFirst,
-    ReservedSecond,
-    Label,
-    Subscript,
 }
+
+const PARAMETER_LINE_COUNT_SLOT: usize = 10;
+const FIELDS: [(CompressedField, usize); 16] = [
+    (CompressedField::Shared(DirectoryFieldSlot::EntityType), 1),
+    (CompressedField::Shared(DirectoryFieldSlot::Structure), 3),
+    (CompressedField::Shared(DirectoryFieldSlot::LineFont), 4),
+    (CompressedField::Shared(DirectoryFieldSlot::Level), 5),
+    (CompressedField::Shared(DirectoryFieldSlot::View), 6),
+    (CompressedField::Shared(DirectoryFieldSlot::Transform), 7),
+    (CompressedField::Shared(DirectoryFieldSlot::LabelDisplay), 8),
+    (CompressedField::Shared(DirectoryFieldSlot::Status), 9),
+    (CompressedField::Shared(DirectoryFieldSlot::LineWeight), 12),
+    (CompressedField::Shared(DirectoryFieldSlot::Color), 13),
+    (CompressedField::ParameterLineCount, 14),
+    (CompressedField::Shared(DirectoryFieldSlot::Form), 15),
+    (
+        CompressedField::Shared(DirectoryFieldSlot::ReservedFirst),
+        16,
+    ),
+    (
+        CompressedField::Shared(DirectoryFieldSlot::ReservedSecond),
+        17,
+    ),
+    (CompressedField::Shared(DirectoryFieldSlot::Label), 18),
+    (CompressedField::Shared(DirectoryFieldSlot::Subscript), 19),
+];
 
 impl CompressedField {
     const fn slot(self) -> usize {
         match self {
-            Self::EntityType => 0,
-            Self::Structure => 1,
-            Self::LineFont => 2,
-            Self::Level => 3,
-            Self::View => 4,
-            Self::Transform => 5,
-            Self::LabelDisplay => 6,
-            Self::Status => 7,
-            Self::LineWeight => 8,
-            Self::Color => 9,
-            Self::ParameterLineCount => 10,
-            Self::Form => 11,
-            Self::ReservedFirst => 12,
-            Self::ReservedSecond => 13,
-            Self::Label => 14,
-            Self::Subscript => 15,
+            Self::ParameterLineCount => PARAMETER_LINE_COUNT_SLOT,
+            Self::Shared(field) => {
+                let slot = field.slot();
+                if slot < PARAMETER_LINE_COUNT_SLOT {
+                    slot
+                } else {
+                    slot + 1
+                }
+            }
         }
     }
 
     const fn number(self) -> usize {
-        match self {
-            Self::EntityType => 1,
-            Self::Structure => 3,
-            Self::LineFont => 4,
-            Self::Level => 5,
-            Self::View => 6,
-            Self::Transform => 7,
-            Self::LabelDisplay => 8,
-            Self::Status => 9,
-            Self::LineWeight => 12,
-            Self::Color => 13,
-            Self::ParameterLineCount => 14,
-            Self::Form => 15,
-            Self::ReservedFirst => 16,
-            Self::ReservedSecond => 17,
-            Self::Label => 18,
-            Self::Subscript => 19,
-        }
+        FIELDS[self.slot()].1
     }
 }
 
@@ -294,34 +283,20 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
             .map_err(|_| malformed("Directory field number is not ASCII"))?
             .parse::<usize>()
             .map_err(|_| malformed("Directory field number is out of range"))?;
-        let compressed_field = match field {
-            1 => CompressedField::EntityType,
-            3 => CompressedField::Structure,
-            4 => CompressedField::LineFont,
-            5 => CompressedField::Level,
-            6 => CompressedField::View,
-            7 => CompressedField::Transform,
-            8 => CompressedField::LabelDisplay,
-            9 => CompressedField::Status,
-            12 => CompressedField::LineWeight,
-            13 => CompressedField::Color,
-            14 => CompressedField::ParameterLineCount,
-            15 => CompressedField::Form,
-            16 => CompressedField::ReservedFirst,
-            17 => CompressedField::ReservedSecond,
-            18 => CompressedField::Label,
-            19 => CompressedField::Subscript,
-            2 | 10 | 11 | 20 => {
-                return Err(malformed(format!(
-                    "Directory field {field} is redundant in Compressed ASCII"
-                )));
-            }
-            _ => {
-                return Err(malformed(format!(
-                    "Directory field number {field} is outside 1 through 20"
-                )));
-            }
-        };
+        let compressed_field = FIELDS
+            .iter()
+            .find_map(|(candidate, number)| (*number == field).then_some(*candidate))
+            .ok_or_else(|| {
+                if matches!(field, 2 | 10 | 11 | 20) {
+                    malformed(format!(
+                        "Directory field {field} is redundant in Compressed ASCII"
+                    ))
+                } else {
+                    malformed(format!(
+                        "Directory field number {field} is outside 1 through 20"
+                    ))
+                }
+            })?;
         if specified[field] {
             return Err(malformed(format!(
                 "Directory field {field} is specified more than once"
@@ -504,72 +479,105 @@ fn append_directory_cards(
     entity: &DataEntity,
     parameter_start: u32,
 ) -> Result<(), CodecError> {
-    let entity_type = entity.fields.get(CompressedField::EntityType);
+    let entity_type = entity
+        .fields
+        .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));
     let first_fields = [
-        fixed_field(CompressedField::EntityType.number(), entity_type)?,
+        fixed_field(
+            CompressedField::Shared(DirectoryFieldSlot::EntityType).number(),
+            entity_type,
+        )?,
         fixed_number(i64::from(parameter_start))?,
         fixed_field(
-            CompressedField::Structure.number(),
-            entity.fields.get(CompressedField::Structure),
+            CompressedField::Shared(DirectoryFieldSlot::Structure).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Structure)),
         )?,
         fixed_field(
-            CompressedField::LineFont.number(),
-            entity.fields.get(CompressedField::LineFont),
+            CompressedField::Shared(DirectoryFieldSlot::LineFont).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::LineFont)),
         )?,
         fixed_field(
-            CompressedField::Level.number(),
-            entity.fields.get(CompressedField::Level),
+            CompressedField::Shared(DirectoryFieldSlot::Level).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Level)),
         )?,
         fixed_field(
-            CompressedField::View.number(),
-            entity.fields.get(CompressedField::View),
+            CompressedField::Shared(DirectoryFieldSlot::View).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::View)),
         )?,
         fixed_field(
-            CompressedField::Transform.number(),
-            entity.fields.get(CompressedField::Transform),
+            CompressedField::Shared(DirectoryFieldSlot::Transform).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Transform)),
         )?,
         fixed_field(
-            CompressedField::LabelDisplay.number(),
-            entity.fields.get(CompressedField::LabelDisplay),
+            CompressedField::Shared(DirectoryFieldSlot::LabelDisplay).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::LabelDisplay)),
         )?,
         fixed_field(
-            CompressedField::Status.number(),
-            entity.fields.get(CompressedField::Status),
+            CompressedField::Shared(DirectoryFieldSlot::Status).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Status)),
         )?,
     ];
     let second_fields = [
         fixed_field(11, entity_type)?,
         fixed_field(
-            CompressedField::LineWeight.number(),
-            entity.fields.get(CompressedField::LineWeight),
+            CompressedField::Shared(DirectoryFieldSlot::LineWeight).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::LineWeight)),
         )?,
         fixed_field(
-            CompressedField::Color.number(),
-            entity.fields.get(CompressedField::Color),
+            CompressedField::Shared(DirectoryFieldSlot::Color).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Color)),
         )?,
         fixed_field(
             CompressedField::ParameterLineCount.number(),
             entity.fields.get(CompressedField::ParameterLineCount),
         )?,
         fixed_field(
-            CompressedField::Form.number(),
-            entity.fields.get(CompressedField::Form),
+            CompressedField::Shared(DirectoryFieldSlot::Form).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Form)),
         )?,
         fixed_field(
-            CompressedField::ReservedFirst.number(),
-            entity.fields.get(CompressedField::ReservedFirst),
+            CompressedField::Shared(DirectoryFieldSlot::ReservedFirst).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::ReservedFirst)),
         )?,
         fixed_field(
-            CompressedField::ReservedSecond.number(),
-            entity.fields.get(CompressedField::ReservedSecond),
+            CompressedField::Shared(DirectoryFieldSlot::ReservedSecond).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::ReservedSecond)),
         )?,
         fixed_field(
-            CompressedField::Label.number(),
-            entity.fields.get(CompressedField::Label),
+            CompressedField::Shared(DirectoryFieldSlot::Label).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Label)),
         )?,
         fixed_field(
-            CompressedField::Subscript.number(),
-            entity.fields.get(CompressedField::Subscript),
+            CompressedField::Shared(DirectoryFieldSlot::Subscript).number(),
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Subscript)),
         )?,
     ];
     let mut first = [b' '; CARD_DATA_WIDTH];
@@ -650,7 +658,11 @@ fn parse_data_entity(
     let fields = apply_field_specs(previous, directory.specs)?;
     let sequence = directory.sequence;
     let mut cursor = directory.next;
-    let entity_type = field_i64(&fields, CompressedField::EntityType, "entity type")?;
+    let entity_type = field_i64(
+        &fields,
+        CompressedField::Shared(DirectoryFieldSlot::EntityType),
+        "entity type",
+    )?;
     let line_count = field_i64(
         &fields,
         CompressedField::ParameterLineCount,
