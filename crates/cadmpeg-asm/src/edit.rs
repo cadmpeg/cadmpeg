@@ -1620,12 +1620,7 @@ fn patch_nurbs_curve_record(
 }
 
 enum PcurvePatchCarrier {
-    Pcurve {
-        scope: std::ops::Range<usize>,
-        wrapper_reversed: Option<bool>,
-        native_tail_flags: Option<[bool; 4]>,
-        parameter_range: Option<[f64; 2]>,
-    },
+    Pcurve(std::ops::Range<usize>),
     Intcurve(std::ops::Range<usize>),
 }
 
@@ -1645,12 +1640,7 @@ impl PcurvePatchCarrier {
                             record.index
                         ))
                     })?;
-                Ok(Self::Pcurve {
-                    scope,
-                    wrapper_reversed: edit.wrapper_reversed,
-                    native_tail_flags: edit.native_tail_flags,
-                    parameter_range: edit.parameter_range,
-                })
+                Ok(Self::Pcurve(scope))
             }
             "intcurve" => match (
                 edit.wrapper_reversed,
@@ -1678,7 +1668,7 @@ impl PcurvePatchCarrier {
 
     fn scope(&self) -> &std::ops::Range<usize> {
         match self {
-            Self::Pcurve { scope, .. } | Self::Intcurve(scope) => scope,
+            Self::Pcurve(scope) | Self::Intcurve(scope) => scope,
         }
     }
 }
@@ -1733,14 +1723,8 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
-    if let PcurvePatchCarrier::Pcurve {
-        wrapper_reversed,
-        native_tail_flags,
-        parameter_range,
-        ..
-    } = &carrier
-    {
-        if let Some(reversed) = *wrapper_reversed {
+    if let PcurvePatchCarrier::Pcurve(_) = &carrier {
+        if let Some(reversed) = edit.wrapper_reversed {
             let offset =
                 sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1779,7 +1763,7 @@ fn patch_nurbs_pcurve_record(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if let Some(flags) = *native_tail_flags {
+        if let Some(flags) = edit.native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
                     return Err(CodecError::malformed(format_args!(
@@ -1799,7 +1783,7 @@ fn patch_nurbs_pcurve_record(
                 }
             }
         }
-        if let Some(range) = *parameter_range {
+        if let Some(range) = edit.parameter_range {
             for (offset, value) in suffix_offsets[4..].iter().zip(range) {
                 if bytes.get(*offset) != Some(&0x06) {
                     return Err(CodecError::malformed(format_args!(
