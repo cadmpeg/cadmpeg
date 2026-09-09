@@ -2,7 +2,9 @@
 //! Conic-arc classification and bounded neutral projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
+use super::geometry::{
+    admit, entity_loss, resolve_transform, source_object, WireProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -241,22 +243,21 @@ pub(super) fn project(
                 } else {
                     raw_start_parameter
                 };
-                (sweep > 0.0).then_some((
-                    CurveGeometry::Ellipse(
-                        match cadmpeg_ir::geometry::EllipseCurve::try_new(
-                            plane_origin,
-                            axis,
-                            major_direction,
-                            major_radius,
-                            minor_radius,
-                        ) {
-                            Ok(payload) => payload,
-                            Err(message) => {
-                                losses.push(entity_loss(entry, message));
-                                continue;
-                            }
-                        },
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        plane_origin,
+                        axis,
+                        major_direction,
+                        major_radius,
+                        minor_radius,
                     ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                (sweep > 0.0).then_some((
+                    CurveGeometry::Ellipse(payload),
                     [start_parameter, start_parameter + sweep],
                 ))
             }
@@ -303,22 +304,21 @@ pub(super) fn project(
                     start_parameter = parameter(start, axis);
                     end_parameter = parameter(end, axis);
                 }
-                (end_parameter > start_parameter).then_some((
-                    CurveGeometry::Hyperbola(
-                        match cadmpeg_ir::geometry::HyperbolaCurve::try_new(
-                            plane_origin,
-                            axis,
-                            major_direction,
-                            major_radius,
-                            minor_radius,
-                        ) {
-                            Ok(payload) => payload,
-                            Err(message) => {
-                                losses.push(entity_loss(entry, message));
-                                continue;
-                            }
-                        },
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                        plane_origin,
+                        axis,
+                        major_direction,
+                        major_radius,
+                        minor_radius,
                     ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                (end_parameter > start_parameter).then_some((
+                    CurveGeometry::Hyperbola(payload),
                     [start_parameter, end_parameter],
                 ))
             }
@@ -344,21 +344,20 @@ pub(super) fn project(
                 start_parameter = parameter(start, axis);
                 end_parameter = parameter(end, axis);
             }
-            (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
-                CurveGeometry::Parabola(
-                    match cadmpeg_ir::geometry::ParabolaCurve::try_new(
-                        plane_origin,
-                        axis,
-                        major_direction,
-                        focal_distance,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
+            let Some(payload) = admit(
+                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                    plane_origin,
+                    axis,
+                    major_direction,
+                    focal_distance,
                 ),
+                entry,
+                &mut losses,
+            ) else {
+                continue;
+            };
+            (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
+                CurveGeometry::Parabola(payload),
                 [start_parameter, end_parameter],
             ))
         } else if zero(*coeff_a) && zero(*coeff_f) && !zero(*coeff_c) && !zero(*coeff_d) {
@@ -383,21 +382,20 @@ pub(super) fn project(
                 start_parameter = parameter(start, axis);
                 end_parameter = parameter(end, axis);
             }
-            (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
-                CurveGeometry::Parabola(
-                    match cadmpeg_ir::geometry::ParabolaCurve::try_new(
-                        plane_origin,
-                        axis,
-                        major_direction,
-                        focal_distance,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
+            let Some(payload) = admit(
+                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                    plane_origin,
+                    axis,
+                    major_direction,
+                    focal_distance,
                 ),
+                entry,
+                &mut losses,
+            ) else {
+                continue;
+            };
+            (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
+                CurveGeometry::Parabola(payload),
                 [start_parameter, end_parameter],
             ))
         } else {
