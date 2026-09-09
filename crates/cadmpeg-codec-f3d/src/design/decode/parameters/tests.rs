@@ -660,8 +660,11 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
             value: 0.0,
             offset: 700,
         },
+        0,
     )
-    .expect("legacy 68-byte parameter owner");
+    .expect("legacy 68-byte parameter owner")
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     assert_eq!(parsed.frame_length(), 68);
     assert_eq!(parsed.class_tag().as_str(), "284");
     assert_eq!(parsed.record_index(), 100);
@@ -685,7 +688,8 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
             crate::records::Located {
                 value: 1.25,
                 offset: 700
-            }
+            },
+            0
         )
         .is_some());
     }
@@ -698,7 +702,8 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         crate::records::Located {
             value: 1.0,
             offset: 700
-        }
+        },
+        0
     )
     .is_none());
 
@@ -709,7 +714,8 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         crate::records::Located {
             value: 1.0,
             offset: 700
-        }
+        },
+        0
     )
     .is_none());
 }
@@ -722,8 +728,11 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
             value: 2.5,
             offset: 700,
         },
+        0,
     )
-    .expect("legacy 88-byte parameter owner");
+    .expect("legacy 88-byte parameter owner")
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     assert_eq!(parsed.frame_length(), 88);
     assert_eq!(parsed.scope_record_index(), 77);
     assert_eq!(parsed.local_ordinal(), 0);
@@ -746,7 +755,8 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
                 crate::records::Located {
                     value: 2.5,
                     offset: 700
-                }
+                },
+                0
             )
             .is_some(),
             "class {class_tag} must use the admitted 88-byte owner grammar"
@@ -757,7 +767,8 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         crate::records::Located {
             value: 2.5,
             offset: 700
-        }
+        },
+        0
     )
     .is_none());
 
@@ -768,7 +779,8 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         crate::records::Located {
             value: 2.5,
             offset: 700
-        }
+        },
+        0
     )
     .is_none());
 }
@@ -1107,6 +1119,7 @@ fn parameter_owner_value_offset_is_localized_once() {
                 value: 2.5,
                 offset: 700,
             },
+            0,
         )
         .unwrap(),
         parse_legacy_parameter_owner_88(
@@ -1115,9 +1128,50 @@ fn parameter_owner_value_offset_is_localized_once() {
                 value: 2.5,
                 offset: 700,
             },
+            0,
         )
         .unwrap(),
     ] {
+        let owner = owner.into_record("Design/BulkStream.dat", 0).unwrap();
         assert_eq!(owner.evaluated_value_offset(), 700);
+    }
+}
+
+#[test]
+fn legacy_parameter_owner_preserves_external_scalar_offsets() {
+    for frame_start in [400, 1000] {
+        let evaluated = crate::records::Located {
+            value: 2.5,
+            offset: 700,
+        };
+        for parsed in [
+            parse_legacy_parameter_owner_68(
+                &legacy_parameter_owner_68_frame("284"),
+                evaluated,
+                frame_start,
+            )
+            .unwrap(),
+            parse_legacy_parameter_owner_88(
+                &legacy_parameter_owner_88_frame("284"),
+                evaluated,
+                frame_start,
+            )
+            .unwrap(),
+        ] {
+            assert_eq!(
+                parsed.evaluated_value_offset,
+                super::FrameRelative(i128::from(700) - i128::from(frame_start))
+            );
+            let owner = parsed
+                .into_record("Design/BulkStream.dat", frame_start)
+                .unwrap();
+            assert_eq!(owner.byte_offset(), frame_start);
+            assert_eq!(owner.evaluated_value_offset(), 700);
+            assert_eq!(owner.evaluated_value(), 2.5);
+            assert_eq!(
+                owner.id(),
+                &crate::ids::native_design_parameter_owner_id("Design/BulkStream.dat", frame_start)
+            );
+        }
     }
 }

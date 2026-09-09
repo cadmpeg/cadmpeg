@@ -4996,7 +4996,7 @@ pub(super) fn exact_legacy_mirror_scope_count(
         || owner.companion_record_index != count_record_index.checked_add(1)?
         || owner.evaluated_value_offset
             != crate::design::decode::parameters::FrameRelative(
-                u64::try_from(mirror_441_count::COUNT).ok()?,
+                i128::try_from(mirror_441_count::COUNT).ok()?,
             )
     {
         return None;
