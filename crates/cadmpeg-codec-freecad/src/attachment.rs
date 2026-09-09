@@ -167,24 +167,17 @@ fn unique_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(malformed(format!(
-            "attachment property {name} occurs more than once"
-        )));
-    }
-    Ok(Some(property))
+    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
+        .map_err(|_| {
+            CodecError::malformed(format_args!(
+                "attachment property {name} occurs more than once"
+            ))
+        })
 }
 
 fn placement_matrix(
     property: Option<&PropertyRecord>,
-) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
     let Some(property) = property else {
         return Ok(None);
     };

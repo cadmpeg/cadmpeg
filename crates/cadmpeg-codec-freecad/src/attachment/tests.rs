@@ -42,7 +42,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
         attachments[0].supports[0].object(),
         Some("fcstd:native:object#Support")
     );
-    assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);
+    assert_eq!(attachments[0].supports[0].subelements(), ["Face1"]);
     assert_eq!(
         attachments[0].placement().expect("placement").rows()[0][3],
         10.0

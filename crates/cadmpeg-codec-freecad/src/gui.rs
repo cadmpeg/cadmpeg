@@ -144,6 +144,7 @@ pub(crate) fn transfer(
             Ok(graph)
         }
         (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
+            let declaration = declaration.as_deref().unwrap_or("missing");
             plan.apply(ir);
             graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
                 "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
@@ -153,12 +154,15 @@ pub(crate) fn transfer(
         (
             GuiSchemaAdmission::Unverified { declaration },
             Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
-        ) => Ok(Graph {
-            losses: vec![FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
-                "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
-            ))],
-            ..Graph::default()
-        }),
+        ) => {
+            let declaration = declaration.as_deref().unwrap_or("missing");
+            Ok(Graph {
+                losses: vec![FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
+                    "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
+                ))],
+                ..Graph::default()
+            })
+        }
         (GuiSchemaAdmission::Unverified { .. }, Err(error)) => Err(error),
     }
 }

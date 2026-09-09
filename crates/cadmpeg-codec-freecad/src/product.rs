@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product containers and link occurrences recovered from the application graph.
 
+use crate::native::frame::FiniteFrame;
 use crate::native::joint::JointRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -57,13 +58,7 @@ pub(crate) fn transfer(
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?;
         let placement = selected_placement(&owned)?;
-        let local_transform = placement
-            .map(placement_matrix)
-            .transpose()?
-            .flatten()
-            .map(crate::native::frame::FiniteFrame::try_from)
-            .transpose()
-            .map_err(malformed)?;
+        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
         let element_count = integer_property(&owned, "ElementCount")?
             .map(u64::try_from)
@@ -115,7 +110,7 @@ pub(crate) fn transfer(
             ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
                 members,
                 prototype: prototype_link.and_then(|link| link.object().map(str::to_owned)),
-                external_document: prototype_link.and_then(|link| link.document.clone()),
+                external_document: prototype_link.and_then(|link| link.document().cloned()),
                 local_transform,
                 placement_property,
                 array: crate::native::LinkArray::try_new(
@@ -128,7 +123,7 @@ pub(crate) fn transfer(
                 link_transform,
                 linked_subelements: prototype_link
                     .map(|link| {
-                        link.subelements
+                        link.subelements()
                             .iter()
                             .filter(|subelement| !subelement.is_empty())
                             .cloned()
@@ -228,7 +223,7 @@ pub(crate) fn transfer_neutral(
         joints
             .iter()
             .flat_map(|joint| joint.references().into_iter().cloned())
-            .filter(|reference| reference.document.is_none())
+            .filter(|reference| reference.document().is_none())
             .filter_map(|reference| reference.object().map(str::to_owned))
             .filter(|object| !occurrence_objects.contains(object.as_str())),
     );
@@ -248,7 +243,7 @@ pub(crate) fn transfer_neutral(
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(owned)? {
             if let Some(placement) = placement_matrix(property)? {
-                placements_by_object.insert(owner, placement);
+                placements_by_object.insert(owner, placement.transform());
             }
         }
     }
@@ -300,10 +295,16 @@ pub(crate) fn transfer_neutral(
         for index in 0..count {
             let element = count > 1;
             let element_transform = record.element_transforms().get(index).copied();
-            let local_transform = multiply(
-                record.local_transform().unwrap_or_else(identity),
-                element_transform.unwrap_or_else(identity),
-            );
+            let local_transform = record
+                .local_transform()
+                .map(crate::native::frame::FiniteFrame::transform)
+                .unwrap_or_default()
+                .compose(
+                    element_transform
+                        .map(crate::native::frame::FiniteFrame::transform)
+                        .unwrap_or_default(),
+                )
+                .map_err(|error| malformed(error.to_string()))?;
             let prototype_transform = linked_prototype_transform(
                 ctx,
                 record,
@@ -315,7 +316,7 @@ pub(crate) fn transfer_neutral(
                 .element_scales()
                 .get(index)
                 .copied()
-                .unwrap_or([1.0; 3]);
+                .map_or([1.0; 3], crate::native::frame::FiniteVec3::values);
             let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale: [f64; 3] =
                 std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
@@ -366,10 +367,9 @@ pub(crate) fn transfer_neutral(
                     OccurrenceParent::Occurrence { occurrence }
                 }),
                 ordinal: u32::try_from(index).unwrap_or(u32::MAX),
-                transform: Transform::from_rows(local_transform).expect("affine transform"),
-                linked_prototype: (record.link_transform() == Some(true)).then_some(
-                    Transform::from_rows(prototype_transform).expect("affine transform"),
-                ),
+                transform: local_transform,
+                linked_prototype: (record.link_transform() == Some(true))
+                    .then_some(prototype_transform),
                 scale,
                 name: Some(record.object.clone()),
                 visible: None,
@@ -459,8 +459,9 @@ pub(crate) fn transfer_neutral(
         let record = record_by_object.get(object.as_str()).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
+            .map(crate::native::frame::FiniteFrame::transform)
             .or_else(|| placements_by_object.get(object.as_str()).copied())
-            .unwrap_or_else(identity);
+            .unwrap_or_default();
         let parent = parent_by_object.get(object.as_str()).copied();
         occurrences.push(Occurrence {
             id: container_occurrence_id(object),
@@ -473,7 +474,7 @@ pub(crate) fn transfer_neutral(
                 }
             }),
             ordinal: 0,
-            transform: Transform::from_rows(local_transform).expect("affine transform"),
+            transform: local_transform,
             linked_prototype: None,
             scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
             name: Some(object.clone()),
@@ -499,15 +500,15 @@ fn linked_prototype_transform(
     ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
     records: &HashMap<&str, &ProductNodeRecord>,
-    placements: &HashMap<&str, [[f64; 4]; 4]>,
+    placements: &HashMap<&str, Transform>,
     stack: &mut Vec<String>,
-) -> Result<[[f64; 4]; 4], CodecError> {
+) -> Result<Transform, CodecError> {
     let _depth = ctx.enter_nested("resolve FCStd nested link transform")?;
     if record.link_transform() != Some(true) || record.external_document().is_some() {
-        return Ok(identity());
+        return Ok(Transform::identity());
     }
     let Some(prototype) = record.prototype() else {
-        return Ok(identity());
+        return Ok(Transform::identity());
     };
     if stack.iter().any(|object| object == &record.object) {
         return Err(CodecError::malformed(format_args!(
@@ -519,13 +520,16 @@ fn linked_prototype_transform(
     let target_record = records.get(prototype).copied();
     let placement = target_record
         .and_then(ProductNodeRecord::local_transform)
+        .map(crate::native::frame::FiniteFrame::transform)
         .or_else(|| placements.get(prototype).copied())
-        .unwrap_or_else(identity);
-    let nested = target_record.map_or(Ok(identity()), |target| {
+        .unwrap_or_default();
+    let nested = target_record.map_or(Ok(Transform::identity()), |target| {
         linked_prototype_transform(ctx, target, records, placements, stack)
     });
     stack.pop();
-    nested.map(|nested| multiply(placement, nested))
+    placement
+        .compose(nested?)
+        .map_err(|error| malformed(error.to_string()))
 }
 
 fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
@@ -581,15 +585,6 @@ pub(crate) fn external_document_reference(
     }
 }
 
-pub(crate) fn identity() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
 pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
     std::array::from_fn(|row| {
         std::array::from_fn(|column| {
@@ -603,7 +598,7 @@ pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 
 fn parse_placement_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
-) -> Result<Vec<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Vec<FiniteFrame>, CodecError> {
     let Some(property) = unique_property(properties, "PlacementList")? else {
         return Ok(Vec::new());
     };
@@ -616,13 +611,12 @@ fn parse_placement_list(
     else {
         return Ok(Vec::new());
     };
-    let (count, width) = list_layout(view, 7, "PlacementList")?;
-    (0..count)
-        .map(|index| {
-            let offset = link_array::LEN + index * width * 7;
-            let values = (0..7)
-                .map(|component| read_real(view, offset + component * width, width))
-                .collect::<Vec<_>>();
+    list_layout::<7>(view, "PlacementList")?
+        .map(|positions| {
+            let values = positions
+                .into_iter()
+                .map(read_real)
+                .collect::<Result<Vec<_>, _>>()?;
             placement_components(&values).ok_or_else(|| {
                 CodecError::Malformed("PlacementList contains an invalid placement value".into())
             })
@@ -640,15 +634,10 @@ fn parse_vector_list(
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
-    let (count, width) = list_layout(view, 3, "ScaleList")?;
-    (0..count)
-        .map(|index| {
-            let offset = link_array::LEN + index * width * 3;
-            Ok([
-                read_real(view, offset, width),
-                read_real(view, offset + width, width),
-                read_real(view, offset + 2 * width, width),
-            ])
+    list_layout::<3>(view, "ScaleList")?
+        .map(|positions| {
+            let [x, y, z] = positions.map(read_real);
+            Ok([x?, y?, z?])
         })
         .collect()
 }
@@ -762,19 +751,8 @@ fn unique_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "{name} has duplicate carriers"
-        )));
-    }
-    Ok(Some(property))
+    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
+        .map_err(|_| CodecError::malformed(format_args!("{name} has duplicate carriers")))
 }
 
 fn selected_placement<'a>(
@@ -803,42 +781,80 @@ fn selected_placement<'a>(
     }
 }
 
-fn list_layout(
-    view: View<'_>,
-    components: usize,
+#[derive(Clone, Copy)]
+enum RealWidth {
+    Single,
+    Double,
+}
+
+impl RealWidth {
+    fn bytes(self) -> usize {
+        match self {
+            Self::Single => 4,
+            Self::Double => 8,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RealPosition<'a> {
+    view: View<'a>,
+    offset: usize,
+    width: RealWidth,
+}
+
+fn list_layout<'a, const N: usize>(
+    view: View<'a>,
     name: &str,
-) -> Result<(usize, usize), CodecError> {
-    let len = view.end().saturating_sub(view.start());
+) -> Result<impl Iterator<Item = [RealPosition<'a>; N]>, CodecError> {
+    let len = view.end() - view.start();
     if len < link_array::LEN {
         return Err(CodecError::malformed(format_args!("{name} is truncated")));
     }
     let mut head = view;
-    head.seek(view.start()).expect("window start");
-    let count = head.u32_le().expect("four-byte count") as usize;
-    let double_len =
-        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(8));
-    let float_len =
-        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(4));
-    if len == double_len {
-        Ok((count, 8))
-    } else if len == float_len {
-        Ok((count, 4))
+    head.seek(view.start())
+        .ok_or_else(|| CodecError::malformed(format_args!("{name} header is out of bounds")))?;
+    let count = usize::try_from(
+        head.req_u32_le()
+            .map_err(|error| CodecError::malformed(format_args!("link-array count: {error:?}")))?,
+    )
+    .map_err(CodecError::malformed)?;
+    let encoded_len = |width: RealWidth| {
+        count
+            .checked_mul(N)
+            .and_then(|count| count.checked_mul(width.bytes()))
+            .and_then(|bytes| link_array::LEN.checked_add(bytes))
+    };
+    let width = if encoded_len(RealWidth::Double) == Some(len) {
+        RealWidth::Double
+    } else if encoded_len(RealWidth::Single) == Some(len) {
+        RealWidth::Single
     } else {
-        Err(CodecError::malformed(format_args!(
+        return Err(CodecError::malformed(format_args!(
             "{name} count {count} does not match {len} bytes"
-        )))
-    }
+        )));
+    };
+    Ok((0..count).map(move |index| {
+        std::array::from_fn(|component| RealPosition {
+            view,
+            offset: view.start() + link_array::LEN + (index * N + component) * width.bytes(),
+            width,
+        })
+    }))
 }
 
-fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
-    let mut cursor = view;
+fn read_real(position: RealPosition<'_>) -> Result<f64, CodecError> {
+    let mut cursor = position.view;
     cursor
-        .seek(view.start().saturating_add(offset))
-        .expect("bounded real");
-    if width == 8 {
-        cursor.f64_le().expect("bounded f64")
-    } else {
-        cursor.f32_le().expect("bounded f32") as f64
+        .seek(position.offset)
+        .ok_or_else(|| CodecError::malformed("real position is out of bounds"))?;
+    match position.width {
+        RealWidth::Double => cursor.req_f64_le().map_err(|error| {
+            CodecError::malformed(format_args!("link-array component: {error:?}"))
+        }),
+        RealWidth::Single => cursor.req_f32_le().map(f64::from).map_err(|error| {
+            CodecError::malformed(format_args!("link-array component: {error:?}"))
+        }),
     }
 }
 
@@ -1046,7 +1062,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
 
 pub(crate) fn placement_matrix(
     property: &PropertyRecord,
-) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Option<FiniteFrame>, CodecError> {
     if property.type_name != "App::PropertyPlacement" {
         return Err(CodecError::malformed(format_args!(
             "placement property {} has a non-placement runtime type",
@@ -1143,7 +1159,7 @@ pub(crate) fn placement_matrix(
     Ok(Some(matrix))
 }
 
-fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
+fn placement_components(values: &[f64]) -> Option<FiniteFrame> {
     let [px, py, pz, x, y, z, w] = *<&[f64; 7]>::try_from(values).ok()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -1153,7 +1169,7 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         return None;
     }
     let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
-    Some([
+    FiniteFrame::try_from([
         [
             1.0 - 2.0 * (y * y + z * z),
             2.0 * (x * y - z * w),
@@ -1174,6 +1190,7 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         ],
         [0.0, 0.0, 0.0, 1.0],
     ])
+    .ok()
 }
 
 pub(crate) fn product_cycle_nodes<'a>(
