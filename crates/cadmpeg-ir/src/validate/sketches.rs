@@ -1347,7 +1347,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             )
                     })
             }
-            Constraint::Disabled { .. }
+            Constraint::Disabled
             | Constraint::Coincident { .. }
             | Constraint::Polygon { .. }
             | Constraint::SplineGroup { .. }
