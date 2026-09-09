@@ -2520,7 +2520,7 @@ pub struct ByteCoverageRecord {
     pub exact: bool,
 }
 
-/// Persistent string tables in contiguous numeric HasherIndex order.
+/// Persistent string tables in contiguous numeric `HasherIndex` order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<StringTableRecord>")]
 pub(crate) struct StringTables(Vec<StringTableRecord>);
