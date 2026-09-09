@@ -2644,11 +2644,8 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
             Kind::ProjectedCopy { source, result } => source != result,
             Kind::Group { elements } | Kind::Text { elements, .. } => !elements.is_empty(),
             Kind::Native {
-                native_kind,
-                entities,
-                operands,
-                ..
-            } => !native_kind.is_empty() && (!entities.is_empty() || !operands.is_empty()),
+                entities, operands, ..
+            } => !entities.is_empty() || !operands.is_empty(),
             _ => true,
         };
         if !valid {
@@ -3122,7 +3119,8 @@ pub enum SketchConstraintDefinitionInput {
     /// Source-native relation not yet reduced to a neutral family.
     Native {
         /// Source constraint family.
-        native_kind: String,
+        #[serde(deserialize_with = "deserialize_native_kind")]
+        native_kind: NonEmptyString,
         /// Source-native constraint-state mask, when the format carries one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_state: Option<u64>,

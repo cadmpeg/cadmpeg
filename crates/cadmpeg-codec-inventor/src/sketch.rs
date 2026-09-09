@@ -1463,7 +1463,9 @@ fn project_constraint(
             let members = [resolve(entity)?, resolve(center)?];
             (
                 SketchConstraintDefinitionInput::Native {
-                    native_kind: "circle_center_alignment".into(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                        "circle_center_alignment",
+                    )?,
                     native_state: Some(constraint.header.state as u32 as u64),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),

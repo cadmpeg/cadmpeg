@@ -115,7 +115,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     });
                 }
                 Some(SketchConstraintDefinitionInput::Native {
-                    native_kind: format!("creo:skamp:{}", skamp.kind),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "creo:skamp:{}",
+                        skamp.kind
+                    ))?,
                     native_state: Some(u64::from(skamp.status)),
                     native_flags: Some(u64::from(skamp.flags)),
                     native_properties: if unique_skamp_id {

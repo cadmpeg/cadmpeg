@@ -2403,16 +2403,7 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
             is_text_height: false,
         },
         Kind::Native {
-            native_kind: String::new(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::default(),
-            entities: vec![a],
-            parameter: None,
-            operands: vec![],
-        },
-        Kind::Native {
-            native_kind: "native".into(),
+            native_kind: crate::products::NonEmptyString::new("native").unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::default(),
@@ -2740,4 +2731,17 @@ fn native_and_external_geometry_identity_admission_preserves_wire() {
     )
     .expect_err("empty native_kind");
     assert!(error.to_string().contains("native_kind"));
+}
+
+#[test]
+fn native_constraint_kind_rejects_empty_text_at_input_admission() {
+    use crate::sketches::{SketchConstraintDefinition, SketchConstraintDefinitionInput};
+    let mut wire = serde_json::json!({
+        "kind": "native", "native_kind": "source", "entities": ["test:sketch:entity#0"]
+    });
+    let admitted = serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    wire["native_kind"] = "".into();
+    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
 }

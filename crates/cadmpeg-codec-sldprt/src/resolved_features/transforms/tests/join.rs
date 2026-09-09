@@ -165,7 +165,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert_eq!(
         typed_marker_relation_definition(&nested_native, &markers, &joins),
         Some(SketchConstraintDefinitionInput::Native {
-            native_kind: "sldprt:marker-relation:28".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-relation:28")
+                .unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -271,7 +272,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert_eq!(
         typed_marker_relation_definition(&symmetric, &markers, &joins),
         Some(SketchConstraintDefinitionInput::Native {
-            native_kind: "sldprt:marker-relation:11".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-relation:11")
+                .unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -432,7 +434,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                 parameter: None,
                 operands,
             ..
-            }) if native_kind == format!("sldprt:marker-relation:{}", kind.native_code())
+            }) if native_kind.as_str() == format!("sldprt:marker-relation:{}", kind.native_code())
                 && entities == vec![SketchEntityId::mint("synthetic:test:id#second").unwrap()]
                 && operands.len() == 1
                 && operands[0].object_index == 1
