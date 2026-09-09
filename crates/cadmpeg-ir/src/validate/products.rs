@@ -99,14 +99,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     OperandContainer::Root | OperandContainer::External(_) => true,
                 });
-        let finite = joint
-            .angle()
-            .into_iter()
-            .chain(joint.translation_offset().into_iter().flatten())
-            .chain(joint.distance())
-            .chain(joint.distance2())
-            .all(f64::is_finite);
-        if !operands_valid || !finite {
+        if !operands_valid {
             invalid(
                 findings,
                 joint.id.as_str(),
