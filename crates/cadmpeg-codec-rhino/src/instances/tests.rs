@@ -1501,11 +1501,16 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let data = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Vec::new();
-    let units =
-        super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
+    let mut losses = Vec::new();
+    let units = super::unit_detail(&data, &mut reader, archive, &mut warnings, &mut losses)
+        .expect("unit evidence");
     assert_eq!(units.unit, 2);
     assert_eq!(units.meters_per_unit, 0.5);
     assert_eq!(units.custom_name, "retained name");
-    assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].starts_with("redundant instance unit detail "));
+    assert!(warnings.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::RhinoLossCode::RedundantFieldRepaired.kind()
+    );
 }
