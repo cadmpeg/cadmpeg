@@ -50,7 +50,7 @@ pub(super) fn normalize_model_lengths(
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
             .edit_definition(|definition| {
-                scale_procedural_surface_lengths(definition, length_scale_mm)
+                scale_procedural_surface_lengths(definition, length_scale_mm);
             })
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
