@@ -238,7 +238,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::CPattern.into(),
+        payload: crate::records::feature::DesignFeatureKind::CPattern
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 329,
@@ -380,7 +382,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.payload = crate::records::feature::DesignFeatureKind::RPattern.into();
+    scope.payload = crate::records::feature::DesignFeatureKind::RPattern
+        .try_into()
+        .unwrap();
     let rectangular_owners = [
         owner(50, 0, 3.0, 501),
         owner(51, 1, 1.0, 502),
@@ -478,7 +482,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.payload = crate::records::feature::DesignFeatureKind::Assemble.into();
+    scope.payload = crate::records::feature::DesignFeatureKind::Assemble
+        .try_into()
+        .unwrap();
     scope.frame_length = 627;
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
     let alignment = exact_assembly_alignment(
@@ -784,7 +790,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_frames[1].transform_offset, 178);
 
     let mut first_joint_origin = scope.clone();
-    first_joint_origin.payload = crate::records::feature::DesignFeatureKind::JointOrigin.into();
+    first_joint_origin.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+        .try_into()
+        .unwrap();
     first_joint_origin.record_index = 70;
     first_joint_origin.reference_members = crate::records::ReferenceRun::unlocated(Vec::new());
     let mut second_joint_origin = first_joint_origin.clone();
@@ -842,8 +850,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         *slot = Some(datum_envelope_alignment);
     }
     let mut single_frame_joint_origin = scope.clone();
-    single_frame_joint_origin.payload =
-        crate::records::feature::DesignFeatureKind::JointOrigin.into();
+    single_frame_joint_origin.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+        .try_into()
+        .unwrap();
     single_frame_joint_origin.record_index = 91;
     single_frame_joint_origin.reference_members =
         crate::records::ReferenceRun::unlocated(Vec::new());

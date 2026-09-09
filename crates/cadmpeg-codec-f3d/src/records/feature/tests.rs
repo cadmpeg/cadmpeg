@@ -1743,3 +1743,17 @@ mod combine;
 mod copied_bodies;
 
 mod sheet_metal_indices;
+
+#[test]
+fn required_surface_operations_reject_absence() {
+    for (kind, field) in [
+        (DesignFeatureKind::SurfaceStitch, "surface_stitch_operation"),
+        (DesignFeatureKind::SurfaceRuled, "ruled_surface_operation"),
+    ] {
+        assert!(super::DesignScopePayload::try_from(kind.clone()).is_err());
+        let mut wire = empty_scope(DesignFeatureKind::Sketch);
+        wire["kind"] = serde_json::json!(kind.as_str());
+        let error = serde_json::from_value::<DesignParameterScope>(wire).unwrap_err();
+        assert!(error.to_string().contains(field));
+    }
+}

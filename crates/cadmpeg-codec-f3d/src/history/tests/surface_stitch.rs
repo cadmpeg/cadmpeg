@@ -31,7 +31,14 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let history_id = format!("{stream}/BREP.surface:asm-1");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::DesignFeatureKind::SurfaceStitch,
+        crate::records::feature::DesignScopePayload::SurfaceStitch(
+            crate::records::feature::DesignSurfaceStitchOperation {
+                gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
+                gap_tolerance_offset: 0,
+                tolerance_record_index: 300,
+                settings_record_index: 301,
+            },
+        ),
         42,
     );
     scope.history_state_id = Some(2);

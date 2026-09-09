@@ -742,7 +742,9 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
 
     let mut mixed = second;
-    mixed.payload = crate::records::feature::DesignFeatureKind::Fillet.into();
+    mixed.payload = crate::records::feature::DesignFeatureKind::Fillet
+        .try_into()
+        .unwrap();
     let mixed_scopes = vec![first, mixed];
     let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
         .expect_err("mixed families have no timeline-independent total order");
@@ -824,7 +826,8 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
             .expect("nonempty family name")
-            .into(),
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,

@@ -560,21 +560,16 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut surface_stitch = DesignParameterScope::empty(
         &format!("{stream}:scope#surface-stitch"),
-        crate::records::feature::DesignFeatureKind::SurfaceStitch,
-        30,
-    );
-    surface_stitch.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
-    if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
-        &mut surface_stitch.payload
-    {
-        *slot = Some(DesignSurfaceStitchOperation {
+        crate::records::feature::DesignScopePayload::SurfaceStitch(DesignSurfaceStitchOperation {
             gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 0,
             tolerance_record_index: 302,
             settings_record_index: 303,
-        });
-    }
+        }),
+        30,
+    );
+    surface_stitch.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
 
     let mut copy_paste = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste"),

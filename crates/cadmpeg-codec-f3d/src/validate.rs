@@ -2208,7 +2208,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     Some(records::feature::DesignAssemblyAlignmentForm::Frames { .. }) => {
                         axial_frames
                     }
-                    Some(records::feature::DesignAssemblyAlignmentForm::UnframedPaths(_)) => false,
                     Some(records::feature::DesignAssemblyAlignmentForm::LimitsOnly { .. }) => {
                         as_built_421
                     }
@@ -3432,7 +3431,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             None => true,
         } && match &scope.payload {
-            records::feature::DesignScopePayload::SurfaceStitch(Some(operation)) => {
+            records::feature::DesignScopePayload::SurfaceStitch(operation) => {
                 operation.gap_tolerance_offset > scope.paired_byte_offset
                     && scope.reference_members.len() >= 4
                     && scope.reference_members.len().is_multiple_of(2)
@@ -3441,10 +3440,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope.reference_members.values().next_back()
                         == Some(&operation.settings_record_index)
             }
-            records::feature::DesignScopePayload::SurfaceStitch(None) => false,
             _ => true,
         } && match &scope.payload {
-            records::feature::DesignScopePayload::SurfaceRuled(Some(operation)) => {
+            records::feature::DesignScopePayload::SurfaceRuled(operation) => {
                 operation.method_offset == scope.byte_offset.saturating_add(20)
                     && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
                     && operation.corner_offset == scope.byte_offset.saturating_add(50)
@@ -3473,7 +3471,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         }
                     }
             }
-            records::feature::DesignScopePayload::SurfaceRuled(None) => false,
             _ => true,
         } && scope.frame_length > 89
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)

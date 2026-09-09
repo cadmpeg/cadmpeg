@@ -61,7 +61,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
+        payload: crate::records::feature::DesignFeatureKind::Extrude
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
@@ -422,7 +424,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
     let mut split_scope = scope.clone();
-    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace.into();
+    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace
+        .try_into()
+        .unwrap();
     split_scope.frame_length = 334;
     split_scope.reference_members = crate::records::ReferenceRun::from_columns(
         vec![100, 200, 201, 400, 500],
@@ -632,7 +636,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut split_body_scope = scope.clone();
-    split_body_scope.payload = crate::records::feature::DesignFeatureKind::Split.into();
+    split_body_scope.payload = crate::records::feature::DesignFeatureKind::Split
+        .try_into()
+        .unwrap();
     split_body_scope.frame_length = 325;
     split_body_scope.reference_members = crate::records::ReferenceRun::from_columns(
         vec![100, 200, 400, 500],
@@ -879,7 +885,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .is_none());
 
     let mut delete_scope = scope.clone();
-    delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace.into();
+    delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace
+        .try_into()
+        .unwrap();
     delete_scope.frame_length = 258;
     delete_scope.kind_offset = 1161;
     delete_scope.reference_members = crate::records::ReferenceRun::from_columns(
@@ -983,7 +991,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut surface_scope = delete_scope.clone();
     let reference_bytes = 11 * surface_scope.reference_members.len() as u64;
-    surface_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceDeleteFace.into();
+    surface_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
+        .try_into()
+        .unwrap();
     surface_scope.frame_length = 250 + reference_bytes;
     surface_scope.kind_offset = surface_scope.byte_offset + 140 + reference_bytes;
     let (features, _) = project_parameter_design(
@@ -1115,7 +1125,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
-        delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace.into();
+        delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace
+            .try_into()
+            .unwrap();
         delete_scope.class_tag =
             crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         delete_scope.paired_class_tag =
@@ -1160,7 +1172,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut remove_scope = scope.clone();
-    remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody.into();
+    remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody
+        .try_into()
+        .unwrap();
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     remove_group.operand_role =
@@ -1177,19 +1191,15 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut stitch_scope = scope;
-    stitch_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceStitch.into();
     stitch_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
-    if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
-        &mut stitch_scope.payload
-    {
-        *slot = Some(DesignSurfaceStitchOperation {
+    stitch_scope.payload =
+        crate::records::feature::DesignScopePayload::SurfaceStitch(DesignSurfaceStitchOperation {
             gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 40,
             tolerance_record_index: 300,
             settings_record_index: 301,
         });
-    }
     let mut stitch_group = remove_group;
     stitch_group
         .try_set_members(
@@ -1760,7 +1770,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
                 },
             ),
         );
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);

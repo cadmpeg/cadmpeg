@@ -1762,6 +1762,24 @@ fn exact_surface_boundary_operation(
     Some(candidate.clone())
 }
 
+struct AsBuiltAlignmentDraft {
+    paths: [DesignAssemblyOperandPath; 2],
+    frames: Option<[DesignAssemblyOperandFrame; 2]>,
+}
+
+impl TryFrom<AsBuiltAlignmentDraft> for crate::records::feature::DesignAssemblyAlignmentForm {
+    type Error = &'static str;
+
+    fn try_from(draft: AsBuiltAlignmentDraft) -> Result<Self, Self::Error> {
+        Ok(Self::qualified(
+            draft.frames.ok_or("as-built operand_frames are required")?,
+            draft
+                .paths
+                .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
+        ))
+    }
+}
+
 pub(crate) fn exact_assembly_alignment(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -1937,15 +1955,15 @@ pub(crate) fn exact_assembly_alignment(
         (angle, offset, owners)
     };
     let form = if scope.kind() == crate::records::feature::DesignFeatureKind::AsBuilt {
-        exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
-            match exact_as_built_operand_frames(bytes, &paths) {
-                Some(frames) => DesignAssemblyAlignmentForm::qualified(
-                    frames,
-                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
-                ),
-                None => DesignAssemblyAlignmentForm::UnframedPaths(paths),
-            }
-        })
+        exact_assembly_operand_paths(bytes, records, scope)
+            .map(|paths| {
+                DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
+                    frames: exact_as_built_operand_frames(bytes, &paths),
+                    paths,
+                })
+            })
+            .transpose()
+            .ok()?
     } else {
         exact_assembly_operand_frames(bytes, scope).map(|frames| {
             let qualifiers = if legacy_class_383 {
@@ -8976,7 +8994,17 @@ pub(crate) fn parse_parameter_scope(
                 .map(|(value, offset)| crate::records::Located { value, offset })
                 .collect(),
         ),
-        payload: kind.into(),
+        payload: match kind {
+            crate::records::feature::DesignFeatureKind::SurfaceStitch => {
+                crate::records::feature::DesignScopePayload::SurfaceStitch(
+                    surface_stitch_operation?,
+                )
+            }
+            crate::records::feature::DesignFeatureKind::SurfaceRuled => {
+                crate::records::feature::DesignScopePayload::SurfaceRuled(ruled_surface_operation?)
+            }
+            kind => kind.try_into().ok()?,
+        },
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_at as u64,
@@ -9000,26 +9028,6 @@ pub(crate) fn parse_parameter_scope(
             let construction = Some(coil);
             if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
             | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) =
-                &mut scope.payload
-            {
-                *slot = construction;
-            }
-        }
-    }
-    if let Some(operation) = surface_stitch_operation {
-        {
-            let construction = Some(operation);
-            if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
-                &mut scope.payload
-            {
-                *slot = construction;
-            }
-        }
-    }
-    if let Some(operation) = ruled_surface_operation {
-        {
-            let construction = Some(operation);
-            if let crate::records::feature::DesignScopePayload::SurfaceRuled(slot) =
                 &mut scope.payload
             {
                 *slot = construction;

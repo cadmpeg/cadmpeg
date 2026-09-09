@@ -159,7 +159,9 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::BaseFeature.into(),
+        payload: crate::records::feature::DesignFeatureKind::BaseFeature
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 375,

@@ -389,7 +389,9 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::CustomFeature.into(),
+        payload: crate::records::feature::DesignFeatureKind::CustomFeature
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         paired_byte_offset: u64::from(record_index) + 100,
@@ -538,7 +540,8 @@ fn parameter_expressions_project_feature_dependencies() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
             .expect("nonempty family name")
-            .into(),
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,

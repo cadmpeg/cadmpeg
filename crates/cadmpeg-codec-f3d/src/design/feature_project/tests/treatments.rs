@@ -73,7 +73,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
             .expect("nonempty family name")
-            .into(),
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,
@@ -973,7 +974,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Conge.into(),
+        payload: crate::records::feature::DesignFeatureKind::Conge
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
@@ -1396,7 +1399,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     let mut patch_scope = scope.clone();
-    patch_scope.payload = crate::records::feature::DesignFeatureKind::SurfacePatch.into();
+    patch_scope.payload = crate::records::feature::DesignFeatureKind::SurfacePatch
+        .try_into()
+        .unwrap();
     patch_scope.frame_length = 354;
     patch_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
@@ -1620,7 +1625,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     let mut fill_scope = scope.clone();
-    fill_scope.payload = crate::records::feature::DesignFeatureKind::BoundaryFill.into();
+    fill_scope.payload = crate::records::feature::DesignFeatureKind::BoundaryFill
+        .try_into()
+        .unwrap();
     fill_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 300, 301, 400]);
     let mut tools = group(100, 0, vec![200, 201]);

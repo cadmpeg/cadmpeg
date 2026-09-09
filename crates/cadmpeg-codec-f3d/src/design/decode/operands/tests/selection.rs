@@ -535,7 +535,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
+        payload: crate::records::feature::DesignFeatureKind::Extrude
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,

@@ -1394,7 +1394,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
             .expect("native family name")
-            .into(),
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         paired_byte_offset: 1,
@@ -1561,7 +1562,8 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
             .expect("native family name")
-            .into(),
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         paired_byte_offset: u64::from(record_index) + 1,

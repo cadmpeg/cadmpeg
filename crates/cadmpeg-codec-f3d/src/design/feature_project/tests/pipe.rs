@@ -41,7 +41,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
 
     let parameter = |record_index: u32,
@@ -155,7 +155,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
     let hollow_definition = crate::design::feature_project::project_fixed_pipe(
         &scope,
@@ -199,7 +199,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
@@ -224,7 +224,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
 
     scope.reference_members = {
@@ -273,7 +273,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,

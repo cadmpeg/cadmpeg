@@ -262,7 +262,9 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
     let mut hole_scope = scope.clone();
-    hole_scope.payload = crate::records::feature::DesignFeatureKind::Hole.into();
+    hole_scope.payload = crate::records::feature::DesignFeatureKind::Hole
+        .try_into()
+        .unwrap();
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
     if hole.point_record_index != hole_record_index
         || !hole

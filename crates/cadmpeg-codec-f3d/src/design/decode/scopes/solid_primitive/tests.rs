@@ -71,7 +71,9 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
     let mut cylinder_scope = box_scope;
-    cylinder_scope.payload = crate::records::feature::DesignFeatureKind::CylinderPrimitive.into();
+    cylinder_scope.payload = crate::records::feature::DesignFeatureKind::CylinderPrimitive
+        .try_into()
+        .unwrap();
     cylinder_scope.record_index = 13;
     cylinder_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![30, 31]);
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
