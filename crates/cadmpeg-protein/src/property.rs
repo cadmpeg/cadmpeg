@@ -235,9 +235,10 @@ mod tests {
                 connections: vec!["target".into()],
             },
         };
-        let encoded = serde_json::to_string(&property).unwrap();
+        let encoded = serde_json::to_string(&property).expect("serialize empty reference carrier");
         assert_eq!(
-            serde_json::from_str::<DecodedProperty>(&encoded).unwrap(),
+            serde_json::from_str::<DecodedProperty>(&encoded)
+                .expect("deserialize empty reference carrier"),
             property
         );
         assert_eq!(property.value(), Some(&PropertyValue::Multiple(Vec::new())));
@@ -256,7 +257,7 @@ mod tests {
             ),
             (
                 PropertyContent::MultipleReferences {
-                    count: NonZeroUsize::new(2).unwrap(),
+                    count: NonZeroUsize::new(2).expect("two reference carriers"),
                     targets: vec!["target".into()],
                 },
                 r#"{"value_offset":4,"value":{"kind":"multiple","value":[{"kind":"reference"},{"kind":"reference"}]},"connections":["target"]}"#,
