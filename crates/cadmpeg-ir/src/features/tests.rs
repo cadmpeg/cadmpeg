@@ -2,7 +2,9 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::features::{ConfigurationEvaluation, TrimCellSelection};
+use crate::features::{
+    ConfigurationEvaluation, DistinctMembers, FeatureContent, TrimCellSelection,
+};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 use crate::CadIr;
