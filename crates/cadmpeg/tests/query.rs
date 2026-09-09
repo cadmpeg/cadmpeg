@@ -1369,7 +1369,7 @@ fn fidelity_refuses_to_overwrite_without_force() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "exists; pass --force to replace it",
+            "exists; pass --force to overwrite",
         ));
     assert_eq!(fs::read(&out).unwrap(), b"precious");
 
