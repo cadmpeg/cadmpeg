@@ -361,6 +361,7 @@ enum ProceduralCurveSource {
     Cached {
         construction: Box<ProceduralCurveConstruction>,
         cache_fit_tolerance: Option<f64>,
+        parsed_domain: Option<[f64; 2]>,
     },
     Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
 }

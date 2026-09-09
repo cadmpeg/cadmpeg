@@ -416,6 +416,7 @@ pub(crate) fn walk_reachable_topology(
                                                     token_table,
                                                 )
                                             {
+                                                let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
                                                 let mut curve = decoded.curve;
                                                 // A reversed intcurve parameterizes
                                                 // as the negation of its cache; the
@@ -430,6 +431,7 @@ pub(crate) fn walk_reachable_topology(
                                                     super::ProceduralCurveSource::Cached {
                                                         construction: Box::new(decoded.construction),
                                                         cache_fit_tolerance: decoded.cache_fit_tolerance,
+                                                        parsed_domain,
                                                     },
                                                 );
                                                 out.stats.nurbs_curves += 1;
@@ -702,6 +704,7 @@ fn keep_wire_edge(
                 &curve_record.tokens,
                 token_table,
             ) {
+                let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
                 let mut curve = decoded.curve;
                 if record_reversed(curve_record) {
                     curve.reverse_parameterization();
@@ -712,6 +715,7 @@ fn keep_wire_edge(
                     super::ProceduralCurveSource::Cached {
                         construction: Box::new(decoded.construction),
                         cache_fit_tolerance: decoded.cache_fit_tolerance,
+                        parsed_domain,
                     },
                 );
                 kept_curves.insert(curve_index);

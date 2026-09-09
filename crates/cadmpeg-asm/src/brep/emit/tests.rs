@@ -215,3 +215,112 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
         }
     }
 }
+
+#[test]
+fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
+    use crate::nurbs::proc_curve::nurbs_curve_parameter_domain;
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SpringLayout};
+
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    for reversed in [false, true] {
+        let mut curve_tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            if reversed { Token::True } else { Token::False },
+            Token::SubtypeOpen,
+            Token::Ident("spring_int_cur".into()),
+            Token::Long(23_100),
+            Token::Enum(0),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Double(2.0),
+            Token::Long(1),
+            Token::Double(5.0),
+            Token::Long(1),
+        ];
+        curve_tokens.extend([0.0, 0.0, 0.0, 1.0, 0.0, 0.0].map(Token::Double));
+        curve_tokens.extend([
+            Token::Double(0.0004),
+            Token::Ident("null_surface".into()),
+            Token::Ident("null_surface".into()),
+            Token::Ident("nullbs".into()),
+            Token::Ident("nullbs".into()),
+            Token::False,
+            Token::False,
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(7),
+            Token::Enum(4),
+            Token::SubtypeClose,
+        ]);
+        let refs = |values: &[i64]| values.iter().copied().map(Token::Ref).collect();
+        let records = [
+            record(0, "face", refs(&[-1, -1, -1, -1, 1])),
+            record(1, "loop", refs(&[-1, -1, -1, -1, 2])),
+            record(2, "coedge", refs(&[-1, -1, -1, 2, -1, -1, 3])),
+            record(3, "edge", refs(&[-1, -1, -1, -1, -1, -1, -1, -1, 4])),
+            record(4, "intcurve", curve_tokens),
+        ];
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect();
+        let table = crate::nurbs::toks::SubtypeTable::from_records(&records);
+        let parsed =
+            crate::nurbs::proc_curve::procedural_curve_resolving_refs(&records[4].tokens, &table)
+                .unwrap();
+        assert_eq!(
+            nurbs_curve_parameter_domain(&parsed.curve),
+            Some([2.0, 5.0])
+        );
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        let mut reach = Reachable {
+            faces: HashSet::from([0]),
+            ..Reachable::default()
+        };
+        super::super::topology::walk_reachable_topology(
+            &mut out,
+            &by_index,
+            &table,
+            &mut carriers,
+            &mut reach,
+            super::super::DecodePurpose::Model,
+            IdFormat("f3d"),
+        );
+        let CurveGeometry::Nurbs(normalized) = &carriers.curve_geo[&4] else {
+            panic!("solved curve")
+        };
+        assert_eq!(
+            nurbs_curve_parameter_domain(normalized),
+            Some(if reversed { [-5.0, -2.0] } else { [2.0, 5.0] })
+        );
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::new(),
+            &HashSet::new(),
+            IdFormat("f3d"),
+        )
+        .unwrap();
+        let ProceduralCurveDefinition::Spring {
+            layout: SpringLayout::CacheFirst { context, .. },
+            ..
+        } = out.procedural_curves[0].1.definition()
+        else {
+            panic!("cache-first spring")
+        };
+        assert_eq!(context.parameter_range(), [2.0, 5.0]);
+    }
+}

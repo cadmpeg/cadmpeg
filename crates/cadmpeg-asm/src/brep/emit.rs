@@ -2573,12 +2573,6 @@ fn emit_carrier_curve(
     let Some(mut geometry) = curve_geo.remove(&i) else {
         return Ok(());
     };
-    let solved_domain = match &geometry {
-        CurveGeometry::Nurbs(curve) => {
-            crate::nurbs::proc_curve::nurbs_curve_parameter_domain(curve)
-        }
-        _ => None,
-    };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
             let mut reversed = geometry.clone();
@@ -2601,6 +2595,7 @@ fn emit_carrier_curve(
         Some(super::ProceduralCurveSource::Cached {
             construction,
             cache_fit_tolerance,
+            parsed_domain: solved_domain,
         }) => {
             let definition = (|| {
                 Some(match *construction {
