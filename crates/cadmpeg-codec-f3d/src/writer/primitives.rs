@@ -69,13 +69,13 @@ pub(crate) fn validate_assembly_projection(
 }
 
 pub(crate) fn normalized_face_sense_to_native(desired: Sense, carrier_flipped: bool) -> Sense {
-    if !carrier_flipped {
-        desired
-    } else {
+    if carrier_flipped {
         match desired {
             Sense::Forward => Sense::Reversed,
             Sense::Reversed => Sense::Forward,
         }
+    } else {
+        desired
     }
 }
 
