@@ -195,6 +195,24 @@ mod tests {
     }
 
     #[test]
+    fn attachment_accepts_accumulated_rigid_tolerance() {
+        let mut rows = crate::product::identity();
+        rows[0][0] += 4.0e-10;
+        let frame = super::FiniteFrame::try_from(rows).unwrap();
+        let product = frame.transform().compose(frame.transform()).unwrap();
+        assert!(!product.is_proper_rigid());
+        assert!(super::AttachmentRecord::try_new(
+            "attachment".into(),
+            "object".into(),
+            vec![],
+            None,
+            Some(rows),
+            Some(rows)
+        )
+        .is_ok());
+    }
+
+    #[test]
     fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut matrix = crate::product::identity();
@@ -549,8 +567,12 @@ impl AttachmentRecord {
                 .transpose()
                 .map_err(|error| format!("offset: {error}"))?,
         };
-        FiniteFrame::try_from(record.effective_frame())
-            .map_err(|error| format!("effective_frame: {error}"))?;
+        if let (Some(placement), Some(offset)) = (record.placement, record.offset) {
+            placement
+                .transform()
+                .compose(offset.transform())
+                .map_err(|error| format!("effective_frame: {error}"))?;
+        }
         Ok(record)
     }
     pub(crate) fn placement(&self) -> Option<FiniteFrame> {
