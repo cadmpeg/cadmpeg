@@ -1060,8 +1060,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     crate::decode::with_expand(&scan, |expand| {
-        let mut context =
-            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.object(0).is_some());
         assert!(context.unknown(0).is_some());
         assert_eq!(context.unit_scale(), None);
@@ -1115,8 +1114,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     crate::decode::with_expand(&scan, |expand| {
-        let mut context =
-            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         let original = context
             .unknown(0)
             .expect("required invariant")
@@ -1276,7 +1274,7 @@ fn class_report_counts_terminal_outcomes_once() {
     );
     let scan = crate::container::scan_owned(bytes).expect("object table");
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("valid tolerances");
+        let mut context = DecodeContext::new(&scan, expand);
         assert!(context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
         assert!(context.mark_native_retained(1, RhinoLossCode::HatchFillNotTransferred));
         assert!(!context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
@@ -1326,7 +1324,7 @@ fn class_report_preserves_nil_class_source_selection() {
             };
         }
         with_expand(&scan, |expand| {
-            let context = DecodeContext::new(&scan, expand).expect("valid tolerances");
+            let context = DecodeContext::new(&scan, expand);
             let result = seal_for_test(context.commit(), false);
             let loss = result
                 .report()
