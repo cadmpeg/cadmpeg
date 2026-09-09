@@ -29,7 +29,7 @@
       "compressed_size": 0,
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity_records",
+      "role": "entity-records",
       "uncompressed_size": 0
     },
     {
@@ -40,7 +40,7 @@
       "compressed_size": 0,
       "compression": "none",
       "name": "EXTERNAL_DEPENDENCIES",
-      "role": "external_references",
+      "role": "external-references",
       "uncompressed_size": 0
     }
   ],

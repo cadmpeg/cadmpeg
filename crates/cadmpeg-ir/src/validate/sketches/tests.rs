@@ -430,7 +430,7 @@ fn sketch_constraint_native_ref_must_resolve() {
                         native_kind: crate::products::NonEmptyString::new("test")
                             .expect("source operand kind is nonempty"),
                         field: None,
-                        object_index: 0,
+                        object_index: Some(0),
                         native_ref: Some("native:missing-operand#0".into()),
                     }],
                 },

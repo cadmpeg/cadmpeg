@@ -1656,8 +1656,10 @@ pub struct SketchNativeOperand {
     /// Source-native field and optional role containing this operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<NativeOperandField>,
-    /// Source-native object index.
-    pub object_index: u32,
+    /// Source-native object index; absent when the native operand names no
+    /// object (an axis, root point, or external reference slot).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_index: Option<u32>,
     /// Resolved source-native operand record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,

@@ -2243,7 +2243,7 @@ fn parse_constraints(
                                 ))
                                 .expect("source operand kind is nonempty"),
                                 field: None,
-                                object_index: u32::try_from(*entity).unwrap_or(u32::MAX),
+                                object_index: u32::try_from(*entity).ok(),
                                 native_ref: None,
                             })
                         } else {
