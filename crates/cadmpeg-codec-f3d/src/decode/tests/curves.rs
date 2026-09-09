@@ -372,15 +372,14 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         )
         .expect("generated vector-offset decode");
     let procedural = &result.ir().model.procedural_curves[0];
-    let ProceduralCurveDefinition::VectorOffset {
-        source,
-        parameter_range,
-        offset,
-        roles,
-    } = procedural.definition()
+    let ProceduralCurveDefinition::VectorOffset(definition_payload) = procedural.definition()
     else {
         panic!("expected vector offset construction")
     };
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let offset = definition_payload.offset();
+    let roles = definition_payload.roles();
     assert_eq!(*parameter_range, [-2.0, 5.0]);
     assert_eq!(*offset, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 20.0));
     assert_eq!(
@@ -404,16 +403,25 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::VectorOffset {
-                parameter_range,
-                offset,
-                ..
-            } = definition
-            else {
+            let ProceduralCurveDefinition::VectorOffset(definition_payload) = definition else {
                 panic!("expected editable vector offset")
             };
-            *parameter_range = [-3.0, 6.0];
-            *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
+            let mut parameter_range_value = *definition_payload.parameter_range();
+            let parameter_range = &mut parameter_range_value;
+            let mut offset_value = *definition_payload.offset();
+            let offset = &mut offset_value;
+            {
+                *parameter_range = [-3.0, 6.0];
+                *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
+                    definition_payload.source().clone(),
+                    parameter_range_value,
+                    offset_value,
+                    *definition_payload.roles(),
+                )
+                .unwrap();
         })
         .unwrap();
     edited.model.procedural_curves[0]
@@ -439,7 +447,10 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let source_id = match source_less.model.procedural_curves[0].definition() {
-        ProceduralCurveDefinition::VectorOffset { source, .. } => source.clone(),
+        ProceduralCurveDefinition::VectorOffset(definition_payload) => {
+            let source = definition_payload.source();
+            source.clone()
+        }
         _ => unreachable!(),
     };
     source_less
@@ -469,15 +480,15 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less vector-offset round trip");
-    let ProceduralCurveDefinition::VectorOffset {
-        source,
-        parameter_range,
-        offset,
-        roles,
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::VectorOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip vector offset")
     };
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let offset = definition_payload.offset();
+    let roles = definition_payload.roles();
     assert_eq!(*parameter_range, expected_range);
     assert_eq!(*offset, expected_offset);
     assert_eq!(*roles, expected_roles);
@@ -519,14 +530,14 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("generated subset decode");
-    let ProceduralCurveDefinition::Subset {
-        source,
-        parameter_range,
-        sense: _,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Subset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected subset construction")
     };
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let _ = definition_payload.sense();
     assert_eq!(*parameter_range, [-1.5, 3.5]);
     assert!(result
         .ir()
@@ -546,13 +557,21 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Subset {
-                parameter_range, ..
-            } = definition
-            else {
+            let ProceduralCurveDefinition::Subset(definition_payload) = definition else {
                 unreachable!()
             };
-            *parameter_range = [-2.0, 4.0];
+            let mut parameter_range_value = *definition_payload.parameter_range();
+            let parameter_range = &mut parameter_range_value;
+            {
+                *parameter_range = [-2.0, 4.0];
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                    definition_payload.source().clone(),
+                    parameter_range_value,
+                    *definition_payload.sense(),
+                )
+                .unwrap();
         })
         .unwrap();
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
@@ -571,7 +590,10 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let source_id = match source_less.model.procedural_curves[0].definition() {
-        ProceduralCurveDefinition::Subset { source, .. } => source.clone(),
+        ProceduralCurveDefinition::Subset(definition_payload) => {
+            let source = definition_payload.source();
+            source.clone()
+        }
         _ => unreachable!(),
     };
     source_less
@@ -601,14 +623,14 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less subset round trip");
-    let ProceduralCurveDefinition::Subset {
-        source,
-        parameter_range,
-        sense: _,
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Subset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip subset")
     };
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let _ = definition_payload.sense();
     assert_eq!(*parameter_range, [-1.5, 3.5]);
     assert!(round_trip
         .ir()
@@ -1052,14 +1074,14 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("generated two-sided offset decode");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context,
-        discontinuity_flag,
-        offsets,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected two-sided offset construction")
     };
+    let context = definition_payload.context();
+    let discontinuity_flag = definition_payload.discontinuity_flag();
+    let offsets = definition_payload.offsets();
     assert_eq!(context.parameter_range(), [-1.0, 2.0]);
     assert!(*discontinuity_flag);
     assert_eq!(
@@ -1075,22 +1097,32 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TwoSidedOffset {
-                context,
-                discontinuity_flag,
-                offsets,
-            } = definition
-            else {
+            let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
                 unreachable!()
             };
-            context
-                .edit(|_, context_parameter_range, context_discontinuities| {
-                    (*context_parameter_range) = [-2.0, 3.0];
-                    (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
-                    *discontinuity_flag = false;
-                    *offsets = [-3.0, 5.0];
-                })
-                .unwrap()
+            let mut context_value = definition_payload.context().clone();
+            let context = &mut context_value;
+            let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+            let discontinuity_flag = &mut discontinuity_flag_value;
+            let mut offsets_value = *definition_payload.offsets();
+            let offsets = &mut offsets_value;
+            {
+                context
+                    .edit(|_, context_parameter_range, context_discontinuities| {
+                        (*context_parameter_range) = [-2.0, 3.0];
+                        (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
+                        *discontinuity_flag = false;
+                        *offsets = [-3.0, 5.0];
+                    })
+                    .unwrap()
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                    context_value,
+                    discontinuity_flag_value,
+                    offsets_value,
+                )
+                .unwrap();
         })
         .unwrap();
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
@@ -1134,12 +1166,13 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
             &DecodeOptions::default(),
         )
         .expect("embedded offset-support decode");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected embedded two-sided offset")
     };
+    let context = definition_payload.context();
+    let offsets = definition_payload.offsets();
     assert_eq!(*offsets, [-1.0, 3.0]);
     for side in context.sides() {
         let surface_id = side.surface.as_ref().expect("embedded support surface");
@@ -1159,27 +1192,38 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let mut retained = result.ir().clone();
     retained.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TwoSidedOffset {
-                context,
-                discontinuity_flag,
-                offsets,
-            } = definition
-            else {
+            let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
                 unreachable!()
             };
-            context
-                .edit(|_, context_parameter_range, context_discontinuities| {
-                    (*context_parameter_range) = [-2.0, 5.0];
-                    for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate()
-                    {
-                        for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                            *value = 0.125 * (side + ordinal + 1) as f64;
+            let mut context_value = definition_payload.context().clone();
+            let context = &mut context_value;
+            let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+            let discontinuity_flag = &mut discontinuity_flag_value;
+            let mut offsets_value = *definition_payload.offsets();
+            let offsets = &mut offsets_value;
+            {
+                context
+                    .edit(|_, context_parameter_range, context_discontinuities| {
+                        (*context_parameter_range) = [-2.0, 5.0];
+                        for (side, discontinuities) in
+                            (*context_discontinuities).iter_mut().enumerate()
+                        {
+                            for (ordinal, value) in discontinuities.iter_mut().enumerate() {
+                                *value = 0.125 * (side + ordinal + 1) as f64;
+                            }
                         }
-                    }
-                    *discontinuity_flag = false;
-                    *offsets = [-2.5, 4.5];
-                })
-                .unwrap()
+                        *discontinuity_flag = false;
+                        *offsets = [-2.5, 4.5];
+                    })
+                    .unwrap()
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                    context_value,
+                    discontinuity_flag_value,
+                    offsets_value,
+                )
+                .unwrap();
         })
         .unwrap();
     let expected_retained = retained.model.procedural_curves[0].definition().clone();
@@ -1210,20 +1254,16 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less embedded offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context: expected_context,
-        ..
-    } = &mut expected
-    else {
+    let ProceduralCurveDefinition::TwoSidedOffset(expected_payload) = &mut expected else {
         unreachable!()
     };
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context: actual_context,
-        ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let mut expected_context = expected_payload.context().clone();
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip embedded offset supports")
     };
+    let actual_context = definition_payload.context();
     for side in 0..2 {
         let expected_surface = source_less
             .model
@@ -1241,6 +1281,13 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         assert_eq!(actual_surface.geometry, expected_surface.geometry);
         expected_context.set_surface(side, actual_context.sides()[side].surface.clone());
     }
+    *expected_payload =
+        cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+            expected_context,
+            *expected_payload.discontinuity_flag(),
+            *expected_payload.offsets(),
+        )
+        .unwrap();
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].definition(),
         &expected
@@ -1264,29 +1311,41 @@ fn generated_mixed_offset_supports_write_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let first_support = source_less.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TwoSidedOffset { context, .. } = definition else {
+            let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
                 panic!("expected two-sided offset construction")
             };
-            context
-                .edit(|context_sides, _, _| {
-                    (*context_sides)[1].surface = None;
-                    (*context_sides)[1].pcurve = None;
-                    (*context_sides)[0].pcurve = Some(
-                        cadmpeg_ir::geometry::PcurveGeometry::Line(
-                            cadmpeg_ir::geometry::LinePcurve::try_new(
-                                cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                                cadmpeg_ir::math::Point2::new(3.0, -1.0),
+            let mut context_value = definition_payload.context().clone();
+            let context = &mut context_value;
+            let edit_result = {
+                context
+                    .edit(|context_sides, _, _| {
+                        (*context_sides)[1].surface = None;
+                        (*context_sides)[1].pcurve = None;
+                        (*context_sides)[0].pcurve = Some(
+                            cadmpeg_ir::geometry::PcurveGeometry::Line(
+                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                                    cadmpeg_ir::math::Point2::new(3.0, -1.0),
+                                )
+                                .unwrap(),
                             )
-                            .unwrap(),
-                        )
-                        .into(),
-                    );
-                    (*context_sides)[0]
-                        .surface
-                        .clone()
-                        .expect("retained first support id")
-                })
-                .unwrap()
+                            .into(),
+                        );
+                        (*context_sides)[0]
+                            .surface
+                            .clone()
+                            .expect("retained first support id")
+                    })
+                    .unwrap()
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                    context_value,
+                    *definition_payload.discontinuity_flag(),
+                    *definition_payload.offsets(),
+                )
+                .unwrap();
+            edit_result
         })
         .unwrap();
     let expected_surface = source_less
@@ -1306,11 +1365,12 @@ fn generated_mixed_offset_supports_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less mixed offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset { context, .. } =
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
         &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip two-sided offset construction")
     };
+    let context = definition_payload.context();
     assert!(context.sides()[1].surface.is_none() && context.sides()[1].pcurve.is_none());
     assert_eq!(
         context.sides()[0].pcurve,
@@ -1353,12 +1413,13 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             &DecodeOptions::default(),
         )
         .expect("analytic offset-support decode");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected analytic two-sided offset")
     };
+    let context = definition_payload.context();
+    let offsets = definition_payload.offsets();
     assert_eq!(*offsets, [-1.5, 2.5]);
     let supports = context.sides().each_ref().map(|side| {
         result
@@ -1396,12 +1457,13 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less analytic offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip analytic offset supports")
     };
+    let context = definition_payload.context();
+    let offsets = definition_payload.offsets();
     assert_eq!(*offsets, [-1.5, 2.5]);
     for (side, expected) in context.sides().iter().zip(expected_geometries) {
         let actual = round_trip

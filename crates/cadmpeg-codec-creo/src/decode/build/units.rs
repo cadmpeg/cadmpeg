@@ -53,8 +53,9 @@ pub(super) fn normalize_model_lengths(
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
             .edit_definition(|definition| {
-                scale_procedural_surface_definition(definition, length_scale_mm);
+                scale_procedural_surface_definition(definition, length_scale_mm)
             })
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -1575,25 +1576,44 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
 fn scale_procedural_surface_definition(
     definition: &mut cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
     scale: f64,
-) {
+) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     match definition {
-        ProceduralSurfaceDefinition::Extrusion {
-            direction,
-            native_position,
-            ..
-        } => {
-            scale_vector3(direction, scale);
-            if let Some(position) = native_position {
+        ProceduralSurfaceDefinition::Extrusion(payload) => {
+            let mut direction = *payload.direction();
+            let mut native_position = payload.native_position();
+            scale_vector3(&mut direction, scale);
+            if let Some(position) = &mut native_position {
                 scale_point3(position, scale);
             }
+            *payload =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    payload.directrix().clone(),
+                    payload.parameter_interval(),
+                    direction,
+                    native_position,
+                    payload.revision_form().clone(),
+                )?;
         }
         ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
             scale_vector3(direction, scale);
         }
-        ProceduralSurfaceDefinition::Revolution { axis_origin, .. }
-        | ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
+        ProceduralSurfaceDefinition::Revolution(payload) => {
+            let mut origin = *payload.axis_origin();
+            scale_point3(&mut origin, scale);
+            *payload =
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    payload.directrix().clone(),
+                    (origin, *payload.axis_direction()),
+                    *payload.angular_interval(),
+                    payload.angular_parameter_interval(),
+                    payload.parameter_interval(),
+                    *payload.transposed(),
+                    payload.revision_form().clone(),
+                )?;
+        }
+        ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
             scale_point3(axis_origin, scale);
         }
         ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
@@ -1601,6 +1621,7 @@ fn scale_procedural_surface_definition(
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn scale_procedural_curve_definition(
@@ -2116,14 +2137,17 @@ mod tests {
         let surface = cadmpeg_ir::geometry::ProceduralSurface::try_new(
             cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:entity#surface-construction")
                 .expect("identity grammar"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                directrix: cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
-                    .expect("identity grammar"),
-                parameter_interval: Some([1.0, 2.0]),
-                direction: Vector3::new(1.0, 2.0, 3.0),
-                native_position: Some(Point3::new(4.0, 5.0, 6.0)),
-                revision_form: None,
-            },
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
+                        .expect("identity grammar"),
+                    Some([1.0, 2.0]),
+                    Vector3::new(1.0, 2.0, 3.0),
+                    Some(Point3::new(4.0, 5.0, 6.0)),
+                    None,
+                )
+                .unwrap(),
+            ),
             Some(7.0),
             Some([Some(8.0), None, Some(9.0), None]),
         )
@@ -2161,15 +2185,14 @@ mod tests {
         normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            direction,
-            native_position,
-            parameter_interval,
-            ..
-        } = surface.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
+            surface.definition()
         else {
             panic!("test surface construction changed family");
         };
+        let direction = definition_payload.direction();
+        let native_position = &definition_payload.native_position();
+        let parameter_interval = &definition_payload.parameter_interval();
         assert_vector3(*direction, [25.4, 50.8, 76.2]);
         assert_point3(
             *native_position.as_ref().expect("test native position"),

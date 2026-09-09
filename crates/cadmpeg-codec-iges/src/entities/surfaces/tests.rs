@@ -535,12 +535,13 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .iter()
         .find(|procedural| procedural.id == *construction)
         .expect("line revolution construction");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-        directrix,
-        parameter_interval: Some(parameter_interval),
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
+        procedural.definition()
     else {
+        panic!("expected an exact revolution definition");
+    };
+    let directrix = definition_payload_0.directrix();
+    let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
         panic!("expected an exact revolution definition");
     };
     assert_eq!(directrix.as_str(), "iges:model:curve#D3");
@@ -650,15 +651,16 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("hyperbola revolution construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            parameter_interval: Some(parameter_interval),
-            angular_interval,
-            ..
-        } = procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
+            procedural.definition()
         else {
             panic!("expected an exact revolution definition");
         };
+        let directrix = definition_payload_0.directrix();
+        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+            panic!("expected an exact revolution definition");
+        };
+        let angular_interval = definition_payload_0.angular_interval();
         assert_eq!(directrix.as_str(), "iges:model:curve#D3");
         assert_eq!(*angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
         let directrix_geometry = &result
@@ -743,11 +745,12 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         procedural.record_bounds,
         Some([Some(0.0), Some(2.0), None, None])
     );
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-        parameter_interval: Some(parameter_interval),
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
+        procedural.definition()
     else {
+        panic!("expected bounded trimmed revolution");
+    };
+    let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
         panic!("expected bounded trimmed revolution");
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);
@@ -778,14 +781,13 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     };
     assert_eq!(surface.control_points()[0].x, 11.0);
     let procedural = &result.ir().model.procedural_surfaces[0];
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-        directrix,
-        axis_origin,
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload) =
+        procedural.definition()
     else {
         panic!("expected a revolution definition");
     };
+    let directrix = definition_payload.directrix();
+    let axis_origin = definition_payload.axis_origin();
     assert_eq!(axis_origin.x, 10.0);
     assert_eq!(directrix.as_str(), "iges:model:curve#D7-placed-generatrix");
     assert!(
@@ -880,11 +882,12 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
                 == Some("iges:model:surface#D9")
         })
         .expect("Type 122 neutral carrier");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
         procedural.definition()
     else {
         panic!("expected an extrusion definition");
     };
+    let directrix = definition_payload.directrix();
     assert_eq!(directrix.as_str(), "iges:model:curve#D1");
     assert!(
         result.report().losses.is_empty(),
@@ -931,14 +934,17 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("hyperbola tabulated construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval: Some(parameter_interval),
-            direction,
-            native_position: Some(native_position),
-            ..
-        } = procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
+            procedural.definition()
         else {
+            panic!("expected an exact extrusion definition");
+        };
+        let directrix = definition_payload_0.directrix();
+        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+            panic!("expected an exact extrusion definition");
+        };
+        let direction = definition_payload_0.direction();
+        let Some(native_position) = &definition_payload_0.native_position() else {
             panic!("expected an exact extrusion definition");
         };
         assert_eq!(directrix.as_str(), "iges:model:curve#D1");
@@ -1027,14 +1033,17 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("placed tabulated construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval: Some(parameter_interval),
-            direction,
-            native_position: Some(native_position),
-            ..
-        } = procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
+            procedural.definition()
         else {
+            panic!("expected an exact placed extrusion definition");
+        };
+        let directrix = definition_payload_0.directrix();
+        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+            panic!("expected an exact placed extrusion definition");
+        };
+        let direction = definition_payload_0.direction();
+        let Some(native_position) = &definition_payload_0.native_position() else {
             panic!("expected an exact placed extrusion definition");
         };
         assert_eq!(directrix.as_str(), "iges:model:curve#D5-placed-directrix");
@@ -1119,13 +1128,14 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                 result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
             })
             .expect("placed NURBS tabulated construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            direction,
-            native_position: Some(native_position),
-            ..
-        } = procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
+            procedural.definition()
         else {
+            panic!("expected an exact placed NURBS extrusion definition");
+        };
+        let directrix = definition_payload_0.directrix();
+        let direction = definition_payload_0.direction();
+        let Some(native_position) = &definition_payload_0.native_position() else {
             panic!("expected an exact placed NURBS extrusion definition");
         };
         assert_eq!(directrix.as_str(), "iges:model:curve#D5-placed-directrix");
@@ -1306,11 +1316,12 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         let origin = *plane_surface.origin();
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
             result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected an offset dependency");
         };
+        let distance = definition_payload.distance();
         assert_eq!(*distance, expected_z);
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

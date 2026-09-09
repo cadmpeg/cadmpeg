@@ -1028,21 +1028,25 @@ pub(super) fn decode(
                 continue;
             };
             let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
-            let procedural = match ProceduralCurve::try_new(
-                ProceduralCurveId::from(ids::construction("trimmed_curve", id)),
-                ProceduralCurveDefinition::Subset {
-                    source: basis,
+            let procedural =
+                match cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                    basis,
                     parameter_range,
                     sense,
-                },
-                Some(0.0),
-            ) {
-                Ok(procedural) => procedural,
-                Err(error) => {
-                    warnings.push(format!("TRIMMED_CURVE #{id}: {error}"));
-                    continue;
-                }
-            };
+                )
+                .and_then(|admitted_payload| {
+                    ProceduralCurve::try_new(
+                        ProceduralCurveId::from(ids::construction("trimmed_curve", id)),
+                        ProceduralCurveDefinition::Subset(admitted_payload),
+                        Some(0.0),
+                    )
+                }) {
+                    Ok(procedural) => procedural,
+                    Err(error) => {
+                        warnings.push(format!("TRIMMED_CURVE #{id}: {error}"));
+                        continue;
+                    }
+                };
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
@@ -1148,21 +1152,25 @@ pub(super) fn decode(
         };
         let curve = CurveId::from(ids::data("curve", id));
         let curve_index = CurveIndex(ir.model.curves.len());
-        let procedural = match ProceduralCurve::new(
-            ProceduralCurveId::from(ids::construction("offset_curve", id)),
-            ProceduralCurveDefinition::SpatialOffset {
+        let procedural =
+            match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_new(
                 source,
-                distance: distance * unit_scales.length([id]),
+                distance * unit_scales.length([id]),
                 reference_direction,
                 self_intersect,
-            },
-        ) {
-            Ok(procedural) => procedural,
-            Err(error) => {
-                warnings.push(format!("curve construction #{id}: {error}"));
-                continue;
-            }
-        };
+            )
+            .and_then(|admitted_payload| {
+                ProceduralCurve::new(
+                    ProceduralCurveId::from(ids::construction("offset_curve", id)),
+                    ProceduralCurveDefinition::SpatialOffset(admitted_payload),
+                )
+            }) {
+                Ok(procedural) => procedural,
+                Err(error) => {
+                    warnings.push(format!("curve construction #{id}: {error}"));
+                    continue;
+                }
+            };
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry,
@@ -1606,16 +1614,22 @@ pub(super) fn decode(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match ProceduralSurface::new(
-                    ProceduralSurfaceId::from(ids::construction("rectangular_trimmed_surface", id)),
-                    ProceduralSurfaceDefinition::Subset {
-                        support: SurfaceId::from(ids::data("surface", support_step)),
-                        parameter_ranges,
-                        u_sense: Some(u_sense),
-                        v_sense: Some(v_sense),
-                    },
-                    None,
-                ) {
+                match cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
+                    SurfaceId::from(ids::data("surface", support_step)),
+                    parameter_ranges,
+                    Some(u_sense),
+                    Some(v_sense),
+                )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::from(ids::construction(
+                            "rectangular_trimmed_surface",
+                            id,
+                        )),
+                        ProceduralSurfaceDefinition::Subset(admitted_payload),
+                        None,
+                    )
+                }) {
                     Ok(surface) => surface,
                     Err(error) => {
                         warnings.push(format!("procedural surface #{id}: {error}"));
@@ -1741,15 +1755,11 @@ pub(super) fn decode(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match ProceduralSurface::new(
+                match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).and_then(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction("offset_surface", id)),
-                    ProceduralSurfaceDefinition::ParallelOffset {
-                        support,
-                        distance: distance * record_scale,
-                        self_intersect,
-                    },
+                    ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
-                ) {
+                )) {
                     Ok(surface) => surface,
                     Err(error) => {
                         warnings.push(format!("procedural surface #{id}: {error}"));
@@ -4848,8 +4858,20 @@ fn procedural_definition_parameter_scales(
         )
     };
     match definition {
-        ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-        | ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => Some([
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            Some([
+                directrix_parameter_scale(
+                    ir,
+                    directrix,
+                    length_scale,
+                    angle_scale,
+                    source_curve_parameter_scales,
+                )?,
+                1.0,
+            ])
+        }
+        ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => Some([
             directrix_parameter_scale(
                 ir,
                 directrix,
@@ -4869,30 +4891,44 @@ fn procedural_definition_parameter_scales(
                 source_curve_parameter_scales,
             )?,
         ]),
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            transposed,
-            ..
-        } => {
-            let directrix = directrix_parameter_scale(
-                ir,
-                directrix,
-                length_scale,
-                angle_scale,
-                source_curve_parameter_scales,
-            )?;
-            Some(if *transposed {
-                [angle_scale, directrix]
-            } else {
-                [directrix, angle_scale]
-            })
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let transposed = definition_payload.transposed();
+            {
+                let directrix = directrix_parameter_scale(
+                    ir,
+                    directrix,
+                    length_scale,
+                    angle_scale,
+                    source_curve_parameter_scales,
+                )?;
+                Some(if *transposed {
+                    [angle_scale, directrix]
+                } else {
+                    [directrix, angle_scale]
+                })
+            }
         }
-        ProceduralSurfaceDefinition::Offset { support, .. }
-        | ProceduralSurfaceDefinition::ParallelOffset { support, .. }
-        | ProceduralSurfaceDefinition::Subset { support, .. }
-        | ProceduralSurfaceDefinition::SubSurface { support, .. }
-        | ProceduralSurfaceDefinition::CurveBounded { support, .. }
-        | ProceduralSurfaceDefinition::Replica {
+        ProceduralSurfaceDefinition::Offset(definition_payload) => {
+            let support = definition_payload.support();
+            support_scales(support, active)
+        }
+        ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
+            let support = definition_payload.support();
+            support_scales(support, active)
+        }
+        ProceduralSurfaceDefinition::Subset(definition_payload) => {
+            let support = definition_payload.support();
+            support_scales(support, active)
+        }
+        ProceduralSurfaceDefinition::SubSurface(definition_payload) => {
+            let support = definition_payload.support();
+            support_scales(support, active)
+        }
+        ProceduralSurfaceDefinition::CurveBounded { support, .. } => {
+            support_scales(support, active)
+        }
+        ProceduralSurfaceDefinition::Replica {
             source: support, ..
         } => support_scales(support, active),
         ProceduralSurfaceDefinition::DegenerateTorus { .. } => Some([angle_scale, angle_scale]),
@@ -4977,18 +5013,72 @@ fn directrix_geometry_parameter_scale(
             .iter()
             .find(|procedural| procedural.id == *construction)
             .and_then(|procedural| match procedural.definition() {
-                ProceduralCurveDefinition::Offset { source, .. }
-                | ProceduralCurveDefinition::SpatialOffset { source, .. }
-                | ProceduralCurveDefinition::Subset { source, .. }
-                | ProceduralCurveDefinition::VectorOffset { source, .. }
-                | ProceduralCurveDefinition::Projection { source, .. }
-                | ProceduralCurveDefinition::Replica { source, .. } => {
+                ProceduralCurveDefinition::Offset(definition_payload) => {
+                    let source = definition_payload.source();
+                    {
+                        directrix_parameter_scale_inner(
+                            ir,
+                            source,
+                            length_scale,
+                            angle_scale,
+                            active,
+                        )
+                    }
+                }
+                ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
+                    let source = definition_payload.source();
+                    {
+                        directrix_parameter_scale_inner(
+                            ir,
+                            source,
+                            length_scale,
+                            angle_scale,
+                            active,
+                        )
+                    }
+                }
+                ProceduralCurveDefinition::Subset(definition_payload) => {
+                    let source = definition_payload.source();
+                    {
+                        directrix_parameter_scale_inner(
+                            ir,
+                            source,
+                            length_scale,
+                            angle_scale,
+                            active,
+                        )
+                    }
+                }
+                ProceduralCurveDefinition::VectorOffset(definition_payload) => {
+                    let source = definition_payload.source();
+                    {
+                        directrix_parameter_scale_inner(
+                            ir,
+                            source,
+                            length_scale,
+                            angle_scale,
+                            active,
+                        )
+                    }
+                }
+                ProceduralCurveDefinition::Projection { source, .. } => {
                     directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
                 }
-                ProceduralCurveDefinition::Deformable {
-                    source: cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve },
-                    ..
-                } => directrix_parameter_scale_inner(ir, curve, length_scale, angle_scale, active),
+                ProceduralCurveDefinition::Replica { source, .. } => {
+                    directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
+                }
+                ProceduralCurveDefinition::Deformable(payload) => match payload.source() {
+                    cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve } => {
+                        directrix_parameter_scale_inner(
+                            ir,
+                            curve,
+                            length_scale,
+                            angle_scale,
+                            active,
+                        )
+                    }
+                    cadmpeg_ir::geometry::DeformableCurveSource::NativeReference { .. } => None,
+                },
                 _ => None,
             }),
         CurveGeometry::Degenerate(_) => None,

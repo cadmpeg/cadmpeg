@@ -79,19 +79,25 @@ fn decode_transfers_positional_line_extrusion_plane() {
             result.ir().model.procedural_surface_owner(&surface.id) == Some(&carrier_id)
         })
         .expect("extrusion construction");
-    assert!(matches!(
-        construction.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: None,
-            direction: cadmpeg_ir::math::Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-            native_position: None,
-            ..
-        }
-    ));
+    assert!(match construction.definition() {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+            (
+                &matched_payload.parameter_interval(),
+                matched_payload.direction(),
+                &matched_payload.native_position(),
+            ),
+            (
+                None,
+                cadmpeg_ir::math::Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 1.0
+                },
+                None,
+            )
+        ),
+        _ => false,
+    });
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(record.fields()["surface_type_byte"], 0x2c);
     assert_eq!(record.fields()["extrusion_direction"][0], 0.0);

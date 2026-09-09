@@ -1104,13 +1104,13 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .iter()
         .find(|surface| surface.id.as_str() == "catia:consolidated:surface-revolution#0")
         .expect("transferred freeform revolution");
-    assert!(matches!(
-        revolution.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            parameter_interval: Some([-4.0, 9.0]),
-            ..
-        }
-    ));
+    assert!(match revolution.definition() {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+            (&matched_payload.parameter_interval(),),
+            (Some([-4.0, 9.0]),)
+        ),
+        _ => false,
+    });
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 

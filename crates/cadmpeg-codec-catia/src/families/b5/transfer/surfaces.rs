@@ -617,20 +617,22 @@ pub(super) fn emit_surfaces(
                 );
                 let _attached = ir.model.add_procedural_surface(
                     id,
-                    ProceduralSurface::new(
-                        procedural_id,
-                        ProceduralSurfaceDefinition::Revolution {
-                            directrix: directrix_id,
-                            axis_origin: revolution.axis_origin,
-                            axis_direction: revolution.axis_direction,
-                            angular_interval: revolution.angular_interval,
-                            angular_parameter_interval: Some(revolution.angular_parameter_interval),
-                            parameter_interval: Some(revolution.parameter_interval),
-                            transposed: false,
-                            revision_form: None,
-                        },
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        directrix_id,
+                        (revolution.axis_origin, revolution.axis_direction),
+                        revolution.angular_interval,
+                        Some(revolution.angular_parameter_interval),
+                        Some(revolution.parameter_interval),
+                        false,
                         None,
                     )
+                    .and_then(|admitted_payload| {
+                        ProceduralSurface::new(
+                            procedural_id,
+                            ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                            None,
+                        )
+                    })
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 );
             }
@@ -685,20 +687,23 @@ pub(super) fn emit_surfaces(
         );
         let _attached = ir.model.add_procedural_surface(
             surface.clone(),
-            ProceduralSurface::new(
-                procedural_id,
-                ProceduralSurfaceDefinition::Offset {
-                    support: support.clone(),
-                    distance: offset.distance,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
-                Some(parameter_record_bounds(offset.parameter_bounds)),
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support.clone(),
+                offset.distance,
+                None,
+                None,
+                None,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    Some(parameter_record_bounds(offset.parameter_bounds)),
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
@@ -848,20 +853,23 @@ fn emit_extrusion_procedure(
             );
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
-                ProceduralCurve::new(
-                    procedure_id,
-                    ProceduralCurveDefinition::Offset {
-                        source: source_id,
-                        distance,
-                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
-                            direction,
-                            support: Some(surface_ids[&support.surface_object_id].clone()),
-                        },
-                        range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
-                            parameter_range: source_parameter_range,
-                        }),
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                    source_id,
+                    distance,
+                    cadmpeg_ir::geometry::OffsetSide::Direction {
+                        direction,
+                        support: Some(surface_ids[&support.surface_object_id].clone()),
                     },
+                    Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                        parameter_range: source_parameter_range,
+                    }),
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralCurve::new(
+                        procedure_id,
+                        ProceduralCurveDefinition::Offset(admitted_payload),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
@@ -877,17 +885,20 @@ fn emit_extrusion_procedure(
     );
     let _attached = ir.model.add_procedural_surface(
         surface_id,
-        ProceduralSurface::new(
-            procedure_id,
-            ProceduralSurfaceDefinition::Extrusion {
-                directrix: directrix_id,
-                parameter_interval: Some(extrusion.directrix_parameter_range),
-                direction: extrusion.direction,
-                native_position: None,
-                revision_form: None,
-            },
-            Some(parameter_record_bounds(extrusion.parameter_bounds)),
+        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+            directrix_id,
+            Some(extrusion.directrix_parameter_range),
+            extrusion.direction,
+            None,
+            None,
         )
+        .and_then(|admitted_payload| {
+            ProceduralSurface::new(
+                procedure_id,
+                ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                Some(parameter_record_bounds(extrusion.parameter_bounds)),
+            )
+        })
         .map_err(cadmpeg_core::CodecError::malformed)?,
     );
     Ok(())
@@ -1024,15 +1035,11 @@ mod tests {
             ir.model.procedural_curves[0].cache_fit_tolerance(),
             Some(1e-5)
         );
-        assert!(matches!(
-            ir.model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::Extrusion {
-                parameter_interval: Some([0.0, 1.0]),
-                direction,
-                native_position: None,
-                ..
-            } if *direction == Vector3::new(0.0, 0.0, 1.0)
-        ));
+        assert!(match ir.model.procedural_surfaces[0].definition() {
+            ProceduralSurfaceDefinition::Extrusion(matched_payload) =>
+                matches!((&matched_payload.parameter_interval(), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
+            _ => false,
+        });
         assert_eq!(
             ir.model.procedural_surfaces[0].record_bounds,
             Some([Some(-2.0), Some(3.0), Some(0.0), Some(1.0)])

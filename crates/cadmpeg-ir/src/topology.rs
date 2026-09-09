@@ -1313,6 +1313,9 @@ impl ParameterInterval {
     pub const fn endpoints(self) -> [f64; 2] {
         self.0
     }
+    pub(crate) const fn as_raw(&self) -> &[f64; 2] {
+        &self.0
+    }
 }
 
 impl TryFrom<[f64; 2]> for ParameterInterval {

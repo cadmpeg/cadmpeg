@@ -3255,33 +3255,34 @@ fn model_curve_differential_by_id_inner(
                     acceleration: affine_vector(*transform, differential.acceleration),
                 });
             }
-            ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range: [start, end],
-                sense,
-            } => {
-                let span = (end - start).abs();
-                if !span.is_finite() || span == 0.0 || parameter < 0.0 || parameter > span {
-                    return None;
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let [start, end] = definition_payload.parameter_range();
+                let sense = definition_payload.sense();
+                {
+                    let span = (end - start).abs();
+                    if !span.is_finite() || span == 0.0 || parameter < 0.0 || parameter > span {
+                        return None;
+                    }
+                    let source_parameter = if *sense {
+                        start + parameter
+                    } else {
+                        end - parameter
+                    };
+                    let differential = model_curve_differential_by_id_inner(
+                        index,
+                        source,
+                        source_parameter,
+                        depth + 1,
+                        budget,
+                    )?;
+                    let parameter_scale = if *sense { 1.0 } else { -1.0 };
+                    return Some(ModelCurveDifferential {
+                        point: differential.point,
+                        tangent: scale_vector(differential.tangent, parameter_scale),
+                        acceleration: differential.acceleration,
+                    });
                 }
-                let source_parameter = if *sense {
-                    start + parameter
-                } else {
-                    end - parameter
-                };
-                let differential = model_curve_differential_by_id_inner(
-                    index,
-                    source,
-                    source_parameter,
-                    depth + 1,
-                    budget,
-                )?;
-                let parameter_scale = if *sense { 1.0 } else { -1.0 };
-                return Some(ModelCurveDifferential {
-                    point: differential.point,
-                    tangent: scale_vector(differential.tangent, parameter_scale),
-                    acceleration: differential.acceleration,
-                });
             }
             ProceduralCurveDefinition::Helix(_) => {
                 return helix_differential(procedural.definition(), parameter);
@@ -3684,26 +3685,27 @@ fn model_curve_point_by_id_inner(
             model_curve_point_by_id_inner(index, source, parameter, depth + 1, budget)
                 .map(|point| affine_point(*transform, point))
         }
-        ProceduralCurveDefinition::Subset {
-            source,
-            parameter_range: [start, end],
-            sense,
-        } => {
-            let span = (end - start).abs();
-            if !parameter.is_finite()
-                || !span.is_finite()
-                || span == 0.0
-                || parameter < 0.0
-                || parameter > span
+        ProceduralCurveDefinition::Subset(definition_payload) => {
+            let source = definition_payload.source();
+            let [start, end] = definition_payload.parameter_range();
+            let sense = definition_payload.sense();
             {
-                return None;
+                let span = (end - start).abs();
+                if !parameter.is_finite()
+                    || !span.is_finite()
+                    || span == 0.0
+                    || parameter < 0.0
+                    || parameter > span
+                {
+                    return None;
+                }
+                let source_parameter = if *sense {
+                    start + parameter
+                } else {
+                    end - parameter
+                };
+                model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
             }
-            let source_parameter = if *sense {
-                start + parameter
-            } else {
-                end - parameter
-            };
-            model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
         }
         ProceduralCurveDefinition::Helix(_) => {
             helix_differential(procedural.definition(), parameter)
@@ -3851,42 +3853,43 @@ fn model_curve_parameter_near_point_with_tolerance(
                     depth + 1,
                 );
             }
-            ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range: [start, end],
-                sense,
-            } => {
-                let span = (end - start).abs();
-                if !seed.is_finite()
-                    || !tolerance.is_finite()
-                    || tolerance < 0.0
-                    || !span.is_finite()
-                    || span == 0.0
-                    || seed < 0.0
-                    || seed > span
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let [start, end] = definition_payload.parameter_range();
+                let sense = definition_payload.sense();
                 {
-                    return None;
+                    let span = (end - start).abs();
+                    if !seed.is_finite()
+                        || !tolerance.is_finite()
+                        || tolerance < 0.0
+                        || !span.is_finite()
+                        || span == 0.0
+                        || seed < 0.0
+                        || seed > span
+                    {
+                        return None;
+                    }
+                    let source_seed = if *sense { start + seed } else { end - seed };
+                    let source_parameter = model_curve_parameter_near_point_with_tolerance(
+                        index,
+                        source,
+                        point,
+                        source_seed,
+                        tolerance,
+                        depth + 1,
+                    )?;
+                    let parameter = if *sense {
+                        source_parameter - start
+                    } else {
+                        end - source_parameter
+                    };
+                    return (parameter.is_finite()
+                        && parameter >= 0.0
+                        && parameter <= span
+                        && model_curve_point_by_id(index, curve_id, parameter)
+                            .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
+                    .then_some(parameter);
                 }
-                let source_seed = if *sense { start + seed } else { end - seed };
-                let source_parameter = model_curve_parameter_near_point_with_tolerance(
-                    index,
-                    source,
-                    point,
-                    source_seed,
-                    tolerance,
-                    depth + 1,
-                )?;
-                let parameter = if *sense {
-                    source_parameter - start
-                } else {
-                    end - source_parameter
-                };
-                return (parameter.is_finite()
-                    && parameter >= 0.0
-                    && parameter <= span
-                    && model_curve_point_by_id(index, curve_id, parameter)
-                        .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
-                .then_some(parameter);
             }
             ProceduralCurveDefinition::Helix(_) => {
                 return helix_parameter_near_point(
@@ -5056,53 +5059,53 @@ pub fn model_surface_point(
     let carrier_interval = record_u_interval(procedural.record_bounds);
     let index = crate::index::ModelIndex::new(ir);
     match procedural.definition() {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            direction,
-            parameter_interval,
-            revision_form,
-            ..
-        } => model_native_extrusion_partials(
-            &index,
-            directrix,
-            *direction,
-            *parameter_interval,
-            carrier_interval,
-            extrusion_directrix_reversed(revision_form.as_ref()),
-            u,
-            v,
-            None,
-        )
-        .map(|partials| partials.point),
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let direction = definition_payload.direction();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let revision_form = definition_payload.revision_form();
+            model_native_extrusion_partials(
+                &index,
+                directrix,
+                *direction,
+                *parameter_interval,
+                carrier_interval,
+                extrusion_directrix_reversed(revision_form.as_ref()),
+                u,
+                v,
+                None,
+            )
+            .map(|partials| partials.point)
+        }
         ProceduralSurfaceDefinition::LinearSweep {
             directrix,
             direction,
         } => model_curve_point_by_id(&index, directrix, u)
             .map(|point| offset(point, &[(v, *direction)])),
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            ..
-        } => model_native_revolution_partials(
-            &index,
-            directrix,
-            *axis_origin,
-            *axis_direction,
-            *angular_interval,
-            *angular_parameter_interval,
-            *parameter_interval,
-            carrier_interval,
-            *transposed,
-            u,
-            v,
-            None,
-        )
-        .map(|partials| partials.point),
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let axis_origin = definition_payload.axis_origin();
+            let axis_direction = definition_payload.axis_direction();
+            let angular_interval = definition_payload.angular_interval();
+            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let transposed = definition_payload.transposed();
+            model_native_revolution_partials(
+                &index,
+                directrix,
+                *axis_origin,
+                *axis_direction,
+                *angular_interval,
+                *angular_parameter_interval,
+                *parameter_interval,
+                carrier_interval,
+                *transposed,
+                u,
+                v,
+                None,
+            )
+            .map(|partials| partials.point)
+        }
         ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
             axis_origin,
@@ -6661,27 +6664,27 @@ fn model_surface_point_by_id_inner(
                 point,
                 oriented_normal: None,
             }),
-            Some(ProceduralSurfaceDefinition::Extrusion {
-                directrix,
-                direction,
-                parameter_interval,
-                revision_form,
-                ..
-            }) => model_native_extrusion_partials(
-                index,
-                directrix,
-                *direction,
-                *parameter_interval,
-                carrier_interval,
-                extrusion_directrix_reversed(revision_form.as_ref()),
-                u,
-                v,
-                budget,
-            )
-            .map(|partials| SurfaceEvaluation {
-                point: partials.point,
-                oriented_normal: None,
-            }),
+            Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
+                let directrix = definition_payload.directrix();
+                let direction = definition_payload.direction();
+                let parameter_interval = &definition_payload.parameter_interval();
+                let revision_form = definition_payload.revision_form();
+                model_native_extrusion_partials(
+                    index,
+                    directrix,
+                    *direction,
+                    *parameter_interval,
+                    carrier_interval,
+                    extrusion_directrix_reversed(revision_form.as_ref()),
+                    u,
+                    v,
+                    budget,
+                )
+                .map(|partials| SurfaceEvaluation {
+                    point: partials.point,
+                    oriented_normal: None,
+                })
+            }
             Some(ProceduralSurfaceDefinition::LinearSweep {
                 directrix,
                 direction,
@@ -6694,33 +6697,33 @@ fn model_surface_point_by_id_inner(
                     point: offset(point, &[(v, *direction)]),
                     oriented_normal: None,
                 }),
-            Some(ProceduralSurfaceDefinition::Revolution {
-                directrix,
-                axis_origin,
-                axis_direction,
-                angular_interval,
-                angular_parameter_interval,
-                parameter_interval,
-                transposed,
-                ..
-            }) => model_native_revolution_partials(
-                index,
-                directrix,
-                *axis_origin,
-                *axis_direction,
-                *angular_interval,
-                *angular_parameter_interval,
-                *parameter_interval,
-                carrier_interval,
-                *transposed,
-                u,
-                v,
-                budget,
-            )
-            .map(|partials| SurfaceEvaluation {
-                point: partials.point,
-                oriented_normal: None,
-            }),
+            Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
+                let directrix = definition_payload.directrix();
+                let axis_origin = definition_payload.axis_origin();
+                let axis_direction = definition_payload.axis_direction();
+                let angular_interval = definition_payload.angular_interval();
+                let angular_parameter_interval = &definition_payload.angular_parameter_interval();
+                let parameter_interval = &definition_payload.parameter_interval();
+                let transposed = definition_payload.transposed();
+                model_native_revolution_partials(
+                    index,
+                    directrix,
+                    *axis_origin,
+                    *axis_direction,
+                    *angular_interval,
+                    *angular_parameter_interval,
+                    *parameter_interval,
+                    carrier_interval,
+                    *transposed,
+                    u,
+                    v,
+                    budget,
+                )
+                .map(|partials| SurfaceEvaluation {
+                    point: partials.point,
+                    oriented_normal: None,
+                })
+            }
             Some(ProceduralSurfaceDefinition::Ruled { first, second }) => {
                 model_ruled_surface_partials(index, first, second, u, v).map(|partials| {
                     SurfaceEvaluation {
@@ -6849,54 +6852,57 @@ fn model_surface_point_by_id_inner(
                 evaluation.oriented_normal = transformed_normal;
                 Some(evaluation)
             }
-            Some(ProceduralSurfaceDefinition::Subset {
-                support,
-                parameter_ranges,
-                u_sense,
-                v_sense,
-            }) => {
-                let (support_u, support_v, u_derivative, v_derivative) =
-                    subset_support_parameters_with_derivatives(
-                        u,
-                        v,
-                        *parameter_ranges,
-                        *u_sense,
-                        *v_sense,
-                    )?;
-                let mut evaluation =
-                    evaluate(index, support, support_u, support_v, visiting, budget)?;
-                if u_derivative * v_derivative < 0.0 {
-                    evaluation.oriented_normal = evaluation
-                        .oriented_normal
-                        .map(|normal| scale_vector(normal, -1.0));
+            Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
+                let support = definition_payload.support();
+                let parameter_ranges = &definition_payload.parameter_ranges();
+                let u_sense = definition_payload.u_sense();
+                let v_sense = definition_payload.v_sense();
+                {
+                    let (support_u, support_v, u_derivative, v_derivative) =
+                        subset_support_parameters_with_derivatives(
+                            u,
+                            v,
+                            *parameter_ranges,
+                            *u_sense,
+                            *v_sense,
+                        )?;
+                    let mut evaluation =
+                        evaluate(index, support, support_u, support_v, visiting, budget)?;
+                    if u_derivative * v_derivative < 0.0 {
+                        evaluation.oriented_normal = evaluation
+                            .oriented_normal
+                            .map(|normal| scale_vector(normal, -1.0));
+                    }
+                    Some(evaluation)
                 }
-                Some(evaluation)
             }
-            Some(ProceduralSurfaceDefinition::ParallelOffset {
-                support, distance, ..
-            }) => {
-                let support = evaluate(index, support, u, v, visiting, budget)?;
-                let normal = support.oriented_normal?;
-                Some(SurfaceEvaluation {
-                    point: offset(support.point, &[(*distance, normal)]),
-                    oriented_normal: Some(normal),
-                })
+            Some(ProceduralSurfaceDefinition::ParallelOffset(definition_payload)) => {
+                let support = definition_payload.support();
+                let distance = definition_payload.distance();
+                {
+                    let support = evaluate(index, support, u, v, visiting, budget)?;
+                    let normal = support.oriented_normal?;
+                    Some(SurfaceEvaluation {
+                        point: offset(support.point, &[(*distance, normal)]),
+                        oriented_normal: Some(normal),
+                    })
+                }
             }
-            Some(ProceduralSurfaceDefinition::Offset {
-                support,
-                distance,
-                support_extension,
-                ..
-            }) => {
-                let support = (*support_extension == Some(OffsetSupportExtension::Linear))
-                    .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
-                    .flatten()
-                    .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
-                let normal = support.oriented_normal?;
-                Some(SurfaceEvaluation {
-                    point: offset(support.point, &[(*distance, normal)]),
-                    oriented_normal: Some(normal),
-                })
+            Some(ProceduralSurfaceDefinition::Offset(definition_payload)) => {
+                let support = definition_payload.support();
+                let distance = definition_payload.distance();
+                let support_extension = definition_payload.support_extension();
+                {
+                    let support = (*support_extension == Some(OffsetSupportExtension::Linear))
+                        .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
+                        .flatten()
+                        .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
+                    let normal = support.oriented_normal?;
+                    Some(SurfaceEvaluation {
+                        point: offset(support.point, &[(*distance, normal)]),
+                        oriented_normal: Some(normal),
+                    })
+                }
             }
             _ if procedural.is_some() => {
                 model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget, 0).map(
@@ -7126,29 +7132,29 @@ fn model_surface_mapping(
             v_scale: 1.0,
             orientation: 1.0,
         }),
-        Some(ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            direction,
-            parameter_interval,
-            revision_form,
-            ..
-        }) => Some(SurfaceMapping {
-            base: model_native_extrusion_partials(
-                index,
-                directrix,
-                *direction,
-                *parameter_interval,
-                carrier_interval,
-                extrusion_directrix_reversed(revision_form.as_ref()),
-                u,
-                v,
-                budget,
-            )?,
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
+        Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
+            let directrix = definition_payload.directrix();
+            let direction = definition_payload.direction();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let revision_form = definition_payload.revision_form();
+            Some(SurfaceMapping {
+                base: model_native_extrusion_partials(
+                    index,
+                    directrix,
+                    *direction,
+                    *parameter_interval,
+                    carrier_interval,
+                    extrusion_directrix_reversed(revision_form.as_ref()),
+                    u,
+                    v,
+                    budget,
+                )?,
+                offset_distance: 0.0,
+                u_scale: 1.0,
+                v_scale: 1.0,
+                orientation: 1.0,
+            })
+        }
         Some(ProceduralSurfaceDefinition::LinearSweep {
             directrix,
             direction,
@@ -7173,35 +7179,35 @@ fn model_surface_mapping(
                 orientation: 1.0,
             })
         }
-        Some(ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            ..
-        }) => Some(SurfaceMapping {
-            base: model_native_revolution_partials(
-                index,
-                directrix,
-                *axis_origin,
-                *axis_direction,
-                *angular_interval,
-                *angular_parameter_interval,
-                *parameter_interval,
-                carrier_interval,
-                *transposed,
-                u,
-                v,
-                budget,
-            )?,
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
+        Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
+            let directrix = definition_payload.directrix();
+            let axis_origin = definition_payload.axis_origin();
+            let axis_direction = definition_payload.axis_direction();
+            let angular_interval = definition_payload.angular_interval();
+            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let transposed = definition_payload.transposed();
+            Some(SurfaceMapping {
+                base: model_native_revolution_partials(
+                    index,
+                    directrix,
+                    *axis_origin,
+                    *axis_direction,
+                    *angular_interval,
+                    *angular_parameter_interval,
+                    *parameter_interval,
+                    carrier_interval,
+                    *transposed,
+                    u,
+                    v,
+                    budget,
+                )?,
+                offset_distance: 0.0,
+                u_scale: 1.0,
+                v_scale: 1.0,
+                orientation: 1.0,
+            })
+        }
         Some(ProceduralSurfaceDefinition::Ruled { first, second }) => Some(SurfaceMapping {
             base: model_ruled_surface_partials(index, first, second, u, v)?,
             offset_distance: 0.0,
@@ -7239,41 +7245,44 @@ fn model_surface_mapping(
                 orientation: source.orientation * affine_orientation(*transform),
             })
         }
-        Some(ProceduralSurfaceDefinition::Subset {
-            support,
-            parameter_ranges,
-            u_sense,
-            v_sense,
-        }) => {
-            let (support_u, support_v, u_derivative, v_derivative) =
-                subset_support_parameters_with_derivatives(
-                    u,
-                    v,
-                    *parameter_ranges,
-                    *u_sense,
-                    *v_sense,
-                )?;
-            let support =
-                model_surface_mapping(index, support, support_u, support_v, visiting, budget)?;
+        Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
+            let support = definition_payload.support();
+            let parameter_ranges = &definition_payload.parameter_ranges();
+            let u_sense = definition_payload.u_sense();
+            let v_sense = definition_payload.v_sense();
+            {
+                let (support_u, support_v, u_derivative, v_derivative) =
+                    subset_support_parameters_with_derivatives(
+                        u,
+                        v,
+                        *parameter_ranges,
+                        *u_sense,
+                        *v_sense,
+                    )?;
+                let support =
+                    model_surface_mapping(index, support, support_u, support_v, visiting, budget)?;
+                Some(SurfaceMapping {
+                    base: support.base,
+                    offset_distance: support.offset_distance,
+                    u_scale: support.u_scale * u_derivative,
+                    v_scale: support.v_scale * v_derivative,
+                    orientation: support.orientation * u_derivative * v_derivative,
+                })
+            }
+        }
+        Some(ProceduralSurfaceDefinition::ParallelOffset(payload)) => {
+            let support = model_surface_mapping(index, payload.support(), u, v, visiting, budget)?;
             Some(SurfaceMapping {
-                base: support.base,
-                offset_distance: support.offset_distance,
-                u_scale: support.u_scale * u_derivative,
-                v_scale: support.v_scale * v_derivative,
-                orientation: support.orientation * u_derivative * v_derivative,
+                offset_distance: support.offset_distance
+                    + *payload.distance() * support.orientation,
+                ..support
             })
         }
-        Some(
-            ProceduralSurfaceDefinition::ParallelOffset {
-                support, distance, ..
-            }
-            | ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
-            },
-        ) => {
-            let support = model_surface_mapping(index, support, u, v, visiting, budget)?;
+        Some(ProceduralSurfaceDefinition::Offset(payload)) => {
+            let support = model_surface_mapping(index, payload.support(), u, v, visiting, budget)?;
             Some(SurfaceMapping {
-                offset_distance: support.offset_distance + *distance * support.orientation,
+                offset_distance: support.offset_distance
+                    + *payload.distance() * support.orientation,
                 ..support
             })
         }

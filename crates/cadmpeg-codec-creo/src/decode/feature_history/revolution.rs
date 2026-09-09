@@ -356,24 +356,26 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: curve_id,
-                        axis_origin: axis.origin.get(),
-                        axis_direction: axis.direction.get(),
-                        angular_interval: [0.0, std::f64::consts::TAU],
-                        angular_parameter_interval: None,
-                        parameter_interval: [
-                            *directrix.knots().first().expect("validated spline knots"),
-                            *directrix.knots().last().expect("validated spline knots"),
-                        ]
-                        .into(),
-                        transposed: false,
-                        revision_form: None,
-                    },
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    curve_id,
+                    (axis.origin.get(), axis.direction.get()),
+                    [0.0, std::f64::consts::TAU],
+                    None,
+                    [
+                        *directrix.knots().first().expect("validated spline knots"),
+                        *directrix.knots().last().expect("validated spline knots"),
+                    ]
+                    .into(),
+                    false,
                     None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        None,
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             transferred += 1;

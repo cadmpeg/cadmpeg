@@ -955,27 +955,13 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     ir.model.procedural_surfaces = vec![
         procedural_surface! {
             id: first_construction,
-            definition: ProceduralSurfaceDefinition::Offset {
-                support: support_id,
-                distance: 2.0,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
-            },
+            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, None, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
             cache_fit_tolerance: None,
             record_bounds: None,
         },
         procedural_surface! {
             id: second_construction,
-            definition: ProceduralSurfaceDefinition::Offset {
-                support: first_id,
-                distance: -5.0,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
-            },
+            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(first_id, -5.0, None, None, None, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
             cache_fit_tolerance: None,
             record_bounds: None,
         },
@@ -1051,14 +1037,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     ];
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: support_id,
-            distance: 0.0,
-            u_sense: None,
-            v_sense: None,
-            support_extension: Some(OffsetSupportExtension::Linear),
-            extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
-        },
+        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 0.0, None, None, Some(OffsetSupportExtension::Linear), OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1099,14 +1078,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     ];
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: support_id,
-            distance: 2.0,
-            u_sense: None,
-            v_sense: None,
-            support_extension: None,
-            extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
-        },
+        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, None, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1162,12 +1134,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             subset_id.clone(),
             procedural_surface! {
                 id: subset_construction,
-                definition: ProceduralSurfaceDefinition::Subset {
-                    support: base_id,
-                    parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
-                    u_sense: Some(false),
-                    v_sense: Some(true),
-                },
+                definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1178,14 +1145,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             offset_id.clone(),
             procedural_surface! {
                 id: offset_construction,
-                definition: ProceduralSurfaceDefinition::Offset {
-                    support: subset_id,
-                    distance: 2.0,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
-                },
+                definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, None, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1353,12 +1313,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        definition: ProceduralSurfaceDefinition::Extrusion {
-            directrix: directrix_id,
-            parameter_interval: Some([-2.0, 0.0]),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-            native_position: Some(Point3::new(0.0, 0.0, 0.0)),
-            revision_form: Some(RevisionSurfaceForm {
+        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), Some(RevisionSurfaceForm {
                 revision: 1,
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
@@ -1370,8 +1325,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
                 discontinuities: Default::default(),
                 tail_flag: false,
                 trailing_flags: Vec::new(),
-            }),
-        },
+            })).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1581,16 +1535,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: directrix_id,
-                    axis_origin: Point3::new(0.0, 0.0, 0.0),
-                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
-                    angular_interval: [0.0, std::f64::consts::PI],
-                    angular_parameter_interval: Some([10.0, 14.0]),
-                    parameter_interval: None,
-                    transposed: false,
-                    revision_form: None,
-                },
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1679,16 +1624,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: directrix_id,
-                    axis_origin: Point3::new(0.0, 0.0, 0.0),
-                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
-                    angular_interval: [0.0, std::f64::consts::TAU],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some([0.0, 1.0]),
-                    transposed: false,
-                    revision_form: None,
-                },
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: Some([Some(0.0), Some(10.0), None, None]),
             },

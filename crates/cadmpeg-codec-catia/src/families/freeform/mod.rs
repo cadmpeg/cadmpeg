@@ -188,24 +188,28 @@ pub(crate) fn append_consolidated_revolutions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint(format!("catia:consolidated:surface-revolution#{index}"))
-                    .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix,
-                    axis_origin: origin,
-                    axis_direction: axis,
-                    angular_interval: [
-                        revolution.angular_range[0] / revolution.angular_scale,
-                        revolution.angular_range[1] / revolution.angular_scale,
-                    ],
-                    angular_parameter_interval: Some(revolution.angular_range),
-                    parameter_interval: Some(revolution.profile_range),
-                    transposed: false,
-                    revision_form: None,
-                },
+            cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                directrix,
+                (origin, axis),
+                [
+                    revolution.angular_range[0] / revolution.angular_scale,
+                    revolution.angular_range[1] / revolution.angular_scale,
+                ],
+                Some(revolution.angular_range),
+                Some(revolution.profile_range),
+                false,
                 None,
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "catia:consolidated:surface-revolution#{index}"
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                    None,
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         if let Some(geometry) = torus_geometry {
@@ -1267,25 +1271,28 @@ pub(crate) fn append_freeform_surface_pools(
         );
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                procedural_id,
-                ProceduralSurfaceDefinition::Offset {
-                    support: carrier_ids[carrier].clone(),
-                    distance: offset.distance,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
-                Some([
-                    Some(offset.domain[0]),
-                    Some(offset.domain[1]),
-                    Some(offset.domain[2]),
-                    Some(offset.domain[3]),
-                ]),
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                carrier_ids[carrier].clone(),
+                offset.distance,
+                None,
+                None,
+                None,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    Some([
+                        Some(offset.domain[0]),
+                        Some(offset.domain[1]),
+                        Some(offset.domain[2]),
+                        Some(offset.domain[3]),
+                    ]),
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
@@ -1845,20 +1852,13 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         );
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            ProceduralSurface::new(
-                                procedural_id,
-                                ProceduralSurfaceDefinition::Offset {
-                                    support,
-                                    distance: *offset,
-                                    u_sense: None,
-                                    v_sense: None,
-                                    support_extension: None,
-                                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, None, cadmpeg_ir::geometry::OffsetExtension::Legacy(
                                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                                    ),
-                                },
+                                    )).and_then(|admitted_payload| ProceduralSurface::new(
+                                procedural_id,
+                                ProceduralSurfaceDefinition::Offset(admitted_payload),
                                 None,
-                            )
+                            ))
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                         );
                         surface_ids.insert(key, id.clone());

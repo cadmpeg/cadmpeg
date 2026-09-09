@@ -3248,12 +3248,11 @@ fn surface_offset_lineage_with_index(
     let Some(procedural) = index.procedural_surface_for_carrier(surface.as_str()) else {
         return Some((surface.clone(), 0.0));
     };
-    let ProceduralSurfaceDefinition::Offset {
-        support, distance, ..
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         return Some((surface.clone(), 0.0));
     };
+    let support = definition_payload.support();
+    let distance = definition_payload.distance();
     let (base, accumulated) = surface_offset_lineage_with_index(index, support, depth + 1)?;
     Some((base, accumulated + distance))
 }

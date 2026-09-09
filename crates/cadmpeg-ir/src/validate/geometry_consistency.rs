@@ -87,14 +87,13 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             }
             continue;
         }
-        if let crate::geometry::ProceduralCurveDefinition::SurfaceOffset {
-            context,
-            base,
-            base_endpoints,
-            distance: offset,
-            ..
-        } = procedural.definition()
+        if let crate::geometry::ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+            procedural.definition()
         {
+            let context = definition_payload.context();
+            let base = definition_payload.base();
+            let base_endpoints = definition_payload.base_endpoints();
+            let offset = definition_payload.distance();
             let Some(solved) = curves.get(owner.as_str()) else {
                 continue;
             };
@@ -154,12 +153,23 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             continue;
         }
         let (context, third) = match procedural.definition() {
-            crate::geometry::ProceduralCurveDefinition::Law { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Projection { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
+            crate::geometry::ProceduralCurveDefinition::Law { context, .. } => {
                 (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::Intersection { context, .. } => {
+                (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. } => {
+                (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::Projection { context, .. } => {
+                (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
+                let context = definition_payload.context();
+                {
+                    (std::borrow::Cow::Borrowed(context), None)
+                }
             }
             crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } => {
                 (std::borrow::Cow::Borrowed(family.context()), None)
@@ -436,7 +446,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .filter(|surface| {
             !matches!(
                 surface.definition(),
-                crate::geometry::ProceduralSurfaceDefinition::Subset { .. }
+                crate::geometry::ProceduralSurfaceDefinition::Subset(_)
             )
         })
         .filter_map(|surface| {
@@ -835,9 +845,7 @@ fn pcurve_parameter_seeds_on_surface(
 }
 
 fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[[f64; 2]; 2]> {
-    if let Some(crate::geometry::ProceduralSurfaceDefinition::Subset {
-        parameter_ranges, ..
-    }) = context
+    if let Some(crate::geometry::ProceduralSurfaceDefinition::Subset(definition_payload)) = context
         .index
         .ir()
         .model
@@ -853,6 +861,7 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
         })
         .map(crate::geometry::ProceduralSurface::definition)
     {
+        let parameter_ranges = &definition_payload.parameter_ranges();
         let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
         let u_span = (u_end - u_start).abs();
         let v_span = (v_end - v_start).abs();

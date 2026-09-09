@@ -538,136 +538,142 @@ fn native_procedural_surface_definition(
             }
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::SubSurface { .. } => {
+        ProceduralSurfaceDefinition::SubSurface(_) => {
             return Err(CodecError::malformed(format_args!(
                 "sub-surface {} must use its exact cacheless carrier",
                 procedural.id
             )));
         }
-        ProceduralSurfaceDefinition::Taper {
-            support,
-            reference,
-            pcurve,
-            parameter,
-            taper,
-            revision_form,
-        } => {
-            let support = target
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == *support)
-                .ok_or_else(|| CodecError::Malformed("taper support surface is missing".into()))?;
-            let reference = target
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == *reference)
-                .ok_or_else(|| CodecError::Malformed("taper reference curve is missing".into()))?;
-            let reference = native_spline_field_curve(
-                &reference.geometry,
-                native_pcurve_knot_domain(pcurve.as_ref())?,
-            )?;
-            let subtype = match taper {
-                cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
-                cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
-                cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. } => "edge_tpr_spl_sur",
-                cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. } => "shadow_tpr_spl_sur",
-                cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. } => "ruled_tpr_spl_sur",
-                cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
-            };
-            if let Some(form) = revision_form {
-                if form.revision <= 0
-                    || !matches!(
-                        taper,
-                        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
-                    )
-                {
-                    return Err(CodecError::Malformed(
-                        "revision-gated taper generation requires the orthogonal subtype".into(),
-                    ));
+        ProceduralSurfaceDefinition::Taper(definition_payload) => {
+            let support = definition_payload.support();
+            let reference = definition_payload.reference();
+            let pcurve = definition_payload.pcurve();
+            let parameter = definition_payload.parameter();
+            let taper = definition_payload.taper();
+            let revision_form = definition_payload.revision_form();
+            {
+                let support = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *support)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("taper support surface is missing".into())
+                    })?;
+                let reference = target
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == *reference)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("taper reference curve is missing".into())
+                    })?;
+                let reference = native_spline_field_curve(
+                    &reference.geometry,
+                    native_pcurve_knot_domain(pcurve.as_ref())?,
+                )?;
+                let subtype = match taper {
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. } => "edge_tpr_spl_sur",
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. } => "shadow_tpr_spl_sur",
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. } => "ruled_tpr_spl_sur",
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
+                };
+                if let Some(form) = revision_form {
+                    if form.revision <= 0
+                        || !matches!(
+                            taper,
+                            cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
+                        )
+                    {
+                        return Err(CodecError::Malformed(
+                            "revision-gated taper generation requires the orthogonal subtype"
+                                .into(),
+                        ));
+                    }
+                    native_surface_base(bytes, "spline")?;
+                    bytes.push(0x0f);
+                    native_ident(bytes, "ortho_spl_sur")?;
+                    native_i64(bytes, form.revision);
+                    native_embedded_surface_with_bounds(
+                        bytes,
+                        &support.geometry,
+                        &form.support_bounds,
+                    )?;
+                    native_nurbs_curve(bytes, &reference)?;
+                    for value in form.reference_endpoints {
+                        native_optional_f64(bytes, value);
+                    }
+                    if let Some(pcurve) = pcurve {
+                        native_nurbs_pcurve_block(bytes, pcurve)?;
+                    } else {
+                        native_ident(bytes, "nullbs")?;
+                    }
+                    native_f64(bytes, *parameter);
+                    native_revision_surface_tail(bytes, "taper surface", form, Some(solved_cache))?;
+                    // Orthogonal sense is the record's own trailing logical, written
+                    // after the shared tail's illegal-region flag.
+                    if let cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } = taper {
+                        bytes.push(native_bool(*sense));
+                    }
+                    bytes.push(0x10);
+                    return Ok(true);
                 }
                 native_surface_base(bytes, "spline")?;
                 bytes.push(0x0f);
-                native_ident(bytes, "ortho_spl_sur")?;
-                native_i64(bytes, form.revision);
-                native_embedded_surface_with_bounds(
-                    bytes,
-                    &support.geometry,
-                    &form.support_bounds,
-                )?;
+                native_ident(bytes, subtype)?;
+                native_embedded_surface(bytes, &support.geometry)?;
                 native_nurbs_curve(bytes, &reference)?;
-                for value in form.reference_endpoints {
-                    native_optional_f64(bytes, value);
-                }
                 if let Some(pcurve) = pcurve {
                     native_nurbs_pcurve_block(bytes, pcurve)?;
                 } else {
                     native_ident(bytes, "nullbs")?;
                 }
                 native_f64(bytes, *parameter);
-                native_revision_surface_tail(bytes, "taper surface", form, Some(solved_cache))?;
-                // Orthogonal sense is the record's own trailing logical, written
-                // after the shared tail's illegal-region flag.
-                if let cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } = taper {
-                    bytes.push(native_bool(*sense));
+                native_nurbs_surface(bytes, solved_cache)?;
+                if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
+                    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                }
+                let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
+                    native_vector(bytes, [draft.x, draft.y, draft.z]);
+                };
+                match taper {
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Standard => {}
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } => {
+                        bytes.push(native_bool(*sense));
+                    }
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Edge { draft } => {
+                        write_draft(bytes, *draft);
+                    }
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Shadow {
+                        draft,
+                        sine,
+                        cosine,
+                    }
+                    | cadmpeg_ir::geometry::TaperSurfaceKind::Swept {
+                        draft,
+                        sine,
+                        cosine,
+                    } => {
+                        write_draft(bytes, *draft);
+                        native_f64(bytes, *sine);
+                        native_f64(bytes, *cosine);
+                    }
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Ruled {
+                        draft,
+                        sine,
+                        cosine,
+                        factor,
+                    } => {
+                        write_draft(bytes, *draft);
+                        native_f64(bytes, *sine);
+                        native_f64(bytes, *cosine);
+                        native_f64(bytes, *factor);
+                    }
                 }
                 bytes.push(0x10);
-                return Ok(true);
             }
-            native_surface_base(bytes, "spline")?;
-            bytes.push(0x0f);
-            native_ident(bytes, subtype)?;
-            native_embedded_surface(bytes, &support.geometry)?;
-            native_nurbs_curve(bytes, &reference)?;
-            if let Some(pcurve) = pcurve {
-                native_nurbs_pcurve_block(bytes, pcurve)?;
-            } else {
-                native_ident(bytes, "nullbs")?;
-            }
-            native_f64(bytes, *parameter);
-            native_nurbs_surface(bytes, solved_cache)?;
-            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
-            }
-            let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
-                native_vector(bytes, [draft.x, draft.y, draft.z]);
-            };
-            match taper {
-                cadmpeg_ir::geometry::TaperSurfaceKind::Standard => {}
-                cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } => {
-                    bytes.push(native_bool(*sense));
-                }
-                cadmpeg_ir::geometry::TaperSurfaceKind::Edge { draft } => {
-                    write_draft(bytes, *draft);
-                }
-                cadmpeg_ir::geometry::TaperSurfaceKind::Shadow {
-                    draft,
-                    sine,
-                    cosine,
-                }
-                | cadmpeg_ir::geometry::TaperSurfaceKind::Swept {
-                    draft,
-                    sine,
-                    cosine,
-                } => {
-                    write_draft(bytes, *draft);
-                    native_f64(bytes, *sine);
-                    native_f64(bytes, *cosine);
-                }
-                cadmpeg_ir::geometry::TaperSurfaceKind::Ruled {
-                    draft,
-                    sine,
-                    cosine,
-                    factor,
-                } => {
-                    write_draft(bytes, *draft);
-                    native_f64(bytes, *sine);
-                    native_f64(bytes, *cosine);
-                    native_f64(bytes, *factor);
-                }
-            }
-            bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Loft {
             sections,
@@ -882,42 +888,102 @@ fn native_procedural_surface_definition(
             }
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            revision_form,
-        } => {
-            if angular_parameter_interval
-                .is_some_and(|parameter_interval| parameter_interval != *angular_interval)
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let axis_origin = definition_payload.axis_origin();
+            let axis_direction = definition_payload.axis_direction();
+            let angular_interval = definition_payload.angular_interval();
+            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let transposed = definition_payload.transposed();
+            let revision_form = definition_payload.revision_form();
             {
-                return Err(CodecError::NotImplemented(
-                    "F3D rot_spl_sur cannot encode a distinct angular parameter interval".into(),
-                ));
-            }
-            if let Some(form) = revision_form {
-                if form.revision <= 0 {
-                    return Err(CodecError::Malformed(
-                        "revision-gated rot_spl_sur requires a positive revision".into(),
+                if angular_parameter_interval
+                    .is_some_and(|parameter_interval| parameter_interval != *angular_interval)
+                {
+                    return Err(CodecError::NotImplemented(
+                        "F3D rot_spl_sur cannot encode a distinct angular parameter interval"
+                            .into(),
                     ));
+                }
+                if let Some(form) = revision_form {
+                    if form.revision <= 0 {
+                        return Err(CodecError::Malformed(
+                            "revision-gated rot_spl_sur requires a positive revision".into(),
+                        ));
+                    }
+                    native_surface_base(bytes, "spline")?;
+                    bytes.push(0x0f);
+                    native_ident(bytes, "rot_spl_sur")?;
+                    native_i64(bytes, form.revision);
+                    let range = match form.reference_endpoints {
+                        [Some(lower), Some(upper)] => Some([lower, upper]),
+                        _ => None,
+                    };
+                    let profile = native_loft_curve_in_range(target, directrix, range)?;
+                    native_nurbs_curve(bytes, &profile)?;
+                    for endpoint in &form.reference_endpoints {
+                        native_optional_f64(bytes, *endpoint);
+                    }
+                    native_point(
+                        bytes,
+                        [
+                            axis_origin.x / LEN_TO_MM,
+                            axis_origin.y / LEN_TO_MM,
+                            axis_origin.z / LEN_TO_MM,
+                        ],
+                    );
+                    native_vector(
+                        bytes,
+                        [axis_direction.x, axis_direction.y, axis_direction.z],
+                    );
+                    native_revision_surface_tail(
+                        bytes,
+                        "revolution surface",
+                        form,
+                        Some(solved_cache),
+                    )?;
+                    bytes.push(0x10);
+                    return Ok(true);
+                }
+                let parameter_interval = (*parameter_interval).ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "source-less F3D rot_spl_sur requires a directrix parameter interval"
+                            .into(),
+                    )
+                })?;
+                let directrix = target
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == *directrix)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "revolution surface {} references a missing directrix",
+                            procedural.id
+                        ))
+                    })?;
+                let directrix = native_interval_curve(&directrix.geometry, parameter_interval)?;
+                let native_parameter_interval = [
+                    directrix.knots().first().copied().unwrap_or(0.0),
+                    directrix.knots().last().copied().unwrap_or(0.0),
+                ];
+                let native_angular_interval = [
+                    solved_cache.v_knots().first().copied().unwrap_or(0.0),
+                    solved_cache.v_knots().last().copied().unwrap_or(0.0),
+                ];
+                if *transposed
+                    || parameter_interval != native_parameter_interval
+                    || *angular_interval != native_angular_interval
+                {
+                    return Err(CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
+                ));
                 }
                 native_surface_base(bytes, "spline")?;
                 bytes.push(0x0f);
                 native_ident(bytes, "rot_spl_sur")?;
-                native_i64(bytes, form.revision);
-                let range = match form.reference_endpoints {
-                    [Some(lower), Some(upper)] => Some([lower, upper]),
-                    _ => None,
-                };
-                let profile = native_loft_curve_in_range(target, directrix, range)?;
-                native_nurbs_curve(bytes, &profile)?;
-                for endpoint in &form.reference_endpoints {
-                    native_optional_f64(bytes, *endpoint);
-                }
+                native_nurbs_curve(bytes, &directrix)?;
                 native_point(
                     bytes,
                     [
@@ -930,175 +996,124 @@ fn native_procedural_surface_definition(
                     bytes,
                     [axis_direction.x, axis_direction.y, axis_direction.z],
                 );
-                native_revision_surface_tail(
-                    bytes,
-                    "revolution surface",
-                    form,
-                    Some(solved_cache),
-                )?;
-                bytes.push(0x10);
-                return Ok(true);
-            }
-            let parameter_interval = (*parameter_interval).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D rot_spl_sur requires a directrix parameter interval".into(),
-                )
-            })?;
-            let directrix = target
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == *directrix)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "revolution surface {} references a missing directrix",
-                        procedural.id
-                    ))
-                })?;
-            let directrix = native_interval_curve(&directrix.geometry, parameter_interval)?;
-            let native_parameter_interval = [
-                directrix.knots().first().copied().unwrap_or(0.0),
-                directrix.knots().last().copied().unwrap_or(0.0),
-            ];
-            let native_angular_interval = [
-                solved_cache.v_knots().first().copied().unwrap_or(0.0),
-                solved_cache.v_knots().last().copied().unwrap_or(0.0),
-            ];
-            if *transposed
-                || parameter_interval != native_parameter_interval
-                || *angular_interval != native_angular_interval
-            {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
-                ));
-            }
-            native_surface_base(bytes, "spline")?;
-            bytes.push(0x0f);
-            native_ident(bytes, "rot_spl_sur")?;
-            native_nurbs_curve(bytes, &directrix)?;
-            native_point(
-                bytes,
-                [
-                    axis_origin.x / LEN_TO_MM,
-                    axis_origin.y / LEN_TO_MM,
-                    axis_origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(
-                bytes,
-                [axis_direction.x, axis_direction.y, axis_direction.z],
-            );
-            native_nurbs_surface(bytes, solved_cache)?;
-            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
-            }
-            bytes.push(0x10);
-        }
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance,
-            u_sense,
-            v_sense,
-            support_extension: _,
-            extension,
-        } => {
-            let support = target
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == *support)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "offset surface {} references a missing support",
-                        procedural.id
-                    ))
-                })?;
-            let extension_flags = match extension {
-                cadmpeg_ir::geometry::OffsetExtension::Revision(form) => {
-                    if form.revision <= 0 {
-                        return Err(CodecError::Malformed(
-                            "revision-gated off_spl_sur requires a positive revision".into(),
-                        ));
-                    }
-                    native_surface_base(bytes, "spline")?;
-                    bytes.push(0x0f);
-                    native_ident(bytes, "off_spl_sur")?;
-                    native_i64(bytes, form.revision);
-                    native_embedded_surface_with_bounds(
-                        bytes,
-                        &support.geometry,
-                        &form.support_bounds,
-                    )?;
-                    native_f64(bytes, *distance / LEN_TO_MM);
-                    // Leading sense pair, then the two-boolean ASM extension prefix.
-                    for flag in form.flags {
-                        bytes.push(native_bool(flag));
-                    }
-                    native_revision_surface_tail(
-                        bytes,
-                        "offset surface",
-                        form,
-                        Some(solved_cache),
-                    )?;
-                    bytes.push(0x10);
-                    return Ok(true);
+                native_nurbs_surface(bytes, solved_cache)?;
+                if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
+                    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
                 }
-                cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) => flags.wire_values(),
-            };
-            let u_sense = (*u_sense).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D offset surface requires a U sense".into(),
-                )
-            })?;
-            let v_sense = (*v_sense).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D offset surface requires a V sense".into(),
-                )
-            })?;
-            native_surface_base(bytes, "spline")?;
-            bytes.push(0x0f);
-            native_ident(
-                bytes,
-                if extension_flags.is_empty() {
-                    "offsur"
-                } else {
-                    "off_spl_sur"
-                },
-            )?;
-            native_embedded_surface(bytes, &support.geometry)?;
-            native_f64(bytes, *distance / LEN_TO_MM);
-            native_enum(bytes, u_sense);
-            native_enum(bytes, v_sense);
-            for flag in extension_flags {
-                bytes.push(native_bool(flag));
+                bytes.push(0x10);
             }
-            native_nurbs_surface(bytes, solved_cache)?;
-            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
-            }
-            bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            direction,
-            native_position,
-            revision_form,
-        } => encode_native_extrusion(
-            bytes,
-            target,
-            procedural,
-            directrix,
-            parameter_interval.ok_or_else(|| {
-                CodecError::Malformed("source-less F3D extrusion lacks its native interval".into())
-            })?,
-            *direction,
-            native_position.ok_or_else(|| {
-                CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
-            })?,
-            revision_form.as_ref(),
-            Some(solved_cache),
-        )?,
+        ProceduralSurfaceDefinition::Offset(definition_payload) => {
+            let support = definition_payload.support();
+            let distance = definition_payload.distance();
+            let u_sense = definition_payload.u_sense();
+            let v_sense = definition_payload.v_sense();
+            let _ = definition_payload.support_extension();
+            let extension = definition_payload.extension();
+            {
+                let support = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *support)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "offset surface {} references a missing support",
+                            procedural.id
+                        ))
+                    })?;
+                let extension_flags = match extension {
+                    cadmpeg_ir::geometry::OffsetExtension::Revision(form) => {
+                        if form.revision <= 0 {
+                            return Err(CodecError::Malformed(
+                                "revision-gated off_spl_sur requires a positive revision".into(),
+                            ));
+                        }
+                        native_surface_base(bytes, "spline")?;
+                        bytes.push(0x0f);
+                        native_ident(bytes, "off_spl_sur")?;
+                        native_i64(bytes, form.revision);
+                        native_embedded_surface_with_bounds(
+                            bytes,
+                            &support.geometry,
+                            &form.support_bounds,
+                        )?;
+                        native_f64(bytes, *distance / LEN_TO_MM);
+                        // Leading sense pair, then the two-boolean ASM extension prefix.
+                        for flag in form.flags {
+                            bytes.push(native_bool(flag));
+                        }
+                        native_revision_surface_tail(
+                            bytes,
+                            "offset surface",
+                            form,
+                            Some(solved_cache),
+                        )?;
+                        bytes.push(0x10);
+                        return Ok(true);
+                    }
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) => flags.wire_values(),
+                };
+                let u_sense = (*u_sense).ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "source-less F3D offset surface requires a U sense".into(),
+                    )
+                })?;
+                let v_sense = (*v_sense).ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "source-less F3D offset surface requires a V sense".into(),
+                    )
+                })?;
+                native_surface_base(bytes, "spline")?;
+                bytes.push(0x0f);
+                native_ident(
+                    bytes,
+                    if extension_flags.is_empty() {
+                        "offsur"
+                    } else {
+                        "off_spl_sur"
+                    },
+                )?;
+                native_embedded_surface(bytes, &support.geometry)?;
+                native_f64(bytes, *distance / LEN_TO_MM);
+                native_enum(bytes, u_sense);
+                native_enum(bytes, v_sense);
+                for flag in extension_flags {
+                    bytes.push(native_bool(flag));
+                }
+                native_nurbs_surface(bytes, solved_cache)?;
+                if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
+                    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                }
+                bytes.push(0x10);
+            }
+        }
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let direction = definition_payload.direction();
+            let native_position = &definition_payload.native_position();
+            let revision_form = definition_payload.revision_form();
+            encode_native_extrusion(
+                bytes,
+                target,
+                procedural,
+                directrix,
+                parameter_interval.ok_or_else(|| {
+                    CodecError::Malformed(
+                        "source-less F3D extrusion lacks its native interval".into(),
+                    )
+                })?,
+                *direction,
+                native_position.ok_or_else(|| {
+                    CodecError::Malformed(
+                        "source-less F3D extrusion lacks its native position".into(),
+                    )
+                })?,
+                revision_form.as_ref(),
+                Some(solved_cache),
+            )?
+        }
         ProceduralSurfaceDefinition::Blend {
             supports,
             spine,
@@ -1127,15 +1142,55 @@ fn native_procedural_surface_definition(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::RollingBallJet(_)
-        | ProceduralSurfaceDefinition::LinearSweep { .. }
-        | ProceduralSurfaceDefinition::AxisRevolution { .. }
-        | ProceduralSurfaceDefinition::ParallelOffset { .. }
-        | ProceduralSurfaceDefinition::DegenerateTorus { .. }
-        | ProceduralSurfaceDefinition::CurveBounded { .. }
-        | ProceduralSurfaceDefinition::Subset { .. }
-        | ProceduralSurfaceDefinition::Replica { .. }
-        | ProceduralSurfaceDefinition::Unknown { .. } => {
+        ProceduralSurfaceDefinition::RollingBallJet(_) => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::LinearSweep { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::AxisRevolution { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::ParallelOffset(_) => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::DegenerateTorus { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::CurveBounded { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::Subset(_) => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::Replica { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} has no lossless native encoding",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
@@ -1820,14 +1875,12 @@ fn native_cacheless_procedural_surface_definition(
             surface.id
         )));
     }
-    if let ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        parameter_interval,
-        direction,
-        native_position,
-        revision_form,
-    } = procedural.definition()
-    {
+    if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {
+        let directrix = definition_payload.directrix();
+        let parameter_interval = &definition_payload.parameter_interval();
+        let direction = definition_payload.direction();
+        let native_position = &definition_payload.native_position();
+        let revision_form = definition_payload.revision_form();
         encode_native_extrusion(
             bytes,
             target,
@@ -1983,11 +2036,9 @@ fn native_cacheless_procedural_surface_definition(
             return Ok(true);
         }
     }
-    if let ProceduralSurfaceDefinition::SubSurface {
-        support,
-        parameter_ranges,
-    } = procedural.definition()
-    {
+    if let ProceduralSurfaceDefinition::SubSurface(definition_payload) = procedural.definition() {
+        let support = definition_payload.support();
+        let parameter_ranges = &definition_payload.parameter_ranges();
         let support = target
             .model
             .surfaces
@@ -4579,14 +4630,14 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-        context,
-        cache_first,
-        source,
-        source_parameter_range,
-        data,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(definition_payload) =
+        procedural.definition()
     {
+        let context = definition_payload.context();
+        let cache_first = definition_payload.cache_first();
+        let source = definition_payload.source();
+        let source_parameter_range = &definition_payload.source_parameter_range();
+        let data = definition_payload.data();
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
@@ -4898,20 +4949,20 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-        context,
-        discontinuity_flag,
-        base_u_range,
-        base_v_range,
-        base,
-        base_range,
-        base_endpoints,
-        cache_first,
-        distance,
-        shift,
-        scale,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+        procedural.definition()
     {
+        let context = definition_payload.context();
+        let discontinuity_flag = definition_payload.discontinuity_flag();
+        let base_u_range = definition_payload.base_u_range();
+        let base_v_range = definition_payload.base_v_range();
+        let base = definition_payload.base();
+        let base_range = definition_payload.base_range();
+        let base_endpoints = definition_payload.base_endpoints();
+        let cache_first = definition_payload.cache_first();
+        let distance = definition_payload.distance();
+        let shift = definition_payload.shift();
+        let scale = definition_payload.scale();
         let base = target
             .model
             .curves
@@ -5097,12 +5148,12 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-        context,
-        discontinuity_flag,
-        offsets,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        procedural.definition()
     {
+        let context = definition_payload.context();
+        let discontinuity_flag = definition_payload.discontinuity_flag();
+        let offsets = definition_payload.offsets();
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_int_cur")?;
@@ -5116,13 +5167,13 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-        source,
-        parameter_range,
-        offset,
-        roles,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload) =
+        procedural.definition()
     {
+        let source = definition_payload.source();
+        let parameter_range = definition_payload.parameter_range();
+        let offset = definition_payload.offset();
+        let roles = definition_payload.roles();
         let source = target
             .model
             .curves
@@ -5154,12 +5205,11 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-        source,
-        parameter_range,
-        ..
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) =
+        procedural.definition()
     {
+        let source = definition_payload.source();
+        let parameter_range = definition_payload.parameter_range();
         let source = target
             .model
             .curves
@@ -5190,8 +5240,13 @@ pub(crate) fn native_procedural_curve(
             &helix_payload.apex_factor(),
             helix_payload.axis(),
         ),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset { .. } => {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_) => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D offset curve {} lacks a defined native offset-law grammar",
+                procedural.id
+            )))
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                 procedural.id
@@ -5203,23 +5258,55 @@ pub(crate) fn native_procedural_curve(
                 procedural.id
             )))
         }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_) => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(_) => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(_) => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(_) => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(_) => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_) => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
             unreachable!("procedural curve variant returned from its native writer")
         }
     };

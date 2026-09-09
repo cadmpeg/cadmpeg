@@ -124,19 +124,18 @@ fn mapped_surface_offset() -> CadIr {
     };
     let context = family.context().clone();
     ir.model.procedural_curves[0]
-        .replace_definition(ProceduralCurveDefinition::SurfaceOffset {
-            context,
-            discontinuity_flag: false,
-            base_u_range: [0.0, 1.0],
-            base_v_range: [0.0, 1.0],
-            base,
-            base_range: [2.0, 3.0],
-            base_endpoints: [Some(2.0), Some(3.0)],
-            cache_first: None,
-            distance: 25.0,
-            shift: 0.0,
-            scale: 1.0,
-        })
+        .replace_definition(ProceduralCurveDefinition::SurfaceOffset(
+            crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+                context,
+                false,
+                [[0.0, 1.0], [0.0, 1.0]],
+                (base, [2.0, 3.0], [Some(2.0), Some(3.0)]),
+                None,
+                25.0,
+                [0.0, 1.0],
+            )
+            .unwrap(),
+        ))
         .unwrap();
     ir
 }
@@ -301,10 +300,27 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut context_first = mapped_surface_offset();
     context_first.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::SurfaceOffset { base_endpoints, .. } = definition else {
+            let ProceduralCurveDefinition::SurfaceOffset(definition_payload) = definition else {
                 unreachable!();
             };
-            *base_endpoints = [None, None];
+            *definition_payload =
+                crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+                    definition_payload.context().clone(),
+                    *definition_payload.discontinuity_flag(),
+                    [
+                        *definition_payload.base_u_range(),
+                        *definition_payload.base_v_range(),
+                    ],
+                    (
+                        definition_payload.base().clone(),
+                        *definition_payload.base_range(),
+                        [None, None],
+                    ),
+                    definition_payload.cache_first().clone(),
+                    *definition_payload.distance(),
+                    [*definition_payload.shift(), *definition_payload.scale()],
+                )
+                .unwrap();
         })
         .unwrap();
     check_procedural_support_consistency(&context_first, &mut findings);
@@ -365,12 +381,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     });
     let construction = procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:entity#trimmed-surface").expect("valid identity"),
-        definition: ProceduralSurfaceDefinition::Subset {
-            support: base_id,
-            parameter_ranges: [[2.0, 0.0], [0.0, 2.0]],
-            u_sense: Some(false),
-            v_sense: Some(true),
-        },
+        definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[2.0, 0.0], [0.0, 2.0]], Some(false), Some(true)).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     };
@@ -883,16 +894,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("coedge owner face");
     let construction = procedural_surface! {
     id: ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity"),
-    definition: ProceduralSurfaceDefinition::Revolution {
-            directrix: procedural.model.curves[0].id.clone(),
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            angular_interval: [0.0, std::f64::consts::TAU],
-            angular_parameter_interval: None,
-            parameter_interval: Some([0.0, 1.0]),
-            transposed: false,
-            revision_form: None,
-        },
+    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.model.curves[0].id.clone(), (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, None).unwrap()),
         cache_fit_tolerance: Some(0.01),
         record_bounds: None,
     };

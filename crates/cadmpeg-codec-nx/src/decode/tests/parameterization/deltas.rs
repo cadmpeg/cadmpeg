@@ -243,9 +243,10 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset surface");
     };
-    let ProceduralSurfaceDefinition::Offset { distance, .. } = procedural.definition() else {
+    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         panic!("offset surface");
     };
+    let distance = definition_payload.distance();
     assert_eq!(*distance, 4.5);
     assert_eq!(
         result.ir().model.faces[0].surface,

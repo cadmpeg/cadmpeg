@@ -173,8 +173,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 .iter()
                 .find(|procedural| procedural.id == *construction)
                 .and_then(|procedural| match procedural.definition() {
-                    ProceduralSurfaceDefinition::Revolution { directrix, .. }
-                    | ProceduralSurfaceDefinition::Extrusion { directrix, .. } => Some(directrix),
+                    ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                        let directrix = definition_payload.directrix();
+                        Some(directrix)
+                    }
+                    ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                        let directrix = definition_payload.directrix();
+                        Some(directrix)
+                    }
                     _ => None,
                 })
         }) {
@@ -578,20 +584,25 @@ fn is_native_surface_construction(
     ) {
         return false;
     }
-    matches!(
-        definition,
-        ProceduralSurfaceDefinition::Revolution {
-            angular_parameter_interval: None,
-            parameter_interval: Some(_),
-            transposed: false,
-            revision_form: None,
-            ..
-        } | ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: Some(_),
-            revision_form: None,
-            ..
-        }
-    )
+    match definition {
+        ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+            (
+                &matched_payload.angular_parameter_interval(),
+                &matched_payload.parameter_interval(),
+                matched_payload.transposed(),
+                matched_payload.revision_form(),
+            ),
+            (None, Some(_), false, None,)
+        ),
+        ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+            (
+                &matched_payload.parameter_interval(),
+                matched_payload.revision_form(),
+            ),
+            (Some(_), None,)
+        ),
+        _ => false,
+    }
 }
 
 struct ValidatedTopology<'a> {
@@ -3265,16 +3276,16 @@ fn procedural_pcurve_source_map(
         return Ok(None);
     };
     let (directrix, fallback_interval) = match procedural.definition() {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            ..
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = &definition_payload.parameter_interval();
+            (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
         }
-        | ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            parameter_interval,
-            ..
-        } => (directrix, parameter_interval.unwrap_or([0.0, 1.0])),
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = &definition_payload.parameter_interval();
+            (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
+        }
         _ => return Ok(None),
     };
     let source_curve = ir
@@ -3293,51 +3304,52 @@ fn procedural_pcurve_source_map(
     let mut u_map;
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            ..
-        } => {
-            let source_interval = if line_directrix(ir, directrix) {
-                parameter_interval.unwrap_or([0.0, 1.0])
-            } else {
-                parameter_interval.unwrap_or(carrier_interval)
-            };
-            u_map = affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
-                CodecError::Malformed(
-                    "IGES procedural surface parameter domains are invalid".into(),
-                )
-            })?;
-        }
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            ..
-        } => {
-            let source_interval = if line_directrix(ir, directrix) {
-                parameter_interval.unwrap_or([0.0, 1.0])
-            } else {
-                parameter_interval.unwrap_or(carrier_interval)
-            };
-            u_map = affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
-                CodecError::Malformed(
-                    "IGES procedural surface parameter domains are invalid".into(),
-                )
-            })?;
-            if let Some(parameter_interval) = angular_parameter_interval {
-                v_map = affine_parameter_map(*angular_interval, *parameter_interval).ok_or_else(
-                    || {
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = &definition_payload.parameter_interval();
+            {
+                let source_interval = if line_directrix(ir, directrix) {
+                    parameter_interval.unwrap_or([0.0, 1.0])
+                } else {
+                    parameter_interval.unwrap_or(carrier_interval)
+                };
+                u_map =
+                    affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
                         CodecError::Malformed(
-                            "IGES procedural surface angular domains are invalid".into(),
+                            "IGES procedural surface parameter domains are invalid".into(),
                         )
-                    },
-                )?;
+                    })?;
             }
-            if *transposed {
-                std::mem::swap(&mut u_map, &mut v_map);
+        }
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let angular_interval = definition_payload.angular_interval();
+            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
+            let parameter_interval = &definition_payload.parameter_interval();
+            let transposed = definition_payload.transposed();
+            {
+                let source_interval = if line_directrix(ir, directrix) {
+                    parameter_interval.unwrap_or([0.0, 1.0])
+                } else {
+                    parameter_interval.unwrap_or(carrier_interval)
+                };
+                u_map =
+                    affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "IGES procedural surface parameter domains are invalid".into(),
+                        )
+                    })?;
+                if let Some(parameter_interval) = angular_parameter_interval {
+                    v_map = affine_parameter_map(*angular_interval, *parameter_interval)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(
+                                "IGES procedural surface angular domains are invalid".into(),
+                            )
+                        })?;
+                }
+                if *transposed {
+                    std::mem::swap(&mut u_map, &mut v_map);
+                }
             }
         }
         _ => return Ok(None),
@@ -4443,10 +4455,10 @@ fn surface_entities_for_ir(
                     ))
                 })?;
             match procedural.definition() {
-                ProceduralSurfaceDefinition::Revolution { .. } => {
+                ProceduralSurfaceDefinition::Revolution(_) => {
                     revolution_surface_entities(ir, construction, base_index, version)
                 }
-                ProceduralSurfaceDefinition::Extrusion { .. } => {
+                ProceduralSurfaceDefinition::Extrusion(_) => {
                     extrusion_surface_entities(ir, construction, base_index, version)
                 }
                 _ => Err(CodecError::NotImplemented(
@@ -4474,18 +4486,16 @@ fn extrusion_surface_entities(
                 "IGES procedural surface construction {construction} is missing"
             ))
         })?;
-    let ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        parameter_interval,
-        direction,
-        native_position,
-        revision_form,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer only encodes Extrusion surfaces as Type 122".into(),
         ));
     };
+    let directrix = definition_payload.directrix();
+    let parameter_interval = &definition_payload.parameter_interval();
+    let direction = definition_payload.direction();
+    let native_position = &definition_payload.native_position();
+    let revision_form = definition_payload.revision_form();
     if revision_form.is_some() {
         return Err(CodecError::NotImplemented(
             "IGES Type 122 output does not encode revision-gated extrusion fields".into(),
@@ -4622,21 +4632,20 @@ fn revolution_surface_entities(
                 "IGES procedural surface construction {construction} is missing"
             ))
         })?;
-    let ProceduralSurfaceDefinition::Revolution {
-        directrix,
-        axis_origin,
-        axis_direction,
-        angular_interval,
-        angular_parameter_interval,
-        parameter_interval,
-        transposed,
-        revision_form,
-    } = procedural.definition()
+    let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
     else {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer only encodes procedural Revolution surfaces as Type 120".into(),
         ));
     };
+    let directrix = definition_payload.directrix();
+    let axis_origin = definition_payload.axis_origin();
+    let axis_direction = definition_payload.axis_direction();
+    let angular_interval = definition_payload.angular_interval();
+    let angular_parameter_interval = &definition_payload.angular_parameter_interval();
+    let parameter_interval = &definition_payload.parameter_interval();
+    let transposed = definition_payload.transposed();
+    let revision_form = definition_payload.revision_form();
     if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {
         return Err(CodecError::NotImplemented(
             "IGES Type 120 output requires the default revolution parameterization".into(),

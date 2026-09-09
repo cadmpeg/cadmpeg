@@ -3374,55 +3374,56 @@ pub(crate) fn validate_procedural_surface_edits(
         }
         let edit = match (before.definition(), after.definition()) {
             (
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: before_directrix,
-                    parameter_interval: before_parameter_interval,
-                    direction: before_direction,
-                    native_position: before_native_position,
-                    revision_form: None,
-                },
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: after_directrix,
-                    parameter_interval: after_parameter_interval,
-                    direction: after_direction,
-                    native_position: after_native_position,
-                    revision_form: None,
-                },
-            ) if before_directrix == after_directrix => {
-                let interval = after_parameter_interval.ok_or_else(|| {
-                    CodecError::malformed(format_args!("F3D extrusion interval is missing: {id}"))
-                })?;
-                let position = after_native_position.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D extrusion native position is missing: {id}"
-                    ))
-                })?;
-                if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion interval must be finite and ordered: {id}"
-                    )));
-                }
-                if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion direction must be finite and nonzero: {id}"
-                    )));
-                }
-                if ![position.x, position.y, position.z]
-                    .into_iter()
-                    .all(f64::is_finite)
+                ProceduralSurfaceDefinition::Extrusion(definition_payload_0),
+                ProceduralSurfaceDefinition::Extrusion(definition_payload_1),
+            ) if (definition_payload_0.directrix()) == (definition_payload_1.directrix())
+                && definition_payload_0.revision_form().is_none()
+                && definition_payload_1.revision_form().is_none() =>
+            {
+                let before_parameter_interval = &definition_payload_0.parameter_interval();
+                let before_direction = definition_payload_0.direction();
+                let before_native_position = &definition_payload_0.native_position();
+                let after_parameter_interval = &definition_payload_1.parameter_interval();
+                let after_direction = definition_payload_1.direction();
+                let after_native_position = &definition_payload_1.native_position();
                 {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion native position must be finite: {id}"
-                    )));
+                    let interval = after_parameter_interval.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D extrusion interval is missing: {id}"
+                        ))
+                    })?;
+                    let position = after_native_position.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D extrusion native position is missing: {id}"
+                        ))
+                    })?;
+                    if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion interval must be finite and ordered: {id}"
+                        )));
+                    }
+                    if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion direction must be finite and nonzero: {id}"
+                        )));
+                    }
+                    if ![position.x, position.y, position.z]
+                        .into_iter()
+                        .all(f64::is_finite)
+                    {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion native position must be finite: {id}"
+                        )));
+                    }
+                    (before_parameter_interval != after_parameter_interval
+                        || before_direction != after_direction
+                        || before_native_position != after_native_position)
+                        .then_some(ProceduralSurfaceEdit::Extrusion {
+                            parameter_interval: interval,
+                            direction: *after_direction,
+                            native_position: position,
+                        })
                 }
-                (before_parameter_interval != after_parameter_interval
-                    || before_direction != after_direction
-                    || before_native_position != after_native_position)
-                    .then_some(ProceduralSurfaceEdit::Extrusion {
-                        parameter_interval: interval,
-                        direction: *after_direction,
-                        native_position: position,
-                    })
             }
             (
                 ProceduralSurfaceDefinition::Blend {
@@ -3536,71 +3537,61 @@ pub(crate) fn validate_procedural_curve_edits(
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
             ) if before.definition() != after.definition() => Some(after.definition().clone()),
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                    source: before_source,
-                    roles: before_roles,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                    source: after_source,
-                    roles: after_roles,
-                    ..
-                },
-            ) if before_source == after_source
-                && before_roles == after_roles
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_0),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_1),
+            ) if (definition_payload_0.source()) == (definition_payload_1.source())
+                && (definition_payload_0.roles()) == (definition_payload_1.roles())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                    source: before_source,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                    source: after_source,
-                    ..
-                },
-            ) if before_source == after_source && before.definition() != after.definition() => {
-                Some(after.definition().clone())
-            }
-            (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: before_context,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: after_context,
-                    ..
-                },
-            ) if before_context.sides() == after_context.sides()
-                && before_context
-                    .discontinuities()
-                    .iter()
-                    .map(Vec::len)
-                    .eq(after_context.discontinuities().iter().map(Vec::len))
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_1),
+            ) if (definition_payload_0.source()) == (definition_payload_1.source())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-                    context: before_context,
-                    base: before_base,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-                    context: after_context,
-                    base: after_base,
-                    ..
-                },
-            ) if before_context.sides() == after_context.sides()
-                && before_context
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                    definition_payload_0,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                    definition_payload_1,
+                ),
+            ) if (definition_payload_0.context()).sides()
+                == (definition_payload_1.context()).sides()
+                && (definition_payload_0.context())
                     .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities().iter().map(Vec::len))
-                && before_base == after_base
+                    .eq((definition_payload_1.context())
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before.definition() != after.definition() =>
+            {
+                Some(after.definition().clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                    definition_payload_0,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                    definition_payload_1,
+                ),
+            ) if (definition_payload_0.context()).sides()
+                == (definition_payload_1.context()).sides()
+                && (definition_payload_0.context())
+                    .discontinuities()
+                    .iter()
+                    .map(Vec::len)
+                    .eq((definition_payload_1.context())
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && (definition_payload_0.base()) == (definition_payload_1.base())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

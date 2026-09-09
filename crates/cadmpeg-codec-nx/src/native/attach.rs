@@ -5519,14 +5519,12 @@ fn owned_offset_carriers<'a>(
         if !body_surfaces.contains(owner) {
             continue;
         }
-        let ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: candidate,
-            ..
-        } = procedural.definition()
+        let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
         else {
             continue;
         };
+        let support = definition_payload.support();
+        let candidate = definition_payload.distance();
         carriers.push((support.clone(), *candidate));
     }
     (!carriers.is_empty()).then_some((body, carriers))

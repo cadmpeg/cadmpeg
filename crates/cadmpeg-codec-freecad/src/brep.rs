@@ -5048,15 +5048,18 @@ pub(crate) fn append_text_curve(
             .unwrap_or(*parameter_range);
             transfer.procedural.push((
                 id.clone(),
-                ProceduralCurve::new(
-                    ProceduralCurveId::mint(format!("{id}:construction"))
-                        .expect("identity grammar"),
-                    ProceduralCurveDefinition::Subset {
-                        source: basis_id,
-                        parameter_range,
-                        sense: true,
-                    },
+                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                    basis_id,
+                    parameter_range,
+                    true,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralCurve::new(
+                        ProceduralCurveId::mint(format!("{id}:construction"))
+                            .expect("identity grammar"),
+                        ProceduralCurveDefinition::Subset(admitted_payload),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             basis_geometry
@@ -5070,19 +5073,22 @@ pub(crate) fn append_text_curve(
             append_text_curve(basis, basis_id.clone(), association, transfer)?;
             transfer.procedural.push((
                 id.clone(),
-                ProceduralCurve::new(
-                    ProceduralCurveId::mint(format!("{id}:construction"))
-                        .expect("identity grammar"),
-                    ProceduralCurveDefinition::Offset {
-                        source: basis_id,
-                        distance: *distance,
-                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
-                            direction: *direction,
-                            support: None,
-                        },
-                        range: None,
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                    basis_id,
+                    *distance,
+                    cadmpeg_ir::geometry::OffsetSide::Direction {
+                        direction: *direction,
+                        support: None,
                     },
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralCurve::new(
+                        ProceduralCurveId::mint(format!("{id}:construction"))
+                            .expect("identity grammar"),
+                        ProceduralCurveDefinition::Offset(admitted_payload),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             CurveGeometry::Unknown { record: None }
@@ -5228,18 +5234,21 @@ pub(crate) fn append_text_surface(
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
             transfer.procedural.push((
                 id.clone(),
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!("{id}:construction"))
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Extrusion {
-                        directrix: directrix_id,
-                        parameter_interval: None,
-                        direction: *direction,
-                        native_position: None,
-                        revision_form: None,
-                    },
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    directrix_id,
+                    None,
+                    *direction,
+                    None,
                     None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(format!("{id}:construction"))
+                            .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                        None,
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
@@ -5253,21 +5262,23 @@ pub(crate) fn append_text_surface(
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
             transfer.procedural.push((
                 id.clone(),
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!("{id}:construction"))
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: directrix_id,
-                        axis_origin: *axis_origin,
-                        axis_direction: *axis_direction,
-                        angular_interval: [0.0, std::f64::consts::TAU],
-                        angular_parameter_interval: None,
-                        parameter_interval: None,
-                        transposed: true,
-                        revision_form: None,
-                    },
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    directrix_id,
+                    (*axis_origin, *axis_direction),
+                    [0.0, std::f64::consts::TAU],
+                    None,
+                    None,
+                    true,
                     None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(format!("{id}:construction"))
+                            .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        None,
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
@@ -5295,17 +5306,20 @@ pub(crate) fn append_text_surface(
             )?;
             transfer.procedural.push((
                 id.clone(),
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!("{id}:construction"))
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Subset {
-                        support: basis_id,
-                        parameter_ranges,
-                        u_sense: None,
-                        v_sense: None,
-                    },
+                cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
+                    basis_id,
+                    parameter_ranges,
+                    None,
                     None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(format!("{id}:construction"))
+                            .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Subset(admitted_payload),
+                        None,
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             basis_geometry
@@ -5321,21 +5335,24 @@ pub(crate) fn append_text_surface(
             )?;
             transfer.procedural.push((
                 id.clone(),
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!("{id}:construction"))
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Offset {
-                        support: basis_id,
-                        distance: *distance,
-                        u_sense: None,
-                        v_sense: None,
-                        support_extension: None,
-                        extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                        ),
-                    },
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    basis_id,
+                    *distance,
                     None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(format!("{id}:construction"))
+                            .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Offset(admitted_payload),
+                        None,
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
@@ -6284,12 +6301,10 @@ pub(crate) mod tests {
             &mut surfaces,
         )
         .unwrap();
-        assert!(matches!(
-            surfaces.procedural[0].1.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-                transposed: true,
-                ..
-            }
-        ));
+        assert!(match surfaces.procedural[0].1.definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
+                matches!((matched_payload.transposed(),), (true,)),
+            _ => false,
+        });
     }
 }

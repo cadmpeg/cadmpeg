@@ -435,16 +435,19 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         ir.model.procedural_surfaces.push(
             ProceduralSurface::new(
                 constructions[side].clone(),
-                ProceduralSurfaceDefinition::Offset {
-                    support: surfaces[1 - side].clone(),
-                    distance: 1.0,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        surfaces[1 - side].clone(),
+                        1.0,
+                        Some(0),
+                        Some(0),
+                        None,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap(),
@@ -955,16 +958,19 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         support_offset.clone(),
         ProceduralSurface::new(
             support_offset_construction.clone(),
-            ProceduralSurfaceDefinition::Offset {
-                support: support.clone(),
-                distance: 1.0,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support.clone(),
+                    1.0,
+                    None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),

@@ -190,13 +190,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                parameter_range: [start, end],
-                ..
-            } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
                 if {
@@ -343,24 +337,22 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
         .expect("Cartesian trimmed curve");
-    assert!(matches!(
-        cartesian_trim.definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-            parameter_range: [start, end],
-            ..
-        } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-    ));
+    assert!(match cartesian_trim.definition() {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
+            matches!((matched_payload.parameter_range(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12),
+        _ => false,
+    });
     let (source, parameter_range) = result
         .ir()
         .model
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range,
-                ..
-            } => Some((source, *parameter_range)),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let parameter_range = definition_payload.parameter_range();
+                Some((source, *parameter_range))
+            }
             _ => None,
         })
         .expect("trimmed curve was not retained as a subset construction");
@@ -371,14 +363,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset {
-                distance: 1.0,
-                self_intersect: None,
-                ..
-            }
-        )));
+        .any(|curve| match curve.definition() {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(matched_payload) =>
+                matches!(
+                    (matched_payload.distance(), matched_payload.self_intersect(),),
+                    (1.0, None,)
+                ),
+            _ => false,
+        }));
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(result
         .ir()
@@ -411,19 +403,17 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
                 if axis_direction.z == 1.0
         )));
-    assert!(result
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .any(|surface| matches!(
-            surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset {
-                distance: 0.5,
-                self_intersect: Some(false),
-                ..
+    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
+        match surface.definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(matched_payload) => {
+                matches!(
+                    (matched_payload.distance(), matched_payload.self_intersect(),),
+                    (0.5, Some(false),)
+                )
             }
-        )));
+            _ => false,
+        }
+    }));
 }
 
 #[test]

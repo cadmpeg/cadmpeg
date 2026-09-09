@@ -1551,22 +1551,25 @@ pub(super) fn project(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Extrusion {
-                        directrix: procedural_directrix,
-                        parameter_interval: Some(source_interval),
-                        direction,
-                        native_position: Some(target),
-                        revision_form: None,
-                    },
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    procedural_directrix,
+                    Some(source_interval),
+                    direction,
+                    Some(target),
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                        Some([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ]),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
@@ -1677,26 +1680,29 @@ pub(super) fn project(
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint(format!(
-                    "iges:model:procedural-surface#D{}",
-                    entry.sequence
-                ))
-                .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: procedural_directrix,
-                    parameter_interval: Some(source_interval),
-                    direction,
-                    native_position: Some(target),
-                    revision_form: None,
-                },
-                Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                procedural_directrix,
+                Some(source_interval),
+                direction,
+                Some(target),
+                None,
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "iges:model:procedural-surface#D{}",
+                        entry.sequence
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
@@ -1847,25 +1853,27 @@ pub(super) fn project(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: procedural_directrix,
-                        axis_origin: procedural_axis_origin,
-                        axis_direction: procedural_axis_direction,
-                        angular_interval: [start_angle, end_angle],
-                        angular_parameter_interval: None,
-                        parameter_interval: Some(source_interval),
-                        transposed: false,
-                        revision_form: None,
-                    },
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    procedural_directrix,
+                    (procedural_axis_origin, procedural_axis_direction),
+                    [start_angle, end_angle],
+                    None,
+                    Some(source_interval),
+                    false,
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        Some([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ]),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
@@ -2007,29 +2015,31 @@ pub(super) fn project(
         if procedural_is_exact {
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!(
-                        "iges:model:procedural-surface#D{}",
-                        entry.sequence
-                    ))
-                    .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: procedural_directrix,
-                        axis_origin: procedural_axis_origin,
-                        axis_direction: procedural_axis_direction,
-                        angular_interval: [start_angle, end_angle],
-                        angular_parameter_interval: None,
-                        parameter_interval: Some(source_interval),
-                        transposed: false,
-                        revision_form: None,
-                    },
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    procedural_directrix,
+                    (procedural_axis_origin, procedural_axis_direction),
+                    [start_angle, end_angle],
+                    None,
+                    Some(source_interval),
+                    false,
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(format!(
+                            "iges:model:procedural-surface#D{}",
+                            entry.sequence
+                        ))
+                        .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        Some([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ]),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
@@ -2524,24 +2534,27 @@ pub(super) fn project(
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint(format!(
-                    "iges:model:procedural-surface#D{}",
-                    entry.sequence
-                ))
-                .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Offset {
-                    support: support_id,
-                    distance: signed_distance,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support_id,
+                signed_distance,
+                Some(0),
+                Some(0),
                 None,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "iges:model:procedural-surface#D{}",
+                        entry.sequence
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    None,
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);

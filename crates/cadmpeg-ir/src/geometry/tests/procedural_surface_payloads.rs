@@ -9,19 +9,23 @@ fn id() -> ProceduralSurfaceId {
     ProceduralSurfaceId::mint("synthetic:test:procedural_surface#payload").unwrap()
 }
 
-fn subset(ranges: [[f64; 2]; 2]) -> ProceduralSurfaceDefinition {
-    ProceduralSurfaceDefinition::Subset {
-        support: SurfaceId::mint("synthetic:test:surface#support").unwrap(),
-        parameter_ranges: ranges,
-        u_sense: None,
-        v_sense: None,
-    }
+fn subset(
+    ranges: [[f64; 2]; 2],
+) -> Result<ProceduralSurfaceDefinition, crate::geometry::ProceduralGeometryError> {
+    Ok(ProceduralSurfaceDefinition::Subset(
+        crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
+            SurfaceId::mint("synthetic:test:surface#support").unwrap(),
+            ranges,
+            None,
+            None,
+        )?,
+    ))
 }
 
 #[test]
-fn surface_payload_admission_and_edits_enforce_directed_nonzero_subset_ranges() {
-    let definition = subset([[2.0, -1.0], [0.0, 1.0]]);
-    let mut surface = ProceduralSurface::new(id(), definition.clone(), None).unwrap();
+fn surface_payload_admission_enforces_directed_nonzero_subset_ranges() {
+    let definition = subset([[2.0, -1.0], [0.0, 1.0]]).unwrap();
+    let surface = ProceduralSurface::new(id(), definition.clone(), None).unwrap();
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(
         wire["parameter_ranges"],
@@ -33,18 +37,14 @@ fn surface_payload_admission_and_edits_enforce_directed_nonzero_subset_ranges() 
     );
     let before = surface.clone();
     for range in [[0.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
-        let invalid = subset([range, [0.0, 1.0]]);
-        assert!(ProceduralSurface::new(id(), invalid.clone(), None).is_err());
-        assert!(surface.replace_definition(invalid.clone()).is_err());
-        assert_eq!(surface, before);
-        assert!(surface
-            .try_replace_definition(invalid.clone(), Some(2.0))
-            .is_err());
-        assert_eq!(surface, before);
-        assert!(surface
-            .edit_definition(|definition| *definition = invalid)
-            .is_err());
-        assert_eq!(surface, before);
+        assert!(subset([range, [0.0, 1.0]]).is_err());
+        let mut invalid = serde_json::to_value(&before).unwrap();
+        invalid["definition"]["parameter_ranges"][0] = serde_json::json!(range);
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(
+            invalid["definition"].clone()
+        )
+        .is_err());
+        assert!(serde_json::from_value::<ProceduralSurface>(invalid).is_err());
     }
     let mut wire = serde_json::to_value(&before).unwrap();
     wire["definition"]["parameter_ranges"][0] = serde_json::json!([1.0, 1.0]);
