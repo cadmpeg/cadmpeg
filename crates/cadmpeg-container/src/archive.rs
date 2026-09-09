@@ -1032,7 +1032,7 @@ mod tests {
         let commands = address.inspect_commands("part.FCStd");
         assert_eq!(
             commands[0],
-            "cadmpeg inspect extract --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'"
+            "cadmpeg inspect extract --force --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'"
         );
         assert_eq!(
             commands[1],
@@ -1071,8 +1071,8 @@ mod tests {
         assert_eq!(payload.window(), b"payload bytes");
         let address = ctx.resolve_location(payload.location_at(7));
         assert_eq!(address.inspect_commands("project part.FCStd"), [
-            "cadmpeg inspect extract --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
-            "cadmpeg inspect extract --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
             "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
         ]);
     }
