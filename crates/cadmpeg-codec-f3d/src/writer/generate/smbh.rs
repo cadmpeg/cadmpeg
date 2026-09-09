@@ -1687,11 +1687,7 @@ fn native_face_sense(
         .face_sidedness
         .get(face.id.as_str())
         .map_or(face.sense, |metadata| {
-            normalized_face_sense_to_native(
-                face.sense,
-                metadata.native_sense,
-                metadata.normalized_sense,
-            )
+            normalized_face_sense_to_native(face.sense, metadata.carrier_flipped)
         })
 }
 
@@ -1731,10 +1727,10 @@ fn native_tolerant_vertex_tail(
     let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
     // The unset evaluated slot has no neutral tolerance; the native tail
     // carries the fact and the sentinel is written back.
-    let tolerance = match vertex.tolerance {
-        Some(tolerance) => tolerance.get(),
-        None if stored.is_some_and(|tail| tail.evaluated_unset) => -1.0,
-        None => return,
+    let tolerance = match (vertex.tolerance, stored) {
+        (Some(tolerance), _) => tolerance.get(),
+        (None, Some(_)) => -1.0,
+        (None, None) => return,
     };
     // The record stores three f64 tolerance slots: the two leading slots
     // verbatim (default: the -1 unevaluated sentinel) and the evaluated

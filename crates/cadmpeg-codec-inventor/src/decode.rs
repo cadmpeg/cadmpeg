@@ -1167,7 +1167,7 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
-                    apply_kernel_header(&mut ir, carrier.family, &decoded.header)?;
+                    apply_kernel_header(&mut ir, carrier.family, &decoded.header.metadata)?;
                     Some(decoded.brep)
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
