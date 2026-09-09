@@ -1104,101 +1104,100 @@ fn emit_scaled_compound_loft_surface(
     })
 }
 
+#[derive(Clone, Copy)]
+enum LawExpressionScope<'a> {
+    Surface(&'a str),
+    Curve(&'a str),
+}
+
+fn map_law_expression(
+    out: &mut AsmBrep,
+    scope: LawExpressionScope<'_>,
+    path: &str,
+    expression: EmbeddedLawExpression,
+) -> cadmpeg_ir::geometry::LawExpression {
+    match expression {
+        EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+        EmbeddedLawExpression::Text(value) => cadmpeg_ir::geometry::LawExpression::Text { value },
+        EmbeddedLawExpression::Integer(value) => {
+            cadmpeg_ir::geometry::LawExpression::Integer { value }
+        }
+        EmbeddedLawExpression::Double(value) => {
+            cadmpeg_ir::geometry::LawExpression::Double { value }
+        }
+        EmbeddedLawExpression::Point(value) => cadmpeg_ir::geometry::LawExpression::Point { value },
+        EmbeddedLawExpression::Vector(value) => {
+            cadmpeg_ir::geometry::LawExpression::Vector { value }
+        }
+        EmbeddedLawExpression::Transform { scalars, enums } => {
+            cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
+        }
+        EmbeddedLawExpression::TransformVec {
+            vectors,
+            scale,
+            flags,
+        } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+            vectors,
+            scale,
+            flags,
+        },
+        EmbeddedLawExpression::Edge {
+            curve,
+            endpoints,
+            parameters,
+        } => {
+            let id = CurveId::mint(match scope {
+                LawExpressionScope::Surface(prefix) => format!("{prefix}:{path}:edge"),
+                LawExpressionScope::Curve(prefix) => format!("{prefix}:{path}"),
+            })
+            .expect("identity grammar");
+            out.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Nurbs(curve),
+                source_object: None,
+            });
+            cadmpeg_ir::geometry::LawExpression::Edge {
+                curve: LoftPathCurve { id, endpoints },
+                parameters,
+            }
+        }
+        EmbeddedLawExpression::Spline {
+            native_id,
+            knots,
+            controls,
+            point,
+        } => cadmpeg_ir::geometry::LawExpression::Spline {
+            native_id,
+            knots,
+            controls,
+            point,
+        },
+        EmbeddedLawExpression::Algebraic { operator, operands } => {
+            cadmpeg_ir::geometry::LawExpression::Algebraic {
+                operator,
+                operands: operands
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, operand)| {
+                        map_law_expression(out, scope, &format!("{path}:{index}"), operand)
+                    })
+                    .collect(),
+            }
+        }
+    }
+}
+
 fn emit_law_surface(
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedLawSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_law_expression(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_law_expression(
-                                out,
-                                owner,
-                                &format!("{path}:{index}"),
-                                operand,
-                                format,
-                            )
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let map_formula = |out: &mut AsmBrep, path: &str, formula: EmbeddedLawFormula| {
         map_law_formula(formula, |index, expression| {
-            map_law_expression(out, i, &format!("{path}:{index}"), expression, format)
+            map_law_expression(out, scope, &format!("{path}:{index}"), expression)
         })
     };
     let embedded = *embedded;
@@ -1226,92 +1225,8 @@ fn emit_skin_surface(
     embedded: Box<EmbeddedSkinSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_law_expression(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:skin:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_law_expression(
-                                out,
-                                owner,
-                                &format!("{path}:{index}"),
-                                operand,
-                                format,
-                            )
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:skin:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let embedded = *embedded;
     let layout = match embedded.layout {
         EmbeddedSkinSurfaceLayout::Compact {
@@ -1404,7 +1319,7 @@ fn emit_skin_surface(
         source_object: None,
     });
     let formula = map_law_formula(embedded.formula, |variable_index, variable| {
-        map_law_expression(&mut *out, i, &variable_index.to_string(), variable, format)
+        map_law_expression(&mut *out, scope, &variable_index.to_string(), variable)
     });
     ProceduralSurfaceDefinition::Skin {
         construction: Box::new(cadmpeg_ir::geometry::SkinSurfaceConstruction {
@@ -1430,86 +1345,8 @@ fn emit_net_surface(
     embedded: Box<EmbeddedNetSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_net_law(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:net:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_net_law(out, owner, &format!("{path}:{index}"), operand, format)
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:net:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let embedded = *embedded;
     let mut next_section = 0;
     let sections = (*embedded.sections).map(|entries| {
@@ -1586,12 +1423,11 @@ fn emit_net_surface(
         let formula_index = next_formula;
         next_formula += 1;
         map_law_formula(formula, |index, variable| {
-            map_net_law(
+            map_law_expression(
                 &mut *out,
-                i,
+                scope,
                 &format!("{formula_index}:{index}"),
                 variable,
-                format,
             )
         })
     });
@@ -1614,86 +1450,8 @@ fn emit_sweep_surface(
     embedded: Box<EmbeddedSweepSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_sweep_law(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_sweep_law(out, owner, &format!("{path}:{index}"), operand, format)
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:sweep:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let embedded = *embedded;
     let (primary_kind, revision_form, layout) = match embedded.layout {
         EmbeddedSweepSurfaceLayout::Legacy {
@@ -1728,12 +1486,11 @@ fn emit_sweep_surface(
                 let formula_index = next_formula;
                 next_formula += 1;
                 map_law_formula(formula, |index, variable| {
-                    map_sweep_law(
+                    map_law_expression(
                         &mut *out,
-                        i,
+                        scope,
                         &format!("{formula_index}:{index}"),
                         variable,
-                        format,
                     )
                 })
             });
@@ -1774,7 +1531,7 @@ fn emit_sweep_surface(
                     },
                 ) => {
                     let formula = map_law_formula(formula, |index, variable| {
-                        map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
+                        map_law_expression(&mut *out, scope, &format!("explicit:{index}"), variable)
                     });
                     cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitFormula {
                         mode,
@@ -1882,15 +1639,15 @@ fn emit_sweep_surface(
                     formula,
                     trailing_flag,
                 }) => {
-                    let first_law = map_sweep_law(&mut *out, i, "law:first", *first_law, format);
-                    let second_law = map_sweep_law(&mut *out, i, "law:second", *second_law, format);
+                    let first_law = map_law_expression(&mut *out, scope, "law:first", *first_law);
+                    let second_law =
+                        map_law_expression(&mut *out, scope, "law:second", *second_law);
                     let formula = map_law_formula(formula, |index, variable| {
-                        map_sweep_law(
+                        map_law_expression(
                             &mut *out,
-                            i,
+                            scope,
                             &format!("law:formula:{index}"),
                             variable,
-                            format,
                         )
                     });
                     cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
@@ -3331,85 +3088,8 @@ fn emit_law_curve(
     format: IdFormat<'_>,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
-    fn map_law_curve(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id =
-                    CurveId::mint(format!("{format}:brep:procedural_curve#{owner}:law:{path}"))
-                        .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_law_curve(out, owner, &format!("{path}:{index}"), operand, format)
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_curve#{i}:law");
+    let scope = LawExpressionScope::Curve(&prefix);
     let (parameter_range, version) = match embedded.layout {
         EmbeddedLawCurveLayout::Legacy(range) => (range, None),
         EmbeddedLawCurveLayout::Version {
@@ -3448,7 +3128,7 @@ fn emit_law_curve(
     });
     let mut map_formula = |path: &str, formula: EmbeddedLawFormula| {
         map_law_formula(formula, |index, expression| {
-            map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
+            map_law_expression(&mut *out, scope, &format!("{path}:{index}"), expression)
         })
     };
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
