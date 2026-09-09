@@ -92,6 +92,8 @@ pub enum QueryView {
     /// (default 10000) caps explosion: a truncated walk prints a note on
     /// standard error and still exits 0. A record with no string `id`
     /// uses `ARENA#<index>` as its locator and cannot be selected by id.
+    ///
+    /// `--fields start,path,record.id` projects paths relative to each walk result.
     Graph(GraphArgs),
     /// Join two arenas on named key paths.
     ///
@@ -103,6 +105,8 @@ pub enum QueryView {
     /// value only. Arena names match `query item`. Discover key paths
     /// with `query schema file FILE ARENA`. This is not SQL: no expressions,
     /// no WHERE, no three-way join.
+    ///
+    /// `--fields left.id,right.links` projects paths relative to each joined row.
     Join(JoinArgs),
     /// Retained source bytes.
     ///

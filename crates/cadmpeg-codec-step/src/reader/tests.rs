@@ -97,14 +97,14 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
             continue;
         };
         if !matches!(
-            limit.context.operation,
+            limit.operation,
             "step_lex_token"
                 | "step_parse_record"
                 | "step_parse_parameter"
                 | "step_anchor_materialization"
                 | "step_reference_materialization"
         ) {
-            semantic_operation = Some(limit.context.operation);
+            semantic_operation = Some(limit.operation);
             break;
         }
     }
@@ -128,7 +128,7 @@ fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
             continue;
         };
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
-            && limit.context.operation == "step_dependency_decode"
+            && limit.operation == "step_dependency_decode"
         {
             entity_limit = Some(limit);
             break;
@@ -168,7 +168,7 @@ fn implicit_face_plane_work_is_charged_before_plane_inference() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_implicit_face_plane" {
+        if limit.operation == "step_implicit_face_plane" {
             plane_limit = Some(limit);
             break;
         }

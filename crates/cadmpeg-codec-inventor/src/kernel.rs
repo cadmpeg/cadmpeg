@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
-use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::kernel_header::BinaryHeader;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
@@ -48,7 +48,7 @@ pub(crate) struct ActiveCarrier<'a> {
     pub(crate) schema: u32,
     pub(crate) carrier_offset: u64,
     pub(crate) bytes: View<'a>,
-    pub(crate) header: Result<Box<KernelHeader>, String>,
+    pub(crate) header: Result<Box<BinaryHeader>, String>,
     pub(crate) selected_key: u32,
     pub(crate) enabled: bool,
     pub(crate) delta_state: i32,
@@ -63,11 +63,11 @@ pub(crate) enum ActiveCarrierState<'a> {
 }
 
 pub(crate) struct DecodedKernelCarrier {
-    pub(crate) header: KernelHeader,
+    pub(crate) header: BinaryHeader,
     pub(crate) brep: AsmBrep,
 }
 
-fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<KernelHeader, String> {
+fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<BinaryHeader, String> {
     match family {
         KernelFamily::Asm => asm_header::parse(bytes)
             .ok_or_else(|| "Inventor ASM carrier has no parseable header".into()),
@@ -79,7 +79,7 @@ fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<KernelHeade
 pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-    header: &KernelHeader,
+    header: &BinaryHeader,
 ) -> Result<DecodedKernelCarrier, CodecError> {
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
@@ -121,7 +121,7 @@ pub(crate) fn decode_kernel_carrier(
     let brep = decode_with_header(
         &records,
         bytes,
-        Some(header.clone()),
+        Some(header.metadata.clone()),
         &stream,
         IdFormat("inventor"),
         DecodePurpose::Model,
@@ -357,8 +357,11 @@ mod tests {
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
         assert_eq!(decoded.header.width.bytes(), 4);
-        assert_eq!(decoded.header.save_format_version, Some(700));
-        assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
+        assert_eq!(decoded.header.metadata.save_format_version, Some(700));
+        assert_eq!(
+            decoded.header.metadata.product_family.as_deref(),
+            Some("Inventor")
+        );
         assert!(decoded.brep.bodies.is_empty());
         assert!(decoded.brep.unknowns.is_empty());
     }
@@ -375,8 +378,11 @@ mod tests {
 
         assert_eq!(carrier.family, KernelFamily::Acis);
         assert_eq!(decoded.header.width.bytes(), 4);
-        assert_eq!(decoded.header.save_format_version, Some(21_800));
-        assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
+        assert_eq!(decoded.header.metadata.save_format_version, Some(21_800));
+        assert_eq!(
+            decoded.header.metadata.product_family.as_deref(),
+            Some("Inventor")
+        );
         assert!(decoded.brep.bodies.is_empty());
         assert!(decoded.brep.unknowns.is_empty());
     }
@@ -401,9 +407,9 @@ mod tests {
         let unverified = decode(70_000);
 
         assert_eq!(unverified.header.width.bytes(), 4);
-        assert_eq!(unverified.header.save_format_version, Some(70_000));
+        assert_eq!(unverified.header.metadata.save_format_version, Some(70_000));
         assert_eq!(
-            unverified.header.product_family.as_deref(),
+            unverified.header.metadata.product_family.as_deref(),
             Some("Inventor")
         );
         assert_eq!(unverified.brep.bodies.len(), 1);

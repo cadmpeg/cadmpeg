@@ -709,7 +709,7 @@ fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.context.operation == "retain NX opaque container payload"
+                && limit.operation == "retain NX opaque container payload"
     ));
 }
 
@@ -729,7 +729,7 @@ fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.context.operation == "retain NX invalid JPEG preview"
+                && limit.operation == "retain NX invalid JPEG preview"
     ));
 }
 

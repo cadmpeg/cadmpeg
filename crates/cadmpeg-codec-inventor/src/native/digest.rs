@@ -22,3 +22,9 @@ impl From<Sha256Hex> for String {
         value.0
     }
 }
+
+impl Sha256Hex {
+    pub(crate) fn digest(bytes: &[u8]) -> Self {
+        Self(cadmpeg_ir::hash::sha256_hex(bytes))
+    }
+}

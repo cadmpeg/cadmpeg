@@ -9,7 +9,7 @@
 use crate::kernel_header::RefWidth;
 use cadmpeg_core::decode::View;
 
-use crate::kernel_header::{read_string_region, KernelHeader};
+use crate::kernel_header::{read_string_region, BinaryHeader, KernelHeader};
 use crate::layout::acisheader_binaryfile4 as acis_bf4;
 
 /// Exact binary ACIS magic, without a width suffix.
@@ -22,12 +22,11 @@ pub fn has_acis_magic(bytes: &[u8]) -> bool {
 }
 
 /// Parse the shared kernel metadata from a 32-bit ACIS binary header.
-pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
+pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
     if !has_acis_magic(bytes) {
         return None;
     }
     let mut header = KernelHeader {
-        width: RefWidth::Four,
         save_format_version: View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION),
         entity_count: View::u32_le_at(bytes, acis_bf4::ENTITY_COUNT).map(u64::from),
         flags: View::u32_le_at(bytes, acis_bf4::FLAGS).map(u64::from),
@@ -47,7 +46,10 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     header.scale = doubles.next();
     header.linear = doubles.next();
     header.angular = doubles.next();
-    Some(header)
+    Some(BinaryHeader {
+        width: RefWidth::Four,
+        metadata: header,
+    })
 }
 
 /// Byte offset immediately after the three strings and three doubles.
@@ -58,7 +60,7 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
 
 /// Byte offset immediately after the three strings and three doubles, using
 /// an already-parsed ACIS header.
-pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
+pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
     if header.width != RefWidth::Four {
         return None;
     }
@@ -74,8 +76,8 @@ pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
 }
 
 /// Exact solved-record boundary, using an already-parsed ACIS header.
-pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
-    if !header.has_history_partition() {
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
+    if !header.metadata.has_history_partition() {
         return None;
     }
     let start = record_stream_start_with_header(bytes, header)?;
@@ -119,9 +121,9 @@ mod tests {
 
         let header = parse(&bytes).expect("ACIS header");
         assert_eq!(header.width.bytes(), 4);
-        assert_eq!(header.save_format_version, Some(21_800));
-        assert_eq!(header.entity_count, Some(2));
-        assert_eq!(header.format_revision(), Some(6));
+        assert_eq!(header.metadata.save_format_version, Some(21_800));
+        assert_eq!(header.metadata.entity_count, Some(2));
+        assert_eq!(header.metadata.format_revision(), Some(6));
         assert_eq!(record_stream_start(&bytes), Some(record_start));
         assert_eq!(solved_record_limit(&bytes), Some(history_start));
     }

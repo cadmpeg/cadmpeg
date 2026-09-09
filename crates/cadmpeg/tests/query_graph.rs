@@ -71,7 +71,8 @@ fn graph_help_mentions_hops_follow_and_reverse() {
             predicate::str::contains("--hops")
                 .and(predicate::str::contains("--follow"))
                 .and(predicate::str::contains("--reverse"))
-                .and(predicate::str::contains("--max-paths")),
+                .and(predicate::str::contains("--max-paths"))
+                .and(predicate::str::contains("start,path,record.id")),
         );
 }
 

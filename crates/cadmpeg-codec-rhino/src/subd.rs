@@ -139,6 +139,7 @@ struct ComponentPointer {
 
 #[derive(Debug, Clone)]
 struct ComponentBase {
+    source_offset: usize,
     archive_id: u32,
 }
 
@@ -169,6 +170,7 @@ struct RawFace {
 
 #[derive(Debug, Clone)]
 struct RawLevel {
+    source_offset: usize,
     vertices: Vec<RawVertex>,
     edges: Vec<RawEdge>,
     faces: Vec<RawFace>,
@@ -503,6 +505,7 @@ fn read_level(
         }
     }
     let level = RawLevel {
+        source_offset: chunk.header_start,
         vertices,
         edges,
         faces,
@@ -759,6 +762,7 @@ fn read_base(
     expected_level: usize,
     warnings: &mut Vec<String>,
 ) -> Result<ComponentBase, SubdError> {
+    let source_offset = reader.position();
     let archive_id = reader.u32()?;
     if archive_id != expected_id {
         return Err(malformed(
@@ -797,25 +801,43 @@ fn read_base(
         }
     } else {
         match consume_known_addition(reader, archive, 24, "SubD displacement", warnings)? {
-            Addition::End => return Ok(ComponentBase { archive_id }),
+            Addition::End => {
+                return Ok(ComponentBase {
+                    source_offset,
+                    archive_id,
+                })
+            }
             Addition::Absent => {}
             Addition::Present => read_finite_values(reader, 3, "deprecated SubD displacement")?,
         }
         match consume_known_addition(reader, archive, 4, "SubD group ID", warnings)? {
-            Addition::End => return Ok(ComponentBase { archive_id }),
+            Addition::End => {
+                return Ok(ComponentBase {
+                    source_offset,
+                    archive_id,
+                })
+            }
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
         match consume_known_addition(reader, archive, 5, "SubD symmetry-next", warnings)? {
-            Addition::End => return Ok(ComponentBase { archive_id }),
+            Addition::End => {
+                return Ok(ComponentBase {
+                    source_offset,
+                    archive_id,
+                })
+            }
             Addition::Absent => {}
             Addition::Present => read_untyped_pointer(reader)?,
         }
         finish_additions(reader, archive, warnings)?;
     }
-    Ok(ComponentBase { archive_id })
+    Ok(ComponentBase {
+        source_offset,
+        archive_id,
+    })
 }
 
 fn consume_known_addition(
@@ -1109,7 +1131,7 @@ fn materialize(
         .map(|(index, vertex)| {
             u32::try_from(index)
                 .map(|index| (vertex.base.archive_id, index))
-                .map_err(|_| malformed(0, "SubD vertex index overflow"))
+                .map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let edge_indices = level
@@ -1119,53 +1141,66 @@ fn materialize(
         .map(|(index, edge)| {
             u32::try_from(index)
                 .map(|index| (edge.base.archive_id, index))
-                .map_err(|_| malformed(0, "SubD edge index overflow"))
+                .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let vertices = level
         .vertices
         .into_iter()
         .map(|vertex| {
-            let tag = vertex
-                .tag
-                .ok_or_else(|| malformed(0, "invalid materialized SubD vertex tag"))?;
+            let tag = vertex.tag.ok_or_else(|| {
+                malformed(
+                    vertex.base.source_offset,
+                    "invalid materialized SubD vertex tag",
+                )
+            })?;
             SubdVertex::new(
                 Point3::new(
-                    crate::wire::scaled_coordinate(vertex.point.x, scale)
-                        .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
-                    crate::wire::scaled_coordinate(vertex.point.y, scale)
-                        .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
-                    crate::wire::scaled_coordinate(vertex.point.z, scale)
-                        .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
+                    crate::wire::scaled_coordinate(vertex.point.x, scale).ok_or_else(|| {
+                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                    })?,
+                    crate::wire::scaled_coordinate(vertex.point.y, scale).ok_or_else(|| {
+                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                    })?,
+                    crate::wire::scaled_coordinate(vertex.point.z, scale).ok_or_else(|| {
+                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                    })?,
                 ),
                 tag,
                 None,
             )
-            .map_err(|error| malformed(0, error.to_string()))
+            .map_err(|error| malformed(vertex.base.source_offset, error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let edges = level
         .edges
         .into_iter()
         .map(|edge| {
-            let tag = edge
-                .tag
-                .ok_or_else(|| malformed(0, "invalid materialized SubD edge tag"))?;
+            let tag = edge.tag.ok_or_else(|| {
+                malformed(
+                    edge.base.source_offset,
+                    "invalid materialized SubD edge tag",
+                )
+            })?;
             SubdEdge::new(
                 [
                     *vertex_indices
                         .get(&edge.vertices[0].archive_id)
-                        .ok_or_else(|| malformed(0, "missing SubD edge endpoint"))?,
+                        .ok_or_else(|| {
+                            malformed(edge.base.source_offset, "missing SubD edge endpoint")
+                        })?,
                     *vertex_indices
                         .get(&edge.vertices[1].archive_id)
-                        .ok_or_else(|| malformed(0, "missing SubD edge endpoint"))?,
+                        .ok_or_else(|| {
+                            malformed(edge.base.source_offset, "missing SubD edge endpoint")
+                        })?,
                 ],
                 edge.sharpness,
                 tag,
                 None,
                 edge.sector_coefficients,
             )
-            .map_err(|error| malformed(0, error.to_string()))
+            .map_err(|error| malformed(edge.base.source_offset, error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let faces = level
@@ -1177,15 +1212,15 @@ fn materialize(
                     .into_iter()
                     .map(|edge| {
                         Ok(SubdEdgeUse {
-                            edge: *edge_indices
-                                .get(&edge.archive_id)
-                                .ok_or_else(|| malformed(0, "missing SubD face edge"))?,
+                            edge: *edge_indices.get(&edge.archive_id).ok_or_else(|| {
+                                malformed(face.base.source_offset, "missing SubD face edge")
+                            })?,
                             reversed: edge.direction,
                         })
                     })
                     .collect::<Result<Vec<_>, SubdError>>()?,
             )
-            .map_err(|error| malformed(0, error.to_string()))
+            .map_err(|error| malformed(face.base.source_offset, error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     Ok(SubdSurface {
@@ -1193,7 +1228,7 @@ fn materialize(
         scheme: SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
-            .map_err(|error| malformed(0, error.to_string()))?,
+            .map_err(|error| malformed(level.source_offset, error.to_string()))?,
     })
 }
 

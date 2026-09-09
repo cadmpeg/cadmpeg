@@ -37,7 +37,7 @@
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
-use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
@@ -93,7 +93,7 @@ impl From<sat::Terminator> for Family {
 pub(crate) enum StreamEvidence<'a> {
     Binary {
         family: Family,
-        header: &'a KernelHeader,
+        header: &'a BinaryHeader,
         framed: bool,
     },
     Text(Option<TextEvidence<'a>>),

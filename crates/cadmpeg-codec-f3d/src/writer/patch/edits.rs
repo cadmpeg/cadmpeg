@@ -2861,12 +2861,7 @@ pub(crate) fn validate_face_sense_edits(
             native
                 .face_sidedness
                 .iter()
-                .map(|metadata| {
-                    (
-                        metadata.face.clone(),
-                        (metadata.native_sense, metadata.normalized_sense),
-                    )
-                })
+                .map(|metadata| (metadata.face.clone(), metadata.carrier_flipped))
                 .collect::<BTreeMap<_, _>>()
         })
         .unwrap_or_default();
@@ -2895,12 +2890,8 @@ pub(crate) fn validate_face_sense_edits(
             )));
         }
         if after.sense != before.sense {
-            let (native_before, normalized_before) = native_senses
-                .get(&before.id)
-                .copied()
-                .unwrap_or((before.sense, before.sense));
-            let native_after =
-                normalized_face_sense_to_native(after.sense, native_before, normalized_before);
+            let carrier_flipped = native_senses.get(&before.id).copied().unwrap_or(false);
+            let native_after = normalized_face_sense_to_native(after.sense, carrier_flipped);
             edits.insert(id.to_owned(), native_after);
         }
     }

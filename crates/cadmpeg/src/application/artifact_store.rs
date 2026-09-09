@@ -30,11 +30,6 @@ pub struct FileDestination {
 }
 
 impl FileDestination {
-    /// Attaches overwrite policy to an optional file output.
-    pub fn optional(path: Option<PathBuf>, overwrite: bool) -> Option<Self> {
-        path.map(|path| Self { path, overwrite })
-    }
-
     /// Checks the file output against its source and overwrite policy.
     pub fn check(&self, input: &Path) -> Result<()> {
         check_output_path(input, &self.path, self.overwrite)
@@ -44,6 +39,89 @@ impl FileDestination {
     pub fn write(&self, input: &Path, bytes: &[u8]) -> Result<()> {
         self.check(input)?;
         write_bytes_atomic(&self.path, bytes)
+    }
+}
+
+/// An optional file output admitted with its overwrite policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionalFileDestination(pub Option<FileDestination>);
+
+impl clap::Args for OptionalFileDestination {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(
+                clap::Arg::new("output")
+                    .short('o')
+                    .long("output")
+                    .help("Output file; omit to write to standard output")
+                    .value_parser(clap::value_parser!(PathBuf)),
+            )
+            .arg(
+                clap::Arg::new("force")
+                    .long("force")
+                    .help("Replace an existing output or report file")
+                    .action(clap::ArgAction::SetTrue),
+            )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+fn file_from_matches(matches: &clap::ArgMatches, id: &str) -> Option<FileDestination> {
+    matches.get_one::<PathBuf>(id).map(|path| FileDestination {
+        path: path.clone(),
+        overwrite: matches.get_flag("force"),
+    })
+}
+
+impl clap::FromArgMatches for OptionalFileDestination {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        Ok(Self(file_from_matches(matches, "output")))
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
+/// Primary and report files admitted under one overwrite policy.
+#[derive(Debug)]
+pub struct OutputDestinations {
+    /// Optional primary file output.
+    pub output: OptionalFileDestination,
+    /// Optional command report file.
+    pub report: Option<FileDestination>,
+}
+
+impl clap::Args for OutputDestinations {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        OptionalFileDestination::augment_args(command).arg(
+            clap::Arg::new("report")
+                .long("report")
+                .help("Write a JSON report to this file")
+                .value_parser(clap::value_parser!(PathBuf)),
+        )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for OutputDestinations {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        Ok(Self {
+            output: OptionalFileDestination::from_arg_matches(matches)?,
+            report: file_from_matches(matches, "report"),
+        })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
     }
 }
 
@@ -295,16 +373,76 @@ mod tests {
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
 
     #[test]
-    fn absent_file_destination_discards_overwrite_policy() {
-        assert_eq!(FileDestination::optional(None, false), None);
-        assert_eq!(FileDestination::optional(None, true), None);
-        assert_eq!(
-            FileDestination::optional(Some(PathBuf::from("report.json")), true),
-            Some(FileDestination {
-                path: PathBuf::from("report.json"),
-                overwrite: true,
-            })
-        );
+    fn clap_pairs_each_output_with_the_shared_force_flag() {
+        use clap::Parser;
+        for command in ["inspect", "check", "diff"] {
+            for flag in ["-o", "--output", "--report"] {
+                let mut args = vec!["cadmpeg", command, "input.step"];
+                if command == "diff" {
+                    args.push("other.step");
+                }
+                args.extend([flag, "report.json", "--force"]);
+                let report = match crate::Cli::try_parse_from(args).unwrap().command {
+                    crate::Command::Inspect(crate::inspect::InspectArgs::Summary(args)) => {
+                        args.report
+                    }
+                    crate::Command::Check { report, .. } | crate::Command::Diff { report, .. } => {
+                        report
+                    }
+                    _ => panic!("expected a report command"),
+                };
+                assert_eq!(
+                    report.0,
+                    Some(FileDestination {
+                        path: "report.json".into(),
+                        overwrite: true
+                    })
+                );
+            }
+        }
+        for command in ["dump", "convert"] {
+            let destinations = match crate::Cli::try_parse_from([
+                "cadmpeg",
+                command,
+                "input.step",
+                "-o",
+                "output.step",
+                "--report",
+                "report.json",
+                "--force",
+            ])
+            .unwrap()
+            .command
+            {
+                crate::Command::Dump { destinations, .. } => destinations,
+                crate::Command::Convert { destinations, .. } => {
+                    let crate::application::transcoder::DestinationPolicy::File(file) =
+                        destinations.destination
+                    else {
+                        panic!("expected file output");
+                    };
+                    OutputDestinations {
+                        output: OptionalFileDestination(Some(file)),
+                        report: destinations.report,
+                    }
+                }
+                _ => panic!("expected a writing command"),
+            };
+            assert_eq!(
+                destinations.output.0,
+                Some(FileDestination {
+                    path: "output.step".into(),
+                    overwrite: true
+                })
+            );
+            assert_eq!(
+                destinations.report,
+                Some(FileDestination {
+                    path: "report.json".into(),
+                    overwrite: true
+                })
+            );
+        }
     }
 
     #[test]
@@ -414,12 +552,10 @@ mod tests {
             cadmpeg_registry::Identification::Native {
                 format, confidence, ..
             } => vec![(format, confidence)],
-            cadmpeg_registry::Identification::Ambiguous {
-                confidence,
-                candidates,
-            } => candidates
-                .into_iter()
-                .map(|format| (format, confidence))
+            cadmpeg_registry::Identification::Ambiguous(tie) => tie
+                .candidates()
+                .iter()
+                .map(|format| (*format, tie.confidence()))
                 .collect(),
             cadmpeg_registry::Identification::None | cadmpeg_registry::Identification::Cadir => {
                 Vec::new()

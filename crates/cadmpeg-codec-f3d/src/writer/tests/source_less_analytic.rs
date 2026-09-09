@@ -445,21 +445,6 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 
     {
         let mut invalid = source_less.clone();
-        f3d_native_mut(&mut invalid).face_sidedness[0].normalized_sense =
-            match source_less.model.faces[0].sense {
-                cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
-                cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
-            };
-        let error = F3dCodec
-            .plan(EncodeInput::new(&invalid, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("stale normalized face sense must not be rewritten");
-        assert!(error
-            .to_string()
-            .contains("normalized sense conflicts with face"));
-    }
-    {
-        let mut invalid = source_less.clone();
         f3d_native_mut(&mut invalid).body_visibilities[0].asm_body_key = 43;
         let error = F3dCodec
             .plan(EncodeInput::new(&invalid, None), TargetRequest::Inherit)

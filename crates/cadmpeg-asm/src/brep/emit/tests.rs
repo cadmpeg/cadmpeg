@@ -76,12 +76,22 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         assert_eq!(out.face_sidedness.len(), 1);
         assert_eq!(out.faces[0].sense, normalized);
         assert_eq!(out.face_sidedness[0].native_sense, native);
-        assert_eq!(out.face_sidedness[0].normalized_sense, normalized);
+        let wire = serde_value::to_value(&out.face_sidedness[0]).unwrap();
+        let serde_value::Value::Map(fields) = &wire else {
+            panic!("record object")
+        };
+        assert_eq!(
+            fields.get(&serde_value::Value::String("normalized_sense".into())),
+            Some(&serde_value::to_value(normalized).unwrap())
+        );
+        let restored: FaceSidedness = serde::Deserialize::deserialize(wire).unwrap();
+        assert_eq!(restored, out.face_sidedness[0]);
+        assert_eq!(out.face_sidedness[0].carrier_flipped, native != normalized);
         out.faces[0].sense = match normalized {
             Sense::Forward => Sense::Reversed,
             Sense::Reversed => Sense::Forward,
         };
-        assert_eq!(out.face_sidedness[0].normalized_sense, normalized);
+        assert_eq!(out.face_sidedness[0].carrier_flipped, native != normalized);
     }
 }
 
@@ -205,4 +215,160 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             assert_eq!(out.tolerant_vertex_tails[0].evaluated_unset, unset);
         }
     }
+}
+
+#[test]
+fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
+    use crate::nurbs::proc_curve::nurbs_curve_parameter_domain;
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SpringLayout};
+
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    for reversed in [false, true] {
+        let mut curve_tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            if reversed { Token::True } else { Token::False },
+            Token::SubtypeOpen,
+            Token::Ident("spring_int_cur".into()),
+            Token::Long(23_100),
+            Token::Enum(0),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Double(2.0),
+            Token::Long(1),
+            Token::Double(5.0),
+            Token::Long(1),
+        ];
+        curve_tokens.extend([0.0, 0.0, 0.0, 1.0, 0.0, 0.0].map(Token::Double));
+        curve_tokens.extend([
+            Token::Double(0.0004),
+            Token::Ident("null_surface".into()),
+            Token::Ident("null_surface".into()),
+            Token::Ident("nullbs".into()),
+            Token::Ident("nullbs".into()),
+            Token::False,
+            Token::False,
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(7),
+            Token::Enum(4),
+            Token::SubtypeClose,
+        ]);
+        let refs = |values: &[i64]| values.iter().copied().map(Token::Ref).collect();
+        let records = [
+            record(0, "face", refs(&[-1, -1, -1, -1, 1])),
+            record(1, "loop", refs(&[-1, -1, -1, -1, 2])),
+            record(2, "coedge", refs(&[-1, -1, -1, 2, -1, -1, 3])),
+            record(3, "edge", refs(&[-1, -1, -1, -1, -1, -1, -1, -1, 4])),
+            record(4, "intcurve", curve_tokens),
+        ];
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect();
+        let table = crate::nurbs::toks::SubtypeTable::from_records(&records);
+        let parsed =
+            crate::nurbs::proc_curve::procedural_curve_resolving_refs(&records[4].tokens, &table)
+                .unwrap();
+        assert_eq!(
+            nurbs_curve_parameter_domain(&parsed.curve),
+            Some([2.0, 5.0])
+        );
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        let mut reach = Reachable {
+            faces: HashSet::from([0]),
+            ..Reachable::default()
+        };
+        super::super::topology::walk_reachable_topology(
+            &mut out,
+            &by_index,
+            &table,
+            &mut carriers,
+            &mut reach,
+            super::super::DecodePurpose::Model,
+            IdFormat("f3d"),
+        );
+        let CurveGeometry::Nurbs(normalized) = &carriers.curve_geo[&4] else {
+            panic!("solved curve")
+        };
+        assert_eq!(
+            nurbs_curve_parameter_domain(normalized),
+            Some(if reversed { [-5.0, -2.0] } else { [2.0, 5.0] })
+        );
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::new(),
+            &HashSet::new(),
+            IdFormat("f3d"),
+        )
+        .unwrap();
+        let ProceduralCurveDefinition::Spring {
+            layout: SpringLayout::CacheFirst { context, .. },
+            ..
+        } = out.procedural_curves[0].1.definition()
+        else {
+            panic!("cache-first spring")
+        };
+        assert_eq!(context.parameter_range(), [2.0, 5.0]);
+    }
+}
+
+#[test]
+fn evaluated_and_absent_vertex_slots_have_the_same_native_tail_wire() {
+    let decode = |slot: Option<f64>| {
+        let mut tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Long(0),
+            Token::Ref(1),
+            Token::Double(0.03),
+            Token::Double(0.07),
+        ];
+        tokens.extend(slot.map(Token::Double));
+        let records = [Record {
+            index: 0,
+            name: "tvertex".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }];
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect();
+        let reach = Reachable {
+            vertices: HashSet::from([0]),
+            points: HashSet::from([1]),
+            ..Reachable::default()
+        };
+        let mut out = AsmBrep::default();
+        emit_vertices(&mut out, &records, &by_index, &reach, IdFormat("f3d")).unwrap();
+        (
+            serde_value::to_value(&out.tolerant_vertex_tails[0]).unwrap(),
+            out.vertices[0].tolerance,
+        )
+    };
+    let (evaluated_wire, tolerance) = decode(Some(0.125));
+    let (absent_wire, absent_tolerance) = decode(None);
+    assert_eq!(
+        tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(1.25)
+    );
+    assert_eq!(absent_tolerance, None);
+    assert_eq!(evaluated_wire, absent_wire);
 }

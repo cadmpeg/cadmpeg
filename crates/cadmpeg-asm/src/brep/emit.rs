@@ -2573,12 +2573,6 @@ fn emit_carrier_curve(
     let Some(mut geometry) = curve_geo.remove(&i) else {
         return Ok(());
     };
-    let solved_domain = match &geometry {
-        CurveGeometry::Nurbs(curve) => {
-            crate::nurbs::proc_curve::nurbs_curve_parameter_domain(curve)
-        }
-        _ => None,
-    };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
             let mut reversed = geometry.clone();
@@ -2601,6 +2595,7 @@ fn emit_carrier_curve(
         Some(super::ProceduralCurveSource::Cached {
             construction,
             cache_fit_tolerance,
+            parsed_domain: solved_domain,
         }) => {
             let definition = (|| {
                 Some(match *construction {
@@ -4073,11 +4068,11 @@ pub(crate) fn emit_faces(
             // self-consistent.
             let native_sense = sense_at(r, 8);
             let mut sense = native_sense;
-            if by_index
+            let carrier_flipped = by_index
                 .get(&surface)
                 .is_some_and(|surf| surf.head() == "spline" && record_reversed(surf))
-                ^ inward_normal_surfaces.contains(&surface)
-            {
+                ^ inward_normal_surfaces.contains(&surface);
+            if carrier_flipped {
                 sense = match sense {
                     Sense::Forward => Sense::Reversed,
                     Sense::Reversed => Sense::Forward,
@@ -4105,7 +4100,7 @@ pub(crate) fn emit_faces(
                 face: FaceId::mint(id(format, i)).expect("identity grammar"),
                 record_index: r.index as u32,
                 native_sense,
-                normalized_sense: sense,
+                carrier_flipped,
                 containment,
             });
             if let Some(Token::Long(key)) = r.chunk(1) {

@@ -7,14 +7,13 @@ use std::io::{Seek, SeekFrom, Write};
 mod model;
 pub(crate) mod target;
 use model::{
-    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritablePcurve,
-    WritableVertex,
+    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
+    WritablePcurve, WritableVertex,
 };
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
@@ -257,33 +256,6 @@ struct BrepScope {
 struct BrepPayload {
     body: Vec<u8>,
     direct: Vec<u8>,
-}
-
-enum WritableObjectCurve<'a> {
-    Circle {
-        center: cadmpeg_ir::math::Point3,
-        axis: cadmpeg_ir::math::Vector3,
-        ref_direction: cadmpeg_ir::math::Vector3,
-        radius: f64,
-    },
-    Nurbs(&'a cadmpeg_ir::geometry::NurbsCurve),
-}
-
-impl WritableObjectCurve<'_> {
-    fn payload(&self) -> ([u8; 16], Vec<u8>) {
-        match self {
-            Self::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => (
-                ARC_CLASS,
-                circle_payload(*center, *axis, *ref_direction, *radius),
-            ),
-            Self::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
-        }
-    }
 }
 
 struct WritePlan<'a> {
@@ -659,58 +631,14 @@ fn prepare_write(
     for scope in &breps {
         topology_points.extend(scope.points.iter().cloned());
     }
-    let mut curves = Vec::new();
-    for curve in &model.curves {
-        if topology_curves.contains(curve.id.as_str()) {
-            continue;
-        }
-        if curve.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "curve {} source-object state is not writable",
-                curve.id.as_str()
-            )));
-        }
-        let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
-            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                curves.push((curve.id.as_str(), WritableObjectCurve::Nurbs(nurbs)));
-                continue;
-            }
-            return Err(CodecError::NotImplemented(format!(
-                "Rhino writer cannot represent curve {} as a native object",
-                curve.id.as_str()
-            )));
-        };
-        let (center, axis, ref_direction, radius) = circle_curve.parts();
-        let axis_norm = axis.norm();
-        let reference_norm = ref_direction.norm();
-        let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
-        if !center.x.is_finite()
-            || !center.y.is_finite()
-            || !center.z.is_finite()
-            || !radius.is_finite()
-            || *radius <= 0.0
-            || !axis_norm.is_finite()
-            || !reference_norm.is_finite()
-            || (axis_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
-            || (reference_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
-            || dot.abs() > EPS_WRITE_DEGENERATE
-        {
-            return Err(CodecError::malformed(format_args!(
-                "curve {} has an invalid circle frame",
-                curve.id.as_str()
-            )));
-        }
-        curves.push((
-            curve.id.as_str(),
-            WritableObjectCurve::Circle {
-                center: *center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: *radius,
-            },
-        ));
-    }
+    let curves = model
+        .curves
+        .iter()
+        .filter(|curve| !topology_curves.contains(curve.id.as_str()))
+        .map(|curve| {
+            WritableObjectCurve::try_new(curve).map(|geometry| (curve.id.as_str(), geometry))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let surfaces = model
         .surfaces
         .iter()
@@ -1267,7 +1195,7 @@ fn admit_pcurve<'a>(
         )));
     }
     let domain = edge.domain;
-    let (payload, hull) = match &pcurve.geometry {
+    let (payload, domain_extent_points) = match &pcurve.geometry {
         cadmpeg_ir::geometry::PcurveGeometry::Line(line) => {
             let (origin, direction) = line.parts();
             if !origin.u.is_finite()
@@ -1339,7 +1267,7 @@ fn admit_pcurve<'a>(
     Ok(WritablePcurve {
         source: pcurve,
         payload,
-        hull,
+        domain_extent_points,
     })
 }
 
@@ -1377,11 +1305,11 @@ fn validate_nurbs_trim(
             && v >= v_domain[0] - uv_epsilon
             && v <= v_domain[1] + uv_epsilon
     };
-    let control_hull_inside = explicit
-        .hull
+    let domain_extent_inside = explicit
+        .domain_extent_points
         .iter()
         .all(|point| inside_domain(point.u, point.v));
-    if !control_hull_inside {
+    if !domain_extent_inside {
         return Err(CodecError::malformed(format_args!(
             "pcurve {} leaves its NURBS surface parameter domain",
             pcurve.id.as_str()
@@ -1770,21 +1698,17 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
 
 fn check_frame(
     id: &str,
-    origin: cadmpeg_ir::math::Point3,
     normal: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
     family: &str,
 ) -> Result<(), CodecError> {
     let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
-    if !origin.x.is_finite()
-        || !origin.y.is_finite()
-        || !origin.z.is_finite()
-        || (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
+    if (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || dot.abs() > EPS_WRITE_DEGENERATE
     {
         return Err(CodecError::malformed(format_args!(
-            "{family} {id} has an invalid frame"
+            "{family} {id} frame is not orthonormal to Rhino's tighter bound {EPS_WRITE_DEGENERATE}"
         )));
     }
     Ok(())
@@ -1808,28 +1732,6 @@ fn check_nurbs_surface(
     {
         return Err(CodecError::malformed(format_args!(
             "surface {id} cannot be represented by Rhino NURBS counts"
-        )));
-    }
-    if surface
-        .u_knots()
-        .iter()
-        .chain(surface.v_knots())
-        .any(|v| !v.is_finite())
-        || surface
-            .u_knots()
-            .windows(2)
-            .chain(surface.v_knots().windows(2))
-            .any(|v| v[0] > v[1])
-        || surface
-            .control_points()
-            .iter()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
-        || surface
-            .weights()
-            .is_some_and(|w| w.iter().any(|v| !v.is_finite() || *v == 0.0))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "surface {id} has invalid NURBS data"
         )));
     }
     check_knot_roundtrip(
@@ -1857,20 +1759,6 @@ fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Resu
     if i32::try_from(order).is_err() || i32::try_from(count).is_err() || order < 2 {
         return Err(CodecError::malformed(format_args!(
             "curve {id} cannot be represented by Rhino NURBS counts"
-        )));
-    }
-    if curve.knots().iter().any(|v| !v.is_finite())
-        || !knots_nondecreasing(curve.knots())
-        || curve
-            .control_points()
-            .iter()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
-        || curve
-            .weights()
-            .is_some_and(|w| w.iter().any(|v| !v.is_finite() || *v == 0.0))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "curve {id} has invalid NURBS data"
         )));
     }
     check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;

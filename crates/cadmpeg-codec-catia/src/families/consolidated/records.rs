@@ -259,30 +259,25 @@ struct Class25ScalarSegmentWire {
 impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
     type Error = String;
     fn try_from(wire: Class25ScalarSegmentWire) -> Result<Self, Self::Error> {
-        match (wire.marker, wire.trailing.as_slice()) {
-            (Class25ScalarMarker::M82, lane) if lane.len() == 5 => Ok(Self::M82Five(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            (Class25ScalarMarker::M82, lane) if lane.len() == 6 => Ok(Self::M82Six(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            (Class25ScalarMarker::M82, lane) if lane.len() == 7 => Ok(Self::M82Seven(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            (Class25ScalarMarker::M83, lane) if lane.len() == 8 => Ok(Self::M83Eight(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            (Class25ScalarMarker::M83, lane) if lane.len() == 9 => Ok(Self::M83Nine(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            (Class25ScalarMarker::M89, lane) if lane.len() == 20 => Ok(Self::M89(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            (Class25ScalarMarker::M8b, lane) if lane.len() == 24 => Ok(Self::M8b(Box::new(
-                lane.try_into().map_err(|_| "trailing arity")?,
-            ))),
-            _ => Err("trailing arity does not match marker".into()),
+        fn with_arity<const N: usize>(
+            lane: &[f64],
+            constructor: fn(Box<[f64; N]>) -> Class25ScalarSegment,
+        ) -> Option<Class25ScalarSegment> {
+            Some(constructor(Box::new(lane.try_into().ok()?)))
         }
+
+        let lane = wire.trailing.as_slice();
+        match wire.marker {
+            Class25ScalarMarker::M82 => with_arity(lane, Self::M82Five)
+                .or_else(|| with_arity(lane, Self::M82Six))
+                .or_else(|| with_arity(lane, Self::M82Seven)),
+            Class25ScalarMarker::M83 => {
+                with_arity(lane, Self::M83Eight).or_else(|| with_arity(lane, Self::M83Nine))
+            }
+            Class25ScalarMarker::M89 => with_arity(lane, Self::M89),
+            Class25ScalarMarker::M8b => with_arity(lane, Self::M8b),
+        }
+        .ok_or_else(|| "trailing arity does not match marker".to_owned())
     }
 }
 impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {

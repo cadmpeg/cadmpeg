@@ -26,27 +26,39 @@ use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
+const HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const HEADER_ANGULAR_TOLERANCE: f64 = 1.0e-10;
+
 #[test]
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width.bytes(), 8);
-    assert_eq!(h.save_format_version, Some(23100));
-    assert_eq!(h.entity_count, Some(7));
-    assert_eq!(h.flags, Some(3));
-    assert_eq!(h.save_format_major(), Some(231));
-    assert_eq!(h.save_format_minor(), Some(0));
-    assert!(h.has_history_partition());
+    assert_eq!(h.metadata.save_format_version, Some(23100));
+    assert_eq!(h.metadata.entity_count, Some(7));
+    assert_eq!(h.metadata.flags, Some(3));
+    assert_eq!(h.metadata.save_format_major(), Some(231));
+    assert_eq!(h.metadata.save_format_minor(), Some(0));
+    assert!(h.metadata.has_history_partition());
     // Flags `3` is the history bit plus revision `1` in bits 1 to 7. Nothing is
     // left over, so no bit reaches the uninterpreted set.
-    assert_eq!(h.format_revision(), Some(1));
-    assert_eq!(h.unassigned_flags(), Some(0));
-    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.product_version.as_deref(), Some("ASM 231.6.3.65535 OSX"));
-    assert_eq!(h.save_date.as_deref(), Some("Tue Mar 31 16:16:19 2026"));
-    assert_eq!(h.scale, Some(60.0));
-    assert_eq!(h.linear, Some(1.0e-6));
-    assert_eq!(h.angular, Some(1.0e-10));
+    assert_eq!(h.metadata.format_revision(), Some(1));
+    assert_eq!(h.metadata.unassigned_flags(), Some(0));
+    assert_eq!(
+        h.metadata.product_family.as_deref(),
+        Some("Autodesk Neutron")
+    );
+    assert_eq!(
+        h.metadata.product_version.as_deref(),
+        Some("ASM 231.6.3.65535 OSX")
+    );
+    assert_eq!(
+        h.metadata.save_date.as_deref(),
+        Some("Tue Mar 31 16:16:19 2026")
+    );
+    assert_eq!(h.metadata.scale, Some(60.0));
+    assert_eq!(h.metadata.linear, Some(HEADER_LINEAR_TOLERANCE));
+    assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
 }
 
 /// Flag bits 1 to 7 hold the save format's revision number
@@ -57,7 +69,6 @@ fn asm_header_parses_documented_fields() {
 #[test]
 fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
     let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
-        width: cadmpeg_asm::kernel_header::RefWidth::Eight,
         save_format_version: Some(22500),
         entity_count: None,
         flags: Some(flags),
@@ -93,16 +104,25 @@ fn asm_header_parses_binaryfile4_fields() {
     assert!(asm_header::has_asm_magic(&bytes));
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width.bytes(), 4);
-    assert_eq!(h.save_format_version, Some(22700));
+    assert_eq!(h.metadata.save_format_version, Some(22700));
     assert_eq!(asm_header::record_count(&bytes), Some(0));
-    assert_eq!(h.entity_count, Some(2));
-    assert_eq!(h.flags, Some(5));
-    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.product_version.as_deref(), Some("ASM 227.5.0.65535 NT"));
-    assert_eq!(h.save_date.as_deref(), Some("Mon Aug  8 02:39:24 2022"));
-    assert_eq!(h.scale, Some(50.0));
-    assert_eq!(h.linear, Some(1.0e-6));
-    assert_eq!(h.angular, Some(1.0e-10));
+    assert_eq!(h.metadata.entity_count, Some(2));
+    assert_eq!(h.metadata.flags, Some(5));
+    assert_eq!(
+        h.metadata.product_family.as_deref(),
+        Some("Autodesk Neutron")
+    );
+    assert_eq!(
+        h.metadata.product_version.as_deref(),
+        Some("ASM 227.5.0.65535 NT")
+    );
+    assert_eq!(
+        h.metadata.save_date.as_deref(),
+        Some("Mon Aug  8 02:39:24 2022")
+    );
+    assert_eq!(h.metadata.scale, Some(50.0));
+    assert_eq!(h.metadata.linear, Some(HEADER_LINEAR_TOLERANCE));
+    assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
     // The record stream begins directly after the tolerance doubles.
     assert_eq!(asm_header::record_stream_start(&bytes), Some(bytes.len()));
 }
@@ -524,7 +544,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit F3D archive entries"
+                    && limit.operation == "admit F3D archive entries"
         ),
         "{error:?}"
     );
@@ -704,9 +724,12 @@ fn smbh_header_string_region_starts_at_byte_47() {
     // The header parses all three strings and both tolerances despite the
     // overlap, and the record stream begins immediately after the last double.
     let h = asm_header::parse(&prefix).expect("magic present");
-    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.flags, Some(3));
-    assert_eq!(h.angular, Some(1.0e-10));
+    assert_eq!(
+        h.metadata.product_family.as_deref(),
+        Some("Autodesk Neutron")
+    );
+    assert_eq!(h.metadata.flags, Some(3));
+    assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
     assert_eq!(
         asm_header::record_stream_start(&prefix),
         Some(prefix.len()),

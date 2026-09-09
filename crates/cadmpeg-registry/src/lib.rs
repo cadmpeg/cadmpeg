@@ -37,8 +37,8 @@ mod views;
 mod integration_tests;
 
 pub use catalog::{
-    DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor, ResolveSourceError,
-    ResolvedSource, Selection,
+    AmbiguousDetection, DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor,
+    ResolveSourceError, ResolvedSource, Selection,
 };
 pub use descriptors::{forced_input, input_names, FormatDescriptor, NativeDescriptor};
 pub use disposition::{

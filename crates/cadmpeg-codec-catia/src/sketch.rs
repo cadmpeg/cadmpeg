@@ -3,8 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-mod unique_index;
-use unique_index::UniqueIndex;
+use crate::unique_index::UniqueIndex;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{

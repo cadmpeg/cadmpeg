@@ -1581,3 +1581,11 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
 }
 
 mod surface_intersections;
+
+#[test]
+fn line_pair_constraint_accepts_pairs_beyond_edge_roles() {
+    let constraint = super::super::StandardLinePairConstraint::new(&[], &[], &[]);
+    let pairs = [None];
+    assert!(constraint.is_valid(&pairs));
+    assert!(constraint.is_simple(&pairs));
+}

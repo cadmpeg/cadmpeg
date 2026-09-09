@@ -15,7 +15,7 @@ use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
     checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
-    parse_eof, parse_header, verify_checksum, verify_checksum_ranges, ArchiveVersion,
+    parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
@@ -889,7 +889,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                     "properties, settings, and object tables are required".to_string(),
                 ));
             }
-            parse_eof(data, offset, archive).map_err(framing_error)?;
+            validate_eof(data, offset, archive).map_err(framing_error)?;
             let mut metadata =
                 crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
             let all_objects = resolve_identities(all_objects, &metadata, &mut warnings);
@@ -1304,7 +1304,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
-    crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
+    Ok(crate::decode::decode(
+        &scan,
+        crate::mesh::MeshExpand::new(ctx, root),
+    ))
 }
 
 #[cfg(test)]

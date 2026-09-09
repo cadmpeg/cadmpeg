@@ -21,7 +21,6 @@
 //! indexing and reference resolution hold for every record.
 
 use crate::kernel_header::KernelHeader;
-use crate::kernel_header::RefWidth;
 use crate::sab::{Record, Token};
 use crate::stream_error::{StreamError, StreamFormat};
 
@@ -66,7 +65,6 @@ impl TextHeader {
     /// binary stream carries.
     pub fn as_kernel_header(&self) -> KernelHeader {
         KernelHeader {
-            width: RefWidth::Eight,
             save_format_version: Some(self.save_format_version),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),

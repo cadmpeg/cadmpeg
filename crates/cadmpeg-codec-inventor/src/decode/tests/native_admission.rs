@@ -109,7 +109,7 @@ fn rejected_occurrence_does_not_fail_decode() {
 }
 
 #[test]
-fn nonfinite_assembly_placement_does_not_fail_decode() {
+fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
     let bytes = primary_envelope_fixture();
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
@@ -162,7 +162,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
         "transform_prefix": false, "transform_encoding": [0, 0],
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
-        "object_reference": 0, "suffix_len": 0, "suffix_sha256": "invalid"
+        "object_reference": 0, "suffix_len": 48, "suffix_sha256": "invalid"
     });
     let mut issues = Vec::new();
     let bad: AssemblyPlacementRecordWire =
@@ -336,4 +336,43 @@ fn utf16(bytes: &mut Vec<u8>, value: &str) {
     for unit in value.encode_utf16() {
         u16_le(bytes, unit);
     }
+}
+
+#[test]
+fn protein_admission_keeps_later_assets_and_rejections() {
+    let mut issues = Vec::new();
+    let assets = ["bad.bin", "assets/InstanceProperties.bin"]
+        .into_iter()
+        .filter_map(|entry_name| {
+            let wire = serde_json::from_value(serde_json::json!({
+                "id": "asset", "entry_name": entry_name, "ordinal": 3,
+                "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+                    "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+            }))
+            .expect("Protein asset wire fixture");
+            crate::decode::admit_protein_asset(wire, &mut issues)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(assets.len(), 1);
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].scope, "asset");
+    assert!(issues[0].detail.contains("entry_name"));
+    let rejections = ["bad.bin", "assets/InstanceProperties.bin"]
+        .into_iter()
+        .filter_map(|entry_name| {
+            crate::decode::admit_protein_rejection(
+                crate::native::protein::ProteinRejectionRecordWire {
+                    id: "rejection".into(),
+                    entry_name: entry_name.into(),
+                    ordinal: 4,
+                    detail: "invalid record".into(),
+                },
+                &mut issues,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rejections.len(), 1);
+    assert_eq!(issues.len(), 2);
+    assert_eq!(issues[1].scope, "rejection");
+    assert!(issues[1].detail.contains("entry_name"));
 }

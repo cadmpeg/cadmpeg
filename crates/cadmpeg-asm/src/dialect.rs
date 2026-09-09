@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar, LayerInstance};
 
-use crate::kernel_header::KernelHeader;
+use crate::kernel_header::{BinaryHeader, KernelHeader};
 
 include!("dialect/registry_ids.rs");
 
@@ -43,9 +43,9 @@ pub const DECLARED_CARRIER: &str = "carrier";
 #[derive(Debug, Clone, Copy)]
 pub enum KernelHeaderRef<'a> {
     /// A Spatial ACIS binary header.
-    Acis(&'a KernelHeader),
+    Acis(&'a BinaryHeader),
     /// An Autodesk Shape Manager binary header.
-    Asm(&'a KernelHeader),
+    Asm(&'a BinaryHeader),
     /// A text stream terminated by `End-of-ASM-data`.
     TextAsm(&'a KernelHeader),
     /// A text stream terminated by `End-of-ACIS-data`.
@@ -59,10 +59,8 @@ pub enum KernelHeaderRef<'a> {
 pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
     let mut declared = BTreeMap::new();
     let parsed = match header {
-        KernelHeaderRef::Acis(header)
-        | KernelHeaderRef::Asm(header)
-        | KernelHeaderRef::TextAsm(header)
-        | KernelHeaderRef::TextAcis(header) => Some(header),
+        KernelHeaderRef::Acis(header) | KernelHeaderRef::Asm(header) => Some(&header.metadata),
+        KernelHeaderRef::TextAsm(header) | KernelHeaderRef::TextAcis(header) => Some(header),
         KernelHeaderRef::Unknown => None,
     };
     if let Some(parsed) = parsed {
@@ -80,7 +78,7 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
                 DECLARED_REFERENCE_WIDTH.to_owned(),
                 header.width.to_string(),
             );
-            acis_match(header.save_format_major())
+            acis_match(header.metadata.save_format_major())
         }
         KernelHeaderRef::Asm(header) => {
             declared.insert(
@@ -230,23 +228,25 @@ mod tests {
         ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS,
         ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
     };
-    use crate::kernel_header::KernelHeader;
     use crate::kernel_header::RefWidth;
+    use crate::kernel_header::{BinaryHeader, KernelHeader};
     use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, LayerInstance};
     use std::collections::BTreeSet;
 
-    fn header(width: RefWidth, save_format_version: Option<u32>) -> KernelHeader {
-        KernelHeader {
+    fn header(width: RefWidth, save_format_version: Option<u32>) -> BinaryHeader {
+        BinaryHeader {
             width,
-            save_format_version,
-            entity_count: None,
-            flags: None,
-            product_family: None,
-            product_version: None,
-            save_date: None,
-            scale: None,
-            linear: None,
-            angular: None,
+            metadata: KernelHeader {
+                save_format_version,
+                entity_count: None,
+                flags: None,
+                product_family: None,
+                product_version: None,
+                save_date: None,
+                scale: None,
+                linear: None,
+                angular: None,
+            },
         }
     }
 
@@ -282,10 +282,9 @@ mod tests {
         assert_eq!(unverified.dialect(), &ACIS_SAVE_FORMAT_BINARY_OTHER);
         assert_eq!(unverified.using(), Some(ACIS_SAVE_FORMAT_218));
         assert_eq!(
-            classify(KernelHeaderRef::TextAcis(&header(
-                RefWidth::Four,
-                Some(70_000)
-            )))
+            classify(KernelHeaderRef::TextAcis(
+                &header(RefWidth::Four, Some(70_000)).metadata
+            ))
             .admission(),
             &Admission::Residual
         );
@@ -301,7 +300,9 @@ mod tests {
             )
         );
 
-        let text = classify(KernelHeaderRef::TextAcis(&header(RefWidth::Four, None)));
+        let text = classify(KernelHeaderRef::TextAcis(
+            &header(RefWidth::Four, None).metadata,
+        ));
         assert_eq!(
             unverified_message("the stream", &text).as_deref(),
             Some(
@@ -363,11 +364,11 @@ mod tests {
         );
 
         assert_eq!(
-            classify(KernelHeaderRef::TextAsm(&asm)).dialect(),
+            classify(KernelHeaderRef::TextAsm(&asm.metadata)).dialect(),
             &ACIS_TEXT_ASM
         );
         assert_eq!(
-            classify(KernelHeaderRef::TextAcis(&acis)).dialect(),
+            classify(KernelHeaderRef::TextAcis(&acis.metadata)).dialect(),
             &ACIS_TEXT_ACIS
         );
         let unknown = classify(KernelHeaderRef::Unknown);
@@ -387,8 +388,8 @@ mod tests {
             classify(KernelHeaderRef::Acis(&header(RefWidth::Four, Some(23_200)))),
             classify(KernelHeaderRef::Asm(&asm4)),
             classify(KernelHeaderRef::Asm(&asm8)),
-            classify(KernelHeaderRef::TextAsm(&asm8)),
-            classify(KernelHeaderRef::TextAcis(&acis)),
+            classify(KernelHeaderRef::TextAsm(&asm8.metadata)),
+            classify(KernelHeaderRef::TextAcis(&acis.metadata)),
             classify(KernelHeaderRef::Unknown),
         ]
         .into_iter()

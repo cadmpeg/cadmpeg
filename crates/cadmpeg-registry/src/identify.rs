@@ -10,7 +10,8 @@ use cadmpeg_ir::codec::{Confidence, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::{
-    DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection,
+    AmbiguousDetection, DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError,
+    ResolvedSource, Selection,
 };
 
 /// Leading byte window offered to prefix detection.
@@ -37,12 +38,7 @@ pub enum Identification {
         inspection: Result<Box<ContainerSummary>, CodecError>,
     },
     /// Native codecs tied at the strongest confidence.
-    Ambiguous {
-        /// Shared strongest confidence.
-        confidence: Confidence,
-        /// Candidate format ids in detection order.
-        candidates: Vec<FormatId>,
-    },
+    Ambiguous(AmbiguousDetection),
 }
 
 /// A successfully inspected source: the selected codec's format, how it was
@@ -116,13 +112,7 @@ pub fn identify_with(
                 inspection,
             })
         }
-        DetectionOutcome::Ambiguous {
-            confidence,
-            candidates,
-        } => Ok(Identification::Ambiguous {
-            confidence,
-            candidates,
-        }),
+        DetectionOutcome::Ambiguous(tie) => Ok(Identification::Ambiguous(tie)),
     }
 }
 
@@ -216,8 +206,7 @@ mod tests {
 
         assert!(match found {
             Identification::Native { format, .. } => format == FormatId::new("nx"),
-            Identification::Ambiguous { candidates, .. } =>
-                candidates.contains(&FormatId::new("nx")),
+            Identification::Ambiguous(tie) => tie.candidates().contains(&FormatId::new("nx")),
             Identification::None | Identification::Cadir => false,
         });
     }
@@ -445,16 +434,13 @@ mod tests {
     #[test]
     fn a_markerless_zip_identifies_as_several_formats_with_no_dialect() {
         let found = run(b"PK\x03\x04 markerless", &inspection());
-        let Identification::Ambiguous {
-            confidence,
-            candidates,
-        } = &found
-        else {
+        let Identification::Ambiguous(tie) = &found else {
             panic!("expected ambiguity: {found:?}");
         };
-        assert!(candidates.len() > 1, "{found:?}");
-        assert_eq!(*confidence, Confidence::Low);
-        let formats = candidates
+
+        assert_eq!(tie.confidence(), Confidence::Low);
+        let formats = tie
+            .candidates()
             .iter()
             .map(|format| format.as_str())
             .collect::<Vec<_>>();
