@@ -53,6 +53,8 @@ pub enum SpaceDerivation {
         parent: SpaceId,
         /// Range in the parent space.
         range: ByteRange,
+        /// Extractable archive member name.
+        member: Option<String>,
     },
     /// Decompressed or otherwise expanded output from a parent range.
     Expanded {
@@ -60,6 +62,8 @@ pub enum SpaceDerivation {
         parent: SpaceId,
         /// Compressed source range in the parent space.
         source_range: ByteRange,
+        /// Extractable archive member name.
+        member: Option<String>,
     },
     /// Concatenation of several parent windows.
     Concatenated {
@@ -84,17 +88,19 @@ pub struct SpaceDescriptor {
 pub struct AddressStep {
     /// Stable label for this step.
     pub label: String,
-    /// Whether this step is the root or an archive member.
+    /// Replay operation for this step.
     pub kind: AddressStepKind,
 }
 
 /// Kind of one address step, for inspect replay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddressStepKind {
     /// Root input file.
     Root,
     /// Archive member, stored or expanded.
-    Member,
+    Member(String),
+    /// Derived bytes without an archive extraction route.
+    Derived,
 }
 
 /// Owned root-to-leaf address that survives the decode session.
@@ -129,17 +135,18 @@ impl ResolvedAddress {
         let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
         let mut input = file.to_owned();
         let mut commands = Vec::new();
-        for step in self
-            .steps
-            .iter()
-            .filter(|step| step.kind == AddressStepKind::Member)
-        {
+        for step in &self.steps {
+            let member = match &step.kind {
+                AddressStepKind::Root => continue,
+                AddressStepKind::Member(member) => member,
+                AddressStepKind::Derived => return commands,
+            };
             let extracted = format!("{input}.member");
             commands.push(format!(
-                "cadmpeg inspect extract --output={} -- {} {}",
+                "cadmpeg inspect extract --force --output={} -- {} {}",
                 quote(&extracted),
                 quote(&input),
-                quote(&step.label),
+                quote(member),
             ));
             input = extracted;
         }
@@ -163,11 +170,19 @@ pub fn resolve_address(
         let Some(descriptor) = descriptors.get(current.index()) else {
             break;
         };
-        let kind = match descriptor.derivation {
+        let kind = match &descriptor.derivation {
             SpaceDerivation::Root => AddressStepKind::Root,
-            SpaceDerivation::StoredSlice { .. }
-            | SpaceDerivation::Expanded { .. }
-            | SpaceDerivation::Concatenated { .. } => AddressStepKind::Member,
+            SpaceDerivation::StoredSlice {
+                member: Some(member),
+                ..
+            }
+            | SpaceDerivation::Expanded {
+                member: Some(member),
+                ..
+            } => AddressStepKind::Member(member.clone()),
+            SpaceDerivation::StoredSlice { member: None, .. }
+            | SpaceDerivation::Expanded { member: None, .. }
+            | SpaceDerivation::Concatenated { .. } => AddressStepKind::Derived,
         };
         steps.push(AddressStep {
             label: descriptor.label.clone(),
@@ -206,6 +221,7 @@ mod tests {
                 derivation: SpaceDerivation::Expanded {
                     parent: SpaceId::ROOT,
                     source_range: ByteRange { start: 30, end: 90 },
+                    member: Some("Assets/inner archive.zip".into()),
                 },
             },
             SpaceDescriptor {
@@ -213,6 +229,7 @@ mod tests {
                 derivation: SpaceDerivation::StoredSlice {
                     parent: SpaceId::from_index(1),
                     range: ByteRange { start: 20, end: 84 },
+                    member: Some("Data/payload bytes.bin".into()),
                 },
             },
         ];
@@ -224,8 +241,8 @@ mod tests {
             },
         );
         assert_eq!(address.inspect_commands("project part.FCStd"), [
-            "cadmpeg inspect extract --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
-            "cadmpeg inspect extract --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
             "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
         ]);
     }

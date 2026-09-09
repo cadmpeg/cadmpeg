@@ -24,7 +24,7 @@ use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::protein::{
-    InstancePropertiesEntry, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord,
+    ProteinAssetRecord, ProteinAssetRecordWire, ProteinEntryRecord, ProteinRecord,
     ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
@@ -36,13 +36,13 @@ use crate::native::ufrx::{
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
     AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, MetaSectionRecord,
-    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedMember,
-    UnpairedSegmentRecord, VersionTupleRecord,
+    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
+    PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -72,7 +72,7 @@ fn decode_container<'a>(
         .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         .cloned();
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
-    let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
+    let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
@@ -236,7 +236,9 @@ fn decode_container<'a>(
                             value_kind: property_value_kind(&property.value),
                             scalar_value,
                             raw_len: property.raw.window().len() as u64,
-                            raw_sha256: sha256_hex(property.raw.window()),
+                            raw_sha256: crate::native::digest::Sha256Hex::digest(
+                                property.raw.window(),
+                            ),
                         });
                     }
                 }
@@ -290,28 +292,30 @@ fn decode_container<'a>(
         }
     };
     let material_catalog = crate::materials::project_catalog(&protein_instances);
+    let mut structural_issues = Vec::new();
     let protein_assets = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance.records.iter().map(|asset| {
-                Ok::<_, CodecError>(ProteinAssetRecord {
-                    id: format!(
-                        "inventor:protein:asset#{}-{}",
-                        sha256_hex(instance.entry_name.as_bytes()),
-                        asset.ordinal
-                    ),
-                    entry_name: InstancePropertiesEntry::try_from(instance.entry_name.clone())
-                        .map_err(CodecError::malformed)?,
-                    asset: asset.clone(),
-                })
+            instance.records.iter().map(|asset| ProteinAssetRecordWire {
+                id: format!(
+                    "inventor:protein:asset#{}-{}",
+                    sha256_hex(instance.entry_name.as_bytes()),
+                    asset.ordinal
+                ),
+                entry_name: instance.entry_name.clone(),
+                ordinal: asset.ordinal,
+                asset: asset.clone(),
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .filter_map(|wire| admit_protein_asset(wire, &mut structural_issues))
+        .collect::<Vec<_>>();
     let protein_rejections = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance.rejected.iter().map(|rejected| {
-                ProteinRejectionRecord::try_from(ProteinRejectionRecordWire {
+            instance
+                .rejected
+                .iter()
+                .map(|rejected| ProteinRejectionRecordWire {
                     id: format!(
                         "inventor:protein:rejection#{}-{}",
                         sha256_hex(instance.entry_name.as_bytes()),
@@ -321,13 +325,12 @@ fn decode_container<'a>(
                     ordinal: rejected.ordinal,
                     detail: rejected.detail.clone(),
                 })
-            })
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(CodecError::malformed)?;
+        .filter_map(|wire| admit_protein_rejection(wire, &mut structural_issues))
+        .collect::<Vec<_>>();
+    let protein_admission_issue_count = structural_issues.len();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let mut structural_issues = Vec::new();
     let ufrx = match &container.ufrx {
         UfrxState::Absent => UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
@@ -349,7 +352,7 @@ fn decode_container<'a>(
             schema: *schema,
             section_versions: section_versions.clone(),
             tail_len: source.window().len() as u64,
-            tail_sha256: sha256_hex(source.window()),
+            tail_sha256: crate::native::digest::Sha256Hex::digest(source.window()),
             detail: detail.clone(),
         },
         UfrxState::Parsed(document) => {
@@ -401,7 +404,7 @@ fn decode_container<'a>(
                         display_name: reference.display_name.clone(),
                         state_groups: reference.state_groups.clone(),
                         state: reference.state,
-                        document_id: hex(&reference.document_id),
+                        document_id: Some(hex(&reference.document_id)),
                         database_id: hex(&reference.database_id),
                         reference_id: reference.reference_id,
                         occurrence_count: reference.occurrence_count,
@@ -498,11 +501,13 @@ fn decode_container<'a>(
                 embedded_references: embedded,
                 occurrences,
                 tail_len: document.unparsed_tail.window().len() as u64,
-                tail_sha256: sha256_hex(document.unparsed_tail.window()),
+                tail_sha256: crate::native::digest::Sha256Hex::digest(
+                    document.unparsed_tail.window(),
+                ),
             }
         }
     };
-    let ufrx_issue_count = structural_issues.len();
+    let ufrx_issue_count = structural_issues.len() - protein_admission_issue_count;
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -943,9 +948,9 @@ fn decode_container<'a>(
     let pm_app_rendering_styles = presentation_inventory
         .rendering_styles
         .iter()
-        .map(|style| {
+        .filter_map(|style| {
             let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
-            PmAppRenderingStyleRecord {
+            let wire = PmAppRenderingStyleRecordWire {
                 id: format!(
                     "inventor:presentation:rendering-style#{}-{}",
                     style.identity.segment_token, style.identity.record_ordinal
@@ -964,10 +969,47 @@ fn decode_container<'a>(
                 name: style.name.clone(),
                 comment: style.comment.clone(),
                 long_name: style.long_name.clone(),
-                extension: style.extension.clone(),
+                style_state: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.style_state),
+                style_label: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.style_label.clone()),
+                asset_guid: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.asset_guid.clone()),
+                material_id: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.material_id.clone()),
+                asset_library_id: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.asset_library_id.clone()),
+                style_values: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.style_values),
+                guid: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.guid.clone()),
                 suffix_len,
-                suffix_sha256,
-            }
+                suffix_sha256: suffix_sha256.into(),
+            };
+            PmAppRenderingStyleRecord::try_from(wire)
+                .inspect_err(|detail| {
+                    presentation_inventory.issues.push(RecordIssue {
+                        family: RecordIssueFamily::Presentation,
+                        segment_token: style.identity.segment_token.clone(),
+                        record_ordinal: style.identity.record_ordinal,
+                        detail: detail.clone(),
+                    });
+                })
+                .ok()
         })
         .collect::<Vec<_>>();
     let pm_graphics_faces = presentation_inventory
@@ -1167,7 +1209,7 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
-                    apply_kernel_header(&mut ir, carrier.family, &decoded.header)?;
+                    apply_kernel_header(&mut ir, carrier.family, &decoded.header.metadata)?;
                     Some(decoded.brep)
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1256,6 +1298,11 @@ fn decode_container<'a>(
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
+    if protein_admission_issue_count != 0 {
+        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+            "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
+        )));
+    }
     losses.extend(dialect_loss(&matched, &recovery));
     losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if !ctx.container_only()
@@ -1412,13 +1459,15 @@ fn decode_container<'a>(
             ),
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
-        if presentation_projection.unresolved_face_overrides != 0 {
-            losses.push(
-                InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
-                    "Could not resolve {} PmGraphics face appearance override(s).",
-                    presentation_projection.unresolved_face_overrides
-                )),
-            );
+        for (cause, count) in &presentation_projection.unresolved_face_overrides {
+            if *count != 0 {
+                losses.push(
+                    InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
+                        "Could not resolve {count} PmGraphics face appearance override(s): {}.",
+                        cause.description()
+                    )),
+                );
+            }
         }
         if ufrx_issue_count != 0 {
             losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
@@ -1447,13 +1496,15 @@ fn decode_container<'a>(
                         external_references.len()
                     )));
                 }
-                if assembly_projection.unresolved_placements != 0 {
-                    losses.push(
-                        InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
-                            "Could not transfer {} assembly occurrence placement(s).",
-                            assembly_projection.unresolved_placements
-                        )),
-                    );
+                for (cause, count) in &assembly_projection.unresolved_placements {
+                    if *count != 0 {
+                        losses.push(InventorLossCode::AssemblyPlacementNotTransferred.note(
+                            format!(
+                                "Could not transfer {count} assembly occurrence placement(s): {}.",
+                                cause.description()
+                            ),
+                        ));
+                    }
                 }
             }
             UfrxState::Absent | UfrxState::Parsed(_) => {}
@@ -1789,6 +1840,26 @@ fn admit_ufrx_record<T>(
 ) -> Option<T> {
     admitted
         .inspect_err(|detail| issues.push(structural_issue(scope, detail)))
+        .ok()
+}
+
+fn admit_protein_asset(
+    wire: ProteinAssetRecordWire,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Option<ProteinAssetRecord> {
+    let scope = wire.id.clone();
+    ProteinAssetRecord::try_from(wire)
+        .inspect_err(|detail| issues.push(structural_issue(&scope, detail)))
+        .ok()
+}
+
+fn admit_protein_rejection(
+    wire: ProteinRejectionRecordWire,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Option<ProteinRejectionRecord> {
+    let scope = wire.id.clone();
+    ProteinRejectionRecord::try_from(wire)
+        .inspect_err(|detail| issues.push(structural_issue(&scope, detail)))
         .ok()
 }
 

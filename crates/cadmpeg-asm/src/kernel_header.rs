@@ -29,11 +29,18 @@ impl std::fmt::Display for RefWidth {
     }
 }
 
+/// Binary kernel framing with its mandatory integer and reference width.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinaryHeader {
+    /// Integer and reference width used by the binary record stream.
+    pub width: RefWidth,
+    /// Encoding-independent kernel metadata.
+    pub metadata: KernelHeader,
+}
+
 /// The recognized metadata fields of an ASM or ACIS model stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KernelHeader {
-    /// Integer and reference width used by the record stream.
-    pub width: RefWidth,
     /// ACIS save-format version, encoded as `100 * major + minor`.
     pub save_format_version: Option<u32>,
     /// Entity-count word.
@@ -168,13 +175,13 @@ mod tests {
                 crate::acis_header::parse
             };
             let header = parse(&bytes).expect("recognized partial header");
-            assert_eq!(header.linear, Some(0.125));
-            assert_eq!(header.angular, None);
+            assert_eq!(header.metadata.linear, Some(0.125));
+            assert_eq!(header.metadata.angular, None);
             bytes.push(6);
             bytes.extend_from_slice(&0.25_f64.to_le_bytes());
             let header = parse(&bytes).expect("recognized complete header");
-            assert_eq!(header.linear, Some(0.125));
-            assert_eq!(header.angular, Some(0.25));
+            assert_eq!(header.metadata.linear, Some(0.125));
+            assert_eq!(header.metadata.angular, Some(0.25));
         }
     }
 }

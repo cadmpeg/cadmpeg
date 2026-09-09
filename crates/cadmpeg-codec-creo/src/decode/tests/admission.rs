@@ -71,7 +71,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit Creo entities"
+                    && limit.operation == "admit Creo entities"
         ),
         "{error:?}"
     );

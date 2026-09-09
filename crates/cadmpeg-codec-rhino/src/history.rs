@@ -807,6 +807,7 @@ fn extended_geometry_json(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: f64,
+    warnings: &mut Vec<String>,
 ) -> Option<String> {
     let data = expand.data();
     let semantic = if crate::mesh::supported_class(value.class_id) {
@@ -1015,7 +1016,7 @@ fn extended_geometry_json(
         if let Some(gradient) = hatch
             .gradient
             .as_ref()
-            .and_then(crate::hatch::gradient_json)
+            .map(crate::hatch::gradient_json)
             .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
         {
             semantic["gradient"] = gradient;
@@ -1040,7 +1041,14 @@ fn extended_geometry_json(
         let mut dimension = dimension;
         crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
             .ok()?;
-        return crate::dimensions::semantic_json(&dimension);
+        return crate::dimensions::semantic_json(&dimension)
+            .map_err(|error| {
+                warnings.push(format!(
+                    "embedded history dimension at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+            })
+            .ok();
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
         let polyedge =
             crate::polyedge::decode(expand, value.class_data_range.clone(), archive).ok()?;
@@ -1055,7 +1063,8 @@ fn extended_geometry_json(
 ///
 /// History curves/surfaces are stringified into native properties; putting them
 /// in `model.curves`/`surfaces` fails `Check::CarrierReachability`.
-struct GeometrySink {
+struct GeometrySink<'a> {
+    warnings: &'a mut Vec<String>,
     untyped: usize,
     failed: usize,
     redundant_repairs: usize,
@@ -1071,7 +1080,7 @@ fn structured_value_properties(
         f64,
     )>,
     properties: &mut BTreeMap<String, String>,
-    sink: &mut GeometrySink,
+    sink: &mut GeometrySink<'_>,
 ) {
     match value {
         Value::ObjectReferences(values) => {
@@ -1120,9 +1129,14 @@ fn structured_value_properties(
                         if let Ok(semantic) = semantic {
                             properties.insert(format!("{key}.{index}.geometry"), semantic);
                         }
-                    } else if let Some(semantic) =
-                        extended_geometry_json(expand, value, archive, writer_version, scale)
-                    {
+                    } else if let Some(semantic) = extended_geometry_json(
+                        expand,
+                        value,
+                        archive,
+                        writer_version,
+                        scale,
+                        sink.warnings,
+                    ) {
                         sink.untyped += 1;
                         properties.insert(format!("{key}.{index}.geometry"), semantic);
                     } else {
@@ -1207,6 +1221,7 @@ pub(crate) fn project(
         f64,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
+    warnings: &mut Vec<String>,
 ) -> (usize, usize, usize, usize) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
@@ -1225,6 +1240,7 @@ pub(crate) fn project(
     }
 
     let mut sink = GeometrySink {
+        warnings,
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,

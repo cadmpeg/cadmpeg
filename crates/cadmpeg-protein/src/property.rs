@@ -2,6 +2,7 @@
 //! Decoded property carriers and their serialized representation.
 
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroUsize;
 
 /// One typed property decoded according to its packaged schema.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -28,7 +29,7 @@ pub enum PropertyContent {
     /// Repeated reference carriers share one connection block.
     MultipleReferences {
         /// Number of zero-byte reference values preceding the connection block.
-        count: usize,
+        count: NonZeroUsize,
         /// Connected asset identifiers in serialized order.
         targets: Vec<String>,
     },
@@ -127,7 +128,9 @@ impl From<DecodedProperty> for DecodedPropertyWire {
             PropertyContent::Reference(targets) => (PropertyValueWire::Reference, targets),
             PropertyContent::MultipleReferences { count, targets } => (
                 PropertyValueWire::Multiple(
-                    (0..count).map(|_| PropertyValueWire::Reference).collect(),
+                    (0..count.get())
+                        .map(|_| PropertyValueWire::Reference)
+                        .collect(),
                 ),
                 targets,
             ),
@@ -147,13 +150,13 @@ impl TryFrom<DecodedPropertyWire> for DecodedProperty {
         let content = match wire.value {
             PropertyValueWire::Reference => PropertyContent::Reference(wire.connections),
             PropertyValueWire::Multiple(values) => {
-                if !values.is_empty()
-                    && values
+                if let Some(count) = NonZeroUsize::new(values.len()).filter(|_| {
+                    values
                         .iter()
                         .all(|value| matches!(value, PropertyValueWire::Reference))
-                {
+                }) {
                     PropertyContent::MultipleReferences {
-                        count: values.len(),
+                        count,
                         targets: wire.connections,
                     }
                 } else {
@@ -227,12 +230,18 @@ mod tests {
     fn empty_references_preserve_the_flat_wire() {
         let property = DecodedProperty {
             value_offset: 4,
-            content: PropertyContent::MultipleReferences {
-                count: 0,
-                targets: vec!["target".into()],
+            content: PropertyContent::Value {
+                value: PropertyValue::Multiple(Vec::new()),
+                connections: vec!["target".into()],
             },
         };
-        assert!(property.value().is_none());
+        let encoded = serde_json::to_string(&property).expect("serialize empty reference carrier");
+        assert_eq!(
+            serde_json::from_str::<DecodedProperty>(&encoded)
+                .expect("deserialize empty reference carrier"),
+            property
+        );
+        assert_eq!(property.value(), Some(&PropertyValue::Multiple(Vec::new())));
         assert_eq!(
             serde_json::to_string(&property).expect("serialize empty references"),
             r#"{"value_offset":4,"value":{"kind":"multiple","value":[]},"connections":["target"]}"#
@@ -248,7 +257,7 @@ mod tests {
             ),
             (
                 PropertyContent::MultipleReferences {
-                    count: 2,
+                    count: NonZeroUsize::new(2).expect("two reference carriers"),
                     targets: vec!["target".into()],
                 },
                 r#"{"value_offset":4,"value":{"kind":"multiple","value":[{"kind":"reference"},{"kind":"reference"}]},"connections":["target"]}"#,

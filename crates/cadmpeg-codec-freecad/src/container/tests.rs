@@ -164,7 +164,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit FCStd entities"
+                    && limit.operation == "admit FCStd entities"
         ),
         "{error:?}"
     );

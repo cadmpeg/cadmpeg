@@ -364,3 +364,53 @@ fn docstruct_metadata_distinguishes_absent_and_empty_subtype() {
         }
     }
 }
+
+#[test]
+fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let prefix = concat!(
+        "21800 0 2 3\n",
+        "16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic\n",
+        "1 0.000001 0.0000000001\n",
+        "asmheader $-1 -1 @11 218.0.1.400 #\n",
+        "body $-1 -1 $-1 $2 $-1 $-1 #\n",
+        "lump $-1 -1 $-1 $-1 $3 $1 #\n",
+        "shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n",
+        "face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n",
+        "sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n",
+    );
+    for (terminator, expected) in [
+        ("End-of-ASM-data", "acis:text-asm"),
+        ("End-of-ACIS-data", "acis:text-acis"),
+    ] {
+        let text = format!("{prefix}{terminator}\n");
+        let bytes = f3d_with_text_brep_stream(
+            &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+            text.as_bytes(),
+        );
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut scan = crate::container::scan(&ctx, root).unwrap();
+        let (facts, brep) = crate::decode::try_decode_text_model(&scan)
+            .unwrap()
+            .expect("text sphere supplies model geometry");
+        assert_eq!(brep.asm.faces.len(), 1);
+        let framing = facts.kernel.as_ref().unwrap();
+        let crate::container::KernelFraming::Text { header, .. } = framing else {
+            panic!("text model facts must not fabricate binary framing")
+        };
+        assert!(header.has_history_partition());
+        let matched = cadmpeg_asm::dialect::classify(framing.as_header_ref());
+        assert_eq!(matched.dialect().as_str(), expected);
+        assert!(!matched
+            .declared()
+            .contains_key(cadmpeg_asm::dialect::DECLARED_REFERENCE_WIDTH));
+        assert!(crate::decode::try_decode_brep(&scan, &facts)
+            .unwrap()
+            .is_none());
+        scan.breps.push(facts);
+        assert_eq!(crate::container::history_breps(&scan).count(), 0);
+    }
+}

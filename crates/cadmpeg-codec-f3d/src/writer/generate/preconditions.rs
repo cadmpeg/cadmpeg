@@ -992,12 +992,6 @@ pub(crate) fn validate_source_less_design_links(
         .iter()
         .map(|shell| (shell.id.as_str(), shell))
         .collect::<std::collections::HashMap<_, _>>();
-    let face_by_id = target
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<std::collections::HashMap<_, _>>();
     macro_rules! validate_unique_targets {
         ($items:expr, $field:ident, $valid:expr, $label:literal) => {
             validate_unique_targets!($items, $field, $valid, $label, id());
@@ -1101,7 +1095,10 @@ pub(crate) fn validate_source_less_design_links(
             || vertex_by_id
                 .get(tail.vertex.as_str())
                 .copied()
-                .is_none_or(|vertex| vertex.tolerance.is_none() && !tail.evaluated_unset)
+                .is_none_or(|vertex| {
+                    (vertex.tolerance.is_none() && !tail.evaluated_unset)
+                        || (tail.evaluated_unset && vertex.tolerance.is_some())
+                })
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
@@ -1138,19 +1135,6 @@ pub(crate) fn validate_source_less_design_links(
             return Err(CodecError::InvalidInput(format!(
                 "F3D wire metadata {} has invalid edge-ring or isolated-vertex membership",
                 wire.id()
-            )));
-        }
-    }
-    for sidedness in &native.face_sidedness {
-        let face = face_by_id
-            .get(sidedness.face.as_str())
-            .copied()
-            .expect("validated face-sidedness target");
-        if sidedness.normalized_sense != face.sense {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D face sidedness {} normalized sense conflicts with face {}",
-                sidedness.id(),
-                sidedness.face
             )));
         }
     }
@@ -1276,4 +1260,38 @@ pub(crate) fn validate_source_less_wire_vertices(
         ));
     }
     Ok(WireVerticesValidated { target })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_source_less_design_links, F3dNative};
+    use crate::writer::generate::attributes::AttributeIndex;
+    use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
+    use cadmpeg_asm::brep::records::TolerantVertexTail;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::units::PositiveScalar;
+
+    #[test]
+    fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
+        let mut target = cadmpeg_ir::examples::unit_cube();
+        target.model.vertices[0].tolerance = Some(PositiveScalar::new(0.025).unwrap());
+        let native = F3dNative {
+            tolerant_vertex_tails: vec![TolerantVertexTail {
+                source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+                record_index: 0,
+                vertex: target.model.vertices[0].id.clone(),
+                leading_tolerances: [-1.0, -1.0],
+                trailing_field: Some(0),
+                evaluated_unset: true,
+            }],
+            ..F3dNative::default()
+        };
+        let attributes = AttributeIndex::new(&target, &native).unwrap();
+        let error = validate_source_less_design_links(&target, &native, &attributes)
+            .expect_err("unset native evaluation must not coexist with a neutral tolerance");
+        assert!(matches!(error, CodecError::InvalidInput(_)));
+        assert!(error
+            .to_string()
+            .contains("requires finite fields and a tolerant vertex"));
+    }
 }

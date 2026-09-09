@@ -241,7 +241,7 @@ impl<'a> Cursor<'a> {
         self.source.remaining()
     }
 
-    pub(crate) fn peek_u32(&self, _field: &str) -> Result<u32, CodecError> {
+    pub(crate) fn peek_u32(&self) -> Result<u32, CodecError> {
         let mut view = self.source;
         Ok(view.req_u32_le()?)
     }
@@ -256,23 +256,23 @@ impl<'a> Cursor<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor PmDc {field}")))
     }
 
-    pub(crate) fn u8(&mut self, _field: &str) -> Result<u8, CodecError> {
+    pub(crate) fn u8(&mut self) -> Result<u8, CodecError> {
         Ok(self.source.req_u8()?)
     }
 
-    pub(crate) fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
+    pub(crate) fn u16(&mut self) -> Result<u16, CodecError> {
         Ok(self.source.req_u16_le()?)
     }
 
-    pub(crate) fn i16(&mut self, _field: &str) -> Result<i16, CodecError> {
+    pub(crate) fn i16(&mut self) -> Result<i16, CodecError> {
         Ok(self.source.req_i16_le()?)
     }
 
-    pub(crate) fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
+    pub(crate) fn u32(&mut self) -> Result<u32, CodecError> {
         Ok(self.source.req_u32_le()?)
     }
 
-    pub(crate) fn i32(&mut self, _field: &str) -> Result<i32, CodecError> {
+    pub(crate) fn i32(&mut self) -> Result<i32, CodecError> {
         Ok(self.source.req_i32_le()?)
     }
 
@@ -291,7 +291,7 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         field: &str,
     ) -> Result<String, CodecError> {
-        let units = self.u32(&format!("{field} length"))? as usize;
+        let units = self.u32()? as usize;
         if units > 1_048_576 {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} exceeds 1048576 code units"
@@ -306,8 +306,8 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    pub(crate) fn reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
-        let value = self.u32(field)?;
+    pub(crate) fn reference(&mut self) -> Result<PmDcReference, CodecError> {
+        let value = self.u32()?;
         Ok(PmDcReference {
             index: value & 0x7fff_ffff,
             qualified: value & 0x8000_0000 != 0,
@@ -328,12 +328,12 @@ impl<'a> Cursor<'a> {
 
 pub(crate) fn content_header(cursor: &mut Cursor<'_>) -> Result<PmDcContentHeader, CodecError> {
     Ok(PmDcContentHeader {
-        header_value: cursor.u32("content header value")?,
-        header_id: cursor.u16("content header id")?,
-        next: cursor.reference("content next reference")?,
-        flags: cursor.u32("content flags")?,
-        context: cursor.reference("content context reference")?,
-        source_index: cursor.u32("content source index")?,
+        header_value: cursor.u32()?,
+        header_id: cursor.u16()?,
+        next: cursor.reference()?,
+        flags: cursor.u32()?,
+        context: cursor.reference()?,
+        source_index: cursor.u32()?,
     })
 }
 
@@ -346,8 +346,8 @@ pub(crate) fn reference_list(
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
     let mut references = Vec::with_capacity(count);
-    for index in 0..count {
-        references.push(cursor.reference(&format!("{field} reference {index}"))?);
+    for _ in 0..count {
+        references.push(cursor.reference()?);
     }
     PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
@@ -361,29 +361,20 @@ fn list_preamble(
     field: &str,
     admission: &'static str,
 ) -> Result<(usize, Option<PmDcListMetadata>), CodecError> {
-    let actual = [
-        cursor.u16(&format!("{field} marker kind"))?,
-        cursor.u16(&format!("{field} marker form"))?,
-    ];
+    let actual = [cursor.u16()?, cursor.u16()?];
     if actual != [marker, 0x3000] {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} marker is {actual:?}"
         )));
     }
-    let count = cursor.u32(&format!("{field} count"))? as usize;
+    let count = cursor.u32()? as usize;
     ctx.charge_collection_items(count as u64, admission)?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {
-        Some(PmDcListMetadata::U16([
-            cursor.u16(&format!("{field} metadata 0"))?,
-            cursor.u16(&format!("{field} metadata 1"))?,
-        ]))
+        Some(PmDcListMetadata::U16([cursor.u16()?, cursor.u16()?]))
     } else {
-        Some(PmDcListMetadata::U32([
-            cursor.u32(&format!("{field} metadata 0"))?,
-            cursor.u32(&format!("{field} metadata 1"))?,
-        ]))
+        Some(PmDcListMetadata::U32([cursor.u32()?, cursor.u32()?]))
     };
     Ok((count, metadata))
 }
@@ -397,10 +388,93 @@ pub(crate) fn u32_list(
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
     let mut values = Vec::with_capacity(count);
-    for index in 0..count {
-        values.push(cursor.u32(&format!("{field} value {index}"))?);
+    for _ in 0..count {
+        values.push(cursor.u32()?);
     }
     PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc integer list metadata disagrees with length".into())
     })
+}
+
+pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
+    records: &'a [T],
+    key: impl Fn(&'a T) -> K,
+) -> std::collections::HashMap<K, &'a T> {
+    let mut unique = std::collections::HashMap::new();
+    for record in records {
+        unique
+            .entry(key(record))
+            .and_modify(|value| *value = None)
+            .or_insert(Some(record));
+    }
+    unique
+        .into_iter()
+        .filter_map(|(key, value)| value.map(|value| (key, value)))
+        .collect()
+}
+
+type PairedMapItems<V> = ([u32; 2], Vec<(PmDcReference, V)>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcPairedMapWire<V>",
+    into = "PmDcPairedMapWire<V>",
+    bound(
+        serialize = "V: Serialize + Clone",
+        deserialize = "V: Deserialize<'de>"
+    )
+)]
+pub(crate) struct PmDcPairedMap<V> {
+    items: Option<PairedMapItems<V>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcPairedMapWire<V> {
+    metadata: Option<[u32; 2]>,
+    entries: Vec<(PmDcReference, V)>,
+}
+
+impl<V> PmDcPairedMap<V> {
+    pub(crate) fn new(
+        metadata: Option<[u32; 2]>,
+        entries: Vec<(PmDcReference, V)>,
+    ) -> Option<Self> {
+        Some(Self {
+            items: paired_items(metadata, entries)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    pub(crate) fn entries(&self) -> &[(PmDcReference, V)] {
+        self.items
+            .as_ref()
+            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
+    }
+}
+
+impl<V> From<PmDcPairedMap<V>> for PmDcPairedMapWire<V> {
+    fn from(value: PmDcPairedMap<V>) -> Self {
+        match value.items {
+            None => Self {
+                metadata: None,
+                entries: Vec::new(),
+            },
+            Some((metadata, entries)) => Self {
+                metadata: Some(metadata),
+                entries,
+            },
+        }
+    }
+}
+
+impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
+    type Error = String;
+
+    fn try_from(wire: PmDcPairedMapWire<V>) -> Result<Self, Self::Error> {
+        Self::new(wire.metadata, wire.entries)
+            .ok_or_else(|| "PmDc map metadata disagrees with length".to_owned())
+    }
 }

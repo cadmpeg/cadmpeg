@@ -639,41 +639,45 @@ impl Affine {
     }
 
     pub(crate) fn compose(self, local: Self) -> Option<Self> {
-        let mut rows = [[0.0; 4]; 3];
-        for (row, values) in rows.iter_mut().enumerate() {
+        let rows = self.rows();
+        let local_rows = local.rows();
+        let mut composed = [[0.0; 4]; 3];
+        for (row, values) in composed.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate().take(3) {
                 *value = (0..3)
-                    .map(|index| self.rows()[row][index] * local.rows()[index][column])
+                    .map(|index| rows[row][index] * local_rows[index][column])
                     .sum();
             }
-            values[3] = self.rows()[row][3]
+            values[3] = rows[row][3]
                 + (0..3)
-                    .map(|index| self.rows()[row][index] * local.rows()[index][3])
+                    .map(|index| rows[row][index] * local_rows[index][3])
                     .sum::<f64>();
         }
-        Self::new(rows)
+        Self::new(composed)
     }
 
     pub(super) fn point(self, point: Point3) -> Point3 {
+        let rows = self.rows();
         let values = [point.x, point.y, point.z];
         let coordinate = |row: usize| {
-            self.rows()[row][3]
+            rows[row][3]
                 + values
                     .iter()
                     .enumerate()
-                    .map(|(column, value)| self.rows()[row][column] * value)
+                    .map(|(column, value)| rows[row][column] * value)
                     .sum::<f64>()
         };
         Point3::new(coordinate(0), coordinate(1), coordinate(2))
     }
 
     pub(super) fn vector(self, vector: Vector3) -> Vector3 {
+        let rows = self.rows();
         let values = [vector.x, vector.y, vector.z];
         let coordinate = |row: usize| {
             values
                 .iter()
                 .enumerate()
-                .map(|(column, value)| self.rows()[row][column] * value)
+                .map(|(column, value)| rows[row][column] * value)
                 .sum::<f64>()
         };
         Vector3::new(coordinate(0), coordinate(1), coordinate(2))
@@ -944,6 +948,7 @@ impl WireProjectionOutcome {
 
 #[derive(Default)]
 pub(crate) struct Projection {
+    pub(crate) placement_rejections: BTreeMap<u32, super::structure::PlacementRejection>,
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
     /// neutral entity. The generic retention pass suppresses its loss for
@@ -1170,6 +1175,17 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
             message.into()
         ))
         .with_provenance(entry.loss_provenance())
+}
+
+/// Records an entity loss when geometry admission fails.
+pub(super) fn admit<T>(
+    result: Result<T, &str>,
+    entry: &DirectoryEntry,
+    losses: &mut Vec<LossNote>,
+) -> Option<T> {
+    result
+        .map_err(|message| losses.push(entity_loss(entry, message)))
+        .ok()
 }
 
 pub(super) fn source_object(
@@ -2180,15 +2196,15 @@ pub(crate) fn project_geometry(
     super::csg::project(ir, directory, parameters, global, ctx)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
-    super::structure::project(
+    let (structure_projection, placement_rejections) = super::structure::project(
         ir,
         directory,
         parameters,
         trailing_pointer_analysis,
         global,
         ctx,
-    )
-    .merge_into(&mut decoded, &mut losses);
+    );
+    structure_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
     super::presentation::project(ir, directory, parameters, global, ctx)
         .merge_into(&mut decoded, &mut losses);
@@ -2227,6 +2243,7 @@ pub(crate) fn project_geometry(
         !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
     });
     Ok(Projection {
+        placement_rejections,
         decoded,
         consumed,
         losses,

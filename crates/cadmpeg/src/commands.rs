@@ -7,7 +7,7 @@ use reporting::{
     command_body_json, command_report_json, fidelity_diff, fidelity_differs, print_check_report,
     print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
     print_source_diff, refused_command_report_json, write_command_report, write_json_report,
-    write_refused_json_report, CommandReportBody,
+    write_payload_report, CommandReportBody, Payload,
 };
 
 use cadmpeg_ir::codec::write::TargetRequest;
@@ -76,35 +76,17 @@ pub struct ConversionArgs {
 /// Attempt to persist a semantic refusal without replacing it with a report
 /// I/O failure. The original refusal controls the process exit status; report
 /// persistence failure remains visible on stderr.
-fn write_refusal_command_report(
+fn write_refusal<P: Serialize>(
     input: &Path,
     output: Option<&FileDestination>,
     command: &'static str,
-    refusal: &ConversionRefusal,
-) {
-    let body = CommandReportBody::Refused(refusal);
-    if !refusal.may_write_report() {
-        return;
-    }
-    if let Err(error) = write_command_report(input, output, command, body) {
-        eprintln!(
-            "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
-            refusal.code()
-        );
-    }
-}
-
-fn write_refusal_report<P: Serialize>(
-    input: &Path,
-    output: Option<&FileDestination>,
-    command: &'static str,
-    payload: &P,
+    payload: Payload<'_, P>,
     refusal: &ConversionRefusal,
 ) {
     if !refusal.may_write_report() {
         return;
     }
-    if let Err(error) = write_refused_json_report(input, output, command, payload, refusal) {
+    if let Err(error) = write_payload_report(input, output, command, payload) {
         eprintln!(
             "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
             refusal.code()
@@ -188,7 +170,13 @@ pub fn inspect(
                 confidence: selection.confidence(),
                 summary: None,
             };
-            write_refusal_report(path, report_path, "inspect", &payload, &refusal);
+            write_refusal(
+                path,
+                report_path,
+                "inspect",
+                Payload::Refused(&payload, &refusal),
+                &refusal,
+            );
             if json {
                 println!(
                     "{}",
@@ -292,7 +280,13 @@ pub fn dump(
                 return Err(error);
             };
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, Some(report_path), "dump", refusal);
+                write_refusal(
+                    path,
+                    Some(report_path),
+                    "dump",
+                    CommandReportBody::Refused(refusal).payload(),
+                    refusal,
+                );
             }
             return Err(error);
         }
@@ -337,7 +331,13 @@ pub fn check_cmd(
         Ok(loaded) => loaded,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, report_path, "check", refusal);
+                write_refusal(
+                    path,
+                    report_path,
+                    "check",
+                    CommandReportBody::Refused(refusal).payload(),
+                    refusal,
+                );
             }
             return Err(error);
         }
@@ -398,7 +398,13 @@ pub fn convert(
         Ok(selection) => selection,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, conversion.report.as_ref(), "convert", refusal);
+                write_refusal(
+                    path,
+                    conversion.report.as_ref(),
+                    "convert",
+                    CommandReportBody::Refused(refusal).payload(),
+                    refusal,
+                );
             }
             return Err(error);
         }
@@ -434,7 +440,13 @@ pub fn convert(
         if let Some(validation) = reports.check {
             print_check_report(&mut stderr, validation)?;
         }
-        write_refusal_command_report(path, conversion.report.as_ref(), "convert", refusal);
+        write_refusal(
+            path,
+            conversion.report.as_ref(),
+            "convert",
+            CommandReportBody::Refused(refusal).payload(),
+            refusal,
+        );
         Ok(())
     };
 

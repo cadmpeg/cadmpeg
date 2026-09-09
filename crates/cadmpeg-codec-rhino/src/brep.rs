@@ -240,8 +240,6 @@ pub(crate) struct RawBrepFaceSide {
 /// A raw Brep region.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RawBrepRegion {
-    /// Positional region index.
-    pub(crate) index: i32,
     /// Raw region type.
     pub(crate) region_type: i32,
     /// Member face-side indexes.
@@ -356,22 +354,12 @@ impl ValidatedRawBrep {
                     .enumerate()
                     .any(|(index, value)| value.index != index as i32),
             ),
-            (
-                "region",
-                raw.regions
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
-            ),
         ] {
             if mismatch {
                 warnings.push(format!(
                     "redundant Brep {label} positional index mismatch; serialized array order used"
                 ));
             }
-        }
-        for (index, region) in raw.regions.iter_mut().enumerate() {
-            region.index = index as i32;
         }
         for vertex in &raw.vertices {
             refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
@@ -2029,17 +2017,18 @@ fn read_region_records<'a>(
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
     let mut children = Vec::with_capacity(count);
-    for _ in 0..count {
+    let mut index_mismatch = false;
+    for position in 0..count {
         let (body, source) = region_element(bytes, &mut child, archive, ON_BREP_REGION)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         let index = child.i32()?;
+        index_mismatch |= usize::try_from(index).ok() != Some(position);
         let region_type = child.i32()?;
         let sides = indexes(&mut child)?;
         let bounds = bbox(&mut child)?;
         child.skip_remaining()?;
         result.push(RawBrepRegion {
-            index,
             region_type,
             sides,
             bounds,
@@ -2047,6 +2036,12 @@ fn read_region_records<'a>(
         });
     }
     finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
+    if index_mismatch {
+        warnings.push(
+            "redundant Brep region positional index mismatch; serialized array order used"
+                .to_string(),
+        );
+    }
     Ok(result)
 }
 
@@ -2632,7 +2627,6 @@ mod tests {
         assert_eq!(sides[0].direction, 1);
         assert_eq!(sides[1].direction, -1);
         assert_eq!(regions.len(), 1);
-        assert_eq!(regions[0].index, 0);
         assert_eq!(regions[0].region_type, 0);
         assert_eq!(regions[0].sides, vec![0, 1]);
         assert_eq!(regions[0].bounds.minimum, Point3([-1.0, -1.0, 0.0]));
@@ -3265,6 +3259,33 @@ mod tests {
     }
 
     #[test]
+    fn region_record_index_mismatch_is_reported_at_parse() {
+        let entries = [
+            region_record(9, 0, &[1], [0.0; 6]),
+            region_record(-1, 1, &[0], [0.0; 6]),
+        ]
+        .concat();
+        let bytes = region_array(&entries, 2);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Vec::new();
+        let regions = read_region_records(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
+            .expect("regions with redundant indexes");
+        assert_eq!(
+            regions
+                .iter()
+                .map(|region| region.region_type)
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
+        assert_eq!(regions[0].sides, [1]);
+        assert_eq!(regions[1].sides, [0]);
+        assert_eq!(
+            warnings,
+            ["redundant Brep region positional index mismatch; serialized array order used"]
+        );
+    }
+
+    #[test]
     fn region_outer_wrapper_preserves_v5_raw_element_boundaries() {
         let mut region_record = Vec::new();
         region_record.extend_from_slice(&0_i32.to_le_bytes());
@@ -3358,14 +3379,12 @@ mod tests {
         ];
         raw.regions = vec![
             RawBrepRegion {
-                index: 0,
                 region_type: 0,
                 sides: vec![1],
                 bounds: raw.bounds,
                 source_range: 0..0,
             },
             RawBrepRegion {
-                index: 1,
                 region_type: 1,
                 sides: vec![0],
                 bounds: raw.bounds,
@@ -3399,14 +3418,12 @@ mod tests {
         ];
         raw.regions = vec![
             RawBrepRegion {
-                index: 0,
                 region_type: 0,
                 sides: vec![0],
                 bounds: raw.bounds,
                 source_range: 0..0,
             },
             RawBrepRegion {
-                index: 1,
                 region_type: 1,
                 sides: vec![1],
                 bounds: raw.bounds,

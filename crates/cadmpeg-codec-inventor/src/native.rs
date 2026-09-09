@@ -247,7 +247,7 @@ pub(crate) struct PropertyRecord {
     pub(crate) value_kind: PropertyValueKind,
     pub(crate) scalar_value: Option<String>,
     pub(crate) raw_len: u64,
-    pub(crate) raw_sha256: String,
+    pub(crate) raw_sha256: digest::Sha256Hex,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -278,7 +278,7 @@ impl From<PropertyRecord> for PropertyRecordWire {
             name: value.name,
             scalar_value: value.scalar_value,
             raw_len: value.raw_len,
-            raw_sha256: value.raw_sha256,
+            raw_sha256: value.raw_sha256.into(),
         }
     }
 }
@@ -297,7 +297,8 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             name: wire.name,
             scalar_value: wire.scalar_value,
             raw_len: wire.raw_len,
-            raw_sha256: wire.raw_sha256,
+            raw_sha256: digest::Sha256Hex::try_from(wire.raw_sha256)
+                .map_err(|error| format!("raw_sha256: {error}"))?,
         })
     }
 }
@@ -361,7 +362,7 @@ pub(crate) struct AssemblyPlacementRecord {
     pub(crate) occurrence_id: u32,
     pub(crate) graphics_index: u32,
     pub(crate) object_reference: u32,
-    pub(crate) suffix_len: u64,
+    pub(crate) suffix_len: std::num::NonZeroU64,
     suffix_sha256: digest::Sha256Hex,
 }
 
@@ -404,7 +405,8 @@ impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
             occurrence_id: wire.occurrence_id,
             graphics_index: wire.graphics_index,
             object_reference: wire.object_reference,
-            suffix_len: wire.suffix_len,
+            suffix_len: std::num::NonZeroU64::new(wire.suffix_len)
+                .ok_or("suffix_len must not be zero")?,
             suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
@@ -428,7 +430,7 @@ impl From<AssemblyPlacementRecord> for AssemblyPlacementRecordWire {
             occurrence_id: value.occurrence_id,
             graphics_index: value.graphics_index,
             object_reference: value.object_reference,
-            suffix_len: value.suffix_len,
+            suffix_len: value.suffix_len.get(),
             suffix_sha256: value.suffix_sha256.into(),
         }
     }
@@ -448,7 +450,7 @@ pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) state: u8,
     pub(crate) terminal_reference: u32,
     pub(crate) suffix_len: u64,
-    pub(crate) suffix_sha256: String,
+    pub(crate) suffix_sha256: digest::Sha256Hex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -457,6 +459,28 @@ pub(crate) struct PmAppDefaultStyleRecord {
     into = "PmAppRenderingStyleRecordWire"
 )]
 pub(crate) struct PmAppRenderingStyleRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    segment_version_major: u8,
+    pub(crate) header_value: u32,
+    pub(crate) header_id: u16,
+    pub(crate) state: u8,
+    pub(crate) flags: u16,
+    pub(crate) values: [u16; 2],
+    pub(crate) default_state: u32,
+    pub(crate) value: u32,
+    pub(crate) name_reference: u32,
+    pub(crate) name: String,
+    comment: String,
+    pub(crate) long_name: String,
+    extension: Option<RenderingStyleExtension>,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: digest::Sha256Hex,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct PmAppRenderingStyleRecordWire {
     pub(crate) id: String,
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
@@ -472,37 +496,15 @@ pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) name: String,
     pub(crate) comment: String,
     pub(crate) long_name: String,
-    pub(crate) extension: Option<RenderingStyleExtension>,
+    pub(crate) style_state: Option<u16>,
+    pub(crate) style_label: Option<String>,
+    pub(crate) asset_guid: Option<String>,
+    pub(crate) material_id: Option<String>,
+    pub(crate) asset_library_id: Option<String>,
+    pub(crate) style_values: Option<[u16; 2]>,
+    pub(crate) guid: Option<String>,
     pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PmAppRenderingStyleRecordWire {
-    id: String,
-    segment_token: String,
-    record_ordinal: u32,
-    segment_version_major: u8,
-    header_value: u32,
-    header_id: u16,
-    state: u8,
-    flags: u16,
-    values: [u16; 2],
-    default_state: u32,
-    value: u32,
-    name_reference: u32,
-    name: String,
-    comment: String,
-    long_name: String,
-    style_state: Option<u16>,
-    style_label: Option<String>,
-    asset_guid: Option<String>,
-    material_id: Option<String>,
-    asset_library_id: Option<String>,
-    style_values: Option<[u16; 2]>,
-    guid: Option<String>,
-    suffix_len: u64,
-    suffix_sha256: String,
 }
 
 impl From<PmAppRenderingStyleRecord> for PmAppRenderingStyleRecordWire {
@@ -551,7 +553,7 @@ impl From<PmAppRenderingStyleRecord> for PmAppRenderingStyleRecordWire {
             style_values,
             guid,
             suffix_len: value.suffix_len,
-            suffix_sha256: value.suffix_sha256,
+            suffix_sha256: value.suffix_sha256.into(),
         }
     }
 }
@@ -617,7 +619,8 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
             long_name: wire.long_name,
             extension,
             suffix_len: wire.suffix_len,
-            suffix_sha256: wire.suffix_sha256,
+            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+                .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
 }
@@ -1578,7 +1581,7 @@ mod tests {
             "segment_version_major": 16, "header_value": 0, "header_id": 0,
             "state": 0, "flags": 0, "values": [0, 0], "default_state": 0,
             "value": 0, "name_reference": 0, "name": "", "comment": "comment",
-            "long_name": "", "suffix_len": 0, "suffix_sha256": ""
+            "long_name": "", "suffix_len": 0, "suffix_sha256": "0".repeat(64)
         });
         assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(legacy.clone()).is_ok());
         let mut modern = legacy.clone();
@@ -1660,7 +1663,7 @@ mod tests {
             "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
                           [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
-            "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": "0".repeat(64)
+            "graphics_index": 0, "object_reference": 0, "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
         let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
             .expect("assembly matrix fixture agrees with its masks");
@@ -1668,6 +1671,25 @@ mod tests {
             serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
             wire
         );
+        let mut empty_suffix = wire.clone();
+        empty_suffix["suffix_len"] = serde_json::json!(0);
+        assert!(
+            serde_json::from_value::<super::AssemblyPlacementRecord>(empty_suffix)
+                .expect_err("empty placement suffix")
+                .to_string()
+                .contains("suffix_len")
+        );
+        for len in [1, 48, 49] {
+            let mut nonempty_suffix = wire.clone();
+            nonempty_suffix["suffix_len"] = serde_json::json!(len);
+            assert_eq!(
+                serde_json::from_value::<super::AssemblyPlacementRecord>(nonempty_suffix)
+                    .expect("nonempty placement suffix")
+                    .suffix_len
+                    .get(),
+                len
+            );
+        }
         for digest in ["a".repeat(63), "g".repeat(64)] {
             let mut invalid = wire.clone();
             invalid["suffix_sha256"] = serde_json::json!(digest);

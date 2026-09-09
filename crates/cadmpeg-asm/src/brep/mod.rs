@@ -361,6 +361,7 @@ enum ProceduralCurveSource {
     Cached {
         construction: Box<ProceduralCurveConstruction>,
         cache_fit_tolerance: Option<f64>,
+        parsed_domain: Option<[f64; 2]>,
     },
     Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
 }
@@ -434,7 +435,7 @@ pub fn decode_with_purpose(
     format: IdFormat<'_>,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
-    let header = asm_header::parse(bytes);
+    let header = asm_header::parse(bytes).map(|header| header.metadata);
     decode_with_header(records, bytes, header, stream, format, purpose)
 }
 

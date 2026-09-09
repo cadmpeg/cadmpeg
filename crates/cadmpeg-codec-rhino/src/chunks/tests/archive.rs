@@ -155,8 +155,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let bytes = archive(&[large.clone(), point.clone()]);
     let scan = crate::container::scan_owned(bytes).expect("complete archive scan");
     let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context =
-            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
         crate::decode::seal_for_test(context.commit(), false)
     });
@@ -172,8 +171,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
     let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context =
-            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
         crate::decode::seal_for_test(context.commit(), false)
     });

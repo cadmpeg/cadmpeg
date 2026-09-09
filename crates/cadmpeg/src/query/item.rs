@@ -103,12 +103,8 @@ struct TargetCapture {
 }
 
 enum Kept {
-    Head {
-        limit: usize,
-        records: Vec<Box<RawValue>>,
-    },
+    Head(Vec<Box<RawValue>>),
     Ids {
-        ids: Vec<String>,
         records: Vec<Box<RawValue>>,
         all_ids: Vec<String>,
     },
@@ -158,18 +154,14 @@ pub fn run(args: &ItemArgs) -> Result<()> {
     };
 
     match target_capture.kept {
-        Kept::Head { records, .. } => {
+        Kept::Head(records) => {
             let values = parse_kept(&records)?;
             emit_values("item", output, &values)
         }
-        Kept::Ids {
-            ids,
-            records,
-            all_ids,
-        } => {
+        Kept::Ids { records, all_ids } => {
             let dotted = target.dotted();
             let (values, errors) = resolve_ids(
-                &ids,
+                &args.ids,
                 &records,
                 &all_ids,
                 target_capture.entry_count,
@@ -692,12 +684,8 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
         let target = self.capture.target.get_or_insert_with(|| TargetCapture {
             entry_count: 0,
             kept: match self.mode {
-                KeepMode::Head(limit) => Kept::Head {
-                    limit: *limit,
-                    records: Vec::new(),
-                },
-                KeepMode::Ids(ids) => Kept::Ids {
-                    ids: ids.to_vec(),
+                KeepMode::Head(_) => Kept::Head(Vec::new()),
+                KeepMode::Ids(_) => Kept::Ids {
                     records: Vec::new(),
                     all_ids: Vec::new(),
                 },
@@ -706,18 +694,14 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
         while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
             target.entry_count += 1;
             match &mut target.kept {
-                Kept::Head { limit, records } => {
-                    if records.len() < *limit {
+                Kept::Head(records) => {
+                    if matches!(self.mode, KeepMode::Head(limit) if records.len() < *limit) {
                         records.push(raw);
                     }
                 }
-                Kept::Ids {
-                    ids,
-                    records,
-                    all_ids,
-                } => {
+                Kept::Ids { records, all_ids } => {
                     if let Some(id) = string_id(&raw) {
-                        let matched = ids.iter().any(|req| id == *req || id.ends_with(req));
+                        let matched = matches!(self.mode, KeepMode::Ids(ids) if ids.iter().any(|req| id == *req || id.ends_with(req)));
                         all_ids.push(id);
                         if matched {
                             records.push(raw);

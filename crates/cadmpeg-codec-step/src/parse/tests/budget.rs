@@ -38,7 +38,7 @@ fn parser_accounts_for_owned_value_storage() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_parse_value_storage" {
+        if limit.operation == "step_parse_value_storage" {
             value_storage_limit = Some(limit);
             break;
         }
@@ -78,7 +78,7 @@ fn parser_accounts_for_record_table_storage() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_parse_record_table_storage" {
+        if limit.operation == "step_parse_record_table_storage" {
             record_table_limit = Some(limit);
             break;
         }
@@ -109,7 +109,7 @@ fn parser_accounts_for_anchor_tag_collection_storage() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_anchor_tag_storage" {
+        if limit.operation == "step_anchor_tag_storage" {
             tag_limit = Some(limit);
             break;
         }
@@ -138,7 +138,7 @@ fn anchor_materialization_uses_the_decode_session_budget() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_anchor_materialization" {
+        if limit.operation == "step_anchor_materialization" {
             materialization_limit = Some(limit);
             break;
         }
@@ -169,7 +169,7 @@ fn local_reference_materialization_uses_the_decode_session_budget() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_reference_materialization" {
+        if limit.operation == "step_reference_materialization" {
             materialization_limit = Some(limit);
             break;
         }

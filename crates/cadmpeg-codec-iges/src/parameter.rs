@@ -72,20 +72,29 @@ pub(crate) struct TrailingPointerGroups {
 
 impl TrailingPointerGroups {
     pub(crate) fn fully_valid(self) -> Option<ResolvedGroups> {
-        let valid = self
-            .association_pointers
-            .iter()
-            .chain(&self.property_pointers)
-            .all(|pointer| pointer.resolved.is_some());
-        valid.then_some(ResolvedGroups(self))
+        Some(ResolvedGroups {
+            token_start: self.token_start,
+            associations: self
+                .association_pointers
+                .iter()
+                .map(|pointer| pointer.resolved)
+                .collect::<Option<_>>()?,
+            properties: self
+                .property_pointers
+                .iter()
+                .map(|pointer| pointer.resolved)
+                .collect::<Option<_>>()?,
+        })
     }
 
+    #[cfg(test)]
     pub(crate) fn associations(&self) -> impl Iterator<Item = &u32> {
         self.association_pointers
             .iter()
             .filter_map(|pointer| pointer.resolved.as_ref())
     }
 
+    #[cfg(test)]
     pub(crate) fn properties(&self) -> impl Iterator<Item = &u32> {
         self.property_pointers
             .iter()
@@ -95,12 +104,19 @@ impl TrailingPointerGroups {
 
 /// Fully resolved trailing pointer groups.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResolvedGroups(TrailingPointerGroups);
+pub(crate) struct ResolvedGroups {
+    pub(crate) token_start: usize,
+    associations: Vec<u32>,
+    properties: Vec<u32>,
+}
 
 impl ResolvedGroups {
-    /// The retained trailing pointer evidence.
-    pub(crate) fn as_groups(&self) -> &TrailingPointerGroups {
-        &self.0
+    pub(crate) fn associations(&self) -> &[u32] {
+        &self.associations
+    }
+
+    pub(crate) fn properties(&self) -> &[u32] {
+        &self.properties
     }
 }
 
@@ -135,7 +151,27 @@ impl TrailingPointerAnalysis {
 
     fn groups(&self) -> Option<TrailingPointerGroups> {
         match self {
-            Self::Unambiguous(groups) => Some(groups.as_groups().clone()),
+            Self::Unambiguous(groups) => {
+                let pointers = |sequences: &[u32], start| {
+                    sequences
+                        .iter()
+                        .enumerate()
+                        .map(|(index, sequence)| TrailingPointer {
+                            token_index: start + index,
+                            raw_pointer: i64::from(*sequence),
+                            resolved: Some(*sequence),
+                        })
+                        .collect()
+                };
+                Some(TrailingPointerGroups {
+                    token_start: groups.token_start,
+                    association_pointers: pointers(groups.associations(), groups.token_start + 1),
+                    property_pointers: pointers(
+                        groups.properties(),
+                        groups.token_start + groups.associations().len() + 2,
+                    ),
+                })
+            }
             Self::SingleInvalid(groups) => Some(groups.clone()),
             Self::Macro | Self::Ambiguous { .. } => None,
         }
@@ -3788,7 +3824,7 @@ pub(crate) fn assemble_with_context(
         record.parameter_end = trailing_pointer_analysis
             .get(&record.directory_sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                 _ => None,
             })
             .map_or(record.tokens.len(), |groups| groups.token_start);

@@ -8563,8 +8563,8 @@ impl StandardLinePairConstraint {
     }
 
     fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
-        pairs.iter().enumerate().all(|(edge, pair)| {
-            if self.edge_roles[edge] == EdgeLineRole::NotLine {
+        self.edge_roles.iter().zip(pairs).all(|(role, pair)| {
+            if *role == EdgeLineRole::NotLine {
                 return true;
             }
             let Some(pair) = pair else {
@@ -8582,8 +8582,8 @@ impl StandardLinePairConstraint {
             return false;
         }
         let mut selected = vec![None; self.edge_roles.len()];
-        for (edge, pair) in pairs.iter().enumerate() {
-            if self.edge_roles[edge] != EdgeLineRole::Flexible {
+        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs).enumerate() {
+            if *role != EdgeLineRole::Flexible {
                 continue;
             }
             let Some(pair) = pair else {
