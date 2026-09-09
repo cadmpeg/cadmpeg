@@ -26,7 +26,6 @@ fn configuration_parameter_overrides_require_scalar_values() {
     use crate::records::{DesignConfiguration, DesignConfigurationKind};
     let admit = |payload: serde_json::Value| {
         DesignConfiguration::try_new(
-            crate::ids::configuration_entry_id("table.dsgcfg"),
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["variant".into()],
@@ -70,7 +69,6 @@ fn configuration_kind_requires_its_exact_entry_extension() {
     ] {
         let admit = |name: &str| {
             DesignConfiguration::try_new(
-                crate::ids::configuration_entry_id(name),
                 name.into(),
                 kind,
                 Vec::new(),

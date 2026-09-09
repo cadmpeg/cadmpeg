@@ -3363,17 +3363,11 @@ pub struct DesignConfigurationWire {
 impl DesignConfiguration {
     /// Admit the entry identity, object payload, and authored variant order.
     pub fn try_new(
-        id: String,
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
         payload: serde_json::Map<String, serde_json::Value>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        if id != crate::ids::configuration_entry_id(&entry_name) {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "configuration.id must identify entry_name"
-            )));
-        }
         let extension = match kind {
             DesignConfigurationKind::Table => ".dsgcfg",
             DesignConfigurationKind::Rule => ".dsgcfgrule",
@@ -3422,11 +3416,13 @@ impl DesignConfiguration {
 impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
     type Error = String;
     fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
+        if wire.id != crate::ids::configuration_entry_id(&wire.entry_name) {
+            return Err("configuration.id must identify entry_name".into());
+        }
         let serde_json::Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
         Self::try_new(
-            wire.id,
             wire.entry_name,
             wire.kind,
             wire.variant_order,

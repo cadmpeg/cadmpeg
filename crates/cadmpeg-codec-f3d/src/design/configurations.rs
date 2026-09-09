@@ -6,7 +6,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::dimensions::json_scalar_text;
-use crate::ids::{self, neutral_configuration_id};
+use crate::ids::neutral_configuration_id;
 use crate::records::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::CodecError;
 use serde::de::{IgnoredAny, MapAccess, Visitor};
@@ -105,7 +105,6 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
                 Vec::new()
             };
             DesignConfiguration::try_new(
-                ids::configuration_entry_id(&entry.name),
                 entry.name.clone(),
                 kind,
                 variant_order,
@@ -616,7 +615,6 @@ mod tests {
         assert_eq!(variant_order, ["Small", "Medium", "Large"]);
 
         let table = DesignConfiguration::try_new(
-            "f3d:configuration:entry#table.dsgcfg".into(),
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             variant_order,
@@ -656,7 +654,6 @@ mod tests {
     fn configuration_unknown_members_are_counted_at_each_semantic_level() {
         let native = [
             DesignConfiguration::try_new(
-                "f3d:configuration:entry#table.dsgcfg".into(),
                 "table.dsgcfg".into(),
                 DesignConfigurationKind::Table,
                 vec!["variant".into()],
@@ -678,7 +675,6 @@ mod tests {
             )
             .unwrap(),
             DesignConfiguration::try_new(
-                "f3d:configuration:entry#rule.dsgcfgrule".into(),
                 "rule.dsgcfgrule".into(),
                 DesignConfigurationKind::Rule,
                 Vec::new(),
@@ -699,7 +695,6 @@ mod tests {
     #[test]
     fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
         let native = [DesignConfiguration::try_new(
-            "f3d:configuration:entry#partial.dsgcfgrule".into(),
             "partial.dsgcfgrule".into(),
             DesignConfigurationKind::Rule,
             Vec::new(),
@@ -718,7 +713,6 @@ mod tests {
     fn configuration_rules_bind_only_one_named_variant() {
         let table = |entry_name: &str, variant_name: &str| {
             DesignConfiguration::try_new(
-                format!("f3d:configuration:entry#{entry_name}"),
                 entry_name.into(),
                 DesignConfigurationKind::Table,
                 vec![variant_name.into()],
@@ -730,7 +724,6 @@ mod tests {
             .unwrap()
         };
         let rule = DesignConfiguration::try_new(
-            "f3d:configuration:entry#rule.dsgcfgrule".into(),
             "rule.dsgcfgrule".into(),
             DesignConfigurationKind::Rule,
             Vec::new(),
@@ -763,7 +756,6 @@ mod tests {
     #[test]
     fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
         let table = DesignConfiguration::try_new(
-            "f3d:configuration:entry#table.dsgcfg".into(),
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["wide".into()],
@@ -802,7 +794,6 @@ mod tests {
             ..parameter.clone()
         };
         let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
-            "f3d:configuration:entry#other.dsgcfg".into(),
             "other.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["wide".into()],
@@ -826,7 +817,6 @@ mod tests {
     #[test]
     fn configuration_suppression_binds_only_unique_feature_names() {
         let table = DesignConfiguration::try_new(
-            "f3d:configuration:entry#table.dsgcfg".into(),
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["alternate".into()],
@@ -872,7 +862,6 @@ mod tests {
             ..feature.clone()
         };
         let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
-            "f3d:configuration:entry#other.dsgcfg".into(),
             "other.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["alternate".into()],
