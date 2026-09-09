@@ -148,15 +148,15 @@ impl Brep {
                 .expect("qualified identity");
             shell
                 .edit_topology(|faces, wire_edges, free_vertices| {
-                    faces.iter_mut().for_each(|id| {
+                    for id in faces {
                         *id = qualify(id.as_str()).try_into().expect("qualified identity");
-                    });
-                    wire_edges.iter_mut().for_each(|id| {
+                    }
+                    for id in wire_edges {
                         *id = qualify(id.as_str()).try_into().expect("qualified identity");
-                    });
-                    free_vertices.iter_mut().for_each(|id| {
+                    }
+                    for id in free_vertices {
                         *id = qualify(id.as_str()).try_into().expect("qualified identity");
-                    });
+                    }
                 })
                 .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload)?;
         }
