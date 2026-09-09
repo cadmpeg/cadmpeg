@@ -40,6 +40,7 @@ use owner_chart::{
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
+pub use crate::families::zero_entity::topology::EdgeEnd;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
@@ -6577,7 +6578,7 @@ pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
     /// Start or end of that candidate's oriented endpoint pair.
-    pub endpoint_index: crate::families::zero_entity::topology::EdgeEnd,
+    pub endpoint_index: EdgeEnd,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
