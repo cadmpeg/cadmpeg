@@ -192,7 +192,6 @@ pub(super) fn oriented_circle_plan(
     let radius = circle_curve.radius();
     let mut axis = *axis;
     let ref_direction = *ref_direction;
-    let radius = radius;
     let oriented_angles = if delta < 0.0 {
         axis = Vector3::new(-axis.x, -axis.y, -axis.z);
         [-angles[0], -angles[1]]
