@@ -149,7 +149,7 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 pub enum LossPolicy {
     /// Permit losses at both phases.
     #[default]
-    #[value(hide = true)]
+    #[value(skip)]
     Allow,
     /// Refuse decode losses only.
     #[value(name = "decode")]
