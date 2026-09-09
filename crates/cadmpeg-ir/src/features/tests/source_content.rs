@@ -77,7 +77,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
             .contains(field));
     }
     feature.dependencies.clear();
-    feature.source_content = Default::default();
+    feature.source_content = FeatureContent::default();
     let wire = serde_json::to_value(&feature).unwrap();
     assert!(wire.get("dependencies").is_none());
     assert!(wire.get("source_content").is_none());

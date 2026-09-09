@@ -48,7 +48,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         expression: "10 mm".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
+        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -158,11 +158,11 @@ fn configuration_body_membership_round_trips_and_validates() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::DatumPoint {
@@ -198,7 +198,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Suppressed,
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -239,7 +239,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Suppressed,
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -663,11 +663,11 @@ fn generated_sweep_sections_round_trip_and_validate() {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
@@ -721,11 +721,11 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: Some("Fillet".into()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
