@@ -124,14 +124,15 @@ fn grip_wedge_rejects_phantom_payload() {
 #[test]
 fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::Radial {
-            segments: std::num::NonZeroU32::new(4).unwrap(),
-            sweep: 1.0,
-            radial_maps: vec![SubdRadialSymmetryMap {
+        SubdSymmetryKind::radial(
+            std::num::NonZeroU32::new(4).unwrap(),
+            1.0,
+            vec![SubdRadialSymmetryMap {
                 selector: SubdRadialMapSelector::Ef,
                 pairs: vec![[1, 2]],
             }],
-        },
+        )
+        .unwrap(),
         SubdPlaneFrame::new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -309,10 +310,10 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
     assert!(cage
         .edit_vertices(|vertices| {
             vertices[0].tag = SubdVertexTag::Corner;
-            vertices[1].secondary_grips = Some(super::SubdVertexGripLayout {
-                direction: super::SubdGripDirection::North,
-                wedges: Vec::new(),
-            });
+            vertices[1].secondary_grips = Some(super::SubdVertexGripLayout::new(
+                super::SubdGripDirection::North,
+                Vec::new(),
+            )?);
             Ok(())
         })
         .is_err());
@@ -459,3 +460,43 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
 mod symmetry;
 
 mod vertices;
+
+#[test]
+fn grip_layout_admits_cyclic_arity_before_cage_construction() {
+    use super::{SubdGripDirection, SubdVertexGripLayout};
+    let slot = |spokes, sectors| SubdGripWedge::Slot {
+        edge: None,
+        sector_face: None,
+        spokes,
+        sectors,
+    };
+    for wedges in [
+        Vec::new(),
+        vec![slot(vec![None], Vec::new())],
+        vec![slot(vec![None], vec![None]), SubdGripWedge::Phantom],
+        vec![
+            slot(vec![None], vec![None, None]),
+            slot(vec![None, None], Vec::new()),
+        ],
+    ] {
+        let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
+        assert!(SubdVertexGripLayout::new(SubdGripDirection::North, wedges).is_err());
+        assert!(serde_json::from_value::<SubdVertexGripLayout>(wire).is_err());
+    }
+    for wedges in [
+        vec![SubdGripWedge::Phantom],
+        vec![slot(vec![None], vec![None])],
+        vec![
+            slot(vec![None], vec![None, None]),
+            slot(vec![None, None], vec![None, None]),
+        ],
+    ] {
+        let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
+        let layout = SubdVertexGripLayout::new(SubdGripDirection::North, wedges).unwrap();
+        assert_eq!(serde_json::to_value(&layout).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<SubdVertexGripLayout>(wire).unwrap(),
+            layout
+        );
+    }
+}

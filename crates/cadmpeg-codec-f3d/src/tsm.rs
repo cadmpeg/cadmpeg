@@ -699,7 +699,9 @@ fn build_secondary_layouts(
         }
         let vertex_ir =
             vertex_ir[vertex].ok_or_else(|| malformed(name, "derived-grip vertex is deleted"))?;
-        layouts[vertex_ir as usize] = Some(SubdVertexGripLayout { direction, wedges });
+        layouts[vertex_ir as usize] = Some(
+            SubdVertexGripLayout::new(direction, wedges).map_err(|error| malformed(name, error))?,
+        );
     }
 
     for (vertex, count) in secondary_counts.into_iter().enumerate() {
@@ -1327,11 +1329,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     sweep,
                     maps,
                 } => (
-                    SubdSymmetryKind::Radial {
-                        segments: *segments,
-                        sweep: *sweep,
-                        radial_maps: maps.clone(),
-                    },
+                    SubdSymmetryKind::radial(*segments, *sweep, maps.clone())
+                        .map_err(|error| malformed(name, error))?,
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
@@ -1604,20 +1603,19 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
         let layout = cage.surface.cage.vertices()[0]
-            .secondary_grips
-            .as_ref()
+            .secondary_grips()
             .expect("secondary grip layout");
-        assert_eq!(layout.direction, cadmpeg_ir::SubdGripDirection::North);
-        assert_eq!(layout.wedges.len(), 4);
-        let SubdGripWedge::Slot { spokes, .. } = &layout.wedges[0] else {
+        assert_eq!(layout.direction(), cadmpeg_ir::SubdGripDirection::North);
+        assert_eq!(layout.wedges().len(), 4);
+        let SubdGripWedge::Slot { spokes, .. } = &layout.wedges()[0] else {
             panic!("first wedge is a fan slot");
         };
         assert_eq!(spokes[0].as_ref().unwrap().source_index, 4);
-        assert!(layout.wedges[2..]
+        assert!(layout.wedges()[2..]
             .iter()
             .all(|wedge| matches!(wedge, SubdGripWedge::Phantom)));
         assert!(matches!(
-            &layout.wedges[1],
+            &layout.wedges()[1],
             SubdGripWedge::Slot {
                 sector_face: None,
                 ..
@@ -1678,14 +1676,13 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         let cage = parse_cage(source.as_bytes()).expect("rectangular sector grid");
         let layout = cage.surface.cage.vertices()[0]
-            .secondary_grips
-            .as_ref()
+            .secondary_grips()
             .expect("secondary grip layout");
         let SubdGripWedge::Slot {
             spokes: first_spokes,
             sectors: first_sectors,
             ..
-        } = &layout.wedges[0]
+        } = &layout.wedges()[0]
         else {
             panic!("first wedge is a fan slot");
         };
@@ -1693,7 +1690,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             spokes: second_spokes,
             sectors: second_sectors,
             ..
-        } = &layout.wedges[1]
+        } = &layout.wedges()[1]
         else {
             panic!("second wedge is a fan slot");
         };
@@ -1813,15 +1810,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert_quad(&cage.surface);
         assert_eq!(cage.surface.cage.symmetries().len(), 1);
         let symmetry = &cage.surface.cage.symmetries()[0];
-        let cadmpeg_ir::SubdSymmetryKind::Radial {
-            segments,
-            sweep,
-            radial_maps,
-        } = symmetry.kind()
-        else {
+        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = symmetry.kind() else {
             panic!("radial symmetry kind");
         };
-        assert_eq!((segments.get(), *sweep), (4, 1.0));
+        let radial_maps = radial.radial_maps();
+        assert_eq!((radial.segments().get(), radial.sweep()), (4, 1.0));
         assert_eq!(
             symmetry.plane.origin(),
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
@@ -1882,12 +1875,12 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let replacement = format!("105r ef {native_id} {native_id}\n");
         let native = source.replace("105r ef 0 1\n", &replacement);
         let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
-        let cadmpeg_ir::SubdSymmetryKind::Radial { radial_maps, .. } =
-            cage.surface.cage.symmetries()[0].kind()
+        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = cage.surface.cage.symmetries()[0].kind()
         else {
             panic!("radial symmetry kind");
         };
-        let ef = radial_maps
+        let ef = radial
+            .radial_maps()
             .iter()
             .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
             .expect("ef radial map");
