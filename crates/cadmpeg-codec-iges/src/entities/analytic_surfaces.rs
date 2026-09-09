@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pointer-defined analytic surface projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome};
+use super::geometry::{
+    admit, entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -226,15 +228,14 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Plane(
-                    match cadmpeg_ir::geometry::PlaneSurface::try_new(location, axis, u_axis) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(location, axis, u_axis),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Plane(payload)
             }
             192 => {
                 let axis = match transformed_direction(
@@ -277,20 +278,19 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Cylinder(
-                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::CylinderSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Cylinder(payload)
             }
             194 => {
                 let axis = match transformed_direction(
@@ -342,22 +342,21 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Cone(
-                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         radius,
                         1.0,
                         half_angle,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Cone(payload)
             }
             196 => {
                 let Some(radius) = record.number(2).map(|radius| radius * factor) else {
@@ -403,20 +402,19 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Sphere(
-                    match cadmpeg_ir::geometry::SphereSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Sphere(payload)
             }
             198 => {
                 let axis = match transformed_direction(
@@ -468,21 +466,20 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Torus(
-                    match cadmpeg_ir::geometry::TorusSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         major_radius,
                         minor_radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Torus(payload)
             }
             _ => {
                 losses.push(entity_loss(entry, "analytic surface type is unsupported"));
