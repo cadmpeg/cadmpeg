@@ -682,25 +682,7 @@ fn prepare_write(
             )));
         };
         let (center, axis, ref_direction, radius) = circle_curve.parts();
-        let axis_norm = axis.norm();
-        let reference_norm = ref_direction.norm();
-        let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
-        if !center.x.is_finite()
-            || !center.y.is_finite()
-            || !center.z.is_finite()
-            || !radius.is_finite()
-            || *radius <= 0.0
-            || !axis_norm.is_finite()
-            || !reference_norm.is_finite()
-            || (axis_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
-            || (reference_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
-            || dot.abs() > EPS_WRITE_DEGENERATE
-        {
-            return Err(CodecError::malformed(format_args!(
-                "curve {} has an invalid circle frame",
-                curve.id.as_str()
-            )));
-        }
+        check_frame(curve.id.as_str(), *axis, *ref_direction, "circle")?;
         curves.push((
             curve.id.as_str(),
             WritableObjectCurve::Circle {
@@ -1770,21 +1752,17 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
 
 fn check_frame(
     id: &str,
-    origin: cadmpeg_ir::math::Point3,
     normal: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
     family: &str,
 ) -> Result<(), CodecError> {
     let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
-    if !origin.x.is_finite()
-        || !origin.y.is_finite()
-        || !origin.z.is_finite()
-        || (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
+    if (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || dot.abs() > EPS_WRITE_DEGENERATE
     {
         return Err(CodecError::malformed(format_args!(
-            "{family} {id} has an invalid frame"
+            "{family} {id} frame is not orthonormal to Rhino's tighter bound {EPS_WRITE_DEGENERATE}"
         )));
     }
     Ok(())

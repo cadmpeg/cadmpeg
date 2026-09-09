@@ -107,7 +107,7 @@ impl<'a> WritableFaceSurface<'a> {
         match &surface.geometry {
             SurfaceGeometry::Plane(plane) => {
                 let (origin, normal, u_axis) = plane.parts();
-                check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
+                check_frame(surface.id.as_str(), *normal, *u_axis, "plane")?;
                 Ok(Self::Plane {
                     origin: *origin,
                     normal: *normal,
