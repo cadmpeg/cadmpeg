@@ -5513,9 +5513,16 @@ pub(crate) fn decode(
             scale,
         )
     });
+    let mut history_warnings = Vec::new();
     let untyped = context.validate_candidate(|candidate, _annotations| {
-        crate::history::project(&scan.history, geometry_context, candidate)
+        crate::history::project(
+            &scan.history,
+            geometry_context,
+            candidate,
+            &mut history_warnings,
+        )
     });
+    context.report.phase_warnings.extend(history_warnings);
     match untyped {
         Ok((0, 0, 0, 0)) => {}
         Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {

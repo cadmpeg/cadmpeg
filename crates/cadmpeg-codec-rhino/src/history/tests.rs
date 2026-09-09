@@ -88,7 +88,10 @@ fn source_band_history_record_with_major(
 fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
+    assert_eq!(
+        project(&records, None, &mut ir, &mut Vec::new()),
+        (0, 0, 0, 0)
+    );
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(
@@ -116,7 +119,10 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
+    assert_eq!(
+        project(&records, None, &mut ir, &mut Vec::new()),
+        (0, 0, 1, 0)
+    );
     assert!(ir.model.features[0].dependencies.is_empty());
 }
 
@@ -128,7 +134,10 @@ fn projection_counts_dependency_with_ambiguous_producers() {
         record(3, 13, &[40], &[41]),
     ];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
+    assert_eq!(
+        project(&records, None, &mut ir, &mut Vec::new()),
+        (0, 0, 1, 0)
+    );
     assert!(ir.model.features[2].dependencies.is_empty());
 }
 
@@ -227,7 +236,10 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     });
     let records = [producer, record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
+    assert_eq!(
+        project(&records, None, &mut ir, &mut Vec::new()),
+        (0, 0, 0, 0)
+    );
 
     assert_eq!(
         ir.model.features[1].dependencies.as_slice(),
@@ -261,6 +273,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
             .expect("embedded geometry");
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
+            warnings: &mut Vec::new(),
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
@@ -296,6 +309,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
             && values[0].class_id == Uuid::from_wire(crate::test_support::POINT_CLASS)));
     let mut properties = BTreeMap::new();
     let mut sink = GeometrySink {
+        warnings: &mut Vec::new(),
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,
@@ -407,7 +421,14 @@ fn embedded_cage_projects_exact_construction_semantics() {
         userdata: Vec::new(),
     };
     let semantic = crate::decode::with_expand_bytes(&bytes, |expand| {
-        extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
+        extended_geometry_json(
+            expand,
+            &geometry,
+            ArchiveVersion::V8,
+            None,
+            10.0,
+            &mut Vec::new(),
+        )
     })
     .expect("cage semantics");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("required invariant");
@@ -425,7 +446,14 @@ fn embedded_cage_projects_exact_construction_semantics() {
         userdata: Vec::new(),
     };
     let semantic = crate::decode::with_expand_bytes(&empty_subd, |expand| {
-        extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 1.0)
+        extended_geometry_json(
+            expand,
+            &geometry,
+            ArchiveVersion::V8,
+            None,
+            1.0,
+            &mut Vec::new(),
+        )
     })
     .expect("empty SubD semantics");
     assert_eq!(
@@ -440,7 +468,14 @@ fn embedded_cage_projects_exact_construction_semantics() {
         userdata: Vec::new(),
     };
     let semantic = crate::decode::with_expand_bytes(&brep, |expand| {
-        extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
+        extended_geometry_json(
+            expand,
+            &geometry,
+            ArchiveVersion::V8,
+            None,
+            10.0,
+            &mut Vec::new(),
+        )
     })
     .expect("Brep topology semantics");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("required invariant");
@@ -673,6 +708,7 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
         assert_eq!(next, bytes.len());
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
+            warnings: &mut Vec::new(),
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
