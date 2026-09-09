@@ -86,11 +86,11 @@ fn parses_and_projects_semantic_graph() {
             .map(|annotation| annotation.id.clone())
             .collect::<BTreeSet<_>>(),
         BTreeSet::from([
-            pmi_id("A10"),
-            pmi_id("A20"),
-            pmi_id("A20:datum-system"),
-            pmi_id("A30"),
-            pmi_id("A40"),
+            pmi_id("A10").unwrap(),
+            pmi_id("A20").unwrap(),
+            pmi_id("A20:datum-system").unwrap(),
+            pmi_id("A30").unwrap(),
+            pmi_id("A40").unwrap(),
         ])
     );
     assert_eq!(dimension_nominal(&annotations, "A30"), None);
@@ -184,4 +184,35 @@ fn rejects_ambiguous_root_and_impossible_count() {
         .expect("count field")
         .copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(parse_unique_root(&malformed), None);
+}
+
+#[test]
+fn malformed_reference_identity_returns_decode_loss() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    for id in ["", "A 10"] {
+        let mut root = semantic_root();
+        root.annotations.references.first_mut().unwrap().id = id.into();
+        let mut payload = Vec::new();
+        encode_entity(&root, &mut payload);
+        let parsed = parse_unique_root(&payload).unwrap();
+        assert_eq!(parsed.annotations.references.first().unwrap().id, id);
+        let mut bytes = crate::test_support::synthetic_sldprt();
+        bytes.extend(crate::test_support::make_block(
+            0x40,
+            "SWIFT/Schema",
+            &payload,
+        ));
+        let decoded = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::SldprtLossCode::PmiSwiftAnnotationUnsupported.kind()));
+        assert!(!project(&parsed)
+            .iter()
+            .any(|annotation| annotation.name.as_deref() == Some("Datum A")));
+    }
 }

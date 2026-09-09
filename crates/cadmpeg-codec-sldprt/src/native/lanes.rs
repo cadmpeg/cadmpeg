@@ -31,22 +31,57 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));
         }
-        let expected_offsets = (0..lane.native_payload.len())
+        let mut entities = lane.sketch_entities.iter();
+        for (index, position) in (0..lane.native_payload.len())
             .filter(|offset| {
                 crate::resolved_features::markers::sketch_marker_at(&lane.native_payload, *offset)
             })
-            .map(|offset| offset as u64)
-            .collect::<std::collections::HashSet<_>>();
-        let actual_offsets = lane
-            .sketch_entities
-            .iter()
-            .map(crate::records::SketchInputEntity::offset)
-            .collect::<std::collections::HashSet<_>>();
-        if let Some(offset) = expected_offsets.difference(&actual_offsets).next() {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "SolidWorks feature-input lane {} omits marker at offset {offset}",
-                lane.id
-            )));
+            .enumerate()
+        {
+            let entity = entities.next().ok_or_else(|| {
+                cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input lane {} omits marker at offset {position}",
+                    lane.id
+                ))
+            })?;
+            if usize::try_from(entity.ordinal()).ok() != Some(index) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
+                    entity.ordinal()
+                )));
+            }
+            if entity.offset() != position as u64 {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id
+                )));
+            }
+            if entity.object_index()
+                != crate::resolved_features::markers::marker_object_index(
+                    &lane.native_payload,
+                    position,
+                )
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "SolidWorks feature-input object index does not match its native payload"
+                        .into(),
+                ));
+            }
+            if entity.local_id()
+                != crate::resolved_features::markers::marker_local_id(
+                    &lane.native_payload,
+                    position,
+                )
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "SolidWorks feature-input local object id does not match its native payload"
+                        .into(),
+                ));
+            }
+        }
+        if entities.next().is_some() {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "SolidWorks sketch entity offset is outside its native payload marker set".into(),
+            ));
         }
     }
     for (lane, expected_lane) in expected_lanes(native) {

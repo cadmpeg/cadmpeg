@@ -713,57 +713,6 @@ impl SldprtNative {
                 .collect();
             lane.sketch_entities
                 .sort_by_key(crate::records::SketchInputEntity::ordinal);
-            for (index, entity) in lane.sketch_entities.iter().enumerate() {
-                if usize::try_from(entity.ordinal()).ok() != Some(index) {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
-                        entity.ordinal()
-                    )));
-                }
-                if index.checked_sub(1).is_some_and(|previous| {
-                    lane.sketch_entities[previous].offset() >= entity.offset()
-                }) {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                        "SolidWorks feature-input entity offsets are not strictly increasing"
-                            .into(),
-                    ));
-                }
-                let position = usize::try_from(entity.offset())
-                    .ok()
-                    .filter(|&offset| {
-                        offset < lane.native_payload.len()
-                            && crate::resolved_features::markers::sketch_marker_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                    })
-                    .ok_or_else(|| {
-                        cadmpeg_ir::NativeConvertError::InvalidOwner(
-                            "SolidWorks sketch entity offset is outside its native payload".into(),
-                        )
-                    })?;
-                if entity.object_index
-                    != crate::resolved_features::markers::marker_object_index(
-                        &lane.native_payload,
-                        position,
-                    )
-                {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                        "SolidWorks feature-input object index does not match its native payload"
-                            .into(),
-                    ));
-                }
-                if entity.local_id
-                    != crate::resolved_features::markers::marker_local_id(
-                        &lane.native_payload,
-                        position,
-                    )
-                {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                        "SolidWorks feature-input local object id does not match its native payload".into()
-                    ));
-                }
-            }
         }
         lanes::admit(&native)?;
         Ok(native)
@@ -1058,7 +1007,7 @@ impl SldprtNative {
                         )));
                     };
                     if target.feature_ref != record.feature_ref
-                        || target.local_id != Some(u32::from(link.local_id))
+                        || target.local_id() != Some(u32::from(link.local_id))
                     {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                             "sketch input entity {} has inconsistent local-link target {}",

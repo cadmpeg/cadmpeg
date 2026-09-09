@@ -130,8 +130,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 0, 370, SketchInputKind::Point);
             constructed_marker.feature_ref = None;
-            constructed_marker.object_index = Some(1);
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(Some(1), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
@@ -448,7 +447,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 0,
             offset: 150,
             type_prefix: [0xc2, 0x83, 0xfb, 0x08],
-            feature_source_id: 224,
+            feature_source_id: 224_u32.try_into().unwrap(),
             local_identity: 2,
             components: vec![
                 FeatureInputComponentPathEntry {
@@ -677,8 +676,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -749,8 +747,7 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(None, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -852,8 +849,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = None;
-        constructed_marker.object_index = Some(1);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(1), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;

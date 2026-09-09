@@ -36,27 +36,6 @@ impl NativeOperandTag {
     pub(crate) const TAG_BD69: Self = Self(0xbd69);
 }
 
-#[cfg(test)]
-impl NativeOperandTag {
-    pub(crate) const TAG_1234: Self = Self(0x1234);
-    pub(crate) const TAG_69BD: Self = Self(0x69bd);
-    pub(crate) const TAG_80DD: Self = Self(0x80dd);
-    pub(crate) const TAG_80F7: Self = Self(0x80f7);
-    pub(crate) const TAG_80FE: Self = Self(0x80fe);
-    pub(crate) const TAG_8124: Self = Self(0x8124);
-    pub(crate) const TAG_8129: Self = Self(0x8129);
-    pub(crate) const TAG_812A: Self = Self(0x812a);
-    pub(crate) const TAG_812E: Self = Self(0x812e);
-    pub(crate) const TAG_81D5: Self = Self(0x81d5);
-    pub(crate) const TAG_8207: Self = Self(0x8207);
-    pub(crate) const TAG_825C: Self = Self(0x825c);
-    pub(crate) const TAG_8263: Self = Self(0x8263);
-    pub(crate) const TAG_829A: Self = Self(0x829a);
-    pub(crate) const TAG_8452: Self = Self(0x8452);
-    pub(crate) const TAG_88E7: Self = Self(0x88e7);
-    pub(crate) const TAG_8C44: Self = Self(0x8c44);
-}
-
 impl TryFrom<u16> for NativeOperandTag {
     type Error = &'static str;
     fn try_from(tag: u16) -> Result<Self, Self::Error> {

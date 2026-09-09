@@ -83,8 +83,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("position".into());
-            constructed_marker.object_index = Some(object_index);
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some(coordinates_m);
             constructed_marker.links = None;
@@ -130,8 +129,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 2, 2, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("position".into());
-            constructed_marker.object_index = Some(3);
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(Some(3), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([1.0, 1.0]);
             constructed_marker.links = None;
@@ -143,8 +141,6 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 3, 3, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("position".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = None;
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
@@ -228,8 +224,8 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
                 SketchInputKind::Arc,
             );
             constructed_marker.feature_ref = Some("position".into());
-            constructed_marker.object_index = Some((ordinal + 1) as u32);
-            constructed_marker.local_id = None;
+            constructed_marker =
+                constructed_marker.with_test_identity(Some((ordinal + 1) as u32), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some(coordinates_m);
             constructed_marker.links = None;
@@ -287,8 +283,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             kind,
         );
         constructed_marker.feature_ref = Some("position".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -586,8 +581,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.object_index = Some(1);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(1), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.002, 0.003]);
         constructed_marker.links = None;
@@ -599,7 +593,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let offset = 90;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
         constructed_marker.id = "origin-marker".into();
-        constructed_marker.object_index = None;
+        constructed_marker =
+            constructed_marker.with_test_identity(None, constructed_marker.local_id());
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker
     });
@@ -609,7 +604,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let offset = 120;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
         constructed_marker.id = "point-identity".into();
-        constructed_marker.object_index = Some(2);
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
         constructed_marker.coordinates_m = None;
         constructed_marker
     });
@@ -619,7 +615,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let offset = 100;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
         constructed_marker.id = "authored-arc-locus".into();
-        constructed_marker.object_index = Some(2);
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
         constructed_marker.kind = SketchInputKind::Arc;
         constructed_marker.coordinates_m = Some([0.014, 0.025]);
         constructed_marker
@@ -630,7 +627,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let offset = 110;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
         constructed_marker.id = "arc-origin-marker".into();
-        constructed_marker.object_index = None;
+        constructed_marker =
+            constructed_marker.with_test_identity(None, constructed_marker.local_id());
         constructed_marker.kind = SketchInputKind::Point;
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker
@@ -761,7 +759,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let offset = 120;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
         constructed_marker.id = "unpaired-object-locus".into();
-        constructed_marker.object_index = Some(3);
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(3), constructed_marker.local_id());
         constructed_marker.kind = SketchInputKind::Arc;
         constructed_marker.coordinates_m = Some([0.016, 0.027]);
         constructed_marker
@@ -835,8 +834,6 @@ fn unique_unindexed_point_locus_is_projected() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -956,8 +953,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.object_index = Some(1);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(1), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -969,8 +965,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 90, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.object_index = Some(2);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(2), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -982,8 +977,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 2, 100, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.object_index = Some(3);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(3), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -1228,8 +1222,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
             SketchInputKind::Relation(SketchRelationKind::Vertical),
         );
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.object_index = Some(1);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(1), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
