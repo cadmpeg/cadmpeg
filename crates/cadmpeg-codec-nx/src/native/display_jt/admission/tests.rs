@@ -23,20 +23,20 @@ fn graph_wire() -> Value {
         }],
         "display_jt_segments": [
             {"id": "nx:display-jt:segment#0", "document": "nx:display-jt:document#0", "toc_entry": "nx:display-jt:toc-entry#0",
-             "segment_id": vec![7; 16], "segment_type": 7, "segment_byte_len": 64, "payload_sha256": "payload", "compression": null, "source_offset": 300},
+             "segment_id": vec![7; 16], "segment_type": 7, "segment_byte_len": 64, "payload_sha256": cadmpeg_ir::hash::sha256_hex(b"payload"), "compression": null, "source_offset": 300},
             {"id": "nx:display-jt:segment#1", "document": "nx:display-jt:document#0", "toc_entry": "nx:display-jt:toc-entry#1",
-             "segment_id": vec![31; 16], "segment_type": 31, "segment_byte_len": 64, "payload_sha256": "payload",
-             "compression": {"flag": 2, "compressed_data_byte_len": 32, "algorithm": 2, "compressed_byte_len": 31, "inflated_sha256": "inflated"}, "source_offset": 364}
+             "segment_id": vec![31; 16], "segment_type": 31, "segment_byte_len": 64, "payload_sha256": cadmpeg_ir::hash::sha256_hex(b"payload"),
+             "compression": {"flag": 2, "compressed_data_byte_len": 32, "algorithm": 2, "compressed_byte_len": 31, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"inflated")}, "source_offset": 364}
         ],
         "display_jt_shape_lod_elements": [{
             "id": "nx:display-jt:shape-element#0", "segment": "nx:display-jt:segment#0", "ordinal": 0,
             "object_type_id": vec![0; 16], "object_base_type": 4, "object_id": 1,
-            "body_byte_len": 1, "body_sha256": "body", "source_offset": 324
+            "body_byte_len": 1, "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"), "source_offset": 324
         }],
         "display_jt_compressed_elements": [{
             "id": "nx:display-jt:compressed-element#0", "segment": "nx:display-jt:segment#1", "segment_type": 31,
             "ordinal": 0, "object_type_id": vec![0; 16], "object_base_type": 1, "object_id": 2,
-            "body_byte_len": 1, "body_sha256": "body", "inflated_offset": 0, "source_offset": 388
+            "body_byte_len": 1, "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"), "inflated_offset": 0, "source_offset": 388
         }],
         "display_jt_compressed_element_sequences": [{
             "id": "nx:display-jt:sequence#0", "segment": "nx:display-jt:segment#1", "segment_type": 31,
