@@ -5283,73 +5283,37 @@ pub(crate) fn native_procedural_curve(
                 &helix_payload.apex_factor(),
                 helix_payload.axis(),
             ),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_) => {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                     procedural.id
                 )))
             }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D offset curve {} lacks a defined native offset-law grammar",
-                    procedural.id
-                )))
-            }
+
             cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D blend-spine curve {} lacks its native blend construction",
                     procedural.id
                 )))
             }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(..) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(_) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(..) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(_) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(..) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(_) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(_) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_) => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
-            }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(..)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(..)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(..)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
                 unreachable!("procedural curve variant returned from its native writer")
             }
         };
