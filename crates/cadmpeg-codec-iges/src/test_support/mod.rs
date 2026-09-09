@@ -8,6 +8,7 @@ mod test_drawing_and_trimming;
 mod test_owned;
 mod test_procedural_surfaces;
 mod test_solids_and_structure;
+mod test_surface_fixtures;
 mod test_tabulated_surfaces;
 
 pub(crate) use test_cards::*;
