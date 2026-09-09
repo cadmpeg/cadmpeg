@@ -1106,16 +1106,14 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
             let discontinuity_flag = &mut discontinuity_flag_value;
             let mut offsets_value = *definition_payload.offsets();
             let offsets = &mut offsets_value;
-            {
-                context
-                    .edit(|_, context_parameter_range, context_discontinuities| {
-                        (*context_parameter_range) = [-2.0, 3.0];
-                        (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
-                        *discontinuity_flag = false;
-                        *offsets = [-3.0, 5.0];
-                    })
-                    .unwrap()
-            };
+            context
+                .edit(|_, context_parameter_range, context_discontinuities| {
+                    (*context_parameter_range) = [-2.0, 3.0];
+                    (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
+                    *discontinuity_flag = false;
+                    *offsets = [-3.0, 5.0];
+                })
+                .unwrap();
             *definition_payload =
                 cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
                     context_value,
@@ -1201,22 +1199,19 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
             let discontinuity_flag = &mut discontinuity_flag_value;
             let mut offsets_value = *definition_payload.offsets();
             let offsets = &mut offsets_value;
-            {
-                context
-                    .edit(|_, context_parameter_range, context_discontinuities| {
-                        (*context_parameter_range) = [-2.0, 5.0];
-                        for (side, discontinuities) in
-                            (*context_discontinuities).iter_mut().enumerate()
-                        {
-                            for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                                *value = 0.125 * (side + ordinal + 1) as f64;
-                            }
+            context
+                .edit(|_, context_parameter_range, context_discontinuities| {
+                    (*context_parameter_range) = [-2.0, 5.0];
+                    for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate()
+                    {
+                        for (ordinal, value) in discontinuities.iter_mut().enumerate() {
+                            *value = 0.125 * (side + ordinal + 1) as f64;
                         }
-                        *discontinuity_flag = false;
-                        *offsets = [-2.5, 4.5];
-                    })
-                    .unwrap()
-            };
+                    }
+                    *discontinuity_flag = false;
+                    *offsets = [-2.5, 4.5];
+                })
+                .unwrap();
             *definition_payload =
                 cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
                     context_value,
