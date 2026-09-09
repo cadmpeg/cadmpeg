@@ -14,7 +14,7 @@ use model::{
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry};
+use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
@@ -1810,28 +1810,6 @@ fn check_nurbs_surface(
             "surface {id} cannot be represented by Rhino NURBS counts"
         )));
     }
-    if surface
-        .u_knots()
-        .iter()
-        .chain(surface.v_knots())
-        .any(|v| !v.is_finite())
-        || surface
-            .u_knots()
-            .windows(2)
-            .chain(surface.v_knots().windows(2))
-            .any(|v| v[0] > v[1])
-        || surface
-            .control_points()
-            .iter()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
-        || surface
-            .weights()
-            .is_some_and(|w| w.iter().any(|v| !v.is_finite() || *v == 0.0))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "surface {id} has invalid NURBS data"
-        )));
-    }
     check_knot_roundtrip(
         id,
         "surface U",
@@ -1857,20 +1835,6 @@ fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Resu
     if i32::try_from(order).is_err() || i32::try_from(count).is_err() || order < 2 {
         return Err(CodecError::malformed(format_args!(
             "curve {id} cannot be represented by Rhino NURBS counts"
-        )));
-    }
-    if curve.knots().iter().any(|v| !v.is_finite())
-        || !knots_nondecreasing(curve.knots())
-        || curve
-            .control_points()
-            .iter()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
-        || curve
-            .weights()
-            .is_some_and(|w| w.iter().any(|v| !v.is_finite() || *v == 0.0))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "curve {id} has invalid NURBS data"
         )));
     }
     check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;
