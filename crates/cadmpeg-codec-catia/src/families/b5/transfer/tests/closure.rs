@@ -597,7 +597,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .coedges
             .iter()
-            .map(|coedge| coedge.pcurves[0].parameter_range)
+            .map(|coedge| coedge.pcurves[0]
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints))
             .collect::<Vec<_>>(),
         [None, Some([1.0, 0.5]), None]
     );

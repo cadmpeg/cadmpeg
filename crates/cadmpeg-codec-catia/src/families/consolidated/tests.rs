@@ -1076,7 +1076,7 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
             )),
         1
     );
-    assert_eq!(decoded.ir().model.edges[0].param_range, Some([-4.0, 9.0]));
+    assert_eq!(decoded.ir().model.edges[0].param_range(), Some([-4.0, 9.0]));
     assert_eq!(
         decoded.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire

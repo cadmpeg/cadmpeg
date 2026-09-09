@@ -215,10 +215,9 @@ fn add_edge(
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
-        curve: Some(curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range)).ok()?,
         start: start_vertex,
         end: end_vertex,
-        param_range: Some(parameter_range),
         tolerance: None,
     });
     Some(edge)

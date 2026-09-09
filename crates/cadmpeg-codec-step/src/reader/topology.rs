@@ -921,12 +921,13 @@ fn build_wire_set(
         wire_edges.push(ir_id.clone());
         built_edges.push(Edge {
             id: ir_id,
-            curve: edge_curve_id_reported(edge_id, edge, exchange, warnings),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
+                edge_id, edge, exchange, warnings,
+            )),
             start: VertexId::mint(ids::data("vertex", format!("{start}{vertex_suffix}")))
                 .expect("identity grammar"),
             end: VertexId::mint(ids::data("vertex", format!("{end}{vertex_suffix}")))
                 .expect("identity grammar"),
-            param_range: None,
             tolerance: None,
         });
         used_vertices.extend([start, end]);
@@ -1118,12 +1119,13 @@ fn build_shell_wire_set(
         wire_edges.push(ir_id.clone());
         edges.push(Edge {
             id: ir_id,
-            curve: edge_curve_id_reported(edge_id, edge, exchange, warnings),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
+                edge_id, edge, exchange, warnings,
+            )),
             start: VertexId::mint(ids::data("vertex", format!("{start}{vertex_suffix}")))
                 .expect("identity grammar"),
             end: VertexId::mint(ids::data("vertex", format!("{end}{vertex_suffix}")))
                 .expect("identity grammar"),
-            param_range: None,
             tolerance: None,
         });
     }
@@ -2550,12 +2552,20 @@ fn build_one(
                         },
                         pcurves: pcurves
                             .into_iter()
-                            .map(|(pcurve, parameter_range)| PcurveUse {
-                                pcurve,
-                                isoparametric: None,
-                                parameter_range,
+                            .map(|(pcurve, parameter_range)| {
+                                Ok(PcurveUse {
+                                    pcurve,
+                                    isoparametric: None,
+                                    parameter_range: parameter_range
+                                        .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                        .transpose()?,
+                                })
                             })
-                            .collect(),
+                            .collect::<Result<Vec<_>, cadmpeg_ir::geometry::ParameterRangeError>>()
+                            .map_err(|error| {
+                                warnings.push(format!("coedge pcurve parameter_range: {error}"))
+                            })
+                            .ok()?,
                         use_curve: None,
                     });
                     radial
@@ -2712,20 +2722,20 @@ fn build_one(
         let (start, end) = e.curve_vertices();
         edges.push(Edge {
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
-            curve: edge_curve_id_reported(edge_id, e, exchange, warnings),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
+                edge_id, e, exchange, warnings,
+            )),
             start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
             end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
-            param_range: None,
             tolerance: None,
         });
     }
     for ((shell_step, edge_identity), (start, end)) in poly_edges {
         edges.push(Edge {
             id: edge_identity,
-            curve: None,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
             start: scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root),
             end: scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root),
-            param_range: None,
             tolerance: None,
         });
     }

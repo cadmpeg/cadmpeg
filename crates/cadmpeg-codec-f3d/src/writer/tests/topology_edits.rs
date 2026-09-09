@@ -229,7 +229,9 @@ fn generated_f3d_rewrites_edge_parameter_range() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.edges[0].param_range = Some([-2.5, 4.75]);
+    edited.model.edges[0]
+        .set_param_range(Some([-2.5, 4.75]))
+        .unwrap();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -238,7 +240,7 @@ fn generated_f3d_rewrites_edge_parameter_range() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range,
+        round_trip.ir().model.edges[0].param_range(),
         Some([-2.5, 4.75])
     );
 }

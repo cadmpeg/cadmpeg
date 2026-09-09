@@ -536,7 +536,7 @@ pub fn decode_with_header(
         &carriers,
         &reach,
         format,
-    );
+    )?;
     emit_loops(&mut out, records, &by_index, &reach, format);
     emit_faces(
         &mut out,
@@ -564,7 +564,7 @@ pub fn decode_with_header(
         emit_annotation_records(&mut out, records, &by_index, stream, format);
 
         classify_body_kinds(&mut out);
-        clamp_edge_ranges_to_carrier_domains(&mut out);
+        clamp_edge_ranges_to_carrier_domains(&mut out)?;
     }
 
     Ok(out)

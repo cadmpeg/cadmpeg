@@ -778,7 +778,7 @@ fn retain_unowned_carriers(
             ir.model
                 .edges
                 .iter()
-                .filter_map(|edge| edge.curve.as_ref().map(cadmpeg_ir::ids::CurveId::as_str)),
+                .filter_map(|edge| edge.curve().as_ref().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
         .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
         .chain(

@@ -16,7 +16,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];
-    edge.param_range = Some([2.0, 5.0]);
+    edge.set_param_range(Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
         cadmpeg_ir::geometry::NurbsCurve::new(
             2,
@@ -54,14 +54,14 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.param_range == Some([2.0, 5.0]))
+            .find(|edge| edge.param_range() == Some([2.0, 5.0]))
             .expect("NURBS edge domain");
         let curve = decoded
             .ir()
             .model
             .curves
             .iter()
-            .find(|curve| shared.curve.as_ref() == Some(&curve.id))
+            .find(|curve| shared.curve().as_ref() == Some(&curve.id))
             .expect("NURBS C3");
         assert_eq!(curve.geometry, expected, "{version:?}");
         let uses = decoded
@@ -93,7 +93,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
 #[test]
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     let mut ir = adjacent_quad_sheet();
-    ir.model.edges[1].param_range = Some([2.0, 5.0]);
+    ir.model.edges[1].set_param_range(Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
         cadmpeg_ir::geometry::NurbsCurve::new(
             2,
@@ -203,7 +203,7 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         ),
         metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
             None,
-            ir.model.edges[0].param_range,
+            ir.model.edges[0].param_range(),
             None,
         )
         .unwrap(),
@@ -432,7 +432,10 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         );
         assert_eq!(decoded.ir().model.faces.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.surfaces[0].geometry, expected_surface);
-        assert_eq!(decoded.ir().model.edges[1].param_range, Some([30.0, 32.0]));
+        assert_eq!(
+            decoded.ir().model.edges[1].param_range(),
+            Some([30.0, 32.0])
+        );
         let shared_uses = decoded
             .ir()
             .model
@@ -497,7 +500,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         ],
     );
     make_planar_nurbs_trimmed_face(&mut ir);
-    let domain = ir.model.edges[0].param_range.expect("fixture domain");
+    let domain = ir.model.edges[0].param_range().expect("fixture domain");
     let poles = [
         Point3::new(0.25, 0.25, 0.0),
         Point3::new(2.0, 0.25, 0.0),

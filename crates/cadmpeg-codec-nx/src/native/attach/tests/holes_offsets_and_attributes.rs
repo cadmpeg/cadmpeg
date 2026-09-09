@@ -132,11 +132,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     });
                     model.edges.push(Edge {
                         id: edge_id.clone(),
-                        curve: Some(curve_id),
+                        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
                         start: VertexId::mint("test:model:entity#vertex")
                             .expect("identity grammar"),
                         end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                        param_range: None,
                         tolerance: None,
                     });
                 }
@@ -427,10 +426,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 });
                 model.edges.push(Edge {
                     id: edge_id.clone(),
-                    curve: Some(curve_id),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
                     start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                    param_range: None,
                     tolerance: None,
                 });
             }

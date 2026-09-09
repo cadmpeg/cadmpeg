@@ -138,12 +138,13 @@ pub fn unit_cube() -> CadIr {
         });
         ir.model.edges.push(Edge {
             id: EdgeId::mint(format!("synthetic:cube:edge#{i}")).expect("valid identity"),
-            curve: Some(
-                CurveId::mint(format!("synthetic:cube:curve#{i}")).expect("valid identity"),
-            ),
+            carrier: crate::topology::EdgeCarrier::new(
+                Some(CurveId::mint(format!("synthetic:cube:curve#{i}")).expect("valid identity")),
+                Some([0.0, len]),
+            )
+            .expect("valid example edge interval"),
             start: VertexId::mint(format!("synthetic:cube:vertex#{a}")).expect("valid identity"),
             end: VertexId::mint(format!("synthetic:cube:vertex#{b}")).expect("valid identity"),
-            param_range: Some([0.0, len]),
             tolerance: None,
         });
     }

@@ -332,7 +332,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .model
         .curves
         .iter()
-        .find(|curve| seam.curve.as_ref() == Some(&curve.id))
+        .find(|curve| seam.curve().as_ref() == Some(&curve.id))
         .expect("sphere seam curve");
     assert!(
         matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Degenerate(degenerate_curve)
@@ -389,7 +389,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&seam_curve.id))
+        .find(|edge| edge.curve().as_ref() == Some(&seam_curve.id))
         .expect("existing sphere seam edge");
     let vertex = result
         .ir()
@@ -480,10 +480,10 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .edges
             .iter()
             .find(|edge| edge
-                .curve
+                .curve()
                 .as_ref()
                 .is_some_and(|id| id.as_str().ends_with("#192")))
-            .and_then(|edge| edge.param_range),
+            .and_then(|edge| edge.param_range()),
         Some([0.0, 1000.0])
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
@@ -520,10 +520,10 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .edges
             .iter()
             .find(|edge| edge
-                .curve
+                .curve()
                 .as_ref()
                 .is_some_and(|id| id.as_str().ends_with("#192")))
-            .and_then(|edge| edge.param_range),
+            .and_then(|edge| edge.param_range()),
         Some([-500.0, 500.0])
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());

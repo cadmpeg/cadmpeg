@@ -56,7 +56,7 @@ fn edge_uses_decoded_line_curve() {
             .model
             .edges
             .iter()
-            .filter(|e| e.curve.is_some())
+            .filter(|e| e.curve().is_some())
             .count(),
         1
     );

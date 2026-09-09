@@ -396,12 +396,12 @@ pub(super) fn emit_edges(
         edge_id_map.insert(edge_id, id.clone());
         ir.model.edges.push(Edge {
             id,
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             start: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[0]))
                 .expect("identity grammar"),
             end: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[1]))
                 .expect("identity grammar"),
-            param_range: edge_range,
             tolerance: edge_tolerance,
         });
     }

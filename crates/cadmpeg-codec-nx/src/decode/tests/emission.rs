@@ -525,7 +525,7 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
         .unwrap();
 
     let curve = result.ir().model.edges[0]
-        .curve
+        .curve()
         .as_ref()
         .and_then(|id| {
             result
@@ -583,8 +583,8 @@ fn decode_retains_native_carrierless_edge() {
         .unwrap();
 
     let edge = &result.ir().model.edges[0];
-    assert_eq!(edge.curve, None);
-    assert_eq!(edge.param_range, None);
+    assert_eq!(edge.curve().as_ref(), None);
+    assert_eq!(edge.param_range(), None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -607,8 +607,8 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .expect("vertex point")
             .position
     });
-    ir.model.edges[0].curve = None;
-    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].set_curve(None).unwrap();
+    ir.model.edges[0].set_param_range(None).unwrap();
     ir.model.edges[0].tolerance =
         Some(cadmpeg_ir::units::PositiveScalar::new(0.01).expect("positive finite tolerance"));
     let mut edges = std::collections::BTreeMap::new();
@@ -655,12 +655,12 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .iter()
         .find(|edge| edge.id == edge_id)
         .expect("tolerant edge");
-    assert_eq!(edge.param_range, None);
+    assert_eq!(edge.param_range(), None);
     let curve = ir
         .model
         .curves
         .iter()
-        .find(|curve| Some(&curve.id) == edge.curve.as_ref())
+        .find(|curve| Some(&curve.id) == edge.curve().as_ref())
         .expect("procedural carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
     let procedural = ir
@@ -711,15 +711,15 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         &stream,
         &mut annotations,
     );
-    assert_eq!(off_support_ir.model.edges[0].curve, None);
+    assert_eq!(off_support_ir.model.edges[0].curve().as_ref(), None);
 }
 
 #[test]
 fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let edge_id = ir.model.edges[0].id.clone();
-    ir.model.edges[0].curve = None;
-    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].set_curve(None).unwrap();
+    ir.model.edges[0].set_param_range(None).unwrap();
     ir.model.edges[0].tolerance =
         Some(cadmpeg_ir::units::PositiveScalar::new(0.01).expect("positive finite tolerance"));
     let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);
@@ -748,8 +748,8 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         .iter()
         .find(|edge| edge.id == edge_id)
         .expect("tolerant edge");
-    assert_eq!(edge.curve, None);
-    assert_eq!(edge.param_range, None);
+    assert_eq!(edge.curve().as_ref(), None);
+    assert_eq!(edge.param_range(), None);
     assert!(ir.model.procedural_curves.is_empty());
 }
 
@@ -921,11 +921,11 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.as_ref() == Some(original_owner))
+        .find(|edge| edge.curve().as_ref() == Some(original_owner))
         .unwrap()
         .clone();
     edge.id = cadmpeg_ir::ids::EdgeId::mint("test:model:edge#later-intersection").unwrap();
-    edge.curve = Some(carrier.id.clone());
+    edge.set_curve(Some(carrier.id.clone())).unwrap();
     ir.model.edges.push(edge);
     ir.model.curves.push(carrier);
     ir.model.procedural_curves.push(later);
@@ -1047,10 +1047,9 @@ fn cylinder_plane_transfer_fixture(
     );
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:edge").expect("identity grammar"),
-        curve: Some(curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
         start: VertexId::mint("test:model:entity#synthetic:start").expect("identity grammar"),
         end: VertexId::mint("test:model:entity#synthetic:end").expect("identity grammar"),
-        param_range: Some([0.0, 1.0]),
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(edge_tolerance)
                 .expect("positive finite tolerance"),
@@ -1394,11 +1393,10 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     );
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:boundary-edge").expect("identity grammar"),
-        curve: Some(curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
         start: VertexId::mint("test:model:entity#synthetic:boundary-start")
             .expect("identity grammar"),
         end: VertexId::mint("test:model:entity#synthetic:boundary-end").expect("identity grammar"),
-        param_range: Some([0.0, 1.0]),
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),
@@ -1545,10 +1543,9 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:boundary-edge").expect("identity grammar"),
-        curve: Some(curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
         start: vertex_ids[0].clone(),
         end: vertex_ids[1].clone(),
-        param_range: None,
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),
@@ -1573,7 +1570,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         Some(1.0e-8)
     );
     assert_eq!(parameterization.parameter_range(), [0.0, 1.0]);
-    assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let owner = ir
             .model
@@ -1701,10 +1698,9 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#nx:test:boundary-edge").expect("identity grammar"),
-        curve: Some(curve.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve.clone())),
         start: vertices[0].clone(),
         end: vertices[1].clone(),
-        param_range: None,
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),
@@ -1816,7 +1812,9 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
 
     assert_eq!(result.ir().model.pcurves[0].parameter_range(), None);
     assert_eq!(
-        result.ir().model.coedges[0].pcurves[0].parameter_range,
+        result.ir().model.coedges[0].pcurves[0]
+            .parameter_range
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -1990,7 +1988,7 @@ fn decode_emits_connected_primitive_brep() {
         vec![result.ir().model.loops[0].id.clone()]
     );
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve().as_ref(),
         Some(&result.ir().model.curves[0].id)
     );
     assert_eq!(

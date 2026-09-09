@@ -1116,10 +1116,9 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     let edge_id = EdgeId::mint("generated:test:edge#3").expect("identity grammar");
     source_less.model.edges.push(cadmpeg_ir::topology::Edge {
         id: edge_id.clone(),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
         start: vertex_id,
         end: first_vertex,
-        param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
     let coedge_id = CoedgeId::mint("generated:test:coedge#3").expect("identity grammar");
@@ -1229,8 +1228,10 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             ),
             source_object: None,
         });
-        source_less.model.edges[index].curve = Some(id);
-        source_less.model.edges[index].param_range = Some([0.0, length]);
+        source_less.model.edges[index].set_curve(Some(id)).unwrap();
+        source_less.model.edges[index]
+            .set_param_range(Some([0.0, length]))
+            .unwrap();
     }
 
     let expected = source_less
@@ -1266,7 +1267,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_some()));
+        .all(|edge| edge.curve().is_some()));
 }
 
 #[test]
@@ -1296,8 +1297,12 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         geometry: expected.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
-    source_less.model.edges[0].param_range = Some([0.25, 1.75]);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
+    source_less.model.edges[0]
+        .set_param_range(Some([0.25, 1.75]))
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1310,10 +1315,10 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let mut round_trip = cadmpeg_test_support::EditableDecodeResult::from(round_trip);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range,
+        round_trip.ir().model.edges[0].param_range(),
         Some([0.25, 1.75])
     );
-    assert!(round_trip.ir().model.edges[0].curve.is_some());
+    assert!(round_trip.ir().model.edges[0].curve().is_some());
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .findings
@@ -1366,8 +1371,12 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         geometry: expected.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
-    source_less.model.edges[0].param_range = Some([0.5, 2.0]);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
+    source_less.model.edges[0]
+        .set_param_range(Some([0.5, 2.0]))
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1378,7 +1387,10 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less ellipse-carrier round trip");
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
-    assert_eq!(round_trip.ir().model.edges[0].param_range, Some([0.5, 2.0]));
+    assert_eq!(
+        round_trip.ir().model.edges[0].param_range(),
+        Some([0.5, 2.0])
+    );
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .findings
@@ -1530,10 +1542,13 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         });
         source_less.model.edges.push(Edge {
             id: edges[index].clone(),
-            curve: Some(curves[index].clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curves[index].clone()),
+                Some([-std::f64::consts::PI, std::f64::consts::PI]),
+            )
+            .unwrap(),
             start: vertices[index].clone(),
             end: vertices[index].clone(),
-            param_range: Some([-std::f64::consts::PI, std::f64::consts::PI]),
             tolerance: None,
         });
         source_less.model.curves.push(Curve {
@@ -1578,7 +1593,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     assert!(
         round_trip.ir().model.edges.iter().all(|edge| {
             edge.start == edge.end
-                && edge.param_range.is_some_and(|range| {
+                && edge.param_range().is_some_and(|range| {
                     (range[0] + std::f64::consts::PI).abs() < 1.0e-12
                         && (range[1] - std::f64::consts::PI).abs() < 1.0e-12
                 })

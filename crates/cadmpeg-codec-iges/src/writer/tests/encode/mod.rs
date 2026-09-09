@@ -91,7 +91,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
         .edges
         .iter()
         .find(|edge| {
-            edge.curve
+            edge.curve()
                 .as_ref()
                 .is_some_and(|curve| curve.as_str() == "iges:model:curve#D3")
         })
@@ -114,7 +114,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
             .edges
             .iter_mut()
             .find(|edge| {
-                edge.curve
+                edge.curve()
                     .as_ref()
                     .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
             })
@@ -929,10 +929,13 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         });
         ir.model.edges.push(Edge {
             id: edge_ids[index].clone(),
-            curve: Some(curve_ids[index].clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_ids[index].clone()),
+                Some([0.0, 1.0]),
+            )
+            .unwrap(),
             start: vertex_ids[index].clone(),
             end: vertex_ids[end].clone(),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         let start = positions[index];

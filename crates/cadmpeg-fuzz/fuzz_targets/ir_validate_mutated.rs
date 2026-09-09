@@ -112,9 +112,8 @@ fuzz_target!(|data: &[u8]| {
             source_fidelity.annotations.append(annotations.build());
         }
         12 => {
-            // Put an invalid range on a canonical curve parameterization.
-            if let Some(edge) = ir.model.edges.first_mut() {
-                edge.param_range = Some([f64::INFINITY, f64::NEG_INFINITY]);
+            if let Some(edge) = ir.model.edges.first().cloned() {
+                ir.model.edges.push(edge);
             }
         }
         _ => {}

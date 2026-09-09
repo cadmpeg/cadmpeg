@@ -2823,24 +2823,22 @@ pub(crate) fn validate_edge_range_edits(
     for (id, before) in baseline {
         let after = target[id];
         let mut normalized = after.clone();
-        normalized.param_range = before.param_range;
+        normalized
+            .set_param_range(before.param_range())
+            .map_err(CodecError::malformed)?;
         normalized.tolerance = before.tolerance;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D edge edit changes fields other than parameter range: {id}"
             )));
         }
-        if after.param_range == before.param_range {
+        if after.param_range() == before.param_range() {
             continue;
         }
-        let range = after.param_range.ok_or_else(|| {
+        let range = after.param_range().ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D edge range: {id}"))
         })?;
-        if before.param_range.is_none()
-            || !range[0].is_finite()
-            || !range[1].is_finite()
-            || range[0] == range[1]
-        {
+        if before.param_range().is_none() || range[0] == range[1] {
             return Err(CodecError::malformed(format_args!(
                 "edited F3D edge range {id} must replace an existing finite non-degenerate range"
             )));

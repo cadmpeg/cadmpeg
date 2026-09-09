@@ -554,10 +554,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
     };
     let edge = Edge {
         id: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:entity#start").expect("identity grammar"),
         end: VertexId::mint("test:model:entity#end").expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     };
     let vertices = [

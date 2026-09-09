@@ -3684,10 +3684,15 @@ fn stage_extrusion_caps(
             });
             ir.model.edges.push(Edge {
                 id: edge_id.clone(),
-                curve: Some(curve_id),
+                carrier: match cadmpeg_ir::topology::EdgeCarrier::new(
+                    Some(curve_id),
+                    Some(parameter_range),
+                ) {
+                    Ok(carrier) => carrier,
+                    Err(_) => return false,
+                },
                 start: vertex_id.clone(),
                 end: vertex_id.clone(),
-                param_range: Some(parameter_range),
                 tolerance: None,
             });
             ir.model.pcurves.push(Pcurve {
@@ -4198,10 +4203,10 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         let vertices = edge_vertices(edge);
         staged.draft.model_mut().edges.push(Edge {
             id: id.clone(),
-            curve,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(edge_param_range(edge)))
+                .map_err(|message| crate::curves::GeometryError::malformed(0, message))?,
             start: vertex_ids[vertices[0]].clone(),
             end: vertex_ids[vertices[1]].clone(),
-            param_range: Some(edge_param_range(edge)),
             tolerance: scaled_tolerance(edge.tolerance, scale)?,
         });
         edge_ids.push(id);
@@ -4280,10 +4285,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 if !synthetic_edges.contains_key(trim_index) {
                     staged.draft.model_mut().edges.push(Edge {
                         id: synthetic_id.clone(),
-                        curve: None,
+                        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
                         start: vertex_ids[trim.vertices[0] as usize].clone(),
                         end: vertex_ids[trim.vertices[0] as usize].clone(),
-                        param_range: None,
                         tolerance: scaled_tolerance(trim.tolerances[1], scale)?,
                     });
                     synthetic_edges.insert(*trim_index, synthetic_id.clone());

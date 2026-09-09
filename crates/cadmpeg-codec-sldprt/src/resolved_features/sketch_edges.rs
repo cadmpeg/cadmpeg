@@ -118,7 +118,7 @@ pub(super) fn project_edge(
             cadmpeg_ir::units::PositiveScalar::get,
         )
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
-    match edge.curve.as_ref().and_then(|id| curves.get(id).copied()) {
+    match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle(circle_curve)) => {
             let (center, _, _, radius) = circle_curve.parts();
             let center = project_point(*center, origin, u_axis, v_axis);
@@ -136,9 +136,7 @@ pub(super) fn project_edge(
                     .ok()?,
                 )
             } else {
-                let parameters = edge
-                    .param_range
-                    .filter(|[start, end]| start.is_finite() && end.is_finite() && start != end);
+                let parameters = edge.param_range().filter(|[start, end]| start != end);
                 Some(
                     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                         center,
@@ -187,9 +185,7 @@ pub(super) fn project_edge(
                 let minor_component = -du * major_angle.sin() + dv * major_angle.cos();
                 (minor_component / *minor_radius).atan2(major_component / *major_radius)
             };
-            let parameters = edge
-                .param_range
-                .filter(|[start, end]| start.is_finite() && end.is_finite() && start != end);
+            let parameters = edge.param_range().filter(|[start, end]| start != end);
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center,

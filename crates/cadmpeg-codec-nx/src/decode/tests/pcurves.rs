@@ -325,10 +325,9 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     });
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
-        curve: Some(sphere_circle),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(sphere_circle)),
         start: vertex.clone(),
         end: vertex,
-        param_range: None,
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),
@@ -373,7 +372,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let (supports, _, _) = intersection.parts();
 
     assert_eq!(parameterization.parameter_range(), range);
-    assert_eq!(ir.model.edges[0].param_range, Some(range));
+    assert_eq!(ir.model.edges[0].param_range(), Some(range));
     assert!(parameterization
         .pcurves
         .iter()
@@ -743,10 +742,9 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
     ]);
     ir.model.edges.push(Edge {
         id: edge.clone(),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: start_vertex,
         end: end_vertex,
-        param_range: None,
         tolerance: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
@@ -1164,10 +1162,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let edge = EdgeId::mint("test:model:entity#nx:test:edge").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
-        curve: Some(curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
         start: vertices[0].clone(),
         end: vertices[1].clone(),
-        param_range: None,
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"),
         ),
@@ -1234,7 +1231,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             pcurves: vec![PcurveUse {
                 pcurve: pcurves[index].clone(),
                 isoparametric: None,
-                parameter_range: Some([0.0, 10.0]),
+                parameter_range: (Some([0.0, 10.0]))
+                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                    .transpose()
+                    .unwrap(),
             }],
             use_curve: None,
         });
@@ -1284,7 +1284,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         panic!("serialized branch transferred");
     };
     assert_eq!(parameterization.parameter_range(), [0.0, 10.0]);
-    assert_eq!(ir.model.edges[0].param_range, Some([0.0, 10.0]));
+    assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 10.0]));
     assert_eq!(
         cadmpeg_ir::eval::model_surface_point_by_id(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
@@ -1312,7 +1312,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         })
         .unwrap();
     let edge = &mut ir.model.edges[0];
-    edge.param_range = None;
+    edge.set_param_range(None).unwrap();
     std::mem::swap(&mut edge.start, &mut edge.end);
     for pcurve in &mut ir.model.pcurves {
         pcurve.geometry = PcurveGeometry::Line(
@@ -1383,9 +1383,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             *parameterization = None;
         })
         .unwrap();
-    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].set_param_range(None).unwrap();
     for coedge in &mut ir.model.coedges {
-        coedge.pcurves[0].parameter_range = Some(range);
+        coedge.pcurves[0].parameter_range =
+            Some(cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap());
     }
     for pcurve in &mut ir.model.pcurves {
         let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
@@ -1444,7 +1445,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             *parameterization = None;
         })
         .unwrap();
-    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].set_param_range(None).unwrap();
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
@@ -1593,10 +1594,9 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let edge = EdgeId::mint("nx:test:edge#0").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
-        curve: Some(curve_id.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
         start: start.clone(),
         end: end.clone(),
-        param_range: None,
         tolerance: None,
     });
     let support = SurfaceId::mint("nx:test:surface-support#0").expect("identity grammar");

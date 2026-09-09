@@ -1232,7 +1232,7 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.clone())
+        .filter_map(|edge| edge.curve().clone())
         .collect();
     loop {
         let previous = (used_surfaces.len(), used_curves.len());
@@ -1688,7 +1688,7 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.clone())
+        .filter_map(|edge| edge.curve().clone())
         .collect();
     let pcurves: BTreeSet<_> = ir
         .model

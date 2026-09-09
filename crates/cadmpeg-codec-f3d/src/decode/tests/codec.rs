@@ -130,9 +130,9 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.is_some())
+        .find(|edge| edge.curve().is_some())
         .expect("edge on the ellipse carrier");
-    let [start, end] = arc.param_range.expect("arc range");
+    let [start, end] = arc.param_range().expect("arc range");
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 }
@@ -150,12 +150,13 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .model
         .edges
         .iter_mut()
-        .find(|edge| edge.curve.is_some())
+        .find(|edge| edge.curve().is_some())
         .expect("generated BinaryFile4 arc edge");
-    let range = edge.param_range.as_mut().expect("generated arc range");
+    let mut range = edge.param_range().expect("generated arc range");
     range[0] += 0.125;
     range[1] -= 0.125;
-    let expected_range = *range;
+    let expected_range = range;
+    edge.set_param_range(Some(range)).unwrap();
     edited.model.faces[0].sense = match edited.model.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
@@ -175,8 +176,8 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.is_some())
-            .and_then(|edge| edge.param_range),
+            .find(|edge| edge.curve().is_some())
+            .and_then(|edge| edge.param_range()),
         Some(expected_range)
     );
     assert_eq!(round_trip.ir().model.faces[0].sense, expected_face_sense);
@@ -252,13 +253,13 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.is_some())
+        .find(|edge| edge.curve().is_some())
         .expect("edge on the ellipse carrier");
-    let [start, end] = arc.param_range.expect("arc range");
+    let [start, end] = arc.param_range().expect("arc range");
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 
-    let curve_id = arc.curve.as_ref().expect("curve link");
+    let curve_id = arc.curve().as_ref().expect("curve link");
     let carrier = result
         .ir()
         .model

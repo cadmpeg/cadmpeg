@@ -89,7 +89,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                             let edge = edges.get(coedge.edge.as_str()).ok_or_else(|| {
                                 CodecError::Malformed("coedge references missing edge".into())
                             })?;
-                            if let Some(curve) = &edge.curve {
+                            if let Some(curve) = &edge.curve() {
                                 assign(&mut curve_transforms, curve.as_str(), transform)?;
                             }
                             for vertex_id in [&edge.start, &edge.end] {

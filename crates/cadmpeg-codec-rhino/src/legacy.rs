@@ -1682,10 +1682,13 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: curve_id.as_ref().map(|value| value.0.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                curve_id.as_ref().map(|value| value.0.clone()),
+                curve_id.map(|value| value.1),
+            )
+            .map_err(CodecError::malformed)?,
             start: vertices[0].clone(),
             end: vertices[1].clone(),
-            param_range: curve_id.map(|value| value.1),
             tolerance: group_tolerance
                 .get(&root)
                 .copied()
@@ -1778,7 +1781,10 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     pcurves: vec![PcurveUse {
                         pcurve: pcurve_id,
                         isoparametric: None,
-                        parameter_range: Some(pcurve_domain),
+                        parameter_range: (Some(pcurve_domain))
+                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .transpose()
+                            .map_err(CodecError::malformed)?,
                     }],
                     use_curve: None,
                 });
@@ -2429,10 +2435,13 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                         ]);
                         ir.model.edges.push(Edge {
                             id: edge_id.clone(),
-                            curve: Some(curve_id),
+                            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                                Some(curve_id),
+                                Some(parameter_range),
+                            )
+                            .map_err(CodecError::malformed)?,
                             start: start_vertex,
                             end: end_vertex,
-                            param_range: Some(parameter_range),
                             tolerance: None,
                         });
                         ir.model.shells.push(Shell::with_wire_edge(
@@ -3234,7 +3243,7 @@ mod tests {
             .model
             .edges
             .iter()
-            .all(|edge| edge.curve.is_some()));
+            .all(|edge| edge.curve().is_some()));
     }
 
     #[test]

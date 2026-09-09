@@ -305,11 +305,11 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
-        let Some([start_t, end_t]) = edge.param_range else {
+        let Some([start_t, end_t]) = edge.param_range() else {
             continue;
         };
         let Some((curve_id, geometry)) = edge
-            .curve
+            .curve()
             .as_ref()
             .and_then(|id| curves.get(id.as_str()).map(|geometry| (id, geometry)))
         else {
@@ -360,7 +360,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
-        let [start_t, end_t] = use_curve.parameter_range;
+        let [start_t, end_t] = use_curve.parameter_range.endpoints();
         let curve_id = &use_curve.curve;
         let Some(geometry) = curves.get(curve_id.as_str()) else {
             continue;
@@ -510,7 +510,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         // range. Multiple images are checked from the first image's start
         // extreme to the last image's end extreme.
         let curve_geometry = edge
-            .curve
+            .curve()
             .as_ref()
             .and_then(|curve| curves.get(curve.as_str()).copied());
         let bound = allowance(
@@ -558,15 +558,23 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         )
         .unwrap_or_default();
         let declared = if coedge.pcurves.len() == 1 {
-            pcurve_parameter_ranges(first, first_use.parameter_range, edge.param_range)
+            pcurve_parameter_ranges(
+                first,
+                first_use
+                    .parameter_range
+                    .map(crate::geometry::DirectedParameterRange::endpoints),
+                edge.param_range(),
+            )
         } else {
             match (
                 first_use
                     .parameter_range
+                    .map(crate::geometry::DirectedParameterRange::endpoints)
                     .or(first.parameter_range())
                     .or_else(|| pcurve_parameter_extremes(first)),
                 last_use
                     .parameter_range
+                    .map(crate::geometry::DirectedParameterRange::endpoints)
                     .or(last.parameter_range())
                     .or_else(|| pcurve_parameter_extremes(last)),
             ) {
