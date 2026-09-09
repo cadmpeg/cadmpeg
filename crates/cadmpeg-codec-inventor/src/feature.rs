@@ -1102,22 +1102,24 @@ fn project_extrusion(
         source_tag: Some("extrude".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::sketch_selection(sketch_id, selections).ok()?,
-            direction: ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-                source: Some(ExtrusionDirectionSource::Custom),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::sketch_selection(sketch_id, selections).ok()?,
+                direction: ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    source: Some(ExtrusionDirectionSource::Custom),
+                },
+                start: ExtrudeStart::ProfilePlane,
+                extent,
+                op,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            start: ExtrudeStart::ProfilePlane,
-            extent,
-            op,
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: Some(source.id()),
     };
     Some((feature, result))
@@ -1202,8 +1204,12 @@ fn project_fillet(
             source_tag: Some("fillet".into()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Fillet { groups },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Fillet {
+                    groups: groups.try_into().ok()?,
+                },
+            ),
             native_ref: Some(source.id()),
         },
         result,
@@ -1241,18 +1247,20 @@ fn project_chamfer(
             source_tag: Some("chamfer".into()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Chamfer {
-                groups: vec![ChamferGroup {
-                    edges: EdgeSelection::Native(edges.id()),
-                    spec: ChamferSpec::Distance {
-                        distance: cadmpeg_ir::features::PositiveLength::new(
-                            length_parameter(source, 2, index)?.get(),
-                        )?,
-                    },
-                }],
-                flip_direction: boolean(source, 5, index)?,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Chamfer {
+                    groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                        edges: EdgeSelection::Native(edges.id()),
+                        spec: ChamferSpec::Distance {
+                            distance: cadmpeg_ir::features::PositiveLength::new(
+                                length_parameter(source, 2, index)?.get(),
+                            )?,
+                        },
+                    }),
+                    flip_direction: boolean(source, 5, index)?,
+                },
+            ),
             native_ref: Some(source.id()),
         },
         result,
@@ -1348,31 +1356,37 @@ fn project_hole(
             source_tag: Some("hole".into()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Hole {
-                profile: None,
-                profile_filter: None,
-                face: None,
-                direction: None,
-                placements: Some(vec![HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                        transform.matrix[0][3] * 10.0,
-                        transform.matrix[1][3] * 10.0,
-                        transform.matrix[2][3] * 10.0,
-                    ))?,
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-                }]),
-                construction: cadmpeg_ir::features::HoleConstruction::Form {
-                    kind,
-                    specification: None,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Hole {
+                    profile: None,
+                    profile_filter: None,
+                    face: None,
+                    direction: None,
+                    placements: Some(vec![HolePlacement::Directed {
+                        position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            transform.matrix[0][3] * 10.0,
+                            transform.matrix[1][3] * 10.0,
+                            transform.matrix[2][3] * 10.0,
+                        ))?,
+                        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    }]),
+                    shape: cadmpeg_ir::features::HoleShape::new(
+                        cadmpeg_ir::features::HoleConstruction::Form {
+                            kind,
+                            specification: None,
+                        },
+                        None,
+                        Some(cadmpeg_ir::features::PositiveLength::new(diameter.get())?),
+                    )
+                    .ok()?,
+
+                    extent: Some(extent),
+                    bottom: None,
+                    taper_angle: None,
+                    allow_multi_profile_faces: None,
                 },
-                exit_kind: None,
-                diameter: Some(cadmpeg_ir::features::PositiveLength::new(diameter.get())?),
-                extent: Some(extent),
-                bottom: None,
-                taper_angle: None,
-                allow_multi_profile_faces: None,
-            },
+            ),
             native_ref: Some(source.id()),
         },
         result,
@@ -2103,7 +2117,7 @@ mod tests {
         );
         let (projected, result) = project_fillet(&fillet, &label, &index).expect("fillet");
         assert!(matches!(
-            projected.definition,
+            projected.evaluation.definition(),
             FeatureDefinition::Fillet { groups }
                 if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
         ));
@@ -2179,7 +2193,7 @@ mod tests {
         );
         let (projected, _) = project_chamfer(&chamfer, &label, &index).expect("chamfer");
         assert!(matches!(
-            projected.definition,
+            projected.evaluation.definition(),
             FeatureDefinition::Chamfer {
                 groups,
                 flip_direction: true
@@ -2350,7 +2364,7 @@ mod tests {
         );
         let (projected, _) = project_extrusion(&feature, &label, &index).expect("extrusion");
         assert!(matches!(
-            projected.definition,
+            projected.evaluation.definition(),
             FeatureDefinition::Extrude {
                 direction: ExtrudeDirection::Explicit {
                     vector: geometry_1,
@@ -2496,28 +2510,26 @@ mod tests {
         );
         let (projected, _) = project_hole(&feature, &label, &index).expect("hole");
         assert!(matches!(
-            projected.definition,
-            FeatureDefinition::Hole {
+            projected.evaluation.definition(), FeatureDefinition::Hole {
                 placements,
-                construction: cadmpeg_ir::features::HoleConstruction::Form {
+                shape,
+
+                extent: Some(LinearTermination::ThroughAll),
+                ..
+            } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                     kind: HoleKind::CounterboreDrilled {
                         diameter: actual_diameter,
                         depth: actual_depth,
                         drill_point_angle: actual_drill_point_angle
                     },
                     ..
-                },
-                diameter: Some(actual_diameter_2),
-                extent: Some(LinearTermination::ThroughAll),
-                ..
-            } if (matches!(
+                }, Some(actual_diameter_2),) if (matches!(
                 placements.as_deref(),
                 Some([HolePlacement::Directed {
                     position: geometry_1,
                     direction: geometry_2
                 }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0
-        ));
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
     }
 
     #[test]

@@ -186,7 +186,7 @@ pub(crate) fn validate_embedded_helix_edits(
         .into_iter()
         .filter_map(|feature| {
             matches!(
-                feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::HelixNativeAxis { .. }
             )
             .then_some(feature.id)
@@ -196,15 +196,18 @@ pub(crate) fn validate_embedded_helix_edits(
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
-                && matches!(feature.definition, FeatureDefinition::Helix { .. }))
-            .then_some((feature.id, feature.definition))
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Helix { .. }
+                ))
+            .then_some((feature.id, feature.evaluation.definition().clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        if &feature.definition != expected {
+        if feature.evaluation.definition() != expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes embedded helix geometry",
                 feature.id
@@ -224,30 +227,31 @@ pub(crate) fn validate_surface_sweep_profile_edits(
     let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sweep { section, .. } = feature.definition else {
+            let FeatureDefinition::Sweep { shape, .. } = feature.evaluation.definition() else {
                 return None;
             };
-            let cadmpeg_ir::features::SweepSection::Profile(
-                profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }),
-            ) = section
+            let section = shape.section();
+            let profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }) =
+                section.referenced_profile()?
             else {
                 return None;
             };
             (matches!(profile, ProfileRef::Generated { .. })
                 || !feature.source_properties.contains_key("Profile"))
-            .then_some((feature.id, profile))
+            .then_some((feature.id, profile.clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep { section, .. } = &feature.definition else {
+        let FeatureDefinition::Sweep { shape, .. } = feature.evaluation.definition() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
+        let section = shape.section();
         let Some(profile) = section.referenced_profile() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
@@ -292,19 +296,19 @@ fn project_feature_model_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
         None,
-    );
+    )?;
     project_compact_and_generated(features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
+    )?;
     let _ = crate::resolved_features::markers::spatial_sketches(
         features,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     Ok(projection)
 }
 
@@ -333,7 +337,7 @@ pub(crate) fn validate_compact_body_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+        let FeatureDefinition::DeleteBody { bodies, mode } = feature.evaluation.definition() else {
             continue;
         };
         let expected = BodySelection::local(
@@ -399,7 +403,7 @@ pub(crate) fn validate_compact_edge_selection_edits(
         else {
             continue;
         };
-        let groups = match &feature.definition {
+        let groups = match feature.evaluation.definition() {
             FeatureDefinition::Fillet { groups } => {
                 groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
             }
@@ -477,9 +481,11 @@ pub(crate) fn validate_compact_surface_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let first_component =
-            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
-        let slot = match &feature.definition {
+        let first_component = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::CosmeticThread { .. }
+        );
+        let slot = match feature.evaluation.definition() {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {

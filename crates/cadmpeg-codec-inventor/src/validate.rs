@@ -976,7 +976,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
-        let (expected_class, output_slot) = match &feature.definition {
+        let (expected_class, output_slot) = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::Extrude { .. } => {
                 ("3111a90cd0118b83000819b00524dc09", 26)
             }

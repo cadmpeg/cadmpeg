@@ -548,7 +548,9 @@ pub(crate) fn transfer_curve_expression_features(
             .or_else(|| {
                 let helix = helix?;
                 Some(IrFeatureDefinition::HelixNativeAxis {
-                    axis_native_ref: curve_expression_record_id(record),
+                    axis_native_ref: cadmpeg_ir::NonEmptyString::new(curve_expression_record_id(
+                        record,
+                    ))?,
                     axial_rise: Length::new(helix.height)?,
                     pitch: Length::new(helix.height / helix.revolutions)?,
                     revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
@@ -585,8 +587,8 @@ pub(crate) fn transfer_curve_expression_features(
             source_content: source_content.try_into().map_err(|message: &'static str| {
                 cadmpeg_core::CodecError::Malformed(message.into())
             })?,
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(curve_expression_record_id(record)),
         });
     }

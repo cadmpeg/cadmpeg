@@ -228,10 +228,12 @@ fn encoder_writes_source_less_curved_sketches() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: None,
     });
     let distance_parameter =
@@ -870,10 +872,12 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                },
+            ),
             native_ref: None,
         });
     }
@@ -902,7 +906,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         .model
         .features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some(sketch),
@@ -941,16 +945,18 @@ fn encoder_writes_source_less_native_features() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "BossExtrude".into(),
-            parameters: BTreeMap::from([("Depth".into(), "25mm".into())]),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "BossExtrude".into(),
+                parameters: BTreeMap::from([("Depth".into(), "25mm".into())]),
+            },
+        ),
         native_ref: None,
     });
     let definitions = vec![
         FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Resolved {
                     edges: vec![ir.model.edges[0].id.clone()],
                     native: "edge-a,edge-b".into(),
@@ -959,16 +965,18 @@ fn encoder_writes_source_less_native_features() {
                     radius: cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
                 },
                 tangency_weight: None,
-            }],
+            }),
         },
         FeatureDefinition::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
-                edges: EdgeSelection::Native("edge-c".into()),
-                spec: ChamferSpec::TwoDistances {
-                    first: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                    second: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::ChamferGroup {
+                    edges: EdgeSelection::Native("edge-c".into()),
+                    spec: ChamferSpec::TwoDistances {
+                        first: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                        second: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                    },
                 },
-            }],
+            ),
             flip_direction: false,
         },
         FeatureDefinition::Shell {
@@ -1000,11 +1008,15 @@ fn encoder_writes_source_less_native_features() {
             outward: Some(false),
         },
         FeatureDefinition::Combine {
-            target: BodySelection::Resolved {
-                bodies: vec![ir.model.bodies[0].id.clone()],
-                native: "body-a".into(),
-            },
-            tools: BodySelection::Native("body-b,body-c".into()),
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::Resolved {
+                    bodies: vec![ir.model.bodies[0].id.clone()],
+                    native: "body-a".into(),
+                },
+                BodySelection::Native("body-b,body-c".into()),
+            )
+            .unwrap(),
+
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         },
@@ -1041,12 +1053,16 @@ fn encoder_writes_source_less_native_features() {
                 ))
                 .unwrap(),
             }]),
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
-                diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
-                angle: cadmpeg_ir::features::InteriorAngle::new(1.4).unwrap(),
-            }),
-            exit_kind: None,
-            diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+            shape: cadmpeg_ir::features::HoleShape::new(
+                cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
+                    diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(1.4).unwrap(),
+                }),
+                None,
+                Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+            )
+            .unwrap(),
+
             extent: Some(LinearTermination::Blind {
                 length: cadmpeg_ir::features::NonZeroLength::new(20.0).unwrap(),
             }),
@@ -1067,8 +1083,8 @@ fn encoder_writes_source_less_native_features() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -1109,11 +1125,13 @@ fn encoder_writes_source_less_native_features() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Pattern {
-                seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
-                pattern,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Pattern {
+                    seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
+                    pattern,
+                },
+            ),
             native_ref: None,
         });
     }
@@ -1134,7 +1152,7 @@ fn encoder_writes_source_less_native_features() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -1165,18 +1183,12 @@ fn encoder_writes_source_less_native_features() {
         })
         .collect::<std::collections::HashSet<_>>();
     assert_eq!(source_ids.len(), native_features.len());
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Fillet { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(&(feature.definition),
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Fillet { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(
+        |feature| matches!(&(feature.evaluation.definition()),
             FeatureDefinition::Pattern {
                 pattern: admitted_pattern,
                 ..
@@ -1192,62 +1204,50 @@ fn encoder_writes_source_less_native_features() {
                     }),
                     ..
                 } if actual_spacing.get() == 20.0)
-        )));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Chamfer { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Shell { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Draft { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Combine { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::DeleteFace { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::MoveFace { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Dome { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Hole { .. })));
+        )
+    ));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Chamfer { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Shell { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Draft { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Combine { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::DeleteFace { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::MoveFace { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Dome { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Hole { .. }
+    )));
     assert_eq!(
         decoded
             .ir()
             .model
             .features
             .iter()
-            .filter(|feature| matches!(feature.definition, FeatureDefinition::Pattern { .. }))
+            .filter(|feature| matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Pattern { .. }
+            ))
             .count(),
         3
     );
@@ -1269,8 +1269,9 @@ fn semantic_writer_round_trips_flex_operations() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Flex { axis, mode } = &mut ir_edit.model.features[0].definition
-        else {
+        let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
+        let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
+        let FeatureDefinition::Flex { axis, mode } = &mut updated_ir_edit_definition else {
             panic!("typed flex feature");
         };
         assert_eq!(
@@ -1285,6 +1286,9 @@ fn semantic_writer_round_trips_flex_operations() {
         *mode = FlexMode::Twisting {
             angle: Angle::new(0.75).unwrap(),
         };
+        updated_ir_edit_evaluation
+            .set_definition(updated_ir_edit_definition)
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1302,7 +1306,7 @@ fn semantic_writer_round_trips_flex_operations() {
         "Flex"
     );
     assert!(matches!(
-        &regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Flex {
             axis,
             mode: FlexMode::Twisting { angle },
@@ -1331,25 +1335,30 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
-        if let FeatureDefinition::Flex { mode, .. } = &mut feature.definition {
-            *mode = match feature.name.as_deref().unwrap() {
-                "Bend" => FlexMode::Bending {
-                    angle: Angle::new(0.1).unwrap(),
-                },
-                "Twist" => FlexMode::Twisting {
-                    angle: Angle::new(0.2).unwrap(),
-                },
-                "Taper" => FlexMode::Tapering {
-                    factor: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
-                },
-                "Stretch" => FlexMode::Stretching {
-                    distance: Length::new(12.0).unwrap(),
-                },
-                name => panic!("unexpected flex {name}"),
-            };
-        } else {
-            panic!("untyped flex feature");
-        }
+        feature
+            .evaluation
+            .try_edit(|definition, _| {
+                if let FeatureDefinition::Flex { mode, .. } = definition {
+                    *mode = match feature.name.as_deref().unwrap() {
+                        "Bend" => FlexMode::Bending {
+                            angle: Angle::new(0.1).unwrap(),
+                        },
+                        "Twist" => FlexMode::Twisting {
+                            angle: Angle::new(0.2).unwrap(),
+                        },
+                        "Taper" => FlexMode::Tapering {
+                            factor: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+                        },
+                        "Stretch" => FlexMode::Stretching {
+                            distance: Length::new(12.0).unwrap(),
+                        },
+                        name => panic!("unexpected flex {name}"),
+                    };
+                } else {
+                    panic!("untyped flex feature");
+                }
+            })
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1367,7 +1376,7 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .model
         .features
         .iter()
-        .map(|feature| &feature.definition)
+        .map(|feature| feature.evaluation.definition())
         .collect::<Vec<_>>();
     assert!(
         matches!(modes[0], FeatureDefinition::Flex { mode: FlexMode::Bending { angle }, .. } if (angle.get() - 0.1).abs() < 1.0e-12)
@@ -1404,7 +1413,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.features.len(), 4);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Flex {
             axis: None,
             mode: FlexMode::Bending { .. },
@@ -1415,11 +1424,11 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         .enumerate()
     {
         assert!(matches!(
-            decoded.ir().model.features[index + 1].definition,
+            decoded.ir().model.features[index + 1].evaluation.definition(),
             FeatureDefinition::Flex {
                 axis: Some(_),
                 mode: FlexMode::Unresolved(Some(actual)),
-            } if actual == form
+            } if *actual == form
         ));
     }
 

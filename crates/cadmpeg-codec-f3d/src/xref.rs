@@ -322,7 +322,7 @@ pub fn bind_component_insert_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     table: &XrefTable,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for scope in scopes {
         let Some(construction) = scope.component_insert_construction() else {
             continue;
@@ -343,15 +343,23 @@ pub fn bind_component_insert_features(
         else {
             continue;
         };
-        if matches!(&feature.definition, FeatureDefinition::Native { .. }) {
-            feature.definition = FeatureDefinition::InsertComponent {
-                occurrence: crate::ids::neutral_xref_occurrence_id(
-                    reference.ordinal,
-                    reference.occurrence_ordinal,
-                ),
-            };
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Native { .. }
+        ) {
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::InsertComponent {
+                    occurrence: crate::ids::neutral_xref_occurrence_id(
+                        reference.ordinal,
+                        reference.occurrence_ordinal,
+                    ),
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+
+    Ok(())
 }
 
 /// Expand container references through their occurrence records in the active

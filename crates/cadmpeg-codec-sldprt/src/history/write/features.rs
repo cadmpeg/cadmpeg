@@ -288,7 +288,7 @@ pub fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let sketch_sources = features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => parent_sources
@@ -350,13 +350,14 @@ pub fn sync_neutral_features(
                 &mut parameters,
             );
         }
-        if feature.outputs.is_empty() {
+        if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
                 properties.remove("Scope");
             }
         } else {
             let scope = feature
-                .outputs
+                .evaluation
+                .outputs()
                 .iter()
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()

@@ -250,7 +250,7 @@ pub(crate) fn project_spatial_relation_bindings(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -364,7 +364,7 @@ pub(crate) fn project_relation_point_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -773,7 +773,7 @@ pub(crate) fn project_relation_solved_line_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1308,7 +1308,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -2261,7 +2261,7 @@ pub(crate) fn project_relation_bindings(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -2786,10 +2786,14 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch.clone(),
+                    )),
+                },
+            ),
             native_ref: Some("feature-native".into()),
         };
         let marker = |id: &str, ordinal: u32, offset: u64, coordinates_m| {
@@ -2968,10 +2972,14 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch_id.clone(),
+                    )),
+                },
+            ),
             native_ref: Some(FEATURE.into()),
         };
         let point = |id: &str, ordinal: u32, offset: u64, u: f64, v: f64| {
@@ -3412,10 +3420,12 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::SpatialSketch {
-                sketch: Some(sketch.id.clone()),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::SpatialSketch {
+                    sketch: Some(sketch.id.clone()),
+                },
+            ),
             native_ref: Some(FEATURE.into()),
         };
         let parameter = cadmpeg_ir::features::DesignParameter {

@@ -163,11 +163,14 @@ fn configuration_body_membership_round_trips_and_validates() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            },
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::DatumPoint {
+                    position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    construction: None,
+                },
+            ),
             native_ref: None,
         });
     }
@@ -359,7 +362,7 @@ fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Suppressed,
                 dependencies: feature.dependencies.clone(),
-                definition: feature.definition.clone(),
+                definition: feature.evaluation.definition().clone(),
             },
         )]),
         native_ref: None,
@@ -617,13 +620,21 @@ fn generated_sweep_sections_round_trip_and_validate() {
     };
 
     let definition = FeatureDefinition::Sweep {
-        section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-            outer_radius: crate::features::PositiveLength::new(3.0).unwrap(),
-            wall_thickness: Some(crate::features::PositiveLength::new(1.0).unwrap()),
-        }),
-        sections: Vec::new(),
+        shape: crate::features::SweepShape::new(
+            SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+                region: crate::features::SweepCircularRegion::new(
+                    crate::features::PositiveLength::new(3.0).unwrap(),
+                    Some(crate::features::PositiveLength::new(1.0).unwrap()),
+                )
+                .unwrap(),
+            }),
+            Vec::new(),
+            SweepMode::NewBody,
+        )
+        .unwrap(),
+
         path: None,
-        mode: SweepMode::NewBody,
+
         orientation: None,
         transition: None,
         transformation: None,
@@ -657,8 +668,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
         ir.finalize();
@@ -667,50 +678,38 @@ fn generated_sweep_sections_round_trip_and_validate() {
     let report = validate_definition(definition.clone());
     assert!(report.is_ok(), "{report:#?}");
 
-    let mut invalid_wall = definition.clone();
-    let FeatureDefinition::Sweep { section, .. } = &mut invalid_wall else {
-        unreachable!();
+    assert!(crate::features::SweepCircularRegion::new(
+        crate::features::PositiveLength::new(2.0).unwrap(),
+        Some(crate::features::PositiveLength::new(2.0).unwrap()),
+    )
+    .is_err());
+    let FeatureDefinition::Sweep { mut shape, .. } = definition else {
+        panic!("sweep fixture");
     };
-    let SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-        outer_radius,
-        wall_thickness,
-    }) = section
-    else {
-        unreachable!();
-    };
-    *wall_thickness = Some(*outer_radius);
-    assert!(validate_definition(invalid_wall)
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "sweep magnitude is invalid" }));
-
-    let mut invalid_mode = definition;
-    let FeatureDefinition::Sweep { mode, .. } = &mut invalid_mode else {
-        unreachable!();
-    };
-    *mode = SweepMode::Surface;
-    assert!(validate_definition(invalid_mode)
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "sweep magnitude is invalid" }));
+    let before = shape.clone();
+    assert!(shape
+        .try_edit(|_, _, mode| *mode = SweepMode::Surface)
+        .is_err());
+    assert_eq!(shape, before);
 }
 
 #[test]
 fn full_round_fillet_keeps_automatic_side_semantics() {
     use crate::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
-        FullRoundSideSelection,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundSideSelection,
     };
 
     let mut ir = unit_cube();
     let center = ir.model.faces[0].id.clone();
-    let feature_index = ir.model.features.len();
     let definition = FeatureDefinition::FullRoundFillet {
-        groups: vec![FullRoundFilletGroup {
-            center_faces: FaceSelection::Faces(vec![center.clone()]),
-            side_one_faces: FullRoundSideSelection::Automatic,
-            side_two_faces: FullRoundSideSelection::Automatic,
-        }],
+        groups: crate::features::NonEmptyMembers::one(
+            crate::features::FullRoundFilletGroup::new(
+                FaceSelection::Faces(vec![center.clone()]),
+                FullRoundSideSelection::Automatic,
+                FullRoundSideSelection::Automatic,
+            )
+            .unwrap(),
+        ),
     };
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(serde_json::to_value(&definition).unwrap())
@@ -727,8 +726,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         source_tag: Some("Fillet".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
     assert!(!validate_neutral(&ir, Vec::new())
@@ -739,21 +738,12 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
                 && finding.message == "full-round fillet face sets are invalid"
         }));
 
-    if let FeatureDefinition::FullRoundFillet { groups } =
-        &mut ir.model.features[feature_index].definition
-    {
-        groups[0].side_one_faces =
-            FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center]));
-    } else {
-        unreachable!("test feature is a full-round fillet");
-    }
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
-                && finding.message == "full-round fillet face sets are invalid"
-        }));
+    assert!(crate::features::FullRoundFilletGroup::new(
+        FaceSelection::Faces(vec![center.clone()]),
+        FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center])),
+        FullRoundSideSelection::Automatic,
+    )
+    .is_err());
 }
 
 #[test]
@@ -845,18 +835,15 @@ fn hole_construction_forms_preserve_the_flat_wire_layout() {
     let definition: FeatureDefinition = serde_json::from_value(standard.clone()).unwrap();
     assert!(matches!(
         &definition,
-        FeatureDefinition::Hole {
-            construction: HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                specification: Some(specification),
-            },
-            ..
-        } if matches!(specification.as_ref(), HoleSpecification::Clearance { .. })
+        FeatureDefinition::Hole { shape, .. } if matches!(shape.construction(),
+            HoleConstruction::Form { kind: HoleKind::Simple, specification: Some(specification) }
+            if matches!(specification.as_ref(), HoleSpecification::Clearance { .. }))
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), standard);
 
     let native_thread = serde_json::json!({
         "definition": "hole",
+        "diameter": 6.0,
         "kind": {
             "kind": "threaded",
             "major_diameter": 8.0,
@@ -868,10 +855,7 @@ fn hole_construction_forms_preserve_the_flat_wire_layout() {
     let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
     assert!(matches!(
         &definition,
-        FeatureDefinition::Hole {
-            construction: HoleConstruction::NativeThread { .. },
-            ..
-        }
+        FeatureDefinition::Hole { shape, .. } if matches!(shape.construction(), HoleConstruction::NativeThread { .. })
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), native_thread);
 }
@@ -1262,8 +1246,12 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
     use crate::features::{BodySelection, BooleanKind, FeatureDefinition};
 
     let definition = FeatureDefinition::Combine {
-        target: BodySelection::Native("body:17".into()),
-        tools: BodySelection::Native("body:18".into()),
+        operands: crate::features::CombineOperands::new(
+            BodySelection::Native("body:17".into()),
+            BodySelection::Native("body:18".into()),
+        )
+        .unwrap(),
+
         op: BooleanKind::Join,
         keep_tools: false,
     };
@@ -1492,7 +1480,9 @@ fn wrap_mode_round_trips_through_the_flat_wire_shape() {
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
     let scribe = FeatureDefinition::Wrap {
-        profile: crate::features::ProfileRef::Native("wrap:profile".into()),
+        profile: crate::features::ProfileRef::Native("wrap:profile".into())
+            .try_into()
+            .unwrap(),
         face: crate::features::FaceSelection::Native("wrap:face".into()),
         mode: WrapMode::Scribe,
     };
@@ -2792,3 +2782,5 @@ mod profile_selections;
 mod profile_regions;
 
 mod flange_widths;
+
+mod local_admission;

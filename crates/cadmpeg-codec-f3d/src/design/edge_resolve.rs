@@ -2461,7 +2461,9 @@ pub(crate) fn project_fixed_fillet_with_corners(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(FeatureDefinition::Fillet { groups })
+    Some(FeatureDefinition::Fillet {
+        groups: groups.try_into().ok()?,
+    })
 }
 
 #[cfg(test)]

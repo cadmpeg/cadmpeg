@@ -557,26 +557,28 @@ fn sketch_feature_ownership_and_order_are_validated() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch_id.clone()),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: crate::features::NonZeroLength::new(1.0).unwrap(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(sketch_id.clone()),
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: crate::features::NonZeroLength::new(1.0).unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
     for (ordinal, suffix) in [(1, "owner"), (2, "duplicate-owner")] {
@@ -591,10 +593,12 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+                },
+            ),
             native_ref: None,
         });
     }
@@ -640,26 +644,28 @@ fn sketch_profile_subselections_are_bounds_checked() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile,
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: crate::features::NonZeroLength::new(1.0).unwrap(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile,
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: crate::features::NonZeroLength::new(1.0).unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     };
     ir.model.features.push(feature(
@@ -723,10 +729,12 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            },
+        ),
         native_ref: None,
     });
 

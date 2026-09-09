@@ -158,18 +158,20 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::ResolvedPlane {
-                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
-                    Point3::new(0.0, 0.0, 5.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            }),
-            distance: Length::new(4.0).unwrap(),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::ResolvedPlane {
+                    frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                        Point3::new(0.0, 0.0, 5.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                }),
+                distance: Length::new(4.0).unwrap(),
+            },
+        ),
         native_ref: None,
     }];
 
@@ -177,12 +179,13 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         &mut features,
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    );
+    )
+    .unwrap();
 
     let FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face(face)),
         ..
-    } = &features[0].definition
+    } = features[0].evaluation.definition()
     else {
         panic!("expected offset-plane face reference");
     };
@@ -226,13 +229,15 @@ fn generic_native_offset_plane_support_stays_native() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
-                native.into(),
-            ))),
-            distance: Length::new(4.0).unwrap(),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
+                    native.into(),
+                ))),
+                distance: Length::new(4.0).unwrap(),
+            },
+        ),
         native_ref: None,
     }];
 
@@ -240,12 +245,13 @@ fn generic_native_offset_plane_support_stays_native() {
         &mut features,
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    );
+    )
+    .unwrap();
 
     let FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face(face)),
         ..
-    } = &features[0].definition
+    } = features[0].evaluation.definition()
     else {
         panic!("expected offset-plane face reference");
     };
@@ -292,8 +298,8 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -365,10 +371,11 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         &[lane("lane-a", 40), lane("lane-b", 60)],
         &[],
         &[],
-    );
+    )
+    .unwrap();
 
     let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } =
-        &features[1].definition
+        features[1].evaluation.definition()
     else {
         panic!("expected cosmetic thread");
     };
@@ -403,22 +410,28 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         color: None,
         tolerance: None,
     };
-    let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, diameter, .. } =
-        &mut features[1].definition
-    else {
-        panic!("expected cosmetic thread");
-    };
-    *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-    *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
+    features[1]
+        .evaluation
+        .try_edit(|definition, _| {
+            let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, diameter, .. } =
+                definition
+            else {
+                panic!("expected cosmetic thread");
+            };
+            *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+            *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
+        })
+        .unwrap();
     project_unbound_cosmetic_thread_faces(
         &mut features,
         std::slice::from_ref(&history),
         &[],
         std::slice::from_ref(&topology_face),
         std::slice::from_ref(&surface),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        &features[1].definition,
+        features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
             face: cadmpeg_ir::features::FaceSelection::Faces(faces),
             ..
@@ -466,8 +479,8 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -542,10 +555,11 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
             lane("one", selection("one", first_tail)),
             lane("two", selection("two", second_tail)),
         ],
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
-        &features[1].definition,
+        features[1].evaluation.definition(),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
@@ -567,11 +581,13 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::OffsetSurface {
-            faces: FaceSelection::Unresolved,
-            distance: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::OffsetSurface {
+                faces: FaceSelection::Unresolved,
+                distance: None,
+            },
+        ),
         native_ref: Some("operation-native".into()),
     }];
     let lane = FeatureInputLane {
@@ -606,9 +622,9 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    project_compact_surface_selections(&mut features, &[], &[lane]);
+    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
-    let FeatureDefinition::OffsetSurface { faces, .. } = &features[0].definition else {
+    let FeatureDefinition::OffsetSurface { faces, .. } = features[0].evaluation.definition() else {
         panic!("expected offset surface");
     };
     assert!(matches!(faces, FaceSelection::Native(value) if value.contains(":7")));
@@ -626,8 +642,8 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -642,11 +658,13 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             "fillet",
             "fillet-native",
             FeatureDefinition::Fillet {
-                groups: vec![cadmpeg_ir::features::FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                    radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
-                    tangency_weight: None,
-                }],
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    cadmpeg_ir::features::FilletGroup {
+                        edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                        radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
+                        tangency_weight: None,
+                    },
+                ),
             },
         ),
     ];
@@ -693,28 +711,28 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     for selection in &mut lane_two.surface_selections {
         selection.parent = lane_two.id.clone();
     }
-    project_compact_surface_selections(&mut features, &[], &[lane, lane_two]);
+    project_compact_surface_selections(&mut features, &[], &[lane, lane_two]).unwrap();
 
-    let FeatureDefinition::FullRoundFillet { groups } = &features[1].definition else {
+    let FeatureDefinition::FullRoundFillet { groups } = features[1].evaluation.definition() else {
         panic!("expected full-round fillet");
     };
     let [group] = groups.as_slice() else {
         panic!("expected one full-round group");
     };
     assert!(matches!(
-        &group.center_faces,
+        group.center_faces(),
         FaceSelection::Generated { faces, .. }
             if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "2".into()).unwrap()]
     ));
     assert!(matches!(
-        &group.side_one_faces,
+        group.side_one_faces(),
         cadmpeg_ir::features::FullRoundSideSelection::Explicit(FaceSelection::Generated {
             faces,
             ..
         }) if faces[0].local_id == "4"
     ));
     assert!(matches!(
-        &group.side_two_faces,
+        group.side_two_faces(),
         cadmpeg_ir::features::FullRoundSideSelection::Explicit(FaceSelection::Generated {
             faces,
             ..
@@ -738,8 +756,8 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -821,13 +839,13 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         selection.parent = lane2.id.clone();
     }
 
-    project_compact_surface_selections(&mut features, &[], &[lane, lane2]);
+    project_compact_surface_selections(&mut features, &[], &[lane, lane2]).unwrap();
 
     let FeatureDefinition::CutWithSurface {
         targets,
         tools,
         reverse,
-    } = &features[2].definition
+    } = features[2].evaluation.definition()
     else {
         panic!("expected cut with surface");
     };
@@ -863,8 +881,8 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -933,10 +951,10 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         sketch_entities: Vec::new(),
     };
 
-    project_compact_surface_selections(&mut features, &[], &[lane]);
+    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
     assert!(matches!(
-        features[2].definition,
+        features[2].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane
         }
@@ -990,8 +1008,8 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -1057,10 +1075,11 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             lane("one", selection("one", first_signature)),
             lane("two", selection("two", second_signature)),
         ],
-    );
+    )
+    .unwrap();
 
     let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } =
-        &features[1].definition
+        features[1].evaluation.definition()
     else {
         panic!("expected cosmetic thread");
     };
@@ -1072,12 +1091,16 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     ));
 
     features[1].dependencies.clear();
-    let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } =
-        &mut features[1].definition
-    else {
-        panic!("expected cosmetic thread");
-    };
-    *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+    features[1]
+        .evaluation
+        .try_edit(|definition, _| {
+            let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } = definition
+            else {
+                panic!("expected cosmetic thread");
+            };
+            *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+        })
+        .unwrap();
     let mut conflicting = selection("conflicting", first_signature);
     conflicting.components[0].local_id = Some(8);
     project_compact_surface_selections(
@@ -1087,9 +1110,10 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             lane("one", selection("one", first_signature)),
             lane("conflicting", conflicting),
         ],
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        &features[1].definition,
+        features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
             face: cadmpeg_ir::features::FaceSelection::Unresolved,
             ..
@@ -1138,8 +1162,8 @@ fn split_face_collects_distinct_generated_target_faces() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -1218,9 +1242,9 @@ fn split_face_collects_distinct_generated_target_faces() {
         sketch_entities: Vec::new(),
     };
 
-    project_compact_surface_selections(&mut features, &[history], &[lane]);
+    project_compact_surface_selections(&mut features, &[history], &[lane]).unwrap();
 
-    let FeatureDefinition::SplitFace { targets, .. } = &features[2].definition else {
+    let FeatureDefinition::SplitFace { targets, .. } = features[2].evaluation.definition() else {
         panic!("expected split face");
     };
     assert!(matches!(

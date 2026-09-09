@@ -977,16 +977,20 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: vec![body],
-            definition: FeatureDefinition::Block {
-                dimensions: Some([
-                    cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                    cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-                    cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
-                ]),
-                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::Block {
+                    dimensions: Some([
+                        cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                        cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                        cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                    ]),
+                    placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
+                    op: cadmpeg_ir::features::BooleanOp::NewBody,
+                },
+                vec![body],
+            )
+            .unwrap(),
             native_ref: None,
         });
 
@@ -1011,14 +1015,16 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-            ],
-            definition: FeatureDefinition::Block {
-                dimensions: None,
-                placement: None,
-                op: cadmpeg_ir::features::BooleanOp::Unresolved,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::Block {
+                    dimensions: None,
+                    placement: None,
+                    op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                },
+                vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
+            )
+            .unwrap(),
             native_ref: None,
         });
 
@@ -1093,12 +1099,13 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: Vec::new(),
-                active_child: None,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: Default::default(),
+                },
+            ),
             native_ref: None,
         });
 

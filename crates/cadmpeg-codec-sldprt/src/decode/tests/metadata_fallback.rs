@@ -220,7 +220,7 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .expect("metadata extrusion feature");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..

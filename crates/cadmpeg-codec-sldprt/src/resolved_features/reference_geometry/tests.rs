@@ -49,7 +49,7 @@ fn decode_projects_fixed_reference_plane_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::DatumPlane { frame } if matches!(frame.origin(),  Point3 {
                 x: 2500.0,
                 y: -250.0,
@@ -96,7 +96,7 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane
         }
@@ -118,7 +118,7 @@ fn incomplete_coordinate_system_projects_as_typed_unresolved() {
         .unwrap();
 
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem
         }

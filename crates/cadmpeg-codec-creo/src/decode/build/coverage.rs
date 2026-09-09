@@ -35,7 +35,12 @@ pub(in super::super) fn collect_feature_coverage(
         .model
         .features
         .iter()
-        .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                IrFeatureDefinition::Native { .. }
+            )
+        })
         .count();
     let mut unresolved_datum_plane_feature_count = 0;
     let mut unresolved_datum_coordinate_system_feature_count = 0;
@@ -113,7 +118,7 @@ pub(in super::super) fn collect_feature_coverage(
     let mut unresolved_pattern_transform_feature_count = 0;
     let mut native_axis_helix_feature_count = 0;
     for feature in &ir.model.features {
-        match &feature.definition {
+        match feature.evaluation.definition() {
             IrFeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
             } => {
@@ -171,8 +176,11 @@ pub(in super::super) fn collect_feature_coverage(
                 revolve_feature_count += 1;
                 let unresolved_profile = construction
                     .profile()
-                    .is_none_or(|profile| matches!(profile, ProfileRef::Unresolved(_)));
-                let native_profile = matches!(construction.profile(), Some(ProfileRef::Native(_)));
+                    .is_none_or(|profile| matches!(&**profile, ProfileRef::Unresolved(_)));
+                let native_profile = matches!(
+                    construction.profile().map(std::ops::Deref::deref),
+                    Some(ProfileRef::Native(_))
+                );
                 let unresolved_axis = construction.axis().is_none();
                 let incomplete_extent = construction.extent().is_none_or(|extent| match extent {
                     RevolveExtent::OneSided { termination }
@@ -202,16 +210,19 @@ pub(in super::super) fn collect_feature_coverage(
                 profile,
                 face,
                 placements,
-                construction,
-                exit_kind,
-                diameter,
+                shape,
+
                 extent,
                 ..
             } => {
+                let construction = shape.construction();
+                let exit_kind = shape.exit_kind();
+                let diameter = &shape.diameter();
                 hole_feature_count += 1;
                 let unresolved_location = profile.is_none() && placements.is_none();
-                let unresolved_profile = matches!(profile, Some(ProfileRef::Unresolved(_)));
-                let native_profile = matches!(profile, Some(ProfileRef::Native(_)));
+                let unresolved_profile =
+                    matches!(profile.as_deref(), Some(ProfileRef::Unresolved(_)));
+                let native_profile = matches!(profile.as_deref(), Some(ProfileRef::Native(_)));
                 let unresolved_face = matches!(
                     face,
                     Some(FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. })
@@ -431,7 +442,9 @@ pub(in super::super) fn collect_feature_coverage(
                 incomplete_thicken_feature_count +=
                     usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
             }
-            IrFeatureDefinition::SectionShape { first, second, .. } => {
+            IrFeatureDefinition::SectionShape { operands, .. } => {
+                let first = operands.first();
+                let second = operands.second();
                 section_shape_feature_count += 1;
                 incomplete_section_shape_feature_count += usize::from(
                     body_selection_has_unresolved_operands(first)

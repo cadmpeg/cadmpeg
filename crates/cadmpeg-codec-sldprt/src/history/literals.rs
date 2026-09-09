@@ -273,7 +273,7 @@ pub(crate) fn parse_neutral_parameter_literal(
 ) -> Option<ParameterValue> {
     let positional_length = match name {
         "D1" => matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Extrude { .. }
                 | FeatureDefinition::Fillet { .. }
                 | FeatureDefinition::Chamfer { .. }
@@ -286,11 +286,11 @@ pub(crate) fn parse_neutral_parameter_literal(
                 }
         ),
         "D2" => matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Chamfer { groups, .. }
                 if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
         ),
-        "D3" => matches!(&(feature.definition),
+        "D3" => matches!(&(feature.evaluation.definition()),
             FeatureDefinition::Pattern {
                 pattern: admitted_pattern,
                 ..

@@ -218,10 +218,12 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: crate::features::SketchFeatureBinding::Unresolved,
-            },
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: crate::features::SketchFeatureBinding::Unresolved,
+                },
+            ),
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -284,8 +286,8 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
@@ -316,7 +318,7 @@ mod tests {
                 FeatureDefinition::SplitFace {
                     targets: FaceSelection::Unresolved,
                     tool: SplitFaceTool::Planes {
-                        planes: vec![first.clone(), second.clone()],
+                        planes: vec![first.clone(), second.clone()].try_into().unwrap(),
                     },
                 },
             ),
@@ -324,30 +326,5 @@ mod tests {
 
         let report = validate_neutral(&ir, Vec::new());
         assert!(report.findings.is_empty(), "{:?}", report.findings);
-
-        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
-            *tool = SplitFaceTool::Planes {
-                planes: vec![first.clone()],
-            };
-        } else {
-            unreachable!();
-        }
-        let report = validate_neutral(&ir, Vec::new());
-        assert!(report.findings.iter().any(|finding| {
-            finding.message == "split-face plane set has fewer than two planes"
-        }));
-
-        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
-            *tool = SplitFaceTool::Planes {
-                planes: vec![first.clone(), first],
-            };
-        } else {
-            unreachable!();
-        }
-        let report = validate_neutral(&ir, Vec::new());
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| { finding.message == "split-face plane set contains repeated planes" }));
     }
 }

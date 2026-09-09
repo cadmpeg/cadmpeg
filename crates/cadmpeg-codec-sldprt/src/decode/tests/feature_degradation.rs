@@ -30,7 +30,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 5);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -43,7 +43,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        &decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -52,7 +52,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }])
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
+        decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
@@ -61,7 +61,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir().model.features[3].definition,
+        decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Dome {
             faces: cadmpeg_ir::features::FaceSelection::Native(_),
             height: None,
@@ -70,7 +70,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir().model.features[4].definition,
+        decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
@@ -102,7 +102,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 6);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -115,7 +115,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        &decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -124,7 +124,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }])
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
+        decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
@@ -133,7 +133,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir().model.features[3].definition,
+        decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Dome {
             faces: cadmpeg_ir::features::FaceSelection::Native(_),
             height: None,
@@ -142,21 +142,19 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir().model.features[4].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
-                ..
-            },
-            diameter: None,
+        decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
                 length: actual_length,
             }),
             ..
-        } if actual_length.get() == 5.0
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                ..
+            }, None,) if actual_length.get() == 5.0)));
     assert!(matches!(
-        &decoded.ir().model.features[5].definition,
+        decoded.ir().model.features[5].evaluation.definition(),
         FeatureDefinition::Chamfer {
             ref groups,
             ..
@@ -189,14 +187,16 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 7);
-    assert!(matches!(&(decoded.ir().model.features[1].definition),
-        FeatureDefinition::Pattern {
-            pattern: admitted_pattern,
-            ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
-    ));
+    assert!(
+        matches!(&(decoded.ir().model.features[1].evaluation.definition()),
+            FeatureDefinition::Pattern {
+                pattern: admitted_pattern,
+                ..
+            } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
+        )
+    );
     assert!(matches!(
-        decoded.ir().model.features[4].definition,
+        decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
@@ -205,7 +205,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             && construction.extent().is_none()
     ));
     assert!(matches!(
-        decoded.ir().model.features[6].definition,
+        decoded.ir().model.features[6].evaluation.definition(),
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some(_),
@@ -218,7 +218,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         } if actual_thickness.get() == 2.0
     ));
     assert!(matches!(
-        &decoded.ir().model.features[3].definition,
+        decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Chamfer {
             ref groups,
             ..
@@ -229,7 +229,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     ));
     for index in [2, 5] {
         assert!(matches!(
-            decoded.ir().model.features[index].definition,
+            decoded.ir().model.features[index].evaluation.definition(),
             FeatureDefinition::Native { .. }
         ));
     }

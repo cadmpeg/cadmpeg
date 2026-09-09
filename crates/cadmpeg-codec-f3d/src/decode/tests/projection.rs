@@ -98,11 +98,13 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         source_tag: Some("Base Mesh Feature".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Base Mesh Feature".into(),
-            parameters: std::collections::BTreeMap::new(),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: std::collections::BTreeMap::new(),
+            },
+        ),
         native_ref: Some(scope_id.into()),
     }];
     let projection = MeshProjection {
@@ -113,15 +115,19 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         )]),
     };
 
-    bind_mesh_feature_definitions(&mut features, &[scope], &projection);
+    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
 
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         FeatureDefinition::MeshImport {
-            tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),],
+            tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),]
+                .try_into()
+                .unwrap(),
         }
     );
-    assert!(!feature_definition_is_incomplete(&features[0].definition));
+    assert!(!feature_definition_is_incomplete(
+        features[0].evaluation.definition()
+    ));
 }
 
 #[test]
@@ -213,8 +219,7 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
 #[test]
 fn full_round_fillet_with_automatic_sides_is_complete() {
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
-        FullRoundSideSelection,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundSideSelection,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -228,22 +233,27 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         source_tag: Some("Fillet".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::FullRoundFillet {
-            groups: vec![FullRoundFilletGroup {
-                center_faces: FaceSelection::Resolved {
-                    faces: vec!["test:model:face#center".try_into().expect("valid identity")],
-                    native: "native:center-group".into(),
-                },
-                side_one_faces: FullRoundSideSelection::Automatic,
-                side_two_faces: FullRoundSideSelection::Automatic,
-            }],
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::FullRoundFillet {
+                groups: vec![cadmpeg_ir::features::FullRoundFilletGroup::new(
+                    FaceSelection::Resolved {
+                        faces: vec!["test:model:face#center".try_into().expect("valid identity")],
+                        native: "native:center-group".into(),
+                    },
+                    FullRoundSideSelection::Automatic,
+                    FullRoundSideSelection::Automatic,
+                )
+                .unwrap()]
+                .try_into()
+                .unwrap(),
+            },
+        ),
         native_ref: None,
     });
 
     assert!(!feature_definition_is_incomplete(
-        &ir.model.features[0].definition
+        ir.model.features[0].evaluation.definition()
     ));
     assert_eq!(
         design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
@@ -837,8 +847,8 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         source_tag: Some("CoilPrimitive".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: native_target,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(native_target),
         native_ref: None,
     });
     let gaps = design_projection_gaps(&ir, &F3dNative::default());
@@ -929,8 +939,8 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         source_tag: Some("Loft".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: unresolved,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(unresolved),
         native_ref: None,
     });
 
@@ -955,11 +965,13 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         source_tag: source_tag.map(str::to_owned),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: kind.into(),
-            parameters: std::collections::BTreeMap::new(),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: kind.into(),
+                parameters: std::collections::BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     };
     ir.model
@@ -1451,18 +1463,24 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         }))
         .expect("lost-reference construction group"),
     );
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
-        &mut ir.model.features[2].definition
-    else {
-        unreachable!();
-    };
-    groups[2].edges = cadmpeg_ir::features::EdgeSelection::historical(
-        cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#history-input")
-            .expect("identity grammar"),
-        vec![cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge").expect("identity grammar")],
-        "native:partial-edges".into(),
-    )
-    .unwrap();
+    ir.model.features[2]
+        .evaluation
+        .try_edit(|definition, _| {
+            let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
+                unreachable!();
+            };
+            groups[2].edges = cadmpeg_ir::features::EdgeSelection::historical(
+                cadmpeg_ir::ids::FeatureInputTopologyId::mint(
+                    "test:model:feature-input#history-input",
+                )
+                .expect("identity grammar"),
+                vec![cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge")
+                    .expect("identity grammar")],
+                "native:partial-edges".into(),
+            )
+            .unwrap();
+        })
+        .unwrap();
     assert_eq!(
         design_projection_gaps(&ir, &native).unrepaired_lost_edge_references,
         0

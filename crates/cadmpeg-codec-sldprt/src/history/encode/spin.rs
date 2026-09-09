@@ -132,7 +132,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sweep(
         &self,
         section: &SweepSection,
-        sections: &Vec<SweepSection>,
+        sections: &[SweepSection],
         path: &Option<PathRef>,
         mode: &SweepMode,
         orientation: &Option<SweepOrientation>,
@@ -175,34 +175,37 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let profile_source =
-                match section {
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
-                        ..
-                    }) if existing.is_some() => None,
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_))
-                        if existing
+            let profile_source = match section {
+                cadmpeg_ir::features::SweepSection::Profile(profile)
+                    if matches!(profile.as_ref(), ProfileRef::Generated { .. })
+                        && existing.is_some() =>
+                {
+                    None
+                }
+                cadmpeg_ir::features::SweepSection::Profile(profile)
+                    if matches!(profile.as_ref(), ProfileRef::Feature(_))
+                        && existing
                             .is_some_and(|record| !record.properties.contains_key("Profile")) =>
-                    {
-                        None
-                    }
-                    cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
-                        profile_source(profile, record_sources, feature_sources, sketch_sources)
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "SLDPRT feature {} references a missing sweep profile",
-                                    feature.id
-                                ))
-                            })?,
-                    ),
-                    cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
-                    cadmpeg_ir::features::SweepSection::Generated(_) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported generated sweep section",
-                            feature.id
-                        )));
-                    }
-                };
+                {
+                    None
+                }
+                cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
+                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "SLDPRT feature {} references a missing sweep profile",
+                                feature.id
+                            ))
+                        })?,
+                ),
+                cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
+                cadmpeg_ir::features::SweepSection::Generated(_) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses an unsupported generated sweep section",
+                        feature.id
+                    )));
+                }
+            };
             let path_source = match path {
                 Some(path) => Some(
                     path_source(path, record_sources, sketch_sources).ok_or_else(|| {

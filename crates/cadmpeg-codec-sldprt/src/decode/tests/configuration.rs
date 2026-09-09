@@ -368,8 +368,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
     let feature = FeatureId::mint("feature").expect("identity grammar");
     let definition = FeatureDefinition::TreeNode {
         role: FeatureTreeNodeRole::History,
-        children: Vec::new(),
-        active_child: None,
+        children: Default::default(),
     };
     ir.model.features.push(Feature {
         id: feature.clone(),
@@ -381,8 +380,8 @@ fn configuration_suppression_and_override_references_are_coherent() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: definition.clone(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition.clone()),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {

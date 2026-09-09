@@ -192,8 +192,8 @@ fn offset_plane_frame_translates_its_reference_frame() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, Vec::new()).unwrap(),
         native_ref: Some(native_ref.into()),
     };
     let features = vec![

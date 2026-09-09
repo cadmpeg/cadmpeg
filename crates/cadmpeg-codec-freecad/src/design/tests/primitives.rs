@@ -68,21 +68,22 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         )
         .expect("core operations");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Revolution"),
         cadmpeg_ir::features::FeatureDefinition::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Join
-        } if matches!(construction.profile(), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+        } if matches!(construction.profile().map(std::ops::Deref::deref), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle }
                 }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
@@ -132,14 +133,15 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn document(target: &str, replacement: Option<&str>) -> String {
@@ -299,14 +301,15 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
     }
 
     fn flip_direction(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
-        let definition = &result
+        let definition = result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Chamfer"))
             .expect("chamfer")
-            .definition;
+            .evaluation
+            .definition();
         match definition {
             FeatureDefinition::Chamfer { flip_direction, .. } => *flip_direction,
             definition => panic!("unexpected chamfer definition: {definition:?}"),
@@ -335,14 +338,15 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
 #[test]
 fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Extrusion"))
             .expect("extrusion feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     let base_properties = [
@@ -496,14 +500,15 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let part_design_flags = [
@@ -815,14 +820,15 @@ fn transfers_non_default_revolution_branches() {
         )
         .expect("revolution branches");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("ToFirst"),
@@ -873,7 +879,7 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("Standalone"),
         FeatureDefinition::Revolve { construction, op: BooleanOp::NewBody }
-            if matches!(construction.profile(), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+            if matches!(construction.profile().map(std::ops::Deref::deref), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
                 && construction.axis().is_some_and(|axis| axis.direction.z == 1.0
                     && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":AxisLink")))
                 && matches!(construction.extent(), Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }))
@@ -919,14 +925,15 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
         .expect("primitives");
     assert_eq!(result.ir().ir_version(), cadmpeg_ir::IR_VERSION);
     let feature = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("primitive")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         feature("Box"),
@@ -1023,14 +1030,15 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
         )
         .expect("parametric curves");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Helix"),
@@ -1111,14 +1119,15 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         )
         .expect("helical sweeps");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(
         matches!(definition("Spring"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
@@ -1372,14 +1381,15 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let decode = |document: &str| {
@@ -1639,14 +1649,15 @@ fn transfers_remaining_partdesign_analytic_primitives() {
         )
         .expect("remaining primitives");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(
         matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
@@ -1693,7 +1704,7 @@ fn rejects_nested_and_duplicate_design_scalar_and_vector_roots() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature");
         assert!(matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Native { .. }
         ));
     }
@@ -1743,14 +1754,15 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
                 &DecodeOptions::default(),
             )
             .expect("PartDesign revolution selector");
-        let definition = &result
+        let definition = result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Revolution"))
             .expect("Revolution feature")
-            .definition;
+            .evaluation
+            .definition();
         if expected_native {
             assert!(matches!(
                 definition,

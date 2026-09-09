@@ -43,7 +43,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
             .expect("feature")
     };
     assert!(matches!(
-        feature("Cut").definition,
+        feature("Cut").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Combine {
             op: cadmpeg_ir::features::BooleanKind::Cut,
             ..
@@ -58,14 +58,16 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         ["fcstd:design:feature#A", "fcstd:design:feature#B"]
     );
     let cadmpeg_ir::features::FeatureDefinition::Combine {
-        target,
-        tools,
+        operands,
+
         op,
         keep_tools,
-    } = &feature("Fuse").definition
+    } = feature("Fuse").evaluation.definition()
     else {
         panic!("multi-fuse");
     };
+    let target = operands.target();
+    let tools = operands.tools();
     assert_eq!(*op, cadmpeg_ir::features::BooleanKind::Join);
     assert!(!keep_tools);
     assert!(matches!(
@@ -100,34 +102,31 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
         )
         .expect("PartDesign booleans");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("boolean")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
-        definition("Fuse"),
-        cadmpeg_ir::features::FeatureDefinition::Combine {
-            target: cadmpeg_ir::features::BodySelection::Native(target),
-            tools: cadmpeg_ir::features::BodySelection::Native(tools),
+        definition("Fuse"), cadmpeg_ir::features::FeatureDefinition::Combine {
+            operands,
+
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
-        } if target.ends_with(":Group:link:2")
-            && tools.ends_with(":Group:links:0..2")
-    ));
+        } if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":Group:link:2")
+            && tools.ends_with(":Group:links:0..2"))));
     assert!(matches!(
-        definition("Cut"),
-        cadmpeg_ir::features::FeatureDefinition::Combine {
-            target: cadmpeg_ir::features::BodySelection::Native(target),
-            tools: cadmpeg_ir::features::BodySelection::Native(tools),
+        definition("Cut"), cadmpeg_ir::features::FeatureDefinition::Combine {
+            operands,
+
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
-        } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
-    ));
+        } if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":BaseFeature") && tools.ends_with(":Group"))));
     assert!(result.report().losses.is_empty());
 }
 
@@ -180,14 +179,15 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
                 &DecodeOptions::default(),
             )
             .expect("PartDesign boolean selector");
-        let definition = &result
+        let definition = result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Boolean"))
             .expect("Boolean feature")
-            .definition;
+            .evaluation
+            .definition();
         if expected_native {
             assert!(matches!(
                 definition,
@@ -299,11 +299,11 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             .expect("feature")
     };
     assert!(matches!(
-        &feature("Seed").definition,
+        feature("Seed").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::StoredGeometry
     ));
     assert!(matches!(
-        &feature("Uniform").definition,
+        feature("Uniform").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             seeds,
             pattern: admitted_pattern,
@@ -315,7 +315,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             } if (seeds.len() == 1 && direction.y == 1.0) && actual_spacing.get() == 4.0)
     ));
     assert!(matches!(
-        &feature("Custom").definition,
+        feature("Custom").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
@@ -324,7 +324,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     let cadmpeg_ir::features::FeatureDefinition::Pattern {
         pattern: admitted_pattern,
         ..
-    } = &feature("TwoAxis").definition
+    } = feature("TwoAxis").evaluation.definition()
     else {
         panic!("two-axis pattern")
     };
@@ -347,7 +347,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         cadmpeg_ir::features::PatternStageCombination::CartesianProduct
     );
     assert!(matches!(
-        &feature("PolarCustom").definition,
+        feature("PolarCustom").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
@@ -355,7 +355,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             (angle.get().to_degrees() - expected).abs() < EPS_PATTERN_ANGLE_DEGREES))
     ));
     assert!(matches!(
-        &feature("NativeDirection").definition,
+        feature("NativeDirection").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
@@ -418,14 +418,15 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let pattern_document = |linear_mode: &str, polar_mode: &str, mode2: &str| {
@@ -775,14 +776,15 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str) {
@@ -1147,14 +1149,15 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
         )
         .expect("referenced patterns");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("pattern")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(&(definition("Ring")),
         cadmpeg_ir::features::FeatureDefinition::Pattern {
@@ -1233,14 +1236,15 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
         )
         .expect("ambiguous datum references");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("pattern")
-            .definition
+            .evaluation
+            .definition()
     };
     for name in ["MultipleTargets", "MultipleSelectors"] {
         assert!(matches!(
@@ -1299,14 +1303,15 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         )
         .expect("scaled multi-transform");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(&(definition("Scaled")),
         cadmpeg_ir::features::FeatureDefinition::Pattern {

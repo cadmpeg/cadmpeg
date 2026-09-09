@@ -434,7 +434,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     assert_eq!(feature.ordinal, 0);
     assert_eq!(feature.native_ref.as_deref(), Some(origin.id.as_str()));
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::DatumCoordinateSystem { .. }
     ));
     assert_ne!(

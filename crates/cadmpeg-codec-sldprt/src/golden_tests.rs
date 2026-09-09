@@ -317,9 +317,10 @@ fn fixtures_survive_the_semantic_write_path() {
 const MUTATION_MM: f64 = 3.0;
 
 /// Every statement of a one-sided blind extrusion depth in `ir`.
-fn blind_extrude_lengths(
+fn visit_blind_extrude_lengths(
     ir: &mut cadmpeg_ir::CadIr,
-) -> Vec<&mut cadmpeg_ir::features::NonZeroLength> {
+    mut visit: impl FnMut(&mut cadmpeg_ir::features::NonZeroLength),
+) -> usize {
     fn depth(
         definition: &mut FeatureDefinition,
     ) -> Option<&mut cadmpeg_ir::features::NonZeroLength> {
@@ -335,18 +336,30 @@ fn blind_extrude_lengths(
             _ => None,
         }
     }
-    let features = ir
-        .model
-        .features
-        .iter_mut()
-        .filter_map(|feature| depth(&mut feature.definition));
-    let states = ir
+    let mut count = 0;
+    for feature in &mut ir.model.features {
+        feature
+            .evaluation
+            .try_edit(|definition, _| {
+                if let Some(length) = depth(definition) {
+                    count += 1;
+                    visit(length);
+                }
+            })
+            .unwrap();
+    }
+    for state in ir
         .model
         .configurations
         .iter_mut()
         .flat_map(|configuration| configuration.feature_states.values_mut())
-        .filter_map(|state| depth(&mut state.definition));
-    features.chain(states).collect()
+    {
+        if let Some(length) = depth(&mut state.definition) {
+            count += 1;
+            visit(length);
+        }
+    }
+    count
 }
 
 /// An edited extrusion depth survives the semantic write path.
@@ -360,15 +373,10 @@ fn an_edited_depth_survives_the_semantic_write_path() {
             &bytes,
             WritePath::Patched,
             |ir| {
-                let depths = blind_extrude_lengths(ir);
-                if depths.is_empty() {
-                    return false;
-                }
-                for depth in depths {
+                visit_blind_extrude_lengths(ir, |depth| {
                     *depth = cadmpeg_ir::features::NonZeroLength::new(depth.get() + MUTATION_MM)
                         .unwrap();
-                }
-                true
+                }) != 0
             },
             |outcome| match outcome {
                 MutationOutcome::Written { edited, bytes, .. } => {
@@ -421,10 +429,9 @@ fn an_edited_depth_survives_the_semantic_write_path() {
 
 /// Every blind depth in `ir`, by value.
 fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
-    blind_extrude_lengths(ir)
-        .into_iter()
-        .map(|length| length.get())
-        .collect()
+    let mut values = Vec::new();
+    visit_blind_extrude_lengths(ir, |length| values.push(length.get()));
+    values
 }
 
 /// The size of each topological arena, so a rewrite that loses one fails.

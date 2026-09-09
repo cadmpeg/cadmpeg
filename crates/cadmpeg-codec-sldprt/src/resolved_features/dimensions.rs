@@ -583,7 +583,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -826,7 +826,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1274,7 +1274,10 @@ pub(crate) fn project_marker_dimensioned_circles(
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             },
-        ) = (feature.native_ref.as_deref(), &feature.definition)
+        ) = (
+            feature.native_ref.as_deref(),
+            feature.evaluation.definition(),
+        )
         else {
             continue;
         };

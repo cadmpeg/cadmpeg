@@ -155,19 +155,17 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     )
     .expect("typed ReplaceFace");
     assert!(matches!(
-        definition,
-        FeatureDefinition::ReplaceFace {
-            targets: FaceSelection::Historical { ref faces, ref native, .. },
-            replacements: FaceSelection::Historical {
+        definition, FeatureDefinition::ReplaceFace {
+            operands,
+
+        } if matches!((operands.targets(), operands.replacements(),), (FaceSelection::Historical { ref faces, ref native, .. }, FaceSelection::Historical {
                 faces: ref replacement_faces,
                 native: ref replacement_native,
                 ..
-            },
-        } if faces.len() == 1
+            },) if faces.len() == 1
             && replacement_faces.len() == 1
             && native.as_str() == &target_group.id
-            && replacement_native.as_str() == &replacement_group.id
-    ));
+            && replacement_native.as_str() == &replacement_group.id)));
 
     let mut invalid_scope = scope;
     invalid_scope.frame_length = 291;
@@ -306,10 +304,11 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::TrimSurface {
             keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
             ..

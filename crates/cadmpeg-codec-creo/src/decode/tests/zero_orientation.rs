@@ -680,7 +680,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     });
 
     let IrFeatureDefinition::Extrude { op, solid, .. } =
-        schema_feature_definition(&scan, &ir, 822, None, "Extrude 822")
+        schema_feature_definition(&scan, &ir, 822, None, "Extrude 822").unwrap()
     else {
         panic!("schema numbered extrude definition");
     };

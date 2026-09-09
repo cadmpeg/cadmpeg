@@ -33,15 +33,14 @@ fn dispatcher_projects_perpendicular_surface_extend() {
     }
     let (features, _) = project_parameter_design(&[], &[], &[scope], &[], &[], &[], &[], &[]);
 
-    let [Feature {
-        definition:
-            FeatureDefinition::ExtendSurface {
-                faces: FaceSelection::Native(native),
-                distance: Some(distance),
-                method: cadmpeg_ir::features::SurfaceExtension::Perpendicular,
-            },
-        ..
-    }] = features.as_slice()
+    let [Feature { evaluation, .. }] = features.as_slice() else {
+        panic!("perpendicular SurfaceExtend did not project as a typed feature");
+    };
+    let FeatureDefinition::ExtendSurface {
+        faces: FaceSelection::Native(native),
+        distance: Some(distance),
+        method: cadmpeg_ir::features::SurfaceExtension::Perpendicular,
+    } = evaluation.definition()
     else {
         panic!("perpendicular SurfaceExtend did not project as a typed feature");
     };

@@ -777,7 +777,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").unwrap(),
         IrFeatureDefinition::Fillet {
             ref groups,
         } if matches!(
@@ -904,7 +904,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").unwrap(),
         IrFeatureDefinition::Fillet {
             groups,
         } if matches!(
@@ -974,7 +974,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").unwrap(),
         IrFeatureDefinition::Fillet {
             groups,
         } if matches!(
@@ -1048,7 +1048,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").unwrap(),
         IrFeatureDefinition::Fillet {
             groups,
         } if matches!(

@@ -540,7 +540,7 @@ pub fn bind_configuration_suppressed_features(
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
                     dependencies: feature.dependencies.clone(),
-                    definition: feature.definition.clone(),
+                    definition: feature.evaluation.definition().clone(),
                 },
             );
         }
@@ -891,11 +891,13 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "Fillet".into(),
-                parameters: BTreeMap::new(),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "Fillet".into(),
+                    parameters: BTreeMap::new(),
+                },
+            ),
             native_ref: None,
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");

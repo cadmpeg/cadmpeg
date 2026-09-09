@@ -12,7 +12,7 @@ pub fn bind_unique_sketch_feature(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -21,7 +21,12 @@ pub fn bind_unique_sketch_feature(
     let feature_indices = features
         .iter()
         .enumerate()
-        .filter(|(_, feature)| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .filter(|(_, feature)| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Sketch { .. }
+            )
+        })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let mut bindings = Vec::new();
@@ -68,9 +73,12 @@ pub fn bind_unique_sketch_feature(
         }
     }
     for (index, _, _, sketch, _) in &bindings {
-        features[*index].definition = FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        };
+        features[*index]
+            .evaluation
+            .set_definition(FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut aliases = Vec::new();
     for index in &feature_indices {
@@ -79,7 +87,7 @@ pub fn bind_unique_sketch_feature(
                 cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        } = &features[*index].definition
+        } = features[*index].evaluation.definition()
         else {
             continue;
         };
@@ -145,19 +153,28 @@ pub fn bind_unique_sketch_feature(
     }
     bindings.extend(aliases);
     for feature in features {
-        for (_, dependency, native_ref, sketch, has_profile) in &bindings {
-            if bind_definition_sketch(
-                &mut feature.definition,
-                native_ref,
-                dependency,
-                sketch,
-                *has_profile,
-            ) && !feature.dependencies.contains(dependency)
-            {
-                feature.dependencies.insert(dependency.clone());
+        let mut definition = feature.evaluation.definition().clone();
+        {
+            for (_, dependency, native_ref, sketch, has_profile) in &bindings {
+                if bind_definition_sketch(
+                    &mut definition,
+                    native_ref,
+                    dependency,
+                    sketch,
+                    *has_profile,
+                )? && !feature.dependencies.contains(dependency)
+                {
+                    feature.dependencies.insert(dependency.clone());
+                }
             }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn sketch_alias_base_name(name: &str) -> Option<&str> {
@@ -175,7 +192,7 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } =
-                &feature.definition
+                feature.evaluation.definition()
             else {
                 return None;
             };
@@ -343,7 +360,7 @@ pub fn derive_feature_outputs(
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in histories {
         let mut ordinal = 0_u32;
@@ -372,13 +389,18 @@ pub fn derive_feature_outputs(
             .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
         {
             let body = cadmpeg_ir::ids::BodyId::mint(body.clone()).expect("identity grammar");
-            if !feature.outputs.contains(&body) {
-                feature.outputs.push(body);
+            if !feature.evaluation.outputs().contains(&body) {
+                let mut outputs = feature.evaluation.outputs().clone();
+                outputs.push(body);
+                feature
+                    .evaluation
+                    .set_outputs(outputs)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
         }
     }
     if face_producers.is_empty() {
-        return;
+        return Ok(());
     }
     let owners = face_owner_bodies(faces, shells, regions);
     let mut produced: HashMap<u32, Vec<cadmpeg_ir::ids::BodyId>> = HashMap::new();
@@ -392,7 +414,7 @@ pub fn derive_feature_outputs(
         }
     }
     for feature in features {
-        if !feature.outputs.is_empty() {
+        if !feature.evaluation.outputs().is_empty() {
             continue;
         }
         let Some(source_id) = feature
@@ -410,9 +432,13 @@ pub fn derive_feature_outputs(
             continue;
         };
         if let Some(bodies) = produced.get(&source_id) {
-            feature.outputs.clone_from(bodies);
+            feature
+                .evaluation
+                .set_outputs(bodies.clone())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 pub(crate) fn bind_definition_sketch(
@@ -421,7 +447,7 @@ pub(crate) fn bind_definition_sketch(
     feature_ref: &FeatureId,
     sketch: &cadmpeg_ir::sketches::SketchId,
     has_profile: bool,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let bind_profile = |profile: &mut ProfileRef| {
         if has_profile
             && (matches!(profile, ProfileRef::Unresolved(owner) if owner == native_ref)
@@ -429,6 +455,18 @@ pub(crate) fn bind_definition_sketch(
                 || matches!(profile, ProfileRef::Feature(value) if value == feature_ref))
         {
             *profile = ProfileRef::Sketch(sketch.clone());
+            true
+        } else {
+            false
+        }
+    };
+    let bind_planar_profile = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
+        if has_profile
+            && (matches!(profile.as_ref(), ProfileRef::Unresolved(owner) if owner == native_ref)
+                || matches!(profile.as_ref(), ProfileRef::Native(value) if value == native_ref)
+                || matches!(profile.as_ref(), ProfileRef::Feature(value) if value == feature_ref))
+        {
+            *profile = sketch.clone().into();
             true
         } else {
             false
@@ -442,19 +480,26 @@ pub(crate) fn bind_definition_sketch(
             false
         }
     };
-    match definition {
-        FeatureDefinition::Extrude { profile, .. } | FeatureDefinition::Wrap { profile, .. } => {
-            bind_profile(profile)
-        }
-        FeatureDefinition::Rib { construction, .. } => {
-            construction.profile.as_mut().is_some_and(bind_profile)
-        }
+    Ok(match definition {
+        FeatureDefinition::Extrude { profile, .. } => bind_profile(profile),
+        FeatureDefinition::Wrap { profile, .. } => bind_planar_profile(profile),
+        FeatureDefinition::Rib { construction, .. } => construction
+            .profile
+            .as_mut()
+            .is_some_and(bind_planar_profile),
         FeatureDefinition::Revolve { construction, .. } => {
-            construction.profile_mut().is_some_and(bind_profile)
+            construction.profile_mut().is_some_and(bind_planar_profile)
         }
-        FeatureDefinition::Sweep { section, path, .. } => {
-            section.referenced_profile_mut().is_some_and(bind_profile)
-                | path.as_mut().is_some_and(bind_path)
+        FeatureDefinition::Sweep { shape, path, .. } => {
+            let mut profile_bound = false;
+            shape
+                .try_edit(|section, _, _| {
+                    profile_bound = section
+                        .referenced_profile_mut()
+                        .is_some_and(bind_planar_profile);
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            profile_bound | path.as_mut().is_some_and(bind_path)
         }
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
         FeatureDefinition::SplitFace {
@@ -486,5 +531,5 @@ pub(crate) fn bind_definition_sketch(
             profile_bound || guide_bound
         }
         _ => false,
-    }
+    })
 }

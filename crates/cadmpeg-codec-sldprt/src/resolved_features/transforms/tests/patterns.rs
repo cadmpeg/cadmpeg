@@ -400,8 +400,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let sketch = SketchId("path-sketch".into());
@@ -443,7 +443,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     )
     .unwrap();
 
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -454,9 +454,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features[0].dependencies.as_slice(),
         [features[2].id.clone()]
     );
-    features[1].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-    };
+    features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+        })
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&history),
@@ -464,7 +467,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     )
     .unwrap();
 
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
@@ -477,24 +480,29 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features[0].dependencies.as_slice(),
         [features[2].id.clone(), features[1].id.clone()]
     );
-    let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
+    let FeatureDefinition::Pattern { seeds, .. } = features[0].evaluation.definition() else {
         panic!("expected pattern");
     };
     assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
 
     let mut ambiguous_lane = lane.clone();
     ambiguous_lane.names.insert(2, name(450, 20, "PathSketch"));
-    if let FeatureDefinition::Pattern { pattern, seeds, .. } = &mut features[0].definition {
-        *pattern.curve_path_mut().unwrap() = None;
-        seeds.clear();
-    }
+    features[0]
+        .evaluation
+        .try_edit(|definition, _| {
+            if let FeatureDefinition::Pattern { pattern, seeds, .. } = definition {
+                *pattern.curve_path_mut().unwrap() = None;
+                seeds.clear();
+            }
+        })
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&history),
         &[ambiguous_lane],
     )
     .unwrap();
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
@@ -504,23 +512,26 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     let mut linear_history = history.clone();
     linear_history.features[1].input_class = Some("moLPattern_c".into());
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::new(PatternTransform::Linear {
-            direction: None,
-            spacing: Length::new(5.0).unwrap(),
-            count: 3,
-            second: None,
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::new(PatternTransform::Linear {
+                direction: None,
+                spacing: Length::new(5.0).unwrap(),
+                count: 3,
+                second: None,
+            })
+            .unwrap(),
         })
-        .unwrap(),
-    };
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
     )
     .unwrap();
-    let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
+    let FeatureDefinition::Pattern { seeds, .. } = features[0].evaluation.definition() else {
         panic!("expected pattern");
     };
     assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
@@ -528,7 +539,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features[0].dependencies.as_slice(),
         [features[2].id.clone()]
     );
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
@@ -538,7 +549,9 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             } if *x == -1.0 && *y == 0.0 && *z == 0.0)
     ));
 
-    let FeatureDefinition::Pattern { pattern, .. } = &mut features[0].definition else {
+    let updated_features_evaluation = &mut features[0].evaluation;
+    let mut updated_features_definition = updated_features_evaluation.definition().clone();
+    let FeatureDefinition::Pattern { pattern, .. } = &mut updated_features_definition else {
         panic!("expected linear pattern");
     };
     let mut transform = pattern.definition().clone();
@@ -547,13 +560,16 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     };
     *direction = None;
     *pattern = PatternKind::new(transform).unwrap();
+    updated_features_evaluation
+        .set_definition(updated_features_definition)
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
     )
     .unwrap();
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -584,23 +600,26 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         name(600, 30, "NextFeature"),
     ];
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::new(PatternTransform::Linear {
-            direction: None,
-            spacing: Length::new(5.0).unwrap(),
-            count: 3,
-            second: None,
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::new(PatternTransform::Linear {
+                direction: None,
+                spacing: Length::new(5.0).unwrap(),
+                count: 3,
+                second: None,
+            })
+            .unwrap(),
         })
-        .unwrap(),
-    };
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
     )
     .unwrap();
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -632,17 +651,20 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         .names
         .extend([name(220, u32::MAX, "z"), name(420, u32::MAX, "e")]);
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::UNRESOLVED_LINEAR,
-    };
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::UNRESOLVED_LINEAR,
+        })
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
     )
     .unwrap();
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -697,10 +719,13 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .copy_from_slice(&(index as u32 + 1).to_le_bytes());
     }
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::UNRESOLVED_MIRROR,
-    };
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::UNRESOLVED_MIRROR,
+        })
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&mirror_history),
@@ -711,7 +736,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features[0].dependencies.as_slice(),
         [features[2].id.clone()]
     );
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -724,21 +749,24 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ));
 
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::new(PatternTransform::Mirror {
-            plane_origin: Point3::new(12.0, -25.0, 0.0),
-            plane_normal: Vector3::new(0.0, 1.0, 0.0),
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::new(PatternTransform::Mirror {
+                plane_origin: Point3::new(12.0, -25.0, 0.0),
+                plane_normal: Vector3::new(0.0, 1.0, 0.0),
+            })
+            .unwrap(),
         })
-        .unwrap(),
-    };
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
     )
     .unwrap();
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -751,17 +779,20 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
 
     mirror_lane.native_payload[frame..frame + 97].fill(0);
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::UNRESOLVED_MIRROR,
-    };
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::UNRESOLVED_MIRROR,
+        })
+        .unwrap();
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
     )
     .unwrap();
-    assert!(matches!(&(features[0].definition),
+    assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
@@ -776,40 +807,48 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     sweep_history.features[0].input_class = Some("moProfileFeature_c".into());
     sweep_history.features[1].input_class = Some("moSweep_c".into());
     let path_sketch = SketchId("sweep-path".into());
-    features[2].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
-    };
+    features[2]
+        .evaluation
+        .set_definition(FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
+        })
+        .unwrap();
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Sweep {
-        section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-        sections: Vec::new(),
-        path: Some(PathRef::Native("curve-reference".into())),
-        mode: SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanKind::Join,
-        },
-        orientation: None,
-        transition: None,
-        transformation: None,
-        path_tangent: false,
-        linearize: false,
-        twist: None,
-        path_extent: None,
-        guide_rail: None,
-        taper: None,
-        scale: None,
-        allow_multi_profile_faces: None,
-    };
-    bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Sweep {
+            shape: cadmpeg_ir::features::SweepShape::new(
+                cadmpeg_ir::features::SweepSection::Unresolved(None),
+                Vec::new(),
+                SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Join,
+                },
+            )
+            .unwrap(),
+
+            path: Some(PathRef::Native("curve-reference".into())),
+
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        })
+        .unwrap();
+    bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane))
+        .unwrap();
     assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(
-                cadmpeg_ir::features::ProfileRef::Sketch(ref profile),
-            ),
+        features[0].evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             path: Some(PathRef::Sketch(ref path)),
             ..
-        } if profile == &sketch && path == &path_sketch
-    ));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (cadmpeg_ir::features::ProfileRef::Sketch(ref profile),) if profile == &sketch && path == &path_sketch))));
     assert_eq!(
         features[0].dependencies.as_slice(),
         [features[1].id.clone(), features[2].id.clone()]
@@ -927,10 +966,12 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let coordinates = [
@@ -1111,10 +1152,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let coordinates = [
@@ -1284,10 +1327,12 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let line = |id: &str, start: [f64; 2], end: [f64; 2]| {
@@ -1448,10 +1493,12 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let point = |id: &str, marker: Option<&str>, u: f64| {

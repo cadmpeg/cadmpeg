@@ -325,7 +325,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_hole(
         &self,
-        profile: &Option<ProfileRef>,
+        profile: &Option<cadmpeg_ir::features::PlanarProfileRef>,
         profile_filter: &Option<HoleProfileFilter>,
         face: &Option<FaceSelection>,
         placements: &Option<Vec<HolePlacement>>,

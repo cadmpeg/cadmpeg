@@ -1063,7 +1063,8 @@ pub(crate) fn polyedge_segment_parameter(
         .features
         .iter()
         .find(|feature| feature.source_tag.as_deref() == Some("RhinoPolyEdgeReference"))?;
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
+        feature.evaluation.definition()
     else {
         return None;
     };

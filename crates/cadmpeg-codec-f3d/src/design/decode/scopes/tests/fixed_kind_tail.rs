@@ -531,13 +531,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
     );
     assert!(matches!(
-        axis_features.as_slice(),
-        [Feature {
-            definition: FeatureDefinition::DatumAxis { origin, direction },
+        axis_features.as_slice(), [Feature {
+            evaluation,
             ..
-        }] if *origin == Point3::new(10.0, 20.0, 30.0)
-            && *direction == Vector3::new(0.0, -0.6, 0.8)
-    ));
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::DatumAxis { origin, direction },) if *origin == Point3::new(10.0, 20.0, 30.0)
+            && *direction == Vector3::new(0.0, -0.6, 0.8))));
 
     let compact_at = bytes.len();
     let mut compact = vec![0; 321];
@@ -1752,16 +1750,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
     );
     assert!(matches!(
-        features.as_slice(),
-        [Feature {
-            definition: FeatureDefinition::ExtendSurface {
+        features.as_slice(), [Feature {
+            evaluation,
+            ..
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::ExtendSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
                 method: cadmpeg_ir::features::SurfaceExtension::Linear,
-            },
-            ..
-        }] if native.ends_with(":design-record#500") && distance.get() == 0.4
-    ));
+            },) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
         .copy_from_slice(&(-0.4f64).to_le_bytes());
@@ -1809,15 +1805,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
     );
     assert!(matches!(
-        features.as_slice(),
-        [Feature {
-            definition: FeatureDefinition::OffsetSurface {
+        features.as_slice(), [Feature {
+            evaluation,
+            ..
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::OffsetSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-            },
-            ..
-        }] if native.ends_with(":design-record#500") && distance.get() == -4.0
-    ));
+            },) if native.ends_with(":design-record#500") && distance.get() == -4.0)));
 
     let grouped_record_index = 600u32;
     let grouped_member_record_index = 601u32;

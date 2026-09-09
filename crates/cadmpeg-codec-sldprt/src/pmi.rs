@@ -47,7 +47,7 @@ fn neutral_parameter_is_count(
     matches!(value, Some(ParameterValue::Integer(_)))
         || (matches!(name, "D1" | "D2")
             && matches!(
-                &feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Pattern {
                     pattern: admitted_pattern,
                     ..

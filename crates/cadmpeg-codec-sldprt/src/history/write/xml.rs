@@ -15,7 +15,7 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
     {
         return tag.clone();
     }
-    let tag = match &feature.definition {
+    let tag = match feature.evaluation.definition() {
         FeatureDefinition::TreeNode { .. } => "Feature",
         FeatureDefinition::CosmeticThread { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
@@ -48,10 +48,9 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
-        FeatureDefinition::Sweep {
-            mode: SweepMode::Surface,
-            ..
-        } => "Surface-Sweep",
+        FeatureDefinition::Sweep { shape, .. } if shape.mode() == SweepMode::Surface => {
+            "Surface-Sweep"
+        }
         FeatureDefinition::Sweep { .. } => "Sweep",
         FeatureDefinition::HelicalSweep { .. } => "Helix",
         FeatureDefinition::Binder { .. } => "Feature",

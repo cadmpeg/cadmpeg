@@ -123,8 +123,7 @@ pub(crate) fn transfer(
             )?);
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
-                children: Vec::new(),
-                active_child: None,
+                children: Default::default(),
             }
         } else if is_body(&object.type_name) {
             body_definition(&owned, &feature_ids).unwrap_or_else(|| FeatureDefinition::Native {
@@ -465,8 +464,8 @@ pub(crate) fn transfer(
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: Default::default(),
-            outputs,
-            definition,
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
+                .map_err(CodecError::malformed)?,
             native_ref: Some(object.id.clone()),
         });
     }
@@ -491,15 +490,18 @@ pub(crate) fn transfer(
             .iter_mut()
             .find(|feature| feature.native_ref.as_deref() == Some(object.id.as_str()))
         {
-            feature.definition = FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(
-                    properties_by_owner
-                        .get(object.id.as_str())
-                        .map(Vec::as_slice)
-                        .unwrap_or_default(),
-                ),
-            };
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(
+                        properties_by_owner
+                            .get(object.id.as_str())
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                    ),
+                })
+                .map_err(CodecError::malformed)?;
             feature.dependencies.clear();
         }
     }
@@ -544,8 +546,7 @@ fn body_definition(
     };
     Some(FeatureDefinition::TreeNode {
         role: FeatureTreeNodeRole::SolidBodies,
-        children,
-        active_child,
+        children: cadmpeg_ir::features::TreeChildren::new(children, active_child).ok()?,
     })
 }
 
@@ -719,10 +720,16 @@ fn post_processed_definition(
         PostProcessControlState::Valid {
             refine,
             fuzzy_tolerance,
-        } => FeatureDefinition::PostProcess {
-            operation: Box::new(definition),
-            refine,
-            fuzzy_tolerance,
+        } => match definition.try_into() {
+            Ok(operation) => FeatureDefinition::PostProcess {
+                operation,
+                refine,
+                fuzzy_tolerance,
+            },
+            Err(_) => FeatureDefinition::Native {
+                kind: kind.to_owned().into(),
+                parameters: native_parameters(properties),
+            },
         },
         PostProcessControlState::Malformed => FeatureDefinition::Native {
             kind: kind.to_owned().into(),
@@ -3378,7 +3385,7 @@ fn revolution_definition(
         };
     Some(FeatureDefinition::Revolve {
         construction: RevolveConstruction::new(
-            profile,
+            profile.map(TryInto::try_into).transpose().ok()?,
             Some(axis),
             Some(extent),
             Some(if kind == "Part::Revolution" {
@@ -4042,13 +4049,13 @@ fn fillet_definition(
         scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
     };
     Some(FeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges,
             radius: RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::PositiveLength::new(radius)?,
             },
             tangency_weight: None,
-        }],
+        }),
     })
 }
 
@@ -4097,7 +4104,10 @@ fn chamfer_definition(
             .and_then(scalar_value)
             .is_some_and(|value| value == 1.0 || value == 2.0);
     Some(FeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup { edges, spec }],
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
+            edges,
+            spec,
+        }),
         flip_direction: if legacy_flip {
             !flip_direction
         } else {
@@ -4261,8 +4271,9 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
         (property.links().len() == 1).then(|| BodySelection::Native(property.id.clone()))
     };
     Some(FeatureDefinition::SectionShape {
-        first: operand("Base")?,
-        second: operand("Tool")?,
+        operands: cadmpeg_ir::features::SectionOperands::new(operand("Base")?, operand("Tool")?)
+            .ok()?,
+
         approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
     })
 }
@@ -4759,8 +4770,8 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
         )
     };
     Some(FeatureDefinition::Combine {
-        target,
-        tools,
+        operands: cadmpeg_ir::features::CombineOperands::new(target, tools).ok()?,
+
         op,
         keep_tools: false,
     })
@@ -4917,21 +4928,31 @@ fn sweep_definition(
         }
     };
     Some(FeatureDefinition::Sweep {
-        section: cadmpeg_ir::features::SweepSection::Profile(profile),
-        sections: profiles
-            .into_iter()
-            .map(cadmpeg_ir::features::SweepSection::Profile)
-            .collect(),
+        shape: cadmpeg_ir::features::SweepShape::new(
+            cadmpeg_ir::features::SweepSection::Profile(profile.try_into().ok()?),
+            profiles
+                .into_iter()
+                .map(|profile| {
+                    profile
+                        .try_into()
+                        .map(cadmpeg_ir::features::SweepSection::Profile)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?,
+            if !solid {
+                SweepMode::Surface
+            } else if operation_boolean(kind) == BooleanOp::NewBody {
+                SweepMode::NewBody
+            } else {
+                SweepMode::Solid {
+                    op: operation_boolean(kind).try_into().ok()?,
+                }
+            },
+        )
+        .ok()?,
+
         path: Some(PathRef::Native(path_property.id.clone())),
-        mode: if !solid {
-            SweepMode::Surface
-        } else if operation_boolean(kind) == BooleanOp::NewBody {
-            SweepMode::NewBody
-        } else {
-            SweepMode::Solid {
-                op: operation_boolean(kind).try_into().ok()?,
-            }
-        },
+
         orientation: Some(orientation),
         transition: Some(transition),
         transformation: Some(transformation),
@@ -4998,8 +5019,12 @@ fn hole_definition(
             angle: cut_angle()?,
         },
         3 if !legacy_cut_types => HoleKind::Counterdrill {
-            diameter: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
-            entry_diameter: None,
+            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+                cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
+                None,
+            )
+            .ok()?,
+
             depth: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDepth")?)?,
             angle: cut_angle()?,
         },
@@ -5046,7 +5071,7 @@ fn hole_definition(
         None
     } else {
         let threaded = bool_selector(properties, "Threaded", false)?;
-        let standard = thread_standard(thread_type)?.into();
+        let standard = cadmpeg_ir::NonEmptyString::new(thread_standard(thread_type)?)?;
         let designation = enumeration_label(properties, "ThreadSize");
         let modeled = if property(properties, "ModelThread").is_some() {
             bool_selector(properties, "ModelThread", false)?
@@ -5105,17 +5130,21 @@ fn hole_definition(
     let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
         .map(|(_, direction)| direction);
     Some(FeatureDefinition::Hole {
-        profile: Some(profile),
+        profile: Some(profile.try_into().ok()?),
         profile_filter: Some(profile_filter),
         face: None,
         direction,
         placements: None,
-        construction: HoleConstruction::Form {
-            kind,
-            specification,
-        },
-        exit_kind: None,
-        diameter: Some(cadmpeg_ir::features::PositiveLength::new(diameter)?),
+        shape: cadmpeg_ir::features::HoleShape::new(
+            HoleConstruction::Form {
+                kind,
+                specification,
+            },
+            None,
+            Some(cadmpeg_ir::features::PositiveLength::new(diameter)?),
+        )
+        .ok()?,
+
         extent: Some(extent),
         bottom: Some(bottom),
         taper_angle,
@@ -5178,7 +5207,7 @@ fn helical_sweep_definition(
         return None;
     }
     let construction = HelicalSweepConstruction {
-        profile,
+        profile: profile.try_into().ok()?,
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction.unit()?)?,
         law,
@@ -5222,7 +5251,9 @@ fn binder_definition(
         .map(|link| {
             Some(BinderSource {
                 target: binder_target(link, features)?,
-                subelements: link_selectors(link).map(str::to_owned).collect(),
+                subelements: link_selectors(link)
+                    .map(cadmpeg_ir::NonEmptyString::new)
+                    .collect::<Option<Vec<_>>>()?,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -5312,16 +5343,16 @@ fn binder_target(
     let object = link.object()?;
     if let Some(document) = link.document.as_ref() {
         return Some(BinderTarget::External {
-            document: document.as_str().to_owned(),
-            object: object.to_owned(),
+            document: cadmpeg_ir::NonEmptyString::new(document.as_str())?,
+            object: cadmpeg_ir::NonEmptyString::new(object)?,
         });
     }
-    Some(features.get(object).cloned().map_or_else(
-        || BinderTarget::Native {
-            reference: object.to_owned(),
+    Some(match features.get(object).cloned() {
+        Some(feature) => BinderTarget::Feature { feature },
+        None => BinderTarget::Native {
+            reference: cadmpeg_ir::NonEmptyString::new(object)?,
         },
-        |feature| BinderTarget::Feature { feature },
-    ))
+    })
 }
 
 fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
@@ -6040,7 +6071,10 @@ fn imported_geometry_definition(
         "Part::ImportBrep" | "Part::CurveNet" => GeometryImportFormat::Brep,
         _ => return None,
     };
-    Some(FeatureDefinition::ImportedGeometry { path, format })
+    Some(FeatureDefinition::ImportedGeometry {
+        path: path.try_into().ok()?,
+        format,
+    })
 }
 
 fn is_sketch(kind: &str) -> bool {
@@ -6260,7 +6294,7 @@ pub(crate) fn census(
                     object.id
                 ))
             })?;
-            let (definition, post_processed) = match &feature.definition {
+            let (definition, post_processed) = match feature.evaluation.definition() {
                 FeatureDefinition::PostProcess { operation, .. } => (operation.as_ref(), true),
                 definition => (definition, false),
             };

@@ -822,8 +822,8 @@ pub(super) fn continue_fixed_kind_operations(
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: historical_definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(historical_definition),
         native_ref: Some(indexed_revolve_scope.id.clone()),
     };
     let surface_id =
@@ -853,9 +853,10 @@ pub(super) fn continue_fixed_kind_operations(
             },
             source_object: None,
         }],
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             ..
@@ -917,7 +918,11 @@ pub(super) fn continue_fixed_kind_operations(
     )
     .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {
-        definition: face_axis_definition.clone(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            face_axis_definition.clone(),
+            (feature.clone()).evaluation.outputs().clone(),
+        )
+        .unwrap(),
         ..feature.clone()
     };
     let axis_faces = [
@@ -978,9 +983,10 @@ pub(super) fn continue_fixed_kind_operations(
         std::slice::from_ref(&face_axis_operand),
         &axis_faces,
         &axis_surfaces,
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        face_axis_feature.definition,
+        face_axis_feature.evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             ..
@@ -989,7 +995,11 @@ pub(super) fn continue_fixed_kind_operations(
                 && axis.direction == Vector3::new(0.0, 0.0, 1.0))
     ));
     let mut conflicting_face_axis_feature = cadmpeg_ir::features::Feature {
-        definition: face_axis_definition,
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            face_axis_definition,
+            (feature).evaluation.outputs().clone(),
+        )
+        .unwrap(),
         ..feature
     };
     axis_surfaces[1].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
@@ -1006,9 +1016,10 @@ pub(super) fn continue_fixed_kind_operations(
         std::slice::from_ref(&face_axis_operand),
         &axis_faces,
         &axis_surfaces,
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        conflicting_face_axis_feature.definition,
+        conflicting_face_axis_feature.evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             ..
@@ -1446,12 +1457,10 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
             &[],
             &[],
-        ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::NewBody,
+        ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            shape,
             ..
-        })
-    ));
+        }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::NewBody,))));
     assert_eq!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -1542,18 +1551,14 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
             &[entity_selection],
             &[],
-        ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(
-                cadmpeg_ir::features::ProfileRef::Native(profile)
-            ),
+        ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            shape,
             orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             }),
             guide_rail: None,
             ..
-        }) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"
-    ));
+        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (cadmpeg_ir::features::ProfileRef::Native(profile),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"))));
     if let crate::records::feature::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload {
         slot.get_or_insert_with(Default::default).sweep_profile = None;
     }
@@ -1579,14 +1584,12 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
             &[],
             &[],
-        ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Cut
-            },
+        ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            shape,
             ..
-        })
-    ));
+        }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanKind::Cut
+            },))));
 
     let pipe_start = bytes.len();
     let mut pipe = vec![0; 464];

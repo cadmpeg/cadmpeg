@@ -56,21 +56,27 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            direction: None,
-            placements: None,
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-            exit_kind: None,
-            diameter: Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
-            extent: None,
-            bottom: None,
-            taper_angle: None,
-            allow_multi_profile_faces: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                direction: None,
+                placements: None,
+                shape: cadmpeg_ir::features::HoleShape::new(
+                    cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                    None,
+                    Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
+                )
+                .unwrap(),
+
+                extent: None,
+                bottom: None,
+                taper_angle: None,
+                allow_multi_profile_faces: None,
+            },
+        ),
         native_ref: Some("native-hole".into()),
     }
 }

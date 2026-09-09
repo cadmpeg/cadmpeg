@@ -180,7 +180,7 @@ pub(crate) fn global_parameter_owners(
 ) -> HashSet<FeatureId> {
     features
         .iter()
-        .filter(|feature| match &feature.definition {
+        .filter(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Native { kind, .. } => {
                 kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
             }

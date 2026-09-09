@@ -29,7 +29,10 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
             .unwrap(),
         },
     );
-    pattern.outputs = vec![first_copy.clone(), second_copy.clone()];
+    pattern
+        .evaluation
+        .set_outputs(vec![first_copy.clone(), second_copy.clone()])
+        .unwrap();
     ir.model.features.push(pattern);
 
     assert_eq!(
@@ -53,11 +56,13 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::UNRESOLVED,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            },
+        ),
         native_ref: None,
     });
 

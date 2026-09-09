@@ -39,12 +39,10 @@ pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
-        match &self.feature.definition {
-            FeatureDefinition::TreeNode {
-                role,
-                children,
-                active_child,
-            } => self.encode_tree_node(role, children, active_child),
+        match self.feature.evaluation.definition() {
+            FeatureDefinition::TreeNode { role, children } => {
+                self.encode_tree_node(role, children, children.active_child().as_ref())
+            }
             FeatureDefinition::CosmeticThread {
                 face,
                 diameter,
@@ -141,7 +139,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 start_angle,
                 clockwise,
             } => self.encode_helix_native_axis(
-                axis_native_ref,
+                axis_native_ref.as_str(),
                 axial_rise,
                 pitch,
                 revolutions,
@@ -246,11 +244,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 outward,
             } => self.encode_draft(face_selection, anchor, angle, outward),
             FeatureDefinition::Combine {
-                target,
-                tools,
+                operands,
+
                 op,
                 keep_tools,
-            } => self.encode_combine(target, tools, op, keep_tools),
+            } => {
+                let target = operands.target();
+                let tools = operands.tools();
+                self.encode_combine(target, tools, op, keep_tools)
+            }
             FeatureDefinition::CutWithSurface {
                 targets,
                 tools,
@@ -258,10 +260,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             } => self.encode_cut_with_surface(targets, tools, reverse),
             FeatureDefinition::DeleteBody { bodies, mode } => self.encode_delete_body(bodies, mode),
             FeatureDefinition::DeleteFace { faces, heal } => self.encode_delete_face(faces, heal),
-            FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } => self.encode_replace_face(targets, replacements),
+            FeatureDefinition::ReplaceFace { operands } => {
+                let targets = operands.targets();
+                let replacements = operands.replacements();
+                self.encode_replace_face(targets, replacements)
+            }
             FeatureDefinition::MoveFace { faces, motion } => self.encode_move_face(faces, motion),
             FeatureDefinition::MoveBody {
                 bodies,
@@ -287,34 +290,38 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 face,
                 direction: _,
                 placements,
-                construction,
-                exit_kind,
-                diameter,
+                shape,
+
                 extent,
                 bottom,
                 taper_angle,
                 allow_multi_profile_faces,
-            } => self.encode_hole(
-                profile,
-                profile_filter,
-                face,
-                placements,
-                construction,
-                exit_kind,
-                diameter,
-                extent,
-                bottom,
-                taper_angle,
-                allow_multi_profile_faces,
-            ),
+            } => {
+                let construction = shape.construction();
+                let exit_kind = shape.exit_kind();
+                let diameter = &shape.diameter();
+                self.encode_hole(
+                    profile,
+                    profile_filter,
+                    face,
+                    placements,
+                    construction,
+                    exit_kind,
+                    diameter,
+                    extent,
+                    bottom,
+                    taper_angle,
+                    allow_multi_profile_faces,
+                )
+            }
             FeatureDefinition::Revolve { construction, op } => {
                 self.encode_revolve(construction, op)
             }
             FeatureDefinition::Sweep {
-                section,
-                sections,
+                shape,
+
                 path,
-                mode,
+
                 orientation,
                 transition,
                 transformation,
@@ -326,23 +333,28 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 taper,
                 scale,
                 allow_multi_profile_faces,
-            } => self.encode_sweep(
-                section,
-                sections,
-                path,
-                mode,
-                orientation,
-                transition,
-                transformation,
-                path_tangent,
-                linearize,
-                twist,
-                path_extent,
-                guide_rail,
-                taper,
-                scale,
-                allow_multi_profile_faces,
-            ),
+            } => {
+                let section = shape.section();
+                let sections = shape.sections();
+                let mode = &shape.mode();
+                self.encode_sweep(
+                    section,
+                    sections,
+                    path,
+                    mode,
+                    orientation,
+                    transition,
+                    transformation,
+                    path_tangent,
+                    linearize,
+                    twist,
+                    path_extent,
+                    guide_rail,
+                    taper,
+                    scale,
+                    allow_multi_profile_faces,
+                )
+            }
             FeatureDefinition::Loft {
                 sections,
                 guidance,

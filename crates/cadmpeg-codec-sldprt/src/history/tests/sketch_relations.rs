@@ -32,7 +32,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .expect("projected sketch feature");
     let cadmpeg_ir::features::FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         panic!("bound sketch feature");
     };

@@ -1256,9 +1256,9 @@ pub(super) fn sketch_plane_frames(
     let mut frames_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let frame = match feature.definition {
+            let frame = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    SketchPlaneFrame::native(principal_sketch_frame(plane))
+                    SketchPlaneFrame::native(principal_sketch_frame(*plane))
                 }
                 cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame } => {
                     SketchPlaneFrame::from_frame(
@@ -1279,7 +1279,7 @@ pub(super) fn sketch_plane_frames(
                 let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
                     reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(reference)),
                     distance,
-                } = &feature.definition
+                } = feature.evaluation.definition()
                 else {
                     return None;
                 };
@@ -1325,9 +1325,9 @@ pub(super) fn lane_sketch_plane_frames(
         else {
             continue;
         };
-        let frame = match feature.definition {
+        let frame = match feature.evaluation.definition() {
             FeatureDefinition::DatumPrincipalPlane { plane } => {
-                SketchPlaneFrame::native(principal_sketch_frame(plane))
+                SketchPlaneFrame::native(principal_sketch_frame(*plane))
             }
             FeatureDefinition::DatumPlane { frame } => SketchPlaneFrame::from_frame(
                 (frame.origin(), frame.normal(), frame.u_axis()),

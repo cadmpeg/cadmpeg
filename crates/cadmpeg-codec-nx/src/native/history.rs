@@ -177,7 +177,8 @@ pub(crate) fn active_feature_closure(
         .iter()
         .filter(|feature| {
             feature
-                .outputs
+                .evaluation
+                .outputs()
                 .iter()
                 .any(|output| active_bodies.contains(output))
         })
@@ -185,14 +186,19 @@ pub(crate) fn active_feature_closure(
         .collect::<BTreeSet<_>>();
     let has_neutral_body_writer = active_features.iter().any(|id| {
         features.get(id).is_some_and(|feature| {
-            !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+            !matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::BaseFeature { .. }
+            )
         })
     });
     let has_native_body_witness = active_features.iter().any(|id| {
         features.get(id).is_some_and(|feature| {
-            matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-                && feature.outputs.len() == active_bodies.len()
-                && feature.outputs.iter().collect::<BTreeSet<_>>() == active_bodies
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::BaseFeature { .. }
+            ) && feature.evaluation.outputs().len() == active_bodies.len()
+                && feature.evaluation.outputs().iter().collect::<BTreeSet<_>>() == active_bodies
                 && feature
                     .source_properties
                     .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
@@ -200,11 +206,13 @@ pub(crate) fn active_feature_closure(
     });
     let has_retained_history_input = active_features.iter().any(|id| {
         features.get(id).is_some_and(|feature| {
-            matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-                && feature
-                    .source_properties
-                    .keys()
-                    .any(|key| key.starts_with("segment_body_binding."))
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::BaseFeature { .. }
+            ) && feature
+                .source_properties
+                .keys()
+                .any(|key| key.starts_with("segment_body_binding."))
         })
     });
     if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
@@ -290,12 +298,15 @@ mod tests {
             source_tag: native.then(|| "NX_OPERATION".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs,
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: Vec::new(),
-                active_child: None,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: Default::default(),
+                },
+                outputs,
+            )
+            .unwrap(),
             native_ref: native.then(|| format!("native:{id}")),
         }
     }
@@ -528,13 +539,17 @@ mod tests {
                 source_tag: None,
                 source_text: None,
                 source_content: Default::default(),
-                outputs: vec![body.clone()],
-                definition: FeatureDefinition::BaseFeature {
-                    bodies: BodySelection::Resolved {
-                        bodies: vec![body.clone()],
-                        native: "test".into(),
+
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                    FeatureDefinition::BaseFeature {
+                        bodies: BodySelection::Resolved {
+                            bodies: vec![body.clone()],
+                            native: "test".into(),
+                        },
                     },
-                },
+                    vec![body.clone()],
+                )
+                .unwrap(),
                 native_ref: None,
             },
             history_feature(
@@ -609,13 +624,17 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: vec![body.clone()],
-            definition: FeatureDefinition::BaseFeature {
-                bodies: BodySelection::Resolved {
-                    bodies: vec![body.clone()],
-                    native: "test".into(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved {
+                        bodies: vec![body.clone()],
+                        native: "test".into(),
+                    },
                 },
-            },
+                vec![body.clone()],
+            )
+            .unwrap(),
             native_ref: None,
         }]);
 

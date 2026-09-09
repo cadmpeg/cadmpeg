@@ -1359,7 +1359,7 @@ pub fn project_parameter_design_with_edge_identities(
                 } => bodies.clone(),
                 _ => Vec::new(),
             };
-            Feature {
+            Ok(Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!("{} {}", scope.kind(), scope.feature_ordinal)),
@@ -1383,12 +1383,12 @@ pub fn project_parameter_design_with_edge_identities(
                 source_tag: Some(scope.kind_name().to_owned()),
                 source_text: None,
                 source_content: Default::default(),
-                outputs,
-                definition,
+
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs).map_err(cadmpeg_core::CodecError::malformed)?,
                 native_ref: Some(scope.id.clone()),
-            }
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let scope_history = ScopeHistoryGraph::new(
         scopes,
         body_bindings,
@@ -1421,7 +1421,7 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     for feature in &mut features {
-        let FeatureDefinition::Pattern { seeds, .. } = &feature.definition else {
+        let FeatureDefinition::Pattern { seeds, .. } = feature.evaluation.definition() else {
             continue;
         };
         for dependency in seeds.iter().filter_map(|seed| match seed {
@@ -1434,7 +1434,7 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     for feature in &mut features {
-        let dependencies = match &feature.definition {
+        let dependencies = match feature.evaluation.definition() {
             FeatureDefinition::Draft { anchor, .. } => anchor
                 .pull()
                 .and_then(|pull| pull.plane.as_ref())
@@ -2030,15 +2030,17 @@ fn project_work_plane(
             )
         })
         .collect::<Option<Vec<_>>>();
-    let Some(points) = points.and_then(|points| points.try_into().ok()) else {
+    let Some(points) = points
+        .and_then(|points| <[_; 3]>::try_from(points).ok())
+        .and_then(|points| {
+            cadmpeg_ir::features::ThreePointSelection::try_from(Box::new(points)).ok()
+        })
+    else {
         return FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         };
     };
-    FeatureDefinition::DatumThreePointPlane {
-        frame,
-        points: Box::new(points),
-    }
+    FeatureDefinition::DatumThreePointPlane { frame, points }
 }
 
 pub(crate) fn project_combine(
@@ -2050,20 +2052,24 @@ pub(crate) fn project_combine(
     let operation = scope.combine_operation()?;
     let selection = |record_index| format!("{native_scope}:design-record#{record_index}");
     Some(FeatureDefinition::Combine {
-        target: BodySelection::Native(selection(operation.target_record_index)),
-        tools: if operation.tools.additional.is_empty() {
-            BodySelection::Native(selection(operation.tools.first.record_index))
-        } else {
-            BodySelection::NativeSet(
-                operation
-                    .tools
-                    .iter()
-                    .map(|tool| selection(tool.record_index))
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .ok()?,
-            )
-        },
+        operands: cadmpeg_ir::features::CombineOperands::new(
+            BodySelection::Native(selection(operation.target_record_index)),
+            if operation.tools.additional.is_empty() {
+                BodySelection::Native(selection(operation.tools.first.record_index))
+            } else {
+                BodySelection::NativeSet(
+                    operation
+                        .tools
+                        .iter()
+                        .map(|tool| selection(tool.record_index))
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .ok()?,
+                )
+            },
+        )
+        .ok()?,
+
         op: operation.operation,
         keep_tools: operation.keep_tools,
     })
@@ -2298,7 +2304,10 @@ fn project_fillet_arm(
                     tangency_weight: None,
                 });
             }
-            FeatureDefinition::Fillet { groups }
+            match groups.try_into() {
+                Ok(groups) => FeatureDefinition::Fillet { groups },
+                Err(_) => native_definition(),
+            }
         }
     }
 }
@@ -2437,11 +2446,14 @@ fn project_full_round_fillet(
         return None;
     }
     Some(cadmpeg_ir::features::FeatureDefinition::FullRoundFillet {
-        groups: vec![cadmpeg_ir::features::FullRoundFilletGroup {
-            center_faces,
-            side_one_faces: cadmpeg_ir::features::FullRoundSideSelection::Automatic,
-            side_two_faces: cadmpeg_ir::features::FullRoundSideSelection::Automatic,
-        }],
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::FullRoundFilletGroup::new(
+                center_faces,
+                cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+                cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+            )
+            .ok()?,
+        ),
     })
 }
 
@@ -2485,114 +2497,130 @@ pub fn bind_sketch_feature_geometry(
     placements: &[DesignSketchPlacement],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{
         DatumPointConstruction, FeatureDefinition, LoftSection, PathRef, ProfileRef,
         SketchPointSelection,
     };
 
     for feature in features.iter_mut() {
-        if !matches!(
-            feature.definition,
-            FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. }
-        ) {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            if !matches!(
+                &definition,
+                FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. }
+            ) {
+                break 'feature_edit;
+            }
+            let Some(scope) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+            else {
+                break 'feature_edit;
+            };
+            let stream = native_stream(&scope.id);
+            let matching = placements
+                .iter()
+                .filter(|placement| {
+                    native_stream(&placement.id) == stream
+                        && placement.scope_record_index == Some(scope.record_index)
+                })
+                .collect::<Vec<_>>();
+            let [placement] = matching.as_slice() else {
+                break 'feature_edit;
+            };
+            let planar = neutral_sketch_id(placement);
+            let spatial = neutral_spatial_sketch_id(placement);
+            let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
+            let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
+            definition = match (has_planar, has_spatial) {
+                (true, false) => FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar)),
+                },
+                (false, true) => FeatureDefinition::SpatialSketch {
+                    sketch: Some(spatial),
+                },
+                _ => FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+                },
+            };
         }
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
-            continue;
-        };
-        let stream = native_stream(&scope.id);
-        let matching = placements
-            .iter()
-            .filter(|placement| {
-                native_stream(&placement.id) == stream
-                    && placement.scope_record_index == Some(scope.record_index)
-            })
-            .collect::<Vec<_>>();
-        let [placement] = matching.as_slice() else {
-            continue;
-        };
-        let planar = neutral_sketch_id(placement);
-        let spatial = neutral_spatial_sketch_id(placement);
-        let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
-        let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
-        feature.definition = match (has_planar, has_spatial) {
-            (true, false) => FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar)),
-            },
-            (false, true) => FeatureDefinition::SpatialSketch {
-                sketch: Some(spatial),
-            },
-            _ => FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-            },
-        };
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for feature in features.iter_mut() {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
-            continue;
-        };
-        let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
-            continue;
-        };
-        let ProfileRef::Sketch(sketch) = profile else {
-            continue;
-        };
-        let planar_id = sketch.clone();
-        if sketches.iter().any(|candidate| candidate.id == planar_id) {
-            continue;
-        }
-        let matching = placements
-            .iter()
-            .filter(|placement| neutral_sketch_id(placement) == planar_id)
-            .filter_map(|placement| {
-                let spatial_id = neutral_spatial_sketch_id(placement);
-                spatial_sketches
-                    .iter()
-                    .find(|candidate| candidate.id == spatial_id)
-            })
-            .collect::<Vec<_>>();
-        let [spatial] = matching.as_slice() else {
-            continue;
-        };
-        if spatial.profiles.is_empty() {
-            let Some(profile_operand) = scope.extrude_profile() else {
-                continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(scope) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+            else {
+                break 'feature_edit;
             };
-            let Some(stream) = native_stream(&scope.id) else {
-                continue;
+            let FeatureDefinition::Extrude { profile, .. } = &mut definition else {
+                break 'feature_edit;
             };
-            // The spatial carrier has no closed loop that can be represented
-            // by a profile index. Keep the exact profile frame as a native
-            // selection instead of retaining the provisional planar ID.
-            *profile = ProfileRef::spatial_sketch_selection(
+            let ProfileRef::Sketch(sketch) = profile else {
+                break 'feature_edit;
+            };
+            let planar_id = sketch.clone();
+            if sketches.iter().any(|candidate| candidate.id == planar_id) {
+                break 'feature_edit;
+            }
+            let matching = placements
+                .iter()
+                .filter(|placement| neutral_sketch_id(placement) == planar_id)
+                .filter_map(|placement| {
+                    let spatial_id = neutral_spatial_sketch_id(placement);
+                    spatial_sketches
+                        .iter()
+                        .find(|candidate| candidate.id == spatial_id)
+                })
+                .collect::<Vec<_>>();
+            let [spatial] = matching.as_slice() else {
+                break 'feature_edit;
+            };
+            if spatial.profiles.is_empty() {
+                let Some(profile_operand) = scope.extrude_profile() else {
+                    break 'feature_edit;
+                };
+                let Some(stream) = native_stream(&scope.id) else {
+                    break 'feature_edit;
+                };
+                // The spatial carrier has no closed loop that can be represented
+                // by a profile index. Keep the exact profile frame as a native
+                // selection instead of retaining the provisional planar ID.
+                *profile = ProfileRef::spatial_sketch_selection(
+                    spatial.id.clone(),
+                    vec![format!(
+                        "{stream}:design-record-header#{}",
+                        profile_operand.byte_offset
+                    )],
+                )
+                .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+                break 'feature_edit;
+            }
+            let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
+                break 'feature_edit;
+            };
+            *profile = ProfileRef::spatial_sketch_profiles(
                 spatial.id.clone(),
-                vec![format!(
-                    "{stream}:design-record-header#{}",
-                    profile_operand.byte_offset
-                )],
+                (0..profile_count).collect(),
             )
             .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
-            continue;
         }
-        let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
-            continue;
-        };
-        *profile =
-            ProfileRef::spatial_sketch_profiles(spatial.id.clone(), (0..profile_count).collect())
-                .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let sketch_features = features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some((sketch.clone(), feature.id.clone())),
@@ -2601,7 +2629,7 @@ pub fn bind_sketch_feature_geometry(
         .collect::<HashMap<_, _>>();
     let spatial_sketch_features = features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch),
             } => Some((sketch.clone(), feature.id.clone())),
@@ -2639,7 +2667,7 @@ pub fn bind_sketch_feature_geometry(
     };
     for feature in features.iter_mut() {
         let mut dependencies = Vec::new();
-        match &feature.definition {
+        match feature.evaluation.definition() {
             FeatureDefinition::Extrude { profile, .. } => {
                 dependencies.extend(profile_dependency(profile));
             }
@@ -2647,7 +2675,12 @@ pub fn bind_sketch_feature_geometry(
                 dependencies.extend(profile_dependency(profile));
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                dependencies.extend(construction.profile().and_then(profile_dependency));
+                dependencies.extend(
+                    construction
+                        .profile()
+                        .map(std::ops::Deref::deref)
+                        .and_then(profile_dependency),
+                );
                 dependencies.extend(
                     construction
                         .axis()
@@ -2656,12 +2689,14 @@ pub fn bind_sketch_feature_geometry(
                 );
             }
             FeatureDefinition::Sweep {
-                section,
-                sections,
+                shape,
+
                 path,
                 guide_rail,
                 ..
             } => {
+                let section = shape.section();
+                let sections = shape.sections();
                 dependencies.extend(
                     std::iter::once(section)
                         .chain(sections)
@@ -2707,6 +2742,8 @@ pub fn bind_sketch_feature_geometry(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas
@@ -2718,70 +2755,77 @@ pub fn bind_work_point_sketch_point_constructions(
     scopes: &[DesignParameterScope],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{DatumPointConstruction, FeatureDefinition, SketchPointSelection};
 
     for feature in features.iter_mut() {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
-            continue;
-        };
-        let FeatureDefinition::DatumPoint { construction, .. } = &mut feature.definition else {
-            continue;
-        };
-        if construction.is_some() {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(scope) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+            else {
+                break 'feature_edit;
+            };
+            let FeatureDefinition::DatumPoint { construction, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            if construction.is_some() {
+                break 'feature_edit;
+            }
+            let Some(point) = scope.work_point_construction() else {
+                break 'feature_edit;
+            };
+            let crate::records::feature::DesignWorkPointRuleForm::Vertex {
+                input:
+                    crate::records::feature::DesignWorkPointInput {
+                        carrier: Some(carrier),
+                        record_index,
+                        ..
+                    },
+            } = point.rule.form()
+            else {
+                break 'feature_edit;
+            };
+            let crate::records::feature::DesignWorkPointInputCarrier::SketchPoint { selection } =
+                carrier.as_ref()
+            else {
+                break 'feature_edit;
+            };
+            let native = format!(
+                "{}:design-record#{record_index}",
+                native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM)
+            );
+            if let Some(entity) = sketch_entities.iter().find(|entity| {
+                entity.native_ref.as_deref() == Some(selection.point_native_id.as_str())
+            }) {
+                *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
+                    point: SketchPointSelection::Planar {
+                        sketch: entity.sketch.clone(),
+                        point: entity.id().clone(),
+                        native,
+                    },
+                }));
+            } else if let Some(entity) = spatial_sketch_entities.iter().find(|entity| {
+                entity.native_ref.as_deref() == Some(selection.point_native_id.as_str())
+            }) {
+                *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
+                    point: SketchPointSelection::Spatial {
+                        sketch: entity.sketch.clone(),
+                        point: entity.id().clone(),
+                        native,
+                    },
+                }));
+            }
         }
-        let Some(point) = scope.work_point_construction() else {
-            continue;
-        };
-        let crate::records::feature::DesignWorkPointRuleForm::Vertex {
-            input:
-                crate::records::feature::DesignWorkPointInput {
-                    carrier: Some(carrier),
-                    record_index,
-                    ..
-                },
-        } = point.rule.form()
-        else {
-            continue;
-        };
-        let crate::records::feature::DesignWorkPointInputCarrier::SketchPoint { selection } =
-            carrier.as_ref()
-        else {
-            continue;
-        };
-        let native = format!(
-            "{}:design-record#{record_index}",
-            native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM)
-        );
-        if let Some(entity) = sketch_entities
-            .iter()
-            .find(|entity| entity.native_ref.as_deref() == Some(selection.point_native_id.as_str()))
-        {
-            *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
-                point: SketchPointSelection::Planar {
-                    sketch: entity.sketch.clone(),
-                    point: entity.id().clone(),
-                    native,
-                },
-            }));
-        } else if let Some(entity) = spatial_sketch_entities
-            .iter()
-            .find(|entity| entity.native_ref.as_deref() == Some(selection.point_native_id.as_str()))
-        {
-            *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
-                point: SketchPointSelection::Spatial {
-                    sketch: entity.sketch.clone(),
-                    point: entity.id().clone(),
-                    native,
-                },
-            }));
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn project_surface_offset(
@@ -3460,7 +3504,9 @@ fn project_base_flange(
             && placement.entity_id == profile.entity_id
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
-        profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
+        profile: (ProfileRef::Sketch(neutral_sketch_id(placement)))
+            .try_into()
+            .ok()?,
         thickness: cadmpeg_ir::features::PositiveLength::new(operation.thickness * 10.0)?,
         side: SheetMetalThicknessSide::Forward,
     })
@@ -4262,11 +4308,15 @@ pub(crate) fn bind_form_cages(
                         features.iter_mut().find(|feature| feature.id == feature_id)
                     {
                         if matches!(
-                            &feature.definition,
+                            feature.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Native { .. }
                         ) {
-                            feature.definition =
-                                cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
+                            feature
+                                .evaluation
+                                .set_definition(cadmpeg_ir::features::FeatureDefinition::Form {
+                                    cages: resolved,
+                                })
+                                .map_err(cadmpeg_core::CodecError::malformed)?;
                         }
                     }
                 }
@@ -4315,11 +4365,15 @@ pub(crate) fn bind_form_cages(
                 if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
                 {
                     if matches!(
-                        &feature.definition,
+                        feature.evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Native { .. }
                     ) {
-                        feature.definition =
-                            cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
+                        feature
+                            .evaluation
+                            .set_definition(cadmpeg_ir::features::FeatureDefinition::Form {
+                                cages: resolved,
+                            })
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
                     }
                 }
             }
@@ -4338,12 +4392,15 @@ pub(crate) fn bind_form_cages(
             let feature_id = neutral_feature_id(scope);
             if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
                 if matches!(
-                    &feature.definition,
+                    feature.evaluation.definition(),
                     cadmpeg_ir::features::FeatureDefinition::Native { .. }
                 ) {
-                    feature.definition = cadmpeg_ir::features::FeatureDefinition::Form {
-                        cages: vec![cages[0].id.clone()],
-                    };
+                    feature
+                        .evaluation
+                        .set_definition(cadmpeg_ir::features::FeatureDefinition::Form {
+                            cages: vec![cages[0].id.clone()],
+                        })
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
             continue;
@@ -4384,10 +4441,13 @@ pub(crate) fn bind_form_cages(
             continue;
         };
         if matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Native { .. }
         ) {
-            feature.definition = cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
+            feature
+                .evaluation
+                .set_definition(cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     Ok(())
@@ -5216,7 +5276,7 @@ fn project_variable_fillet(
     };
     let (points, tangency_weight) = variable_fillet_law(parameters)?;
     Some(FeatureDefinition::Fillet {
-        groups: vec![FilletGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
             edges: resolved_edge_treatment_group_with_corners(
                 group,
                 construction_groups,
@@ -5230,7 +5290,7 @@ fn project_variable_fillet(
             ),
             radius: RadiusSpec::Variable { points },
             tangency_weight,
-        }],
+        }),
     })
 }
 
@@ -5525,7 +5585,7 @@ fn project_chamfer(
     };
     let candidates = candidates?.into_iter().collect::<Option<Vec<_>>>()?;
 
-    let groups = candidates
+    let groups: Vec<_> = candidates
         .into_iter()
         .enumerate()
         .map(|(index, spec)| {
@@ -5550,7 +5610,7 @@ fn project_chamfer(
         })
         .collect();
     Some(FeatureDefinition::Chamfer {
-        groups,
+        groups: groups.try_into().ok()?,
         flip_direction: false,
     })
 }
@@ -5591,7 +5651,7 @@ fn project_fixed_chamfer(
         }
     };
     Some(FeatureDefinition::Chamfer {
-        groups: vec![ChamferGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
             edges: resolved_edge_treatment_group_with_corners(
                 group,
                 construction_groups,
@@ -5604,7 +5664,7 @@ fn project_fixed_chamfer(
                 None,
             ),
             spec,
-        }],
+        }),
         flip_direction: false,
     })
 }
@@ -5723,7 +5783,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
     };
     Some(FeatureDefinition::Revolve {
         construction: RevolveConstruction::new(
-            Some(ProfileRef::Native(profile.id.clone())),
+            Some((ProfileRef::Native(profile.id.clone())).try_into().ok()?),
             axis,
             Some(RevolveExtent::OneSided {
                 termination: AngularTermination::Angle {
@@ -5792,102 +5852,111 @@ pub(crate) fn bind_revolve_face_axes(
     face_operands: &[crate::records::topology::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FeatureDefinition;
 
     for feature in features {
-        let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
-            continue;
-        };
-        if construction.axis().is_some() {
-            continue;
-        }
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
-            continue;
-        };
-        let Some(stream) = native_stream(&scope.id) else {
-            continue;
-        };
-        let groups = construction_groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == Some(stream)
-                    && group.scope_record_index == scope.record_index
-                    && group.role() == DesignOperandRole::ROLE_0X21
-            })
-            .collect::<Vec<_>>();
-        let [group] = groups.as_slice() else {
-            continue;
-        };
-        let [crate::records::Located { value: member, .. }] = group.members.as_slice() else {
-            continue;
-        };
-        let selections = entity_selection_operands
-            .iter()
-            .filter(|operand| {
-                native_stream(&operand.id) == Some(stream)
-                    && operand.scope_record_index == scope.record_index
-                    && operand.group_record_index == group.record_index
-                    && operand.group_member_ordinal == 0
-                    && operand.record_index == *member
-            })
-            .collect::<Vec<_>>();
-        let entity_face_slot = match selections.as_slice() {
-            [selection] => selection
-                .historical_face_candidates
-                .first()
-                .map(|candidate| candidate.face_slot)
-                .filter(|slot| {
-                    selection
-                        .historical_face_candidates
-                        .iter()
-                        .all(|candidate| candidate.face_slot == *slot)
-                }),
-            _ => None,
-        };
-        let entity_axis = entity_face_slot.and_then(|face_slot| {
-            analytic_axis_for_face(
-                &cadmpeg_ir::ids::FaceId::mint(ids::brep_entity_id(face_slot))
-                    .expect("identity grammar"),
-                faces,
-                surfaces,
-            )
-        });
-        let recipe_axis =
-            revolve_face_axis_operand(scope, group, *member, face_operands).and_then(|operand| {
-                let candidates =
-                    crate::design::face_resolve::historical_face_operand_candidates(operand);
-                let mut axes = candidates
-                    .iter()
-                    .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces));
-                let first = axes.next().flatten()?;
-                axes.all(|axis| {
-                    axis.is_some_and(|axis| {
-                        crate::history::same_axis_line(
-                            (first.origin.get(), first.direction.get()),
-                            (axis.origin.get(), axis.direction.get()),
-                        )
-                    })
-                })
-                .then_some(first)
-            });
-        construction.set_axis(match (entity_axis, recipe_axis) {
-            (Some(entity), Some(recipe))
-                if crate::history::same_axis_line(
-                    (entity.origin.get(), entity.direction.get()),
-                    (recipe.origin.get(), recipe.direction.get()),
-                ) =>
-            {
-                Some(entity)
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Revolve { construction, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            if construction.axis().is_some() {
+                break 'feature_edit;
             }
-            (Some(axis), None) | (None, Some(axis)) => Some(axis),
-            _ => None,
-        });
+            let Some(scope) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+            else {
+                break 'feature_edit;
+            };
+            let Some(stream) = native_stream(&scope.id) else {
+                break 'feature_edit;
+            };
+            let groups = construction_groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group.role() == DesignOperandRole::ROLE_0X21
+                })
+                .collect::<Vec<_>>();
+            let [group] = groups.as_slice() else {
+                break 'feature_edit;
+            };
+            let [crate::records::Located { value: member, .. }] = group.members.as_slice() else {
+                break 'feature_edit;
+            };
+            let selections = entity_selection_operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == group.record_index
+                        && operand.group_member_ordinal == 0
+                        && operand.record_index == *member
+                })
+                .collect::<Vec<_>>();
+            let entity_face_slot = match selections.as_slice() {
+                [selection] => selection
+                    .historical_face_candidates
+                    .first()
+                    .map(|candidate| candidate.face_slot)
+                    .filter(|slot| {
+                        selection
+                            .historical_face_candidates
+                            .iter()
+                            .all(|candidate| candidate.face_slot == *slot)
+                    }),
+                _ => None,
+            };
+            let entity_axis = entity_face_slot.and_then(|face_slot| {
+                analytic_axis_for_face(
+                    &cadmpeg_ir::ids::FaceId::mint(ids::brep_entity_id(face_slot))
+                        .expect("identity grammar"),
+                    faces,
+                    surfaces,
+                )
+            });
+            let recipe_axis = revolve_face_axis_operand(scope, group, *member, face_operands)
+                .and_then(|operand| {
+                    let candidates =
+                        crate::design::face_resolve::historical_face_operand_candidates(operand);
+                    let mut axes = candidates
+                        .iter()
+                        .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces));
+                    let first = axes.next().flatten()?;
+                    axes.all(|axis| {
+                        axis.is_some_and(|axis| {
+                            crate::history::same_axis_line(
+                                (first.origin.get(), first.direction.get()),
+                                (axis.origin.get(), axis.direction.get()),
+                            )
+                        })
+                    })
+                    .then_some(first)
+                });
+            construction.set_axis(match (entity_axis, recipe_axis) {
+                (Some(entity), Some(recipe))
+                    if crate::history::same_axis_line(
+                        (entity.origin.get(), entity.direction.get()),
+                        (recipe.origin.get(), recipe.direction.get()),
+                    ) =>
+                {
+                    Some(entity)
+                }
+                (Some(axis), None) | (None, Some(axis)) => Some(axis),
+                _ => None,
+            });
+        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn analytic_axis_for_face(
@@ -6184,13 +6253,15 @@ pub(crate) fn project_fixed_loft(
                     .iter()
                     .enumerate()
                     .map(|(ordinal, group)| {
-                        if ordinal == point_ordinal {
-                            LoftSection::Point(LoftPointSection::Native(group.id.clone()))
+                        Some(if ordinal == point_ordinal {
+                            LoftSection::Point(LoftPointSection::Native(
+                                cadmpeg_ir::NonEmptyString::new(group.id.clone())?,
+                            ))
                         } else {
                             LoftSection::Profile(ProfileRef::Native(group.id.clone()))
-                        }
+                        })
                     })
-                    .collect(),
+                    .collect::<Option<Vec<_>>>()?,
                 Vec::new(),
                 None,
             )
@@ -6500,9 +6571,13 @@ fn project_rectangular_pattern_scalars(
             crate::records::feature::DesignRectangularPatternInstances::Bodies(_) => None,
             crate::records::feature::DesignRectangularPatternInstances::Components {
                 seed, ..
-            } => Some(PatternSeed::Occurrences(vec![
-                crate::ids::neutral_component_occurrence_id(seed.occurrence_guid.as_str()),
-            ])),
+            } => Some(PatternSeed::Occurrences(
+                (vec![crate::ids::neutral_component_occurrence_id(
+                    seed.occurrence_guid.as_str(),
+                )])
+                .try_into()
+                .ok()?,
+            )),
         });
     let group_seed = native_stream(&scope.id).and_then(|stream| {
         let matching_groups = groups
@@ -6810,18 +6885,23 @@ pub(crate) fn project_fixed_sweep(
             .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
         });
     Some(FeatureDefinition::Sweep {
-        section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native(
-            profile.id.clone(),
-        )),
-        sections: Vec::new(),
+        shape: cadmpeg_ir::features::SweepShape::new(
+            cadmpeg_ir::features::SweepSection::Profile(
+                (ProfileRef::Native(profile.id.clone())).try_into().ok()?,
+            ),
+            Vec::new(),
+            if *operation == DesignExtrudeOperation::NewBody {
+                SweepMode::NewBody
+            } else {
+                SweepMode::Solid {
+                    op: fixed_boolean_operation(*operation).try_into().ok()?,
+                }
+            },
+        )
+        .ok()?,
+
         path: Some(path),
-        mode: if *operation == DesignExtrudeOperation::NewBody {
-            SweepMode::NewBody
-        } else {
-            SweepMode::Solid {
-                op: fixed_boolean_operation(*operation).try_into().ok()?,
-            }
-        },
+
         orientation,
         transition: None,
         transformation: None,
@@ -6989,13 +7069,21 @@ fn project_fixed_pipe(
         scope,
     );
     Some(FeatureDefinition::Sweep {
-        section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-            outer_radius: cadmpeg_ir::features::PositiveLength::new(section_size.get() / 2.0)?,
-            wall_thickness,
-        }),
-        sections: Vec::new(),
+        shape: cadmpeg_ir::features::SweepShape::new(
+            SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+                region: cadmpeg_ir::features::SweepCircularRegion::new(
+                    cadmpeg_ir::features::PositiveLength::new(section_size.get() / 2.0)?,
+                    wall_thickness,
+                )
+                .ok()?,
+            }),
+            Vec::new(),
+            SweepMode::NewBody,
+        )
+        .ok()?,
+
         path: Some(path),
-        mode: SweepMode::NewBody,
+
         orientation: None,
         transition: None,
         transformation: None,
@@ -7246,7 +7334,9 @@ pub(crate) fn project_boundary_fill(
         cells: cells
             .iter()
             .map(|cell| BodySelection::Native(cell.id.clone()))
-            .collect(),
+            .collect::<Vec<_>>()
+            .try_into()
+            .ok()?,
     })
 }
 
@@ -7345,12 +7435,16 @@ fn project_hole(
         face: Some(face),
         direction: None,
         placements,
-        construction: cadmpeg_ir::features::HoleConstruction::Form {
-            kind,
-            specification: None,
-        },
-        exit_kind: None,
-        diameter: Some(diameter),
+        shape: cadmpeg_ir::features::HoleShape::new(
+            cadmpeg_ir::features::HoleConstruction::Form {
+                kind,
+                specification: None,
+            },
+            None,
+            Some(diameter),
+        )
+        .ok()?,
+
         extent: Some(LinearTermination::Blind {
             length: cadmpeg_ir::features::NonZeroLength::new(depth.get())?,
         }),
@@ -7420,8 +7514,7 @@ fn project_replace_face(
         face_operands,
     )?;
     Some(FeatureDefinition::ReplaceFace {
-        targets,
-        replacements,
+        operands: cadmpeg_ir::features::ReplaceFaceOperands::new(targets, replacements).ok()?,
     })
 }
 
@@ -7494,38 +7587,47 @@ pub(crate) fn bind_surface_trim_cell_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     operations: &[DesignSurfaceTrimOperation],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for feature in features {
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
-            continue;
-        };
-        let Some(operation) = operations.iter().find(|operation| {
-            operation.scope_record_index == scope.record_index
-                && native_stream(&operation.id) == native_stream(&scope.id)
-        }) else {
-            continue;
-        };
-        let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
-            operation
-                .cell_entries
-                .iter()
-                .map(|entry| entry.ordinal)
-                .collect(),
-            u64::from(operation.trailing_value),
-        ) else {
-            continue;
-        };
-        if let cadmpeg_ir::features::FeatureDefinition::TrimSurface { keep, .. } =
-            &mut feature.definition
-        {
-            if matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved) {
-                *keep = cadmpeg_ir::features::TrimRegion::Cells(selection);
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
+            };
+            let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
+                break 'feature_edit;
+            };
+            let Some(operation) = operations.iter().find(|operation| {
+                operation.scope_record_index == scope.record_index
+                    && native_stream(&operation.id) == native_stream(&scope.id)
+            }) else {
+                break 'feature_edit;
+            };
+            let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
+                operation
+                    .cell_entries
+                    .iter()
+                    .map(|entry| entry.ordinal)
+                    .collect(),
+                u64::from(operation.trailing_value),
+            ) else {
+                break 'feature_edit;
+            };
+            if let cadmpeg_ir::features::FeatureDefinition::TrimSurface { keep, .. } =
+                &mut definition
+            {
+                if matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved) {
+                    *keep = cadmpeg_ir::features::TrimRegion::Cells(selection);
+                }
             }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn project_split(
@@ -7685,27 +7787,28 @@ fn project_split_face(
         return None;
     }
     let target_selection = project_face_selection(scope, targets, face_operands, histories);
-    let tool = resolved_split_face_path(scope, tool, entity_selection_operands, histories)
-        .map_or_else(
-            || {
-                selected_work_planes(scope, tool, entity_selection_operands, scopes).map_or_else(
-                    || SplitFaceTool::Path(PathRef::Native(tool.id.clone())),
-                    |planes| {
-                        let planes = planes
-                            .into_iter()
-                            .map(neutral_feature_id)
-                            .collect::<Vec<_>>();
-                        match planes.as_slice() {
-                            [plane] => SplitFaceTool::Plane {
-                                plane: plane.clone(),
-                            },
-                            _ => SplitFaceTool::Planes { planes },
-                        }
-                    },
-                )
+    let tool = if let Some(path) =
+        resolved_split_face_path(scope, tool, entity_selection_operands, histories)
+    {
+        SplitFaceTool::Path(path)
+    } else if let Some(planes) =
+        selected_work_planes(scope, tool, entity_selection_operands, scopes)
+    {
+        let planes = planes
+            .into_iter()
+            .map(neutral_feature_id)
+            .collect::<Vec<_>>();
+        match planes.as_slice() {
+            [plane] => SplitFaceTool::Plane {
+                plane: plane.clone(),
             },
-            SplitFaceTool::Path,
-        );
+            _ => SplitFaceTool::Planes {
+                planes: planes.try_into().ok()?,
+            },
+        }
+    } else {
+        SplitFaceTool::Path(PathRef::Native(tool.id.clone()))
+    };
     Some(FeatureDefinition::SplitFace {
         targets: if matches!(target_selection, FaceSelection::Native(_)) {
             FaceSelection::Native(targets.id.clone())

@@ -408,8 +408,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         source_tag: Some("Extrude".into()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: blind,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(blind),
         native_ref: Some(scope.id.clone()),
     };
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
@@ -440,9 +440,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             angular_tolerance: 1.0e-9,
             arrangement_budget: &arrangement_budget,
         },
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native(ref native),
             ..
@@ -540,14 +541,25 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &sketches,
         &[],
-    );
+    )
+    .unwrap();
     let sketch_feature = features
         .iter()
-        .find(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Sketch { .. }
+            )
+        })
         .expect("neutral Sketch feature");
     let extrude_feature = features
         .iter()
-        .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Extrude { .. }
+            )
+        })
         .expect("neutral Extrude feature");
     assert_eq!(
         extrude_feature.dependencies.as_slice(),
@@ -583,17 +595,28 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
         std::slice::from_ref(&spatial_sketch),
-    );
+    )
+    .unwrap();
     let spatial_feature = spatial_features
         .iter()
-        .find(|feature| matches!(feature.definition, FeatureDefinition::SpatialSketch { .. }))
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::SpatialSketch { .. }
+            )
+        })
         .expect("neutral spatial Sketch feature");
     let spatial_extrude = spatial_features
         .iter()
-        .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Extrude { .. }
+            )
+        })
         .expect("spatial-profile Extrude feature");
     assert!(matches!(
-        spatial_extrude.definition,
+        spatial_extrude.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::SpatialSketchProfiles {
                 ref sketch,
@@ -631,13 +654,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
         std::slice::from_ref(&open_spatial_sketch),
-    );
+    )
+    .unwrap();
     let open_spatial_extrude = open_spatial_features
         .iter()
-        .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Extrude { .. }
+            )
+        })
         .expect("open spatial-profile Extrude feature");
     assert!(matches!(
-        open_spatial_extrude.definition,
+        open_spatial_extrude.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::SpatialSketchSelection {
                 ref sketch,
@@ -1506,8 +1535,8 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     let planar_sketch = SketchId("f3d:sketch:planar".into());
@@ -1530,7 +1559,9 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         "f3d:feature:base-flange",
         2,
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: ProfileRef::Sketch(planar_sketch.clone()),
+            profile: (ProfileRef::Sketch(planar_sketch.clone()))
+                .try_into()
+                .unwrap(),
             thickness: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         },
@@ -1562,7 +1593,8 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
     let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
 
-    crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[]);
+    crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[])
+        .unwrap();
 
     assert_eq!(
         features[2].dependencies.as_slice(),

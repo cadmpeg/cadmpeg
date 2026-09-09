@@ -360,12 +360,14 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch { sketch: None },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch { sketch: None },
+        ),
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]).unwrap();
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -380,7 +382,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
             if sketch.0 == "sldprt:model:spatial-sketch#spatial"
     ));
@@ -465,12 +467,14 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch { sketch: None },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch { sketch: None },
+        ),
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]).unwrap();
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -485,7 +489,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
             if sketch.0 == "sldprt:model:spatial-sketch#spatial-indexed-profile"
     ));

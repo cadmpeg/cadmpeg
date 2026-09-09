@@ -110,7 +110,7 @@ fn patch_spatial_sketches(
             .iter()
             .filter(|feature| {
                 matches!(
-                    &feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::SpatialSketch {
                         sketch: Some(candidate),
                     } if candidate == &sketch.id
@@ -287,7 +287,7 @@ fn patch_spatial_sketches(
         &mut features,
         &native.feature_histories,
         &native.feature_input_lanes,
-    );
+    )?;
     let mut projected_constraints = Vec::new();
     super::relation_geometry::project_spatial_relation_bindings(
         &mut projected_constraints,
@@ -389,7 +389,7 @@ fn validate_generated_marker_constraint(
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !ir.model.features.iter().any(|feature| {
         matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } if sketch == &constraint.sketch
@@ -551,7 +551,7 @@ fn validate_generated_marker_constraint(
         }
         let owner = ir.model.features.iter().find(|feature| {
             matches!(
-                &feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
                     if sketch == &constraint.sketch
             )
@@ -1189,7 +1189,7 @@ fn unique_planar_sketch_owner<'a>(
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, &sketch.0, |feature| {
         matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
             } if candidate == sketch
@@ -1203,7 +1203,7 @@ fn unique_spatial_sketch_owner<'a>(
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, &sketch.0, |feature| {
         matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::SpatialSketch {
                 sketch: Some(candidate),
             } if candidate == sketch
@@ -1494,10 +1494,14 @@ mod source_less_lane_tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone())),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch.id.clone(),
+                    )),
+                },
+            ),
             native_ref: None,
         });
     }

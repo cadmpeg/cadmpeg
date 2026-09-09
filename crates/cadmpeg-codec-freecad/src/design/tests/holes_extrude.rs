@@ -67,16 +67,17 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     let cadmpeg_ir::features::FeatureDefinition::Hole {
         profile,
         profile_filter,
-        construction,
+        shape,
         extent,
         bottom,
         taper_angle,
         allow_multi_profile_faces,
         ..
-    } = &hole.definition
+    } = hole.evaluation.definition()
     else {
         panic!("typed hole");
     };
+    let construction = shape.construction();
     let cadmpeg_ir::features::HoleConstruction::Form {
         kind,
         specification: Some(specification),
@@ -85,7 +86,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         panic!("standard hole construction");
     };
     assert!(matches!(
-        profile,
+        profile.as_deref(),
         Some(cadmpeg_ir::features::ProfileRef::Sketch(_))
     ));
     assert_eq!(
@@ -93,14 +94,12 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         Some(cadmpeg_ir::features::HoleProfileFilter::All)
     );
     assert!(matches!(
-        kind,
-        cadmpeg_ir::features::HoleKind::Counterdrill {
-            diameter: actual_diameter,
-            entry_diameter: None,
+        kind, cadmpeg_ir::features::HoleKind::Counterdrill {
+            diameters,
+
             depth: actual_depth,
             angle,
-        } if ((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_diameter.get() == 12.0 && actual_depth.get() == 2.0
-    ));
+        } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_diameter.get() == 12.0 && actual_depth.get() == 2.0)));
     assert!(matches!(
         extent,
         Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
@@ -155,14 +154,15 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let hole_document = |target: &str, type_name: &str, value: &str| {
@@ -196,20 +196,18 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 
     let absent = decode(&hole_document("", "", ""));
     assert!(matches!(
-        definition(&absent, "Hole"),
-        FeatureDefinition::Hole {
+        definition(&absent, "Hole"), FeatureDefinition::Hole {
             profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::CirclesAndArcs),
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
-                specification: None,
-            },
+            shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
             ..
-        } if actual_length.get() == 25.0
-    ));
+        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                specification: None,
+            },) if actual_length.get() == 25.0)));
     assert!(absent.report().losses.is_empty());
 
     let malformed_values = [
@@ -254,14 +252,15 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 #[test]
 fn uses_only_direct_custom_hole_enumeration_labels() {
     fn hole_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Hole"))
             .expect("hole feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn retains_thread_size_property(
@@ -364,14 +363,13 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
 
     for (case, type_name, value, expected) in cases {
         let result = decode(type_name, value);
-        let FeatureDefinition::Hole {
-            construction:
-                cadmpeg_ir::features::HoleConstruction::Form {
-                    specification: Some(specification),
-                    ..
-                },
+        let FeatureDefinition::Hole { shape, .. } = hole_definition(&result) else {
+            panic!("{case}: expected typed hole");
+        };
+        let cadmpeg_ir::features::HoleConstruction::Form {
+            specification: Some(specification),
             ..
-        } = hole_definition(&result)
+        } = shape.construction()
         else {
             panic!("{case}: expected typed hole");
         };
@@ -391,14 +389,15 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
 #[test]
 fn distinguishes_absent_and_malformed_hole_flags() {
     fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Hole"))
             .expect("hole feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     let base_properties = [
@@ -502,13 +501,14 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             profile_filter,
             bottom,
             taper_angle,
-            construction,
+            shape,
             allow_multi_profile_faces,
             ..
         } = definition(&result)
         else {
             panic!("{target} absent carrier");
         };
+        let construction = shape.construction();
         let specification = match construction {
             cadmpeg_ir::features::HoleConstruction::Form { specification, .. } => specification,
             cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
@@ -598,13 +598,14 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             profile_filter,
             bottom,
             taper_angle,
-            construction,
+            shape,
             allow_multi_profile_faces,
             ..
         } = definition(&result)
         else {
             panic!("{target} valid carrier");
         };
+        let construction = shape.construction();
         let specification = match construction {
             cadmpeg_ir::features::HoleConstruction::Form { specification, .. } => specification,
             cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
@@ -762,18 +763,16 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
         .find(|feature| feature.name.as_deref() == Some("Hole"))
         .expect("hole feature");
     assert!(matches!(
-        hole.definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
+        hole.evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+            ..
+        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
                 },
                 ..
-            },
-            ..
-        } if actual_diameter.get() == 6.0 && actual_depth.get() == 5.0
-    ));
+            },) if actual_diameter.get() == 6.0 && actual_depth.get() == 5.0)));
     assert!(result.report().losses.is_empty());
 }
 
@@ -853,14 +852,15 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         )
         .expect("extrusion termination branches");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("ToLast"),
@@ -1016,7 +1016,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
         .find(|feature| feature.name.as_deref() == Some("Pocket"))
         .expect("pocket feature");
     assert!(matches!(
-        &pocket.definition,
+        pocket.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Native(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
@@ -1077,14 +1077,15 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             &DecodeOptions::default(),
         )
         .expect("symmetric Part extrusion");
-    let definition = &result
+    let definition = result
         .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Extrusion"))
         .expect("extrusion")
-        .definition;
+        .evaluation
+        .definition();
     assert!(matches!(
         definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
@@ -1107,14 +1108,15 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
     fn extrusion_definition(
         result: &cadmpeg_ir::codec::DecodeResult,
     ) -> &cadmpeg_ir::features::FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Extrusion"))
             .expect("extrusion feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     let malformed_values = [
@@ -1200,7 +1202,7 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
             &DecodeOptions::default(),
         )
         .expect("linkless pad");
-    let definition = &result.ir().model.features[0].definition;
+    let definition = result.ir().model.features[0].evaluation.definition();
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
@@ -1251,7 +1253,7 @@ fn rejects_ambiguous_profile_carriers_without_selecting_a_sketch() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("pad feature");
         assert!(matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Native(profile),
                 ..
@@ -1313,14 +1315,15 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         )
         .expect("mixed extrusion controls");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Mixed"),
@@ -1389,14 +1392,15 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
     fn pad_definition(
         result: &cadmpeg_ir::codec::DecodeResult,
     ) -> &cadmpeg_ir::features::FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Pad"))
             .expect("pad feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     let malformed_values = [
@@ -1518,14 +1522,15 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn flag_document(target: &str, replacement: Option<&str>) -> String {
@@ -1895,7 +1900,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(pocket_length.expression, "Pad.Length / 4");
     assert_eq!(pocket_length.dependencies.len(), 1);
     assert!(matches!(
-        pad.definition,
+        pad.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
@@ -1911,7 +1916,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         } if actual_length.get() == 10.0
     ));
     assert!(matches!(
-        pocket.definition,
+        pocket.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {

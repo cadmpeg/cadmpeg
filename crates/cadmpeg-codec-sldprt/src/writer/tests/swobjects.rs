@@ -162,26 +162,28 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved("native:missing-owner".into()),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Unresolved("native:missing-owner".into()),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::Join,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::Join,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
 
@@ -329,10 +331,12 @@ fn encoder_writes_source_less_line_sketches() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: None,
     });
     let profile = ProfileRef::Sketch(sketch_id.clone());
@@ -340,7 +344,7 @@ fn encoder_writes_source_less_line_sketches() {
     let generated = [
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolveConstruction::new(
-                Some(profile.clone()),
+                Some((profile.clone()).try_into().unwrap()),
                 Some(cadmpeg_ir::features::RevolutionAxis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .unwrap(),
@@ -363,12 +367,17 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
-            sections: Vec::new(),
+            shape: cadmpeg_ir::features::SweepShape::new(
+                cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
+                Vec::new(),
+                cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Join,
+                },
+            )
+            .unwrap(),
+
             path: Some(path.clone()),
-            mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Join,
-            },
+
             orientation: None,
             transition: None,
             transformation: None,
@@ -397,7 +406,7 @@ fn encoder_writes_source_less_line_sketches() {
         },
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
-                profile: Some(profile),
+                profile: Some((profile).try_into().unwrap()),
                 direction: Some(
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                         .unwrap(),
@@ -423,8 +432,8 @@ fn encoder_writes_source_less_line_sketches() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -440,30 +449,34 @@ fn encoder_writes_source_less_line_sketches() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch_id),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(sketch_id),
+                direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
                     .unwrap(),
-                source: None,
-            },
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
-                    },
-                    draft: None,
+                    source: None,
                 },
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
+                        },
+                        draft: None,
+                    },
+                },
+                op: BooleanOp::Join,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::Join,
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
     ir.model
@@ -577,13 +590,13 @@ fn encoder_writes_source_less_line_sketches() {
                     && (position.v - 5.0).abs() < 1.0e-12
         )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(_),
             extent: ExtrudeExtent::OneSided {
@@ -598,30 +611,22 @@ fn encoder_writes_source_less_line_sketches() {
             ..
         } if actual_length.get() == 12.0
     )));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Revolve { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Sweep { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Loft { .. })));
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Rib { .. })));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Revolve { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Sweep { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Loft { .. }
+    )));
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Rib { .. }
+    )));
     {
         let mut ir_edit = decoded.ir_mut();
         let point = ir_edit
@@ -724,10 +729,12 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            },
+        ),
         native_ref: None,
     });
 
@@ -765,7 +772,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         } if regenerated_start == second_start && regenerated_end == second_end
     ));
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(_) }
     ));
 
