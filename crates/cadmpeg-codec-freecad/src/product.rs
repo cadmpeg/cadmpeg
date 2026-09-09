@@ -110,7 +110,7 @@ pub(crate) fn transfer(
             ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
                 members,
                 prototype: prototype_link.and_then(|link| link.object().map(str::to_owned)),
-                external_document: prototype_link.and_then(|link| link.document.clone()),
+                external_document: prototype_link.and_then(|link| link.document().cloned()),
                 local_transform,
                 placement_property,
                 array: crate::native::LinkArray::try_new(
@@ -123,7 +123,7 @@ pub(crate) fn transfer(
                 link_transform,
                 linked_subelements: prototype_link
                     .map(|link| {
-                        link.subelements
+                        link.subelements()
                             .iter()
                             .filter(|subelement| !subelement.is_empty())
                             .cloned()
@@ -223,7 +223,7 @@ pub(crate) fn transfer_neutral(
         joints
             .iter()
             .flat_map(|joint| joint.references().into_iter().cloned())
-            .filter(|reference| reference.document.is_none())
+            .filter(|reference| reference.document().is_none())
             .filter_map(|reference| reference.object().map(str::to_owned))
             .filter(|object| !occurrence_objects.contains(object.as_str())),
     );

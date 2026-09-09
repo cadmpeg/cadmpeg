@@ -256,7 +256,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for attachment in &attachments {
         let missing_support = attachment.supports.iter().any(|support| {
-            support.document.is_none()
+            support.document().is_none()
                 && support
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
@@ -378,7 +378,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
             || joint.references().iter().any(|reference| {
-                reference.document.is_none()
+                reference.document().is_none()
                     && reference
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
@@ -397,7 +397,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for drawing in &drawings {
         let missing_object = !object_ids.contains(drawing.object.as_str())
             || drawing.sources.iter().any(|source| {
-                source.document.is_none()
+                source.document().is_none()
                     && source
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
@@ -407,7 +407,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
         let missing_relationship = drawing.relationships.values().flatten().any(|link| {
-            link.document.is_none()
+            link.document().is_none()
                 && link
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
@@ -423,7 +423,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for annotation in &annotations {
         let object = object_by_id.get(annotation.object.as_str());
         let missing_reference = annotation.references.values().flatten().any(|reference| {
-            reference.document.is_none()
+            reference.document().is_none()
                 && reference
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))

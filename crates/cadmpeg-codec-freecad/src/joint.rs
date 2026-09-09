@@ -3,9 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::native::joint::{
-    optional_reference, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
-};
+use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
@@ -40,7 +38,10 @@ pub(crate) fn transfer(
         if let Some(property) = grounded_property {
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
                 && property.links().len() == 1
-                && property.links()[0].subelements.iter().all(String::is_empty);
+                && property.links()[0]
+                    .subelements()
+                    .iter()
+                    .all(String::is_empty);
             if !matches!(
                 property.type_name.as_str(),
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
@@ -66,7 +67,7 @@ pub(crate) fn transfer(
             let reference = links(&owned, "ObjectToGround")
                 .into_iter()
                 .next()
-                .and_then(optional_reference);
+                .and_then(LinkTarget::into_optional);
             JointBody::Grounded {
                 reference,
                 placement,
@@ -81,7 +82,7 @@ pub(crate) fn transfer(
                     reference: connector(owned, reference_name)?
                         .into_iter()
                         .next()
-                        .and_then(optional_reference),
+                        .and_then(LinkTarget::into_optional),
                     placement: placement(owned, placement_name)?.unwrap_or_default(),
                     offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
@@ -186,12 +187,12 @@ pub(crate) fn transfer_neutral(
             let operand = |reference: &LinkTarget| {
                 let object = reference.object()?.to_owned();
                 let subelements = reference
-                    .subelements
+                    .subelements()
                     .iter()
                     .filter(|name| !name.is_empty())
                     .cloned()
                     .collect();
-                if let Some(document) = reference.document.as_ref() {
+                if let Some(document) = reference.document() {
                     return Some(JointOperand::external(
                         crate::product::external_document_reference(
                             document.as_str(),
@@ -553,7 +554,7 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
             property
                 .links()
                 .iter()
-                .filter(|link| link.document.is_some() || link.object().is_some())
+                .filter(|link| link.document().is_some() || link.object().is_some())
                 .cloned()
                 .collect()
         })
@@ -703,7 +704,7 @@ pub(crate) mod tests {
             Some("fcstd:native:object#Assembly")
         );
         assert_eq!(
-            joints[0].references()[0].subelements,
+            joints[0].references()[0].subelements(),
             ["A.Face1", "A.Edge2"]
         );
         assert_eq!(joints[0].placements()[1][0][3], 2.0);

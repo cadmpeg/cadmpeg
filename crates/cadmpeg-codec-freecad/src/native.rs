@@ -51,6 +51,17 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn link_targets_reserve_absence_for_wire_admission() {
+        assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
+        let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
+        let target = serde_json::from_value::<super::LinkTarget>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&target).unwrap(), wire);
+        assert!(target.into_optional().is_none());
+        let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
+        assert!(target.into_optional().is_some());
+    }
+
+    #[test]
     fn design_census_neutral_is_derived_and_checked_on_the_wire() {
         for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
             let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
@@ -2064,10 +2075,6 @@ impl ExternalDocument {
         }
     }
 
-    pub(crate) fn from_file_attr(file: Option<String>) -> Option<Self> {
-        file.and_then(NonEmptyString::new).map(Self::File)
-    }
-
     fn from_wire(
         document: Option<String>,
         attribute: Option<&str>,
@@ -2094,14 +2101,60 @@ impl ExternalDocument {
 #[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
 pub struct LinkTarget {
     /// External document, when the target is not local.
-    pub document: Option<ExternalDocument>,
+    document: Option<ExternalDocument>,
     /// Target object identity. Empty source names are absent.
-    pub object: Option<NonEmptyString>,
+    object: Option<NonEmptyString>,
     /// Ordered subelement selectors.
-    pub subelements: Vec<String>,
+    subelements: Vec<String>,
 }
 
 impl LinkTarget {
+    /// Admits a target with a document, object, or subelement selection.
+    pub fn try_new(
+        document: Option<ExternalDocument>,
+        object: Option<NonEmptyString>,
+        subelements: Vec<String>,
+    ) -> Result<Self, String> {
+        if document.is_none() && object.is_none() && subelements.is_empty() {
+            return Err("link target requires document, object, or subelements".to_owned());
+        }
+        Ok(Self {
+            document,
+            object,
+            subelements,
+        })
+    }
+
+    #[doc(hidden)]
+    fn empty_link_target() -> Self {
+        Self {
+            document: None,
+            object: None,
+            subelements: Vec::new(),
+        }
+    }
+
+    /// External document when the target is not local.
+    pub fn document(&self) -> Option<&ExternalDocument> {
+        self.document.as_ref()
+    }
+
+    /// Ordered subelement selectors.
+    pub fn subelements(&self) -> &[String] {
+        &self.subelements
+    }
+
+    /// Sets a nonempty object identity.
+    pub(crate) fn set_object(&mut self, object: NonEmptyString) {
+        self.object = Some(object);
+    }
+
+    /// Converts a wire null target to absence.
+    pub(crate) fn into_optional(self) -> Option<Self> {
+        (self.document.is_some() || self.object.is_some() || !self.subelements.is_empty())
+            .then_some(self)
+    }
+
     /// Document token retained on the CADIR wire.
     pub fn document_name(&self) -> Option<&str> {
         self.document.as_ref().map(ExternalDocument::as_str)
@@ -2118,12 +2171,13 @@ impl LinkTarget {
     }
 }
 
+/// The persisted link target fields.
 #[derive(Serialize, Deserialize)]
-struct LinkTargetWire {
-    document: Option<String>,
-    document_attribute: Option<String>,
-    object: Option<String>,
-    subelements: Vec<String>,
+pub(crate) struct LinkTargetWire {
+    pub(crate) document: Option<String>,
+    pub(crate) document_attribute: Option<String>,
+    pub(crate) object: Option<String>,
+    pub(crate) subelements: Vec<String>,
 }
 
 impl From<LinkTarget> for LinkTargetWire {
@@ -2157,14 +2211,13 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
     type Error = String;
 
     fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            document: ExternalDocument::from_wire(
-                wire.document,
-                wire.document_attribute.as_deref(),
-            )?,
-            object: wire.object.and_then(NonEmptyString::new),
-            subelements: wire.subelements,
-        })
+        let document =
+            ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
+        let object = wire.object.and_then(NonEmptyString::new);
+        match (document, object, wire.subelements) {
+            (None, None, subelements) if subelements.is_empty() => Ok(Self::empty_link_target()),
+            (document, object, subelements) => Self::try_new(document, object, subelements),
+        }
     }
 }
 

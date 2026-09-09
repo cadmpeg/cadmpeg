@@ -120,7 +120,7 @@ pub(crate) fn transfer_neutral(
                     ));
                 }
             };
-            Ok(ReferenceSelection::new(target, link.subelements.clone()))
+            Ok(ReferenceSelection::new(target, link.subelements().to_vec()))
         };
         let parameter = |name: &str| scalar_property(&owned, name);
         let x = parameter("X")?;
@@ -180,7 +180,7 @@ pub(crate) fn transfer_neutral(
                 .get("Template")
                 .and_then(|targets| targets.first())
                 .and_then(|link| {
-                    if link.document.is_some() {
+                    if link.document().is_some() {
                         return None;
                     }
                     let object = link.object()?;
