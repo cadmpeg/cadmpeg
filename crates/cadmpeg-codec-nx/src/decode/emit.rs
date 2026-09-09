@@ -195,13 +195,28 @@ pub(super) fn emit_topology(
         let shell_id =
             ShellId::mint(format!("{prefix}:shell#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                graph
+                    .of_kind(NodeKind::Face)
+                    .filter(|face| valid_face_xmts.contains(&face.xmt))
+                    .filter_map(|face| {
+                        let face_fields = face.face_fields()?;
+                        (u32::from(face_fields.shell?) == node.xmt
+                            && surfaces.contains_key(&u32::from(face_fields.surface?)))
+                        .then(|| {
+                            FaceId::mint(format!("{prefix}:face#{}", face.xmt))
+                                .expect("identity grammar")
+                        })
+                    })
+                    .collect(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+        );
         if let Some(parent) = ir
             .model
             .regions
@@ -529,14 +544,6 @@ pub(super) fn emit_topology(
             color: None,
             tolerance: decoded_tolerance(fields.tolerance),
         });
-        if let Some(parent) = ir
-            .model
-            .shells
-            .iter_mut()
-            .find(|candidate| candidate.id == shell)
-        {
-            parent.faces.push(id.clone());
-        }
         faces.insert(node.xmt, id);
     }
     let mut loops = BTreeMap::new();

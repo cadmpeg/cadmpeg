@@ -262,16 +262,19 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         body: body.clone(),
         shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
     });
-    model.shells.push(Shell {
-        id: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        region: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-        faces: vec![
-            FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
-            FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
-        ],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    model.shells.push(
+        Shell::new(
+            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            vec![
+                FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
+                FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model = model;
     let outputs = std::collections::BTreeMap::from([
@@ -285,22 +288,40 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     assert_eq!(
         simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert_eq!(
         simple_hole_diameters(&ir, &templates, &[], &outputs),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert_eq!(
         hole_diameters_for_operations(&ir, &operations, &outputs),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert!(
@@ -313,8 +334,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     )
     .is_empty());
     let mut single_hole = ir.clone();
-    single_hole.model.shells[0].faces =
-        vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
+    {
+        let members = vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
+        single_hole.model.shells[0].edit_topology(|faces, _, _| *faces = members)
+    }
+    .unwrap();
     let single_operation = [operations[1].clone()];
     let single_output = std::collections::BTreeMap::from([(
         operations[1].clone(),
@@ -329,8 +353,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
-                origin: Point3::new(1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         )])
     );
@@ -353,8 +379,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
-                origin: Point3::new(1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         )])
     );
@@ -394,8 +422,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
-                origin: Point3::new(1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         )])
     );
@@ -450,8 +480,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             &std::collections::BTreeMap::new(),
         ),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert!(hole_diameters_for_operations(
@@ -535,7 +571,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     );
 
     let mut distinct = ir.clone();
-    distinct.model.shells[0].faces.pop();
+    distinct.model.shells[0]
+        .edit_topology(|faces, _, _| faces.pop())
+        .unwrap();
     distinct.model.bodies.push(Body {
         id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
         kind: BodyKind::Solid,
@@ -550,13 +588,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
         shells: vec![ShellId::mint("test:model:entity#second-shell").expect("identity grammar")],
     });
-    distinct.model.shells.push(Shell {
-        id: ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
-        region: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-        faces: vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    distinct.model.shells.push(Shell::with_face(
+        ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
+        RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+        FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
+    ));
     distinct.model.faces[1].shell =
         ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut distinct.model.surfaces[1].geometry
@@ -603,15 +639,27 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             &distinct_outputs,
         ),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(6.0).unwrap()
+            ),
         ])
     );
     assert_eq!(
         hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(6.0).unwrap()
+            ),
         ])
     );
     assert!(hole_diameters_for_operations(
@@ -658,7 +706,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 ),
                 source_object: None,
             });
-            chamfered.model.shells[0].faces.push(face.clone());
+            chamfered.model.shells[0].add_face(face.clone());
             chamfered.model.faces.push(Face {
                 id: face,
                 shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
@@ -721,15 +769,17 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             (
                 "hole-a".into(),
                 cadmpeg_ir::features::HoleKind::Chamfer {
-                    diameter: cadmpeg_ir::features::Length(7.1),
-                    angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                    diameter: cadmpeg_ir::features::PositiveLength::new(7.1).unwrap(),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                        .unwrap(),
                 },
             ),
             (
                 "hole-b".into(),
                 cadmpeg_ir::features::HoleKind::Chamfer {
-                    diameter: cadmpeg_ir::features::Length(7.1),
-                    angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                    diameter: cadmpeg_ir::features::PositiveLength::new(7.1).unwrap(),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                        .unwrap(),
                 },
             ),
         ])

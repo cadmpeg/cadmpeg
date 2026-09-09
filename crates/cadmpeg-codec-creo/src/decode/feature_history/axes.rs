@@ -8,7 +8,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,
+    AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
@@ -42,8 +42,14 @@ pub(in super::super) fn resolved_revolution_axis(
             let end = section_point_in_model(transform, *end);
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(RevolutionAxis {
-                origin: Point3::new(start[0], start[1], start[2]),
-                direction: Vector3::new(direction[0], direction[1], direction[2]),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    start[0], start[1], start[2],
+                ))?,
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    direction[0],
+                    direction[1],
+                    direction[2],
+                ))?,
                 reference: None,
             })
         })
@@ -61,13 +67,13 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
     let Some(RevolveExtent::OneSided {
-        termination: AngularTermination::Angle {
-            angle: Angle(angle),
-        },
+        termination: AngularTermination::Angle { angle },
     }) = extent
     else {
         return None;
     };
+    let angle = angle.get();
+
     if (angle.abs() - std::f64::consts::TAU).abs() > EPS_FULL_TURN {
         return None;
     }
@@ -177,8 +183,14 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
     }
     Some(RevolutionAxis {
-        origin: Point3::new(origin[0], origin[1], origin[2]),
-        direction: Vector3::new(direction[0], direction[1], direction[2]),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            origin[0], origin[1], origin[2],
+        ))?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            direction[0],
+            direction[1],
+            direction[2],
+        ))?,
         reference: None,
     })
 }

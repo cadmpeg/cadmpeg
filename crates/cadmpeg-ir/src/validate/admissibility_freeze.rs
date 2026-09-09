@@ -6,7 +6,7 @@
 //! rejected sides are required: the rollback paths are driven by rejections.
 
 use crate::ids::{PointId, RegionId, ShellId, VertexId};
-use crate::topology::{Shell, Vertex};
+use crate::topology::{Point, Shell, Vertex};
 use crate::CadIr;
 
 /// Empty document: accepted by every current production gate.
@@ -28,13 +28,23 @@ pub fn rejected_missing_point(prefix: &str) -> CadIr {
 /// Shell → missing region: rejected (`ReferentialIntegrity` / topology).
 pub fn rejected_missing_region(prefix: &str) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.shells.push(Shell {
-        id: ShellId::mint(format!("{prefix}:shell#0")).expect("valid identity"),
-        region: RegionId::mint(format!("{prefix}:region#missing")).expect("valid identity"),
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
+    let point = PointId::mint(format!("{prefix}:point#0")).expect("valid identity");
+    let vertex = VertexId::mint(format!("{prefix}:vertex#0")).expect("valid identity");
+    ir.model.points.push(Point {
+        id: point.clone(),
+        position: crate::math::Point3::new(0.0, 0.0, 0.0),
+        source_object: None,
     });
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+    });
+    ir.model.shells.push(Shell::with_free_vertex(
+        ShellId::mint(format!("{prefix}:shell#0")).expect("valid identity"),
+        RegionId::mint(format!("{prefix}:region#missing")).expect("valid identity"),
+        vertex,
+    ));
     ir
 }
 

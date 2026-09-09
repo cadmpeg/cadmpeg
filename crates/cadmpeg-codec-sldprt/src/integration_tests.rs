@@ -183,9 +183,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let mut coincident = decoded.ir().model.faces[0].clone();
     coincident.id =
         cadmpeg_ir::ids::FaceId::mint("sldprt:brep:face#coincident").expect("identity grammar");
-    decoded.ir_mut().model.shells[0]
-        .faces
-        .push(coincident.id.clone());
+    decoded.ir_mut().model.shells[0].add_face(coincident.id.clone());
     decoded.ir_mut().model.faces.push(coincident);
 
     let _ = crate::tessellation::assign_unique_surface_owners(&mut decoded.ir_mut().model).unwrap();

@@ -439,8 +439,8 @@ fn has_brep_topology(ir: &CadIr) -> bool {
         ir.model
             .shells
             .iter()
-            .find(|shell| shell.faces.iter().any(|face_id| face_id == &face.id))
-            .is_some_and(|shell| shell.faces.len() > 1)
+            .find(|shell| shell.faces().iter().any(|face_id| face_id == &face.id))
+            .is_some_and(|shell| shell.faces().len() > 1)
     })
 }
 
@@ -678,13 +678,13 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                         region.id, shell_id
                     ))
                 })?;
-            if shell.region != region.id || shell.faces.is_empty() {
+            if shell.region != region.id || shell.faces().is_empty() {
                 return Err(CodecError::malformed(format_args!(
                     "IGES shell {} is not a nonempty shell of region {}",
                     shell.id, region.id
                 )));
             }
-            if !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty() {
+            if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
                 return Err(CodecError::NotImplemented(format!(
                     "IGES B-rep writer does not encode wire edges or free vertices in shell {}",
                     shell.id
@@ -696,7 +696,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                     shell.id
                 )));
             }
-            for face_id in &shell.faces {
+            for face_id in shell.faces() {
                 let face = ir
                     .model
                     .faces
@@ -1252,7 +1252,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         let mut body_loop_ids = Vec::new();
         let mut body_face_ids = Vec::new();
         for shell in &shells {
-            for face_id in &shell.faces {
+            for face_id in shell.faces() {
                 let face = ir
                     .model
                     .faces
@@ -1606,8 +1606,8 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
 
         let mut shell_indices = BTreeMap::new();
         for shell in &shells {
-            let mut parameters = shell.faces.len().to_string();
-            for face_id in &shell.faces {
+            let mut parameters = shell.faces().len().to_string();
+            for face_id in shell.faces() {
                 let face = ir
                     .model
                     .faces
@@ -1751,7 +1751,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                 };
                 ignored.vertices.extend(
                     shell
-                        .free_vertices
+                        .free_vertices()
                         .iter()
                         .map(|vertex| vertex.as_str().to_owned()),
                 );
@@ -2224,9 +2224,9 @@ fn validate_trimmed_sheet_topology(
                 ))
             })?;
         if shell.region != region.id
-            || shell.faces.len() != 1
-            || !shell.wire_edges.is_empty()
-            || !shell.free_vertices.is_empty()
+            || shell.faces().len() != 1
+            || !shell.wire_edges().is_empty()
+            || !shell.free_vertices().is_empty()
         {
             return Err(CodecError::NotImplemented(format!(
                 "IGES semantic writer only encodes a single face in shell {}",
@@ -2237,11 +2237,12 @@ fn validate_trimmed_sheet_topology(
             .model
             .faces
             .iter()
-            .find(|candidate| candidate.id == shell.faces[0])
+            .find(|candidate| candidate.id == shell.faces()[0])
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES shell {} references missing face {}",
-                    shell.id, shell.faces[0]
+                    shell.id,
+                    shell.faces()[0]
                 ))
             })?;
         if face.shell != shell.id {

@@ -1208,7 +1208,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             7,
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(2.0, -3.0),
-                radius: Length(4.5),
+                radius: Length::new(4.5).expect("finite length fixture"),
             })
             .expect("valid test fixture"),
             19,
@@ -1356,9 +1356,9 @@ fn generated_saved_geometry_forms_closed_profiles() {
             30,
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(8.0, 8.0),
-                radius: Length(2.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::TAU),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(0.0).expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
             })
             .expect("valid test fixture"),
         ),
@@ -1453,9 +1453,10 @@ fn saved_arc_joins_through_order_table() {
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                radius: Length(2.0),
-                start_angle: Angle(std::f64::consts::PI),
-                end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+                end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2)
+                    .expect("finite angle fixture"),
             })
             .expect("valid test fixture")
         )
@@ -1749,9 +1750,9 @@ fn saved_arc_joins_through_order_table() {
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                radius: Length(2.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::TAU),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(0.0).expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
             })
             .expect("valid test fixture")
         )

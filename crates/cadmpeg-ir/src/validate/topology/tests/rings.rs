@@ -71,9 +71,8 @@ fn mismatched_partner_edge_is_flagged() {
 fn new_topology_references_are_validated() {
     let mut ir = unit_cube();
     ir.model.shells[0]
-        .wire_edges
-        .push(EdgeId::mint("test:model:entity#missing-wire").expect("valid identity"));
-    ir.model.shells[0].free_vertices.push(
+        .add_wire_edge(EdgeId::mint("test:model:entity#missing-wire").expect("valid identity"));
+    ir.model.shells[0].add_free_vertex(
         crate::ids::VertexId::mint("test:model:entity#missing-free").expect("valid identity"),
     );
     ir.model.coedges[0].radial_next =
@@ -117,9 +116,7 @@ fn two_member_radial_ring_with_equal_senses_warns() {
 #[test]
 fn coedge_backed_edge_cannot_be_a_wire_edge() {
     let mut ir = unit_cube();
-    ir.model.shells[0]
-        .wire_edges
-        .push(ir.model.coedges[0].edge.clone());
+    ir.model.shells[0].add_wire_edge(ir.model.coedges[0].edge.clone());
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -140,9 +137,11 @@ fn wire_and_free_topology_negative_cases_are_reported() {
     duplicate_edge.id = "synthetic:test:edge#duplicate"
         .try_into()
         .expect("valid identity");
-    ir.model.shells[0]
-        .wire_edges
-        .extend([duplicate_edge.id.clone(), duplicate_edge.id.clone()]);
+    {
+        for member in [duplicate_edge.id.clone(), duplicate_edge.id.clone()] {
+            ir.model.shells[0].add_wire_edge(member);
+        }
+    };
     ir.model.edges.push(duplicate_edge);
 
     let mut unowned_vertex = ir.model.vertices[0].clone();
@@ -151,9 +150,7 @@ fn wire_and_free_topology_negative_cases_are_reported() {
         .expect("valid identity");
     ir.model.vertices.push(unowned_vertex);
 
-    ir.model.shells[0]
-        .free_vertices
-        .push(ir.model.edges[0].start.clone());
+    ir.model.shells[0].add_free_vertex(ir.model.edges[0].start.clone());
     ir.model.bodies[0].kind = crate::topology::BodyKind::Wire;
     ir.finalize();
 
@@ -181,14 +178,18 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
         vertex: vertex.clone(),
         pcurves: Vec::new(),
     };
-    ir.model.shells[0].free_vertices.push(vertex.clone());
+    ir.model.shells[0].add_free_vertex(vertex.clone());
     let mut second_shell = ir.model.shells[0].clone();
     second_shell.id = "synthetic:test:shell#second"
         .try_into()
         .expect("valid identity");
-    second_shell.faces.clear();
-    second_shell.wire_edges.clear();
-    second_shell.free_vertices = vec![vertex];
+    second_shell
+        .edit_topology(|faces, wire_edges, free_vertices| {
+            faces.clear();
+            wire_edges.clear();
+            *free_vertices = vec![vertex];
+        })
+        .unwrap();
     ir.model.regions[0].shells.push(second_shell.id.clone());
     ir.model.shells.push(second_shell);
 
@@ -199,16 +200,6 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
             finding.check == Check::WireTopology
                 && finding.message == "free vertex must belong to exactly one shell"
         }));
-}
-
-#[test]
-fn empty_shell_is_reported() {
-    let mut ir = unit_cube();
-    ir.model.shells[0].faces.clear();
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    assert!(findings.iter().any(|finding| {
-        finding.check == Check::WireTopology && finding.message == "shell owns no topology"
-    }));
 }
 
 #[test]

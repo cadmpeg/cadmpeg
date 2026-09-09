@@ -553,9 +553,9 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
             center: Point3::new(10.0, 10.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     ));
@@ -613,7 +613,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                 center: Point3::new(0.0, 0.0, 0.0),
                 normal,
                 reference_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             })
             .unwrap(),
         )
@@ -802,13 +802,16 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
     );
     assert_eq!(
         resolved_loft_entity_selection_path(&group, &resolution),
-        Some(PathRef::SketchCurves {
-            sketch: sketch.clone(),
-            curves: vec![
-                neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
-                neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
-            ],
-        })
+        Some(
+            PathRef::sketch_curves(
+                sketch.clone(),
+                vec![
+                    neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
+                    neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
+                ]
+            )
+            .unwrap()
+        )
     );
 
     let mut mixed_operands = operands.to_vec();
@@ -880,20 +883,23 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
 
     assert_eq!(
         resolve_entity_selection_path(&group, &resolution),
-        Some(PathRef::SpatialSketchCurves {
-            sketch: spatial_sketch.clone(),
-            curves: curves
-                .iter()
-                .map(|curve| {
-                    neutral_spatial_sketch_curve_id(
-                        &spatial_sketch,
-                        curve.primary_id.get(),
-                        curve.secondary_id,
-                    )
-                    .unwrap()
-                })
-                .collect(),
-        })
+        Some(
+            PathRef::spatial_sketch_curves(
+                spatial_sketch.clone(),
+                curves
+                    .iter()
+                    .map(|curve| {
+                        neutral_spatial_sketch_curve_id(
+                            &spatial_sketch,
+                            curve.primary_id.get(),
+                            curve.secondary_id,
+                        )
+                        .unwrap()
+                    })
+                    .collect()
+            )
+            .unwrap()
+        )
     );
 }
 
@@ -975,10 +981,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
     };
     assert_eq!(
         resolve_entity_selection_profile(&group, &resolution),
-        Some(ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![1],
-        })
+        Some(ProfileRef::sketch_profiles(sketch.clone(), vec![1]).unwrap())
     );
 
     sketches[0]
@@ -1055,10 +1058,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
 
     assert_eq!(
         resolve_entity_selection_profile(&group, &resolution),
-        Some(ProfileRef::SketchEntities {
-            sketch,
-            entities: vec![entity_id],
-        })
+        Some(ProfileRef::sketch_entities(sketch, vec![entity_id]).unwrap())
     );
 }
 
@@ -1300,10 +1300,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
 
 #[test]
 fn historical_selection_preserves_first_member_region_order() {
-    let region = |outer| SketchProfileRegion::Loops {
-        outer,
-        holes: Vec::new(),
-    };
+    let region = |outer| SketchProfileRegion::loops(outer, Vec::new()).unwrap();
     assert_eq!(
         crate::design::profile_select::ordered_unique_profile_selections([
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
@@ -1332,54 +1329,38 @@ fn historical_selection_preserves_first_member_region_order() {
 fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     let sketch = SketchId::mint("f3d:model:sketch#multi-profile").unwrap();
     let loops = [
-        ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![3, 1],
-        },
-        ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![1, 2],
-        },
+        ProfileRef::sketch_profiles(sketch.clone(), vec![3, 1]).unwrap(),
+        ProfileRef::sketch_profiles(sketch.clone(), vec![1, 2]).unwrap(),
     ];
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops),
-        Some(ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![3, 1, 2],
-        })
+        Some(ProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2]).unwrap())
     );
 
     let regions = [
-        ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions: vec![SketchProfileRegion::Loops {
-                outer: 4,
-                holes: vec![5],
-            }],
-        },
-        ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions: vec![SketchProfileRegion::Loops {
-                outer: 2,
-                holes: Vec::new(),
-            }],
-        },
+        ProfileRef::sketch_regions(
+            sketch.clone(),
+            vec![SketchProfileRegion::loops(4, vec![5]).unwrap()],
+        )
+        .unwrap(),
+        ProfileRef::sketch_regions(
+            sketch.clone(),
+            vec![SketchProfileRegion::loops(2, Vec::new()).unwrap()],
+        )
+        .unwrap(),
     ];
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions),
-        Some(ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions: vec![
-                SketchProfileRegion::Loops {
-                    outer: 4,
-                    holes: vec![5],
-                },
-                SketchProfileRegion::Loops {
-                    outer: 2,
-                    holes: Vec::new(),
-                },
-            ],
-        })
+        Some(
+            ProfileRef::sketch_regions(
+                sketch.clone(),
+                vec![
+                    SketchProfileRegion::loops(4, vec![5]).unwrap(),
+                    SketchProfileRegion::loops(2, Vec::new()).unwrap(),
+                ]
+            )
+            .unwrap()
+        )
     );
 
     assert_eq!(
@@ -1394,10 +1375,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
             &sketch,
             &[
                 loops[0].clone(),
-                ProfileRef::SketchSelection {
-                    sketch: sketch.clone(),
-                    selections: vec!["native-group".into()],
-                },
+                ProfileRef::sketch_selection(sketch.clone(), vec!["native-group".into()]).unwrap(),
             ]
         ),
         None
@@ -1592,7 +1570,7 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
         sketch_id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     );
@@ -1889,10 +1867,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         None
     );
     let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-        SketchProfileRegion::Loops {
-            outer: 0,
-            holes: vec![1],
-        },
+        SketchProfileRegion::loops(0, vec![1]).unwrap(),
     ]);
     assert_eq!(
         transition_selection(vec![
@@ -1921,10 +1896,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         transition_selection(vec![Some(region)]),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                SketchProfileRegion::Loops {
-                    outer: 0,
-                    holes: vec![1],
-                },
+                SketchProfileRegion::loops(0, vec![1]).unwrap(),
             ])
         )
     );

@@ -1298,7 +1298,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
     assert_eq!(
-        ir.model.shells[0].free_vertices,
+        ir.model.shells[0].free_vertices(),
         [VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar")]
     );
 }

@@ -3196,13 +3196,10 @@ pub(crate) fn attach_standard_faces(
         .map_err(cadmpeg_core::CodecError::malformed)?
         .derived(&shell_id, "faces")
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: face_ids,
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(
+        Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new())
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+    );
     Ok(())
 }
 
@@ -3269,7 +3266,14 @@ pub(crate) fn partition_standard_face_components(
             else {
                 return false;
             };
-            shell.faces = face_ids;
+            if {
+                let members = face_ids;
+                shell.edit_topology(|faces, _, _| *faces = members)
+            }
+            .is_err()
+            {
+                return false;
+            }
             continue;
         }
         for (id, tag) in [
@@ -3304,13 +3308,14 @@ pub(crate) fn partition_standard_face_components(
         {
             return false;
         }
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: face_ids,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    return false;
+                }
+            },
+        );
     }
     true
 }

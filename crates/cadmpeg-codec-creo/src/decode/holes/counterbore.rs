@@ -7,7 +7,7 @@ use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Length, LinearTermination};
+use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -504,8 +504,12 @@ pub fn counterbore_support_axis_placement(
         .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
     let axis = normalize(frame.normal?)?;
     Some(cadmpeg_ir::features::HolePlacement::Axis {
-        origin: Point3::new(origin[0], origin[1], origin[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            origin[0], origin[1], origin[2],
+        ))?,
+        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            axis[0], axis[1], axis[2],
+        ))?,
     })
 }
 
@@ -524,8 +528,8 @@ pub fn counterbore_axis_placement_from_sources(
         return None;
     };
     Some(cadmpeg_ir::features::HolePlacement::Axis {
-        origin: carrier.origin,
-        axis: carrier.axis,
+        origin: cadmpeg_ir::features::FinitePoint3::new(carrier.origin)?,
+        axis: cadmpeg_ir::features::FeatureDirection3::new(carrier.axis)?,
     })
 }
 
@@ -663,7 +667,7 @@ pub fn counterbore_placement_from_corner_envelopes(
         assignment.position,
         assignment.direction,
         LinearTermination::Blind {
-            length: Length(assignment.length),
+            length: cadmpeg_ir::features::NonZeroLength::new(assignment.length)?,
         },
     ))
 }
@@ -810,7 +814,7 @@ pub fn counterbore_directed_span(
         counterbore.1,
         Vector3::new(direction[0], direction[1], direction[2]),
         LinearTermination::Blind {
-            length: Length(length),
+            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
         },
     ))
 }

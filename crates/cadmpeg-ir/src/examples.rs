@@ -232,21 +232,24 @@ pub fn unit_cube() -> CadIr {
     }
 
     // Shell, region, body.
-    ir.model.shells.push(Shell {
-        id: "synthetic:cube:shell#0".try_into().expect("valid identity"),
-        region: "synthetic:cube:region#0"
-            .try_into()
-            .expect("valid identity"),
-        faces: face_defs
-            .iter()
-            .map(|(name, ..)| {
-                FaceId::mint(format!("synthetic:cube:face#{name}"))
-                    .expect("fixed namespace and face name")
-            })
-            .collect(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(
+        Shell::new(
+            "synthetic:cube:shell#0".try_into().expect("valid identity"),
+            "synthetic:cube:region#0"
+                .try_into()
+                .expect("valid identity"),
+            face_defs
+                .iter()
+                .map(|(name, ..)| {
+                    FaceId::mint(format!("synthetic:cube:face#{name}"))
+                        .expect("fixed namespace and face name")
+                })
+                .collect(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("unit cube shell owns six faces"),
+    );
     ir.model.regions.push(Region {
         id: "synthetic:cube:region#0"
             .try_into()

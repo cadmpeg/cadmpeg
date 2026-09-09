@@ -633,15 +633,17 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let entity = SketchEntity::new(
@@ -713,15 +715,17 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let entity = SketchEntity::new(
@@ -729,7 +733,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
+            radius: Length::new(3.0).unwrap(),
         })
         .unwrap(),
     )
@@ -782,15 +786,17 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let first_id = SketchEntityId::mint("synthetic:test:id#a-first").unwrap();
@@ -896,8 +902,8 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -946,7 +952,7 @@ fn line_operand_rejects_a_circular_geometry_alias() {
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(1.0),
+                radius: Length::new(1.0).unwrap(),
             })
             .unwrap(),
         )
@@ -1440,8 +1446,8 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         name: "D1".into(),
         expression: "4mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1543,8 +1549,8 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1646,8 +1652,8 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

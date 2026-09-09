@@ -7,7 +7,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
     let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
     let pattern_definition = FeatureDefinition::Pattern {
         seeds: vec![PatternSeed::Feature(seed.clone())],
-        pattern: PatternKind::Unresolved,
+        pattern: PatternKind::UNRESOLVED,
     };
     let features = vec![
         neutral_feature(
@@ -88,10 +88,15 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
         simple_hole_definition(6.1468),
     );
-    let FeatureDefinition::Hole { diameter, .. } = &mut unresolved_hole.definition else {
-        panic!("expected hole definition");
-    };
-    *diameter = None;
+    unresolved_hole
+        .evaluation
+        .try_edit(|definition, _| {
+            let FeatureDefinition::Hole { shape, .. } = definition else {
+                panic!("expected hole definition");
+            };
+            shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
+        })
+        .unwrap();
     unresolved.push(unresolved_hole);
     assert!(pattern_hole_nominal_context(&unresolved).is_empty());
 }

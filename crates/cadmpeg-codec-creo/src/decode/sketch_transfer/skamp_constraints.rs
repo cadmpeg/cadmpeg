@@ -354,11 +354,11 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     {
                         SketchConstraintDefinitionInput::ArcAngle {
                             entity: sketch_entity_id(sketch, item.entity_id)?,
-                            angle: Angle(if kind == 10 {
+                            angle: Angle::new(if kind == 10 {
                                 std::f64::consts::FRAC_PI_2
                             } else {
                                 std::f64::consts::PI
-                            }),
+                            })?,
                         }
                     }
                     (kind @ (12 | 13), [item])

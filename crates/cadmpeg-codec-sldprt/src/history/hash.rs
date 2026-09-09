@@ -40,8 +40,8 @@ impl Debug for FeatureHashView<'_> {
             .field("source_tag", &feature.source_tag)
             .field("source_text", &feature.source_text)
             .field("source_content", &feature.source_content)
-            .field("outputs", &feature.outputs)
-            .field("definition", &feature.definition)
+            .field("outputs", feature.evaluation.outputs())
+            .field("definition", feature.evaluation.definition())
             .field("native_ref", &feature.native_ref)
             .finish()
     }

@@ -3,12 +3,11 @@
 
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, Length,
-    ParameterValue, PatternKind,
+    ParameterValue, PatternTransform,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
-const EPS_LITERALS_VALID_COORDINATE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
@@ -21,27 +20,6 @@ pub(crate) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
         && normal_length > f64::EPSILON
         && u_length > f64::EPSILON
         && normal.dot(u_axis).abs() <= EPS_LITERALS_VALID_PLANE_FRAME_E9 * normal_length * u_length
-}
-
-pub(crate) fn valid_coordinate_frame(
-    origin: Point3,
-    x_axis: Vector3,
-    y_axis: Vector3,
-    z_axis: Vector3,
-) -> bool {
-    let finite_origin = [origin.x, origin.y, origin.z]
-        .into_iter()
-        .all(f64::is_finite);
-    let unit = |axis: Vector3| (axis.norm() - 1.0).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9;
-    let cross = x_axis.cross(y_axis);
-    finite_origin
-        && unit(x_axis)
-        && unit(y_axis)
-        && unit(z_axis)
-        && x_axis.dot(y_axis).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9
-        && x_axis.dot(z_axis).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9
-        && y_axis.dot(z_axis).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9
-        && cross.dot(z_axis) >= 1.0 - EPS_LITERALS_VALID_COORDINATE_FRAME_E9
 }
 
 pub(crate) fn valid_direction(direction: Vector3) -> bool {
@@ -192,7 +170,8 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
     if dimension_display(expression).is_some() {
         return parse_dimension_display_length(expression)
-            .map(|value| ParameterValue::Length(Length(value)));
+            .and_then(Length::new)
+            .map(ParameterValue::Length);
     }
     let expression = expression.trim();
     if expression.eq_ignore_ascii_case("true") {
@@ -202,10 +181,10 @@ pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         return Some(ParameterValue::Boolean(false));
     }
     if let Some(value) = parse_length_mm(expression) {
-        return Some(ParameterValue::Length(Length(value)));
+        return Some(ParameterValue::Length(Length::new(value)?));
     }
     if let Some(value) = parse_angle_rad(expression) {
-        return Some(ParameterValue::Angle(Angle(value)));
+        return Some(ParameterValue::Angle(Angle::new(value)?));
     }
     if let Ok(value) = expression.trim().parse::<i64>() {
         return Some(ParameterValue::Integer(value));
@@ -214,7 +193,7 @@ pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .trim()
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite())
+        .and_then(cadmpeg_ir::features::FiniteReal::new)
         .map(ParameterValue::Real)
 }
 
@@ -294,7 +273,7 @@ pub(crate) fn parse_neutral_parameter_literal(
 ) -> Option<ParameterValue> {
     let positional_length = match name {
         "D1" => matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Extrude { .. }
                 | FeatureDefinition::Fillet { .. }
                 | FeatureDefinition::Chamfer { .. }
@@ -307,31 +286,37 @@ pub(crate) fn parse_neutral_parameter_literal(
                 }
         ),
         "D2" => matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Chamfer { groups, .. }
                 if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
         ),
-        "D3" => matches!(
-            feature.definition,
+        "D3" => matches!(&(feature.evaluation.definition()),
             FeatureDefinition::Pattern {
-                pattern: PatternKind::Linear { .. } | PatternKind::CurveDriven { .. },
+                pattern: admitted_pattern,
                 ..
-            }
+            } if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::CurveDriven { .. })
         ),
         _ => false,
     };
     if positional_length {
         return parse_positive_dimension_length_mm(expression)
-            .map(|value| ParameterValue::Length(Length(value)));
+            .and_then(Length::new)
+            .map(ParameterValue::Length);
     }
     parse_parameter_literal(expression)
 }
 
 pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
-        ParameterValue::Length(Length(value)) => format_length_mm(*value),
-        ParameterValue::Angle(Angle(value)) => format_angle_rad(*value),
-        ParameterValue::Real(value) => format_f64_literal(*value),
+        ParameterValue::Length(value) => {
+            let value = value.get();
+            format_length_mm(value)
+        }
+        ParameterValue::Angle(value) => {
+            let value = value.get();
+            format_angle_rad(value)
+        }
+        ParameterValue::Real(value) => format_f64_literal(value.get()),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => value.clone(),

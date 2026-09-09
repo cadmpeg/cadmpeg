@@ -520,7 +520,7 @@ pub fn bind_configuration_suppressed_features(
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
                     dependencies: feature.dependencies.clone(),
-                    definition: feature.definition.clone(),
+                    definition: feature.evaluation.definition().clone(),
                 },
             );
         }
@@ -786,7 +786,7 @@ mod tests {
             expression: "10 mm".into(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -846,16 +846,18 @@ mod tests {
             ordinal: 0,
             name: Some("Fillet 1".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "Fillet".into(),
-                parameters: BTreeMap::new(),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "Fillet".into(),
+                    parameters: BTreeMap::new(),
+                },
+            ),
             native_ref: None,
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");

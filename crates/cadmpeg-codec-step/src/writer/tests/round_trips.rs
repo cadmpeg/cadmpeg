@@ -498,7 +498,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [1.0; 3],
+        scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
         name: Some("Cube root".into()),
         visible: None,
         link: None,
@@ -548,9 +548,13 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     ir.model.faces.clear();
     ir.model.surfaces.clear();
     ir.model.shells.truncate(1);
-    ir.model.shells[0].faces.clear();
-    ir.model.shells[0].wire_edges = vec![edge.id];
-    ir.model.shells[0].free_vertices.clear();
+    ir.model.shells[0]
+        .edit_topology(|faces, wire_edges, free_vertices| {
+            faces.clear();
+            *wire_edges = vec![edge.id];
+            free_vertices.clear();
+        })
+        .unwrap();
     ir.model.regions.truncate(1);
     ir.model.regions[0].shells = vec![ir.model.shells[0].id.clone()];
     ir.model.bodies.truncate(1);
@@ -579,7 +583,7 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(decoded.ir().model.edges.len(), 1);
-    assert_eq!(decoded.ir().model.shells[0].wire_edges.len(), 1);
+    assert_eq!(decoded.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(
         decoded.ir().model.bodies[0].color,
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
@@ -1269,7 +1273,11 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     let mut ir = unit_cube();
     let edge = ir.model.edges[0].id.clone();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
-    ir.model.shells[0].wire_edges = vec![edge];
+    {
+        let members = vec![edge];
+        ir.model.shells[0].edit_topology(|_, wire_edges, _| *wire_edges = members)
+    }
+    .unwrap();
 
     let mut output = Vec::new();
     let report = write_step(

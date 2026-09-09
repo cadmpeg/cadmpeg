@@ -4,8 +4,8 @@
 use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_ir::features::{
-    Angle, DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
-    Length, ParameterId, ParameterValue,
+    DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length,
+    ParameterId, ParameterValue,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -74,7 +74,8 @@ pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignPara
                     let parse_value = |value: &str| match display {
                         Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
                             parse_dimension_display_length(value)
-                                .map(|value| ParameterValue::Length(Length(value)))
+                                .and_then(Length::new)
+                                .map(ParameterValue::Length)
                         }
                         None => parse_native_parameter_literal(feature, &name, value),
                     };
@@ -91,7 +92,7 @@ pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignPara
                         expression: expression.clone(),
                         display,
                         value,
-                        dependencies: Vec::new(),
+                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         native_ref: None,
                         pmi: None,
                     }
@@ -179,7 +180,7 @@ pub(crate) fn global_parameter_owners(
 ) -> HashSet<FeatureId> {
     features
         .iter()
-        .filter(|feature| match &feature.definition {
+        .filter(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Native { kind, .. } => {
                 kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
             }
@@ -232,7 +233,8 @@ pub(crate) fn parse_native_parameter_literal(
 ) -> Option<ParameterValue> {
     if native_parameter_is_length(feature, name, Some(expression)) {
         return parse_positive_dimension_length_mm(expression)
-            .map(|value| ParameterValue::Length(Length(value)));
+            .and_then(Length::new)
+            .map(ParameterValue::Length);
     }
     parse_parameter_literal(expression)
 }
@@ -557,9 +559,6 @@ pub(crate) fn evaluate_parameter_expressions(
             else {
                 continue;
             };
-            if !parameter_value_is_finite(&value) {
-                continue;
-            }
             values.insert(parameter.id.clone(), value.clone());
             parameter.value = Some(value);
             changed = true;
@@ -618,8 +617,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                 let evaluated =
                     ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
-                        .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression))
-                        .filter(parameter_value_is_finite);
+                        .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression));
                 if let Some(value) = own {
                     values.insert(parameter.id.clone(), value);
                 }
@@ -659,9 +657,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
             states.iter_mut().any(|values| {
                 let actual = values.remove(&parameter.id);
                 let evaluated =
-                    ParameterExpressionParser::new(&parameter.expression, aliases, values)
-                        .parse()
-                        .filter(parameter_value_is_finite);
+                    ParameterExpressionParser::new(&parameter.expression, aliases, values).parse();
                 if let Some(value) = actual.clone() {
                     values.insert(parameter.id.clone(), value);
                 }
@@ -708,14 +704,18 @@ pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &Paramet
             <= EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9 * (1.0 + left.abs().max(right.abs()))
     };
     match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right)))
-        | (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right)))
-        | (ParameterValue::Real(left), ParameterValue::Real(right)) => close(*left, *right),
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => {
+            close(left.get(), right.get())
+        }
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => {
+            close(left.get(), right.get())
+        }
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => close(left.get(), right.get()),
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left == right,
         (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left == right,
         (ParameterValue::Integer(integer), ParameterValue::Real(real))
         | (ParameterValue::Real(real), ParameterValue::Integer(integer)) => {
-            exact_integer_f64(*integer) == Some(*real)
+            exact_integer_f64(*integer) == Some(real.get())
         }
         _ => false,
     }

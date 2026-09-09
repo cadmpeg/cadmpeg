@@ -1716,7 +1716,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
     (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
     Some(TextPlacement {
         anchor,
-        rotation: Angle(at(1, 0).atan2(at(0, 0))),
+        rotation: Angle::new(at(1, 0).atan2(at(0, 0)))?,
     })
 }
 
@@ -2016,7 +2016,7 @@ fn decode_txt_tag_sketch_text_tail(
         layout: SketchTextLayout::TxtTag {
             placement: TextPlacement {
                 anchor,
-                rotation: Angle(rotation),
+                rotation: Angle::new(rotation)?,
             },
         },
         text,

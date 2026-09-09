@@ -163,7 +163,7 @@ pub(super) fn transfer_part_product(
         ordinal: 0,
         transform: Transform::identity(),
         linked_prototype: None,
-        scale: [1.0; 3],
+        scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
         name: Some(model_name.clone()),
         visible: None,
         link: None,

@@ -646,7 +646,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     assert_eq!(bodies.len(), 2);
     assert_ne!(bodies[0], bodies[1]);
-    assert_eq!(native, scope.id);
+    assert_eq!(native.as_str(), scope.id);
 
     scope
         .combine_operation_mut()
@@ -1600,11 +1600,11 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             faces,
             native,
         } if state == crate::design::edge_resolve::feature_input_topology_id(&feature, 1)
-            && faces == [
+            && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 10),
                 crate::ids::history_input_face_id(&prefix, 11),
             ]
-            && native == [groups[0].id.clone()]
+            && native.as_slice() == [groups[0].id.clone()]
     ));
 }
 

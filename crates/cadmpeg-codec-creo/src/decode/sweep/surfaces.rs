@@ -147,7 +147,7 @@ pub(in super::super) fn revolved_section_surface(
                         point(center),
                         vector(axis),
                         vector(reference),
-                        radius.0,
+                        radius.get(),
                     )
                     .ok()?,
                 ))
@@ -158,7 +158,7 @@ pub(in super::super) fn revolved_section_surface(
                         vector(axis),
                         vector(reference),
                         major_radius,
-                        radius.0,
+                        radius.get(),
                     )
                     .ok()?,
                 ))
@@ -216,7 +216,7 @@ pub(in super::super) fn placed_section_geometry_curve(
                         transform.u_axis()[1],
                         transform.u_axis()[2],
                     ),
-                    radius.0,
+                    radius.get(),
                 )
                 .ok()?,
             ))

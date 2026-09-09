@@ -61,7 +61,7 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     );
     assert_eq!(
         by_name["TXD2"].value,
-        Some(ParameterValue::Length(Length(4.0)))
+        Some(ParameterValue::Length(Length::new(4.0).unwrap()))
     );
     assert_eq!(by_name["D1"].value, None);
     assert_eq!(
@@ -83,7 +83,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -96,7 +96,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "2".into(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -148,10 +148,13 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
         .collect::<HashMap<_, _>>();
 
     assert!(by_name["Literal"].dependencies.is_empty());
-    assert_eq!(by_name["Reference"].dependencies, [by_name["4"].id.clone()]);
+    assert_eq!(
+        by_name["Reference"].dependencies.as_slice(),
+        [by_name["4"].id.clone()]
+    );
     assert_eq!(
         by_name["Reference"].value,
-        Some(ParameterValue::Length(Length(6.0)))
+        Some(ParameterValue::Length(Length::new(6.0).unwrap()))
     );
     assert!(!unquoted_expression_identifier("4"));
     assert_eq!(
@@ -179,7 +182,7 @@ fn subtraction_projects_both_parameter_dependencies() {
     }]);
 
     assert_eq!(
-        parameters[2].dependencies,
+        parameters[2].dependencies.as_slice(),
         [parameters[0].id.clone(), parameters[1].id.clone()]
     );
     assert_eq!(parameters[2].value, Some(ParameterValue::Integer(5)));
@@ -249,10 +252,13 @@ fn equation_driven_parameters_are_global() {
         features: vec![equations, consumer],
     }]);
 
-    assert_eq!(parameters[1].dependencies, [parameters[0].id.clone()]);
+    assert_eq!(
+        parameters[1].dependencies.as_slice(),
+        [parameters[0].id.clone()]
+    );
     assert_eq!(
         parameters[1].value,
-        Some(ParameterValue::Length(Length(8.0)))
+        Some(ParameterValue::Length(Length::new(8.0).unwrap()))
     );
 }
 
@@ -298,10 +304,13 @@ fn local_parameter_precedes_same_named_global() {
         features: vec![equations, consumer],
     }]);
 
-    assert_eq!(parameters[1].dependencies, [parameters[2].id.clone()]);
+    assert_eq!(
+        parameters[1].dependencies.as_slice(),
+        [parameters[2].id.clone()]
+    );
     assert_eq!(
         parameters[1].value,
-        Some(ParameterValue::Length(Length(10.0)))
+        Some(ParameterValue::Length(Length::new(10.0).unwrap()))
     );
 }
 
@@ -328,7 +337,7 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
         features: vec![first, second, dependent, malformed],
     };
 
-    let projected = project_features(std::slice::from_ref(&history));
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
 
     assert!(projected[2].dependencies.is_empty());
     assert_eq!(incomplete_history_reference_features(&[history]), 4);

@@ -81,7 +81,7 @@ pub(crate) fn bind_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     annotations: &mut Annotations,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(histories);
@@ -136,7 +136,8 @@ pub(crate) fn bind_sketch_profiles(
                 superseded.insert(sketch.id.clone());
                 continue;
             }
-            match &mut feature.definition {
+            let mut definition = feature.evaluation.definition().clone();
+            match &mut definition {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
                     sketch: feature_sketch,
                 } => {
@@ -144,12 +145,19 @@ pub(crate) fn bind_sketch_profiles(
                     *feature_sketch =
                         cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone()));
                 }
-                cadmpeg_ir::features::FeatureDefinition::Sweep { section, .. }
-                    if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) =>
+                cadmpeg_ir::features::FeatureDefinition::Sweep { shape, .. }
+                    if matches!(
+                        shape.section(),
+                        cadmpeg_ir::features::SweepSection::Unresolved(_)
+                    ) =>
                 {
-                    *section = cadmpeg_ir::features::SweepSection::Profile(
-                        cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone()),
-                    );
+                    shape
+                        .try_edit(|section, _, _| {
+                            *section = cadmpeg_ir::features::SweepSection::Profile(
+                                sketch.id.clone().into(),
+                            );
+                        })
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 cadmpeg_ir::features::FeatureDefinition::Extrude { profile, .. } => {
                     if matches!(
@@ -162,6 +170,10 @@ pub(crate) fn bind_sketch_profiles(
                 }
                 _ => {}
             }
+            feature
+                .evaluation
+                .set_definition(definition)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     let mut removed = superseded
@@ -187,7 +199,9 @@ pub(crate) fn bind_sketch_profiles(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(|id| !removed.contains(id));
     *annotations = builder.build();
-    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters)?;
+
+    Ok(())
 }
 
 fn declared_entity_handle_circular_carriers(
@@ -221,8 +235,8 @@ fn declared_entity_handle_circular_carriers(
                 continue;
             };
             let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
@@ -275,7 +289,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
                         ..
                     } => {
                         quantize(*existing, QUANTUM) == center
-                            && same_dimension_length(existing_radius.0, *radius)
+                            && same_dimension_length(existing_radius.get(), *radius)
                     }
                     _ => false,
                 }
@@ -289,7 +303,7 @@ pub(crate) fn project_compact_sketch_profiles(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -325,7 +339,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(feature_index) = features.iter().position(|feature| {
                 feature.native_ref.as_deref() == Some(native_feature.id.as_str())
                     && matches!(
-                        feature.definition,
+                        feature.evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -454,10 +468,12 @@ pub(crate) fn project_compact_sketch_profiles(
                 continue;
             };
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                features[feature_index].definition =
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                features[feature_index]
+                    .evaluation
+                    .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    };
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 continue;
             }
             let sketch = Sketch {
@@ -541,10 +557,12 @@ pub(crate) fn project_compact_sketch_profiles(
                     continue;
                 }
                 sketches.push(sketch);
-                features[feature_index].definition =
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                features[feature_index]
+                    .evaluation
+                    .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    };
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 continue;
             }
             if let (Some(curves), Some(vertices)) =
@@ -673,10 +691,12 @@ pub(crate) fn project_compact_sketch_profiles(
                     continue;
                 }
                 sketches.push(sketch);
-                features[feature_index].definition =
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                features[feature_index]
+                    .evaluation
+                    .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    };
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 continue;
             }
             let Some(addresses) = addresses else {
@@ -731,11 +751,16 @@ pub(crate) fn project_compact_sketch_profiles(
                 continue;
             }
             sketches.push(sketch);
-            features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            };
+            features[feature_index]
+                .evaluation
+                .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+
+    Ok(())
 }
 
 fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
@@ -773,7 +798,7 @@ pub(crate) fn project_marker_backed_sketches(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -796,7 +821,7 @@ pub(crate) fn project_marker_backed_sketches(
         &native_features,
         lanes,
         &feature_frames,
-    );
+    )?;
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -830,7 +855,7 @@ pub(crate) fn project_marker_backed_sketches(
                     if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
                         return None;
                     }
-                    match &feature.definition {
+                    match feature.evaluation.definition() {
                         cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } => {
                             Some((index, sketch.id().cloned(), false))
                         }
@@ -947,25 +972,32 @@ pub(crate) fn project_marker_backed_sketches(
                         };
                         sketches.push(sketch);
                     }
-                    features[feature_index].definition =
-                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    features[feature_index]
+                        .evaluation
+                        .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                                 sketch_id,
                             )),
-                        };
+                        })
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 continue;
             }
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                features[feature_index].definition = if block_definition {
-                    cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
-                        sketch: Some(sketch_id),
-                    }
-                } else {
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    }
-                };
+                features[feature_index]
+                    .evaluation
+                    .set_definition(if block_definition {
+                        cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
+                            sketch: Some(sketch_id),
+                        }
+                    } else {
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch_id,
+                            )),
+                        }
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 continue;
             }
             if bound_sketch
@@ -1107,7 +1139,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         point.0 as f64 * QUANTUM,
                                         point.1 as f64 * QUANTUM,
                                     ),
-                                    radius: Length(radius * NATIVE_TO_IR),
+                                    radius: Length::new(radius * NATIVE_TO_IR)?,
                                 })
                                 .ok()?
                             } else {
@@ -1262,7 +1294,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         point.0 as f64 * QUANTUM,
                                         point.1 as f64 * QUANTUM,
                                     ),
-                                    radius: Length(radius * NATIVE_TO_IR),
+                                    radius: Length::new(radius * NATIVE_TO_IR)?,
                                 })
                                 .ok()?
                             } else if let (Some(point), Some(radius)) = (
@@ -1282,7 +1314,7 @@ pub(crate) fn project_marker_backed_sketches(
                             ) {
                                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center: point,
-                                    radius: Length(radius * NATIVE_TO_IR),
+                                    radius: Length::new(radius * NATIVE_TO_IR)?,
                                 })
                                 .ok()?
                             } else if let (Some(center), Some((major_axis, major, minor))) = (
@@ -1299,9 +1331,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 ))?;
                                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                                     center,
-                                    major_angle: Angle((axis.1 as f64).atan2(axis.0 as f64)),
-                                    major_radius: Length(major * NATIVE_TO_IR),
-                                    minor_radius: Length(minor * NATIVE_TO_IR),
+                                    major_angle: Angle::new((axis.1 as f64).atan2(axis.0 as f64))?,
+                                    major_radius: Length::new(major * NATIVE_TO_IR)?,
+                                    minor_radius: Length::new(minor * NATIVE_TO_IR)?,
                                     bounds: None,
                                 })
                                 .ok()?
@@ -1803,17 +1835,22 @@ pub(crate) fn project_marker_backed_sketches(
             }
             sketch_entities.extend(projected);
             sketches.push(sketch);
-            features[feature_index].definition = if block_definition {
-                cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
-                    sketch: Some(sketch_id),
-                }
-            } else {
-                cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                }
-            };
+            features[feature_index]
+                .evaluation
+                .set_definition(if block_definition {
+                    cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
+                        sketch: Some(sketch_id),
+                    }
+                } else {
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1858,7 +1895,7 @@ pub(crate) fn project_sketch_block_profiles(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for lane in lanes {
         for history in histories {
             let mut objects = history
@@ -1916,7 +1953,7 @@ pub(crate) fn project_sketch_block_profiles(
                     continue;
                 };
                 if !matches!(
-                    features[profile_index].definition,
+                    features[profile_index].evaluation.definition(),
                     FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                             | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -1950,7 +1987,7 @@ pub(crate) fn project_sketch_block_profiles(
                     };
                     let FeatureDefinition::SketchBlockDefinition {
                         sketch: Some(sketch_id),
-                    } = &features[definition_index].definition
+                    } = features[definition_index].evaluation.definition()
                     else {
                         definitions_complete = false;
                         break;
@@ -2000,7 +2037,7 @@ pub(crate) fn project_sketch_block_profiles(
                     let FeatureDefinition::SketchBlockInstance {
                         block: Some(block),
                         placement: Some(transform),
-                    } = &features[instance_index].definition
+                    } = features[instance_index].evaluation.definition()
                     else {
                         instances_complete = false;
                         break;
@@ -2048,14 +2085,19 @@ pub(crate) fn project_sketch_block_profiles(
                     sketch_entities.extend(assembled.entities);
                     sketches.push(assembled.sketch);
                 }
-                if let FeatureDefinition::Sketch { sketch, .. } =
-                    &mut features[profile_index].definition
-                {
+                let mut definition = features[profile_index].evaluation.definition().clone();
+                if let FeatureDefinition::Sketch { sketch, .. } = &mut definition {
                     *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                 }
+                features[profile_index]
+                    .evaluation
+                    .set_definition(definition)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
         }
     }
+
+    Ok(())
 }
 
 fn dissectable_child_sources(value: &str) -> Option<HashSet<u32>> {
@@ -2239,7 +2281,7 @@ fn transform_sketch_block_geometry(
 ) -> Option<SketchGeometry> {
     let point = |point| transform_sketch_block_point(point, transform, frame);
     let direction = |direction| transform_sketch_block_direction(direction, transform, frame);
-    let angle = |value: Angle| Angle(value.0 + rotation);
+    let angle = |value: Angle| Angle::new(value.get() + rotation);
     Some(match geometry.definition() {
         SketchGeometryDefinition::Point { position } => {
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -2277,8 +2319,8 @@ fn transform_sketch_block_geometry(
         } => SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: point(*center)?,
             radius: *radius,
-            start_angle: angle(*start_angle),
-            end_angle: angle(*end_angle),
+            start_angle: angle(*start_angle)?,
+            end_angle: angle(*end_angle)?,
         })
         .ok()?,
         SketchGeometryDefinition::Ellipse {
@@ -2289,10 +2331,13 @@ fn transform_sketch_block_geometry(
             bounds,
         } => SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: point(*center)?,
-            major_angle: angle(*major_angle),
+            major_angle: angle(*major_angle)?,
             major_radius: *major_radius,
             minor_radius: *minor_radius,
-            bounds: bounds.map(|[start, end]| [angle(start), angle(end)]),
+            bounds: match bounds {
+                Some([start, end]) => Some([angle(*start)?, angle(*end)?]),
+                None => None,
+            },
         })
         .ok()?,
         SketchGeometryDefinition::Hyperbola {
@@ -2303,7 +2348,7 @@ fn transform_sketch_block_geometry(
             bounds,
         } => SketchGeometry::try_from(SketchGeometryDefinition::Hyperbola {
             center: point(*center)?,
-            major_angle: angle(*major_angle),
+            major_angle: angle(*major_angle)?,
             major_radius: *major_radius,
             minor_radius: *minor_radius,
             bounds: *bounds,
@@ -2316,7 +2361,7 @@ fn transform_sketch_block_geometry(
             bounds,
         } => SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
             vertex: point(*vertex)?,
-            axis_angle: angle(*axis_angle),
+            axis_angle: angle(*axis_angle)?,
             focal_length: *focal_length,
             bounds: *bounds,
         })
@@ -2352,7 +2397,7 @@ fn transform_sketch_block_geometry(
             placement: match placement {
                 Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
                     anchor: point(placement.anchor)?,
-                    rotation: angle(placement.rotation),
+                    rotation: angle(placement.rotation)?,
                 }),
                 None => None,
             },
@@ -2404,7 +2449,7 @@ fn project_detached_legacy_config_sketches(
     native_features: &HashMap<&str, &crate::records::Feature>,
     lanes: &[FeatureInputLane],
     feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -2431,97 +2476,108 @@ fn project_detached_legacy_config_sketches(
             *frame
         };
         for feature in features.iter_mut() {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                continue;
-            };
-            if !matches!(
-                feature.definition,
-                FeatureDefinition::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
-                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                    ..
-                }
-            ) {
-                continue;
-            }
-            let Some(native_feature) = native_features.get(native_ref).copied() else {
-                continue;
-            };
-            let markers = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                .collect::<Vec<_>>();
-            if markers.is_empty() {
-                continue;
-            }
-            let (origin, normal, u_axis) = feature_frames
-                .get(native_ref)
-                .copied()
-                .unwrap_or(detached_frame);
-            let Ok(sketch_id) = SketchId::mint(format!(
-                "sldprt:model:sketch#legacy-config:{lane_key}:{}",
-                native_feature.ordinal
-            )) else {
-                continue;
-            };
-            let sketch = Sketch {
-                id: sketch_id.clone(),
-                name: Some(native_feature.name.clone()),
-                configuration: lane.configuration.clone(),
-                visible: None,
-                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-                    origin, normal, u_axis,
+            let mut definition = feature.evaluation.definition().clone();
+            'feature_edit: {
+                let Some(native_ref) = feature.native_ref.as_deref() else {
+                    break 'feature_edit;
+                };
+                if !matches!(
+                    &definition,
+                    FeatureDefinition::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                            | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                        ..
+                    }
                 ) {
-                    Ok(placement) => placement,
-                    Err(_) => continue,
-                },
-                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-                native_ref: Some(lane.id.clone()),
-            };
-            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
-                continue;
-            };
-            let project = |coordinates: [f64; 2]| {
-                let native = quantize(
-                    Point2::new(coordinates[0] * NATIVE_TO_IR, coordinates[1] * NATIVE_TO_IR),
-                    QUANTUM,
-                );
-                let point = transform.apply(native)?;
-                Some(Point2::new(
-                    point.0 as f64 * QUANTUM,
-                    point.1 as f64 * QUANTUM,
-                ))
-            };
+                    break 'feature_edit;
+                }
+                let Some(native_feature) = native_features.get(native_ref).copied() else {
+                    break 'feature_edit;
+                };
+                let markers = lane
+                    .sketch_entities
+                    .iter()
+                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                    .collect::<Vec<_>>();
+                if markers.is_empty() {
+                    break 'feature_edit;
+                }
+                let (origin, normal, u_axis) = feature_frames
+                    .get(native_ref)
+                    .copied()
+                    .unwrap_or(detached_frame);
+                let Ok(sketch_id) = SketchId::mint(format!(
+                    "sldprt:model:sketch#legacy-config:{lane_key}:{}",
+                    native_feature.ordinal
+                )) else {
+                    break 'feature_edit;
+                };
+                let sketch = Sketch {
+                    id: sketch_id.clone(),
+                    name: Some(native_feature.name.clone()),
+                    configuration: lane.configuration.clone(),
+                    visible: None,
+                    placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                        origin, normal, u_axis,
+                    ) {
+                        Ok(placement) => placement,
+                        Err(_) => break 'feature_edit,
+                    },
+                    profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+                    native_ref: Some(lane.id.clone()),
+                };
+                let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                    break 'feature_edit;
+                };
+                let project = |coordinates: [f64; 2]| {
+                    let native = quantize(
+                        Point2::new(coordinates[0] * NATIVE_TO_IR, coordinates[1] * NATIVE_TO_IR),
+                        QUANTUM,
+                    );
+                    let point = transform.apply(native)?;
+                    Some(Point2::new(
+                        point.0 as f64 * QUANTUM,
+                        point.1 as f64 * QUANTUM,
+                    ))
+                };
 
-            let projected = legacy_config_hex_sketch(native_feature, &sketch, &markers, &project)
-                .or_else(|| {
-                    legacy_config_collinear_sketch(
-                        lane,
-                        native_feature,
-                        &sketch,
-                        &markers,
-                        &project,
+                let projected =
+                    legacy_config_hex_sketch(native_feature, &sketch, &markers, &project).or_else(
+                        || {
+                            legacy_config_collinear_sketch(
+                                lane,
+                                native_feature,
+                                &sketch,
+                                &markers,
+                                &project,
+                            )
+                        },
+                    );
+                let Some((sketch, mut entities)) = projected else {
+                    break 'feature_edit;
+                };
+                if entities.iter().any(|entity| {
+                    matches!(
+                        entity.geometry.definition(),
+                        SketchGeometryDefinition::Native { .. }
                     )
-                });
-            let Some((sketch, mut entities)) = projected else {
-                continue;
-            };
-            if entities.iter().any(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Native { .. }
-                )
-            }) {
-                continue;
+                }) {
+                    break 'feature_edit;
+                }
+                sketch_entities.append(&mut entities);
+                sketches.push(sketch.clone());
+                definition = FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id)),
+                };
             }
-            sketch_entities.append(&mut entities);
-            sketches.push(sketch.clone());
-            feature.definition = FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id)),
-            };
+            feature
+                .evaluation
+                .set_definition(definition)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+
+    Ok(())
 }
 
 fn legacy_config_hex_sketch(
@@ -2633,7 +2689,7 @@ fn legacy_config_hex_sketch(
             sketch.id.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
-                radius: Length(circle_radius),
+                radius: Length::new(circle_radius)?,
             })
             .ok()?,
         )
@@ -2646,7 +2702,7 @@ fn legacy_config_hex_sketch(
             sketch.id.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: construction_center,
-                radius: Length(construction_radius),
+                radius: Length::new(construction_radius)?,
             })
             .ok()?,
         )
@@ -3096,7 +3152,8 @@ mod detached_legacy_sketch_tests {
             &mut sketch_entities,
             &[history],
             &[lane],
-        );
+        )
+        .unwrap();
 
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].id, expected_sketch);
@@ -3107,7 +3164,7 @@ mod detached_legacy_sketch_tests {
         assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
         assert!(sketch_entities.is_empty());
         assert!(matches!(
-            &features[0].definition,
+            features[0].evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
@@ -3176,11 +3233,12 @@ mod detached_legacy_sketch_tests {
             &mut sketch_entities,
             &[history],
             &[lane],
-        );
+        )
+        .unwrap();
 
         assert!(sketches.is_empty());
         assert!(matches!(
-            features[0].definition,
+            features[0].evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                     | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -3361,7 +3419,7 @@ mod detached_legacy_sketch_tests {
                 block_sketch_id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(1.0, 2.0),
-                    radius: Length(3.0),
+                    radius: Length::new(3.0).unwrap(),
                 })
                 .unwrap(),
             )
@@ -3433,8 +3491,8 @@ mod detached_legacy_sketch_tests {
         assert_eq!(
             circles,
             [
-                (Point2::new(1.0, 2.0), Length(3.0)),
-                (Point2::new(3.0, 1.0), Length(3.0)),
+                (Point2::new(1.0, 2.0), Length::new(3.0).unwrap()),
+                (Point2::new(3.0, 1.0), Length::new(3.0).unwrap()),
             ]
         );
         let lines = assembled

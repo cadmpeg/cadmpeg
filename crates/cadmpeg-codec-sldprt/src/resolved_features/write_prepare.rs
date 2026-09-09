@@ -111,7 +111,7 @@ fn patch_spatial_sketches(
             .iter()
             .filter(|feature| {
                 matches!(
-                    &feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::SpatialSketch {
                         sketch: Some(candidate),
                     } if candidate == &sketch.id
@@ -296,12 +296,12 @@ fn patch_spatial_sketches(
         }
     }
 
-    let mut features = crate::history::project_features(&native.feature_histories);
+    let mut features = crate::history::project_features(&native.feature_histories)?;
     let (projected_sketches, mut projected_entities) = spatial_sketches(
         &mut features,
         &native.feature_histories,
         &native.feature_input_lanes,
-    );
+    )?;
     let mut projected_constraints = Vec::new();
     super::relation_geometry::project_spatial_relation_bindings(
         &mut projected_constraints,
@@ -404,7 +404,7 @@ fn validate_generated_marker_constraint(
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !ir.model.features.iter().any(|feature| {
         matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } if sketch == &constraint.sketch
@@ -565,7 +565,7 @@ fn validate_generated_marker_constraint(
         }
         let owner = ir.model.features.iter().find(|feature| {
             matches!(
-                &feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
                     if sketch == &constraint.sketch
             )
@@ -596,7 +596,7 @@ fn validate_generated_marker_constraint(
         }
         SketchConstraintDefinitionInput::Fixed { entity } => (entity, None),
         SketchConstraintDefinitionInput::ArcAngle { entity, angle } => {
-            if arc_angle_relation_kind(angle.0).is_none() {
+            if arc_angle_relation_kind(angle.get()).is_none() {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "source-less SLDPRT arc-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
@@ -605,7 +605,7 @@ fn validate_generated_marker_constraint(
             (entity, None)
         }
         SketchConstraintDefinitionInput::EllipseAngle { entity, angle } => {
-            if ellipse_angle_relation_kind(angle.0).is_none() {
+            if ellipse_angle_relation_kind(angle.get()).is_none() {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "source-less SLDPRT ellipse-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
@@ -685,8 +685,8 @@ fn validate_solved_dimension(
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let expected = match parameter.value {
-        Some(cadmpeg_ir::features::ParameterValue::Length(value)) => value.0,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.0,
+        Some(cadmpeg_ir::features::ParameterValue::Length(value)) => value.get(),
+        Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.get(),
         _ => unreachable!("dimension parameter compatibility was checked by the caller"),
     };
     let mut measured = match constraint.definition.kind() {
@@ -779,7 +779,7 @@ fn validate_solved_dimension(
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
             let radius = match entity.geometry.definition() {
                 SketchGeometryDefinition::Circle { radius, .. }
-                | SketchGeometryDefinition::Arc { radius, .. } => radius.0,
+                | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
                 _ => {
                     return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                         "source-less SLDPRT radial dimension {} requires circular geometry",
@@ -1096,7 +1096,7 @@ pub(super) fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) ->
 fn circular_center_radius(geometry: &SketchGeometryDefinition) -> Option<(Point2, f64)> {
     match geometry {
         SketchGeometryDefinition::Circle { center, radius }
-        | SketchGeometryDefinition::Arc { center, radius, .. } => Some((*center, radius.0)),
+        | SketchGeometryDefinition::Arc { center, radius, .. } => Some((*center, radius.get())),
         _ => None,
     }
 }
@@ -1140,7 +1140,7 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
             | SketchGeometryDefinition::Arc { radius: first, .. },
             SketchGeometryDefinition::Circle { radius: second, .. }
             | SketchGeometryDefinition::Arc { radius: second, .. },
-        ) => close(first.0, second.0),
+        ) => close(first.get(), second.get()),
         (
             SketchGeometryDefinition::Ellipse {
                 major_radius: first_major,
@@ -1152,7 +1152,10 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
                 minor_radius: second_minor,
                 ..
             },
-        ) => close(first_major.0, second_major.0) && close(first_minor.0, second_minor.0),
+        ) => {
+            close(first_major.get(), second_major.get())
+                && close(first_minor.get(), second_minor.get())
+        }
         _ => return None,
     })
 }
@@ -1207,7 +1210,7 @@ fn unique_planar_sketch_owner<'a>(
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
         matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
             } if candidate == sketch
@@ -1221,7 +1224,7 @@ fn unique_spatial_sketch_owner<'a>(
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
         matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::SpatialSketch {
                 sketch: Some(candidate),
             } if candidate == sketch
@@ -1510,15 +1513,19 @@ mod source_less_lane_tests {
             ordinal: 0,
             name: Some("Sketch".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone())),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch.id.clone(),
+                    )),
+                },
+            ),
             native_ref: None,
         });
     }

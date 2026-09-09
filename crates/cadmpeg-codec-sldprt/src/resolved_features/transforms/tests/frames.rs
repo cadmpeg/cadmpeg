@@ -179,8 +179,8 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -247,7 +247,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     })
     .unwrap();
     let mut directional_parameter = parameter.clone();
-    directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
+    directional_parameter.value = Some(ParameterValue::Length(Length::new(1.0).unwrap()));
     assert!(matches!(
         typed_relation_definition(
             &projected_relation,
@@ -259,7 +259,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         ),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
-    directional_parameter.value = Some(ParameterValue::Length(Length(0.05)));
+    directional_parameter.value = Some(ParameterValue::Length(Length::new(0.05).unwrap()));
     assert!(matches!(
         typed_relation_definition(
             &projected_relation,
@@ -275,7 +275,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         position: Point2::new(1.0, 1.0),
     })
     .unwrap();
-    directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
+    directional_parameter.value = Some(ParameterValue::Length(Length::new(1.0).unwrap()));
     assert!(matches!(
         typed_relation_definition(
             &projected_relation,
@@ -328,15 +328,17 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
+        ),
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
@@ -345,12 +347,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         name: "D1".into(),
         ordinal: 0,
         expression: "12".into(),
-        value: Some(ParameterValue::Length(Length(12.0))),
+        value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("existing-driver".into()),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
     let scalar = FeatureInputScalar {
         id: "scalar".into(),
@@ -427,7 +429,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         Some(&parameter.id)
     );
     let mut mismatched_parameter = parameter.clone();
-    mismatched_parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    mismatched_parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     assert_eq!(
         relation_parameter_by_display_name(
             &relation,
@@ -453,7 +455,10 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
         })
         .expect("display-only relation parameter");
-    assert_eq!(synthetic.value, Some(ParameterValue::Length(Length(12.0))));
+    assert_eq!(
+        synthetic.value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
+    );
     assert!(synthetic.native_ref.is_none());
     let nested_relation = FeatureInputRelationInstance {
         id: "sldprt:feature-input:relation-instance#lane:10".into(),
@@ -597,12 +602,18 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             }],
             ..lane.clone()
         }),
+    )
+    .unwrap();
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
     assert_eq!(parameter.expression, "<MOD-DIAM>12mm");
     assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
 
-    parameter.value = Some(ParameterValue::Real(0.012));
+    parameter.value = Some(ParameterValue::Real(
+        cadmpeg_ir::features::FiniteReal::new(0.012).unwrap(),
+    ));
     parameter.expression = "0.012".into();
     parameter.display = None;
     parameter.native_ref = Some("driver".into());
@@ -633,8 +644,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             ],
             ..lane
         }),
+    )
+    .unwrap();
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
     assert_eq!(parameter.expression, "12mm");
 }
 
@@ -761,15 +776,17 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut entities = vec![
@@ -849,12 +866,12 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         name: "D1".into(),
         ordinal: 0,
         expression: String::new(),
-        value: Some(ParameterValue::Length(Length(8.0))),
+        value: Some(ParameterValue::Length(Length::new(8.0).unwrap())),
         display: Some(DimensionDisplay::Diameter),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("circle-scalar".into()),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
 
     project_dimensioned_sketch_geometry(
@@ -864,10 +881,12 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         &[feature],
         &[parameter],
         std::slice::from_ref(&lane),
-    );
-    assert!(matches!(entities[2].geometry.definition(),
+    )
+    .unwrap();
+    assert!(matches!(
+        entities[2].geometry.definition(),
         SketchGeometryDefinition::Circle { center, radius }
-            if *center == Point2::new(15.0, 40.0) && *radius == Length(4.0)
+            if *center == Point2::new(15.0, 40.0) && *radius == Length::new(4.0).unwrap()
     ));
     assert!(!entities[2].construction);
 
@@ -1132,7 +1151,7 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(10.0, 20.0),
-            radius: Length(5.0),
+            radius: Length::new(5.0).unwrap(),
         })
         .unwrap(),
     );
@@ -1146,9 +1165,9 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
     let mut arc = circle;
     arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(10.0, 20.0),
-        radius: Length(5.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(5.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(std::f64::consts::PI).unwrap(),
     })
     .unwrap();
     assert!(nested_profile_contains_declared_circular_carriers(
@@ -1195,15 +1214,17 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {
@@ -1213,8 +1234,8 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         name: "diameter".into(),
         expression: "10".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(10.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(10.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("parameter-scalar".into()),
@@ -1366,7 +1387,8 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[history],
         &[lane],
         &mut annotations,
-    );
+    )
+    .unwrap();
 
     assert!(sketches.is_empty());
     assert!(entities.is_empty());
@@ -1374,7 +1396,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     assert!(annotations.provenance.is_empty());
     assert!(annotations.exactness().is_empty());
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),

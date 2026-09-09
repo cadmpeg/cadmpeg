@@ -229,7 +229,8 @@ pub(in super::super) fn knit_surface_feature_definition(
                     )
                 });
             match generated {
-                Some(faces) => FaceSelection::Generated { faces, native },
+                Some(faces) => FaceSelection::generated(faces, native.clone())
+                    .unwrap_or(FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }
         },
@@ -489,19 +490,17 @@ pub(in super::super) fn feature_result_topology(
         .map(|curve_id| format!("curve#{curve_id}"))
         .collect::<Vec<_>>();
     (!faces.is_empty() || !edges.is_empty()).then_some(())?;
-    Some(FeatureResultTopology {
-        id: FeatureResultTopologyId::mint(format!(
-            "creo:model:feature-result-topology#{feature_id}"
-        ))
-        .expect("identity grammar"),
-        output_of: IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
+    FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!("creo:model:feature-result-topology#{feature_id}"))
             .expect("identity grammar"),
-        bodies: Vec::new(),
+        IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar"),
+        Vec::new(),
         faces,
         edges,
-        vertices: Vec::new(),
-        native_ref: None,
-    })
+        Vec::new(),
+        None,
+    )
+    .ok()
 }
 
 pub(in super::super) fn generated_surface_face_refs(
@@ -520,10 +519,7 @@ pub(in super::super) fn generated_surface_face_refs(
                 && result_surface_ids
                     .get(&row.feature_id)
                     .is_some_and(|ids| ids.contains(surface_id)))
-            .then_some(GeneratedFaceRef {
-                feature,
-                local_id: format!("surface#{surface_id}"),
-            })
+            .then_some(GeneratedFaceRef::new(feature, format!("surface#{surface_id}")).ok()?)
         })
         .collect()
 }

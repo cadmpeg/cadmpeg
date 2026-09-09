@@ -73,7 +73,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude { .. }
     ));
     assert_eq!(
@@ -385,7 +385,7 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         .expect("decode");
     let feature = &result.ir().model.features[0];
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [group]
@@ -633,7 +633,7 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        &result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [group]
@@ -680,7 +680,8 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature");
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
+        feature.evaluation.definition()
     else {
         panic!("native feature");
     };

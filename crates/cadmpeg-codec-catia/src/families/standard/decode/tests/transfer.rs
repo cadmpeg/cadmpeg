@@ -177,7 +177,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir().model.shells[0].free_vertices.len(), 3);
+    assert_eq!(result.ir().model.shells[0].free_vertices().len(), 3);
     assert!(result.ir().model.edges.is_empty());
     assert!(result
         .report()

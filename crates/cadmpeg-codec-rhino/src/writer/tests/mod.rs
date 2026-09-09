@@ -131,13 +131,9 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
         body,
         shells: vec![shell.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell.clone(),
-        region,
-        faces: vec![face.clone()],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model
+        .shells
+        .push(Shell::with_face(shell.clone(), region, face.clone()));
     ir.model.faces.push(Face {
         id: face.clone(),
         shell,
@@ -393,13 +389,16 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         body,
         shells: vec![shell.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell.clone(),
-        region,
-        faces: face_ids.to_vec(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(
+        Shell::new(
+            shell.clone(),
+            region,
+            face_ids.to_vec(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     for index in 0..2 {
         ir.model.faces.push(Face {
             id: face_ids[index].clone(),
@@ -596,13 +595,16 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         body,
         shells: vec![shell.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell.clone(),
-        region,
-        faces: face_ids.clone(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(
+        Shell::new(
+            shell.clone(),
+            region,
+            face_ids.clone(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     for index in 0..4 {
         ir.model.points.push(Point {
             id: point_ids[index].clone(),

@@ -248,7 +248,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         section_generated_profile_surface_kinds(
             &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(1.0, 2.0),
-                radius: Length(3.0),
+                radius: Length::new(3.0).expect("finite length fixture"),
             })
             .expect("valid test fixture")
         ),
@@ -805,22 +805,20 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             9,
             Some(SchemaClass::Hole),
             "Hole"
-        ),
-        IrFeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: Angle(angle),
-                },
-                ..
-            },
-            diameter: Some(Length(8.4)),
+        ).expect("valid test fixture"), IrFeatureDefinition::Hole {
+            shape,
+
             extent: Some(LinearTermination::Blind {
-                length: Length(25.0),
+                length: actual_length,
             }),
             bottom: None,
             ..
-        } if approximately_equal(angle, drill_point_angle)
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: angle,
+                },
+                ..
+            }, Some(actual_diameter),) if (approximately_equal(angle.get(), drill_point_angle)) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0)));
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
@@ -853,17 +851,15 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole"),
-        IrFeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                ..
-            },
-            diameter: None,
+        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Hole {
+            shape,
+
             extent: None,
             ..
-        }
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            }, None,))));
 }
 
 #[test]
@@ -1150,8 +1146,10 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
         Some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                .expect("finite point fixture"),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("valid direction fixture"),
         })
     );
     let mut conflicting_patch = existing.clone();
@@ -1214,8 +1212,10 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     assert_eq!(
         counterbore_support_axis_placement(9, &table, &rows, std::slice::from_ref(&frame)),
         Some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(2.0, 3.0, 4.0),
-            axis: Vector3::new(0.0, -1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0))
+                .expect("finite point fixture"),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, -1.0, 0.0))
+                .expect("valid direction fixture"),
         })
     );
     assert!(
@@ -1248,8 +1248,10 @@ fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
     assert_eq!(
         simple_drilled_axis_placement_from_frames(&[first, shifted], 0.5),
         Some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(2.0, -3.0, 4.0),
-            axis: Vector3::new(1.0, 0.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, -3.0, 4.0))
+                .expect("finite point fixture"),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                .expect("valid direction fixture"),
         })
     );
     assert!(simple_drilled_axis_placement_from_frames(&[], 0.5).is_none());
@@ -1276,7 +1278,8 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
             Point3::new(0.0, 2.625, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
             LinearTermination::Blind {
-                length: Length(1.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(1.0)
+                    .expect("nonzero length fixture"),
             },
         ))
     );
@@ -1309,7 +1312,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
         LinearTermination::Blind {
-            length: Length(57.0),
+            length: cadmpeg_ir::features::NonZeroLength::new(57.0).expect("nonzero length fixture"),
         },
     ));
     assert_eq!(
@@ -1340,7 +1343,8 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
             Point3::new(265.0, 200.0, -185.0),
             Vector3::new(-1.0, 0.0, 0.0),
             LinearTermination::Blind {
-                length: Length(40.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(40.0)
+                    .expect("nonzero length fixture"),
             },
         ))
     );
@@ -1832,9 +1836,9 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
 fn extrusion_profile_area_includes_oriented_arc_sector() {
     let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(1.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(1.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
     })
     .expect("valid test fixture");
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -1869,9 +1873,9 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
     let profile = vec![ProfileEntity::new(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
+            radius: Length::new(2.0).expect("finite length fixture"),
+            start_angle: Angle::new(0.0).expect("finite angle fixture"),
+            end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
         })
         .expect("valid test fixture"),
         false,
@@ -1906,7 +1910,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         .expect("valid test fixture");
     let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(1.0, -2.0),
-        radius: Length(3.0),
+        radius: Length::new(3.0).expect("finite length fixture"),
     })
     .expect("valid test fixture");
     let seam = [4.0, -2.0];

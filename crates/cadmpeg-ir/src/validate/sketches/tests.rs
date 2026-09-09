@@ -17,9 +17,9 @@ fn trimmed_concentric_arcs_validate_as_offsets() {
     let arc = |radius, start, end| {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(3.0, -4.0),
-            radius: Length(radius),
-            start_angle: Angle(start),
-            end_angle: Angle(end),
+            radius: Length::new(radius).unwrap(),
+            start_angle: Angle::new(start).unwrap(),
+            end_angle: Angle::new(end).unwrap(),
         })
         .unwrap()
     };
@@ -46,7 +46,7 @@ fn full_concentric_circles_validate_as_offsets() {
     let circle = |radius| {
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -4.0),
-            radius: Length(radius),
+            radius: Length::new(radius).unwrap(),
         })
         .unwrap()
     };
@@ -54,7 +54,7 @@ fn full_concentric_circles_validate_as_offsets() {
     let result = circle(3.5);
     let displaced = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, -3.9),
-        radius: Length(3.5),
+        radius: Length::new(3.5).unwrap(),
     })
     .unwrap();
 
@@ -82,21 +82,21 @@ fn full_concentric_circles_validate_as_offsets() {
 fn mixed_full_circle_arc_validate_as_offsets() {
     let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, -4.0),
-        radius: Length(5.0),
+        radius: Length::new(5.0).unwrap(),
     })
     .unwrap();
     let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, -4.0),
-        radius: Length(3.5),
-        start_angle: Angle(0.1),
-        end_angle: Angle(1.4),
+        radius: Length::new(3.5).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(1.4).unwrap(),
     })
     .unwrap();
     let displaced = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.1, -4.0),
-        radius: Length(3.5),
-        start_angle: Angle(0.1),
-        end_angle: Angle(1.4),
+        radius: Length::new(3.5).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(1.4).unwrap(),
     })
     .unwrap();
 
@@ -200,7 +200,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     result: result.clone(),
                     source_reversed: false,
                 }],
-                distance: Length(2.0),
+                distance: Length::new(2.0).unwrap(),
                 parameter: None,
             },
         )
@@ -495,7 +495,7 @@ fn sketch_constraint_native_ref_must_resolve() {
 #[test]
 fn sketch_feature_ownership_and_order_are_validated() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         LinearTermination, ProfileRef,
     };
     use crate::sketches::{Sketch, SketchId};
@@ -521,31 +521,33 @@ fn sketch_feature_ownership_and_order_are_validated() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch_id.clone()),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(1.0),
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(sketch_id.clone()),
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: crate::features::NonZeroLength::new(1.0).unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
     for (ordinal, suffix) in [(1, "owner"), (2, "duplicate-owner")] {
@@ -555,15 +557,17 @@ fn sketch_feature_ownership_and_order_are_validated() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            source_content: crate::features::FeatureContent::default(),
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+                },
+            ),
             native_ref: None,
         });
     }
@@ -579,7 +583,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 #[test]
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         LinearTermination, ProfileRef, SketchProfileRegion,
     };
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
@@ -605,80 +609,61 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile,
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(1.0),
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile,
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: crate::features::NonZeroLength::new(1.0).unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     };
     ir.model.features.push(feature(
         "invalid-profile-index",
         1,
-        ProfileRef::SketchProfiles {
-            sketch: sketch_id.clone(),
-            profiles: vec![0, 0],
-        },
+        ProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap(),
     ));
     ir.model.features.push(feature(
         "invalid-region",
         2,
-        ProfileRef::SketchRegions {
-            sketch: sketch_id.clone(),
-            regions: vec![SketchProfileRegion::Loops {
-                outer: 0,
-                holes: vec![0, 0],
-            }],
-        },
+        ProfileRef::sketch_regions(
+            sketch_id.clone(),
+            vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
+        )
+        .unwrap(),
     ));
     let selected_entity = SketchEntityId::mint("synthetic:test:entity#missing").unwrap();
     ir.model.features.push(feature(
         "repeated-profile-entity",
         3,
-        ProfileRef::SketchEntities {
-            sketch: sketch_id.clone(),
-            entities: vec![selected_entity.clone(), selected_entity],
-        },
-    ));
-    ir.model.features.push(feature(
-        "empty-native-selection",
-        4,
-        ProfileRef::SketchSelection {
-            sketch: sketch_id,
-            selections: Vec::new(),
-        },
+        ProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
     ));
 
     let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.message == "sketch profile indices are empty, repeated, or out of range"
     }));
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding.message
-                == "native sketch profile selections are empty or repeated")
-    );
+
     assert!(findings.iter().any(|finding| {
         finding.message
             == "sketch regions have empty, repeated, invalid, or out-of-range boundaries"
@@ -709,15 +694,17 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            },
+        ),
         native_ref: None,
     });
 

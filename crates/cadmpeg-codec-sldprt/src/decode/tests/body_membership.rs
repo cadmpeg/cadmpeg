@@ -140,7 +140,7 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
         .model
         .shells
         .iter()
-        .all(|shell| shell.faces.len() == 1));
+        .all(|shell| shell.faces().len() == 1));
 }
 
 #[test]

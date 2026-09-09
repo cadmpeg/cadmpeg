@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane, axis, point, and coordinate-system write encoders.
 
-use super::super::{valid_coordinate_frame, valid_direction, valid_plane_frame};
+use super::super::{valid_direction, valid_plane_frame};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
@@ -58,33 +58,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_datum_plane(
         &self,
-        origin: &Point3,
-        normal: &Vector3,
-        u_axis: &Vector3,
+        frame: &cadmpeg_ir::features::FeatureDatumPlaneFrame,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if !valid_plane_frame(*normal, *u_axis) {
+            if !valid_plane_frame(frame.normal(), frame.u_axis()) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported reference-plane semantics",
                     feature.id
                 )));
             }
-            if ![origin.x, origin.y, origin.z]
-                .iter()
-                .all(|value| value.is_finite())
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has a non-finite reference-plane origin",
-                    feature.id
-                )));
-            }
             require_same_family(existing, &feature.id, &["ReferencePlane"])?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Origin".into(), format_point3_mm(*origin));
-            properties.insert("Normal".into(), format_vector3(*normal));
-            properties.insert("UAxis".into(), format_vector3(*u_axis));
+            properties.insert("Origin".into(), format_point3_mm(frame.origin()));
+            properties.insert("Normal".into(), format_vector3(frame.normal()));
+            properties.insert("UAxis".into(), format_vector3(frame.u_axis()));
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
@@ -105,7 +94,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         let parent_sources = self.parent_sources;
         Ok({
-            if !distance.0.is_finite() {
+            if !distance.get().is_finite() {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite reference-plane offset",
                     feature.id
@@ -158,7 +147,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             parameters.insert(
                 "D1".into(),
                 format_length_like(
-                    distance.0,
+                    distance.get(),
                     existing
                         .and_then(|record| record.parameters.get("D1"))
                         .map(String::as_str),
@@ -241,30 +230,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_datum_coordinate_system(
         &self,
-        origin: &Point3,
-        x_axis: &Vector3,
-        y_axis: &Vector3,
-        z_axis: &Vector3,
+        frame: &cadmpeg_ir::features::FeatureCoordinateFrame,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if !valid_coordinate_frame(*origin, *x_axis, *y_axis, *z_axis) {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has an invalid coordinate-system frame",
-                    feature.id
-                )));
-            }
             require_same_family(
                 existing,
                 &feature.id,
                 &["CoordinateSystem", "ReferenceCoordinateSystem"],
             )?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Origin".into(), format_point3_mm(*origin));
-            properties.insert("XAxis".into(), format_vector3(*x_axis));
-            properties.insert("YAxis".into(), format_vector3(*y_axis));
-            properties.insert("ZAxis".into(), format_vector3(*z_axis));
+            properties.insert("Origin".into(), format_point3_mm(frame.origin()));
+            properties.insert("XAxis".into(), format_vector3(frame.x_axis()));
+            properties.insert("YAxis".into(), format_vector3(frame.y_axis()));
+            properties.insert("ZAxis".into(), format_vector3(frame.z_axis()));
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),

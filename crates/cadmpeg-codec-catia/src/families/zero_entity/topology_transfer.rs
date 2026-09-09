@@ -773,13 +773,9 @@ pub(crate) fn transfer_closed_face_topology(
         .ok()?
         .derived(&shell_id, "faces")
         .ok()?;
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: face_ids,
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model
+        .shells
+        .push(Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()).ok()?);
 
     Some(ZeroEntityTopologyCounts {
         bodies: 1,
@@ -1064,7 +1060,7 @@ mod tests {
         assert_eq!(counts.vertices, 3);
         assert_eq!(counts.coedges, 6);
         assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
-        assert_eq!(ir.model.shells[0].faces.len(), 2);
+        assert_eq!(ir.model.shells[0].faces().len(), 2);
         assert!(ir.model.coedges.iter().all(|coedge| {
             ir.model
                 .coedges

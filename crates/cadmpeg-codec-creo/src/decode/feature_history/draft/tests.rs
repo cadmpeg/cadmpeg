@@ -44,7 +44,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         source_object: None,
     });
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
+            .expect("valid test fixture"),
         IrFeatureDefinition::DatumPlane { .. }
     ));
 
@@ -59,7 +60,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
+            .expect("valid test fixture"),
         IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane
         }
@@ -113,9 +115,12 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
     assert_eq!(
         unbounded_feature_plane_definition(&scan, &CadIr::empty(), 5),
         Some(IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .expect("valid test fixture"),
         })
     );
 }
@@ -129,9 +134,12 @@ fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
     assert_eq!(
         unbounded_feature_plane_definition(&scan, &ir, 5),
         Some(IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .expect("valid test fixture"),
         })
     );
 }
@@ -145,7 +153,8 @@ fn unbounded_plane_rejects_conflicting_carriers() {
 
     assert!(unbounded_feature_plane_definition(&scan, &ir, 5).is_none());
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, None, "Unbounded Plane"),
+        schema_feature_definition(&scan, &ir, 5, None, "Unbounded Plane")
+            .expect("valid test fixture"),
         IrFeatureDefinition::Native { .. }
     ));
 }
