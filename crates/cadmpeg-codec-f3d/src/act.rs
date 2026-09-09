@@ -13,7 +13,7 @@ use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
     ActChannelGroup, ActClassTail, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
-    ActTableReference, ActTableRow, Located,
+    ActTableReference, ActTableRow, DesignClassTag, Located,
 };
 
 pub struct DecodedAct {
@@ -31,7 +31,7 @@ struct RecordFrame {
     record_index: u32,
     record_index_offset: usize,
     payload_offset: usize,
-    class_tag: String,
+    class_tag: DesignClassTag,
 }
 
 fn decode_record_frames(
@@ -87,7 +87,7 @@ fn decode_record_frames(
                 )));
             }
             let (class_tag, after_tag) = lp_ascii_strict(bytes, start, 3..=3)
-                .filter(|(tag, _)| tag.bytes().all(|byte| byte.is_ascii_digit()))
+                .and_then(|(tag, after)| DesignClassTag::try_from(tag).ok().map(|tag| (tag, after)))
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "F3D ACT record lacks a dynamic class tag: {stream}@{start}"
@@ -101,15 +101,11 @@ fn decode_record_frames(
                     "F3D ACT record header conflicts with its MetaStream index: {stream}@{start}"
                 )));
             }
-            let class_index = class_tag
-                .parse::<usize>()
-                .ok()
-                .and_then(|tag| tag.checked_sub(256))
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D ACT class tag is outside the dynamic registry: {stream}@{start}"
-                    ))
-                })?;
+            let class_index = class_tag.dynamic_ordinal().ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "F3D ACT class tag is outside the dynamic registry: {stream}@{start}"
+                ))
+            })?;
             if !meta.types.get(class_index).is_some_and(|record_type| {
                 record_type
                     .entities
@@ -412,7 +408,7 @@ struct ChannelGroup {
     record_index: u32,
     record_index_offset: usize,
     entity_id: Option<Located<String, usize>>,
-    class_tag: String,
+    class_tag: DesignClassTag,
     channels: BTreeMap<String, Located<crate::records::DesignGuidText>>,
     class_tail: Option<ActClassTail>,
 }
@@ -456,7 +452,7 @@ fn merge_entities(
         let channel_group = ActChannelGroup::try_new(
             group.record_index_offset as u64,
             group.entity_id.as_ref().map(|id| id.offset as u64),
-            group.class_tag.try_into().map_err(CodecError::malformed)?,
+            group.class_tag,
             group.channels,
             group.class_tail,
         )
@@ -614,7 +610,7 @@ fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Opt
         ActRootComponent::try_new(
             crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
             frame.record_index,
-            frame.class_tag.clone().try_into().ok()?,
+            frame.class_tag.clone(),
             instance_root_record,
             components_root_record,
             registry_flag,
@@ -694,7 +690,7 @@ mod tests {
                 value: entity_id.into(),
                 offset: 200,
             }),
-            class_tag: "261".into(),
+            class_tag: "261".to_owned().try_into().unwrap(),
             channels: BTreeMap::from([(
                 "Appearance".into(),
                 Located {
@@ -773,7 +769,7 @@ mod tests {
             record_index: 7,
             record_index_offset: 7,
             payload_offset,
-            class_tag: "261".into(),
+            class_tag: "261".to_owned().try_into().unwrap(),
         };
 
         let group = decode_channel_group(&bytes, &frame, "synthetic")
