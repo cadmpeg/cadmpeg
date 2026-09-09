@@ -1,4 +1,4 @@
-# generated at 7606cda8d
+# generated at ee06f3e21
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -41,7 +41,7 @@ impl cadmpeg_container::compound::CompoundStorageId
 pub const fn cadmpeg_container::compound::CompoundStorageId::directory_id(self) -> u32
 pub struct cadmpeg_container::compound::CompoundStreamEntry
 impl cadmpeg_container::compound::CompoundStreamEntry
-pub const fn cadmpeg_container::compound::CompoundStreamEntry::allocation(&self) -> cadmpeg_container::compound::CompoundAllocation
+pub const fn cadmpeg_container::compound::CompoundStreamEntry::allocation(&self) -> core::option::Option<cadmpeg_container::compound::CompoundAllocation>
 pub const fn cadmpeg_container::compound::CompoundStreamEntry::id(&self) -> cadmpeg_container::compound::CompoundStreamId
 pub const fn cadmpeg_container::compound::CompoundStreamEntry::logical_size(&self) -> u64
 pub fn cadmpeg_container::compound::CompoundStreamEntry::path(&self) -> &str
@@ -49,7 +49,6 @@ pub const fn cadmpeg_container::compound::CompoundStreamEntry::start_sector(&sel
 pub struct cadmpeg_container::compound::CompoundStreamId(_)
 impl cadmpeg_container::compound::CompoundStreamId
 pub const fn cadmpeg_container::compound::CompoundStreamId::directory_id(self) -> u32
-pub const fn cadmpeg_container::compound::CompoundStreamId::from_directory_id(u32) -> Self
 pub fn cadmpeg_container::compound::read_detection_prefix(&mut dyn alloc::io::read::Read, usize, u64) -> core::io::error::Result<alloc::vec::Vec<u8>>
 pub mod cadmpeg_container::compression
 pub fn cadmpeg_container::compression::inflate_bounded_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
@@ -57,35 +56,22 @@ pub fn cadmpeg_container::compression::inflate_deflate<'a>(&cadmpeg_core::decode
 pub fn cadmpeg_container::compression::inflate_zlib_exact<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::compression::inflate_zlib_member<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>, cadmpeg_core::decode::context::ExpandSpec) -> core::result::Result<(cadmpeg_core::decode::view::View<'a>, usize), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::compression::inflate_zlib_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
+pub enum cadmpeg_container::CfbSpanRole
+pub cadmpeg_container::CfbSpanRole::Difat
+pub cadmpeg_container::CfbSpanRole::Directory
+pub cadmpeg_container::CfbSpanRole::Fat
+pub cadmpeg_container::CfbSpanRole::Header
+pub cadmpeg_container::CfbSpanRole::MiniFat
+pub cadmpeg_container::CfbSpanRole::MiniStreamPadding
+pub cadmpeg_container::CfbSpanRole::MiniStreamPayload(alloc::string::String)
+pub cadmpeg_container::CfbSpanRole::Padding
+pub cadmpeg_container::CfbSpanRole::Padding::entry: core::option::Option<alloc::string::String>
+pub cadmpeg_container::CfbSpanRole::RangeLockSector
+pub cadmpeg_container::CfbSpanRole::RegularStreamPayload(alloc::string::String)
+pub cadmpeg_container::CfbSpanRole::UnallocatedSector
 pub enum cadmpeg_container::SpanRole
-pub cadmpeg_container::SpanRole::CentralComment(alloc::string::String)
-pub cadmpeg_container::SpanRole::CentralExtra(alloc::string::String)
-pub cadmpeg_container::SpanRole::CentralFields(alloc::string::String)
-pub cadmpeg_container::SpanRole::CentralName(alloc::string::String)
-pub cadmpeg_container::SpanRole::CentralSignature(alloc::string::String)
-pub cadmpeg_container::SpanRole::CfbDifat
-pub cadmpeg_container::SpanRole::CfbDirectory
-pub cadmpeg_container::SpanRole::CfbFat
-pub cadmpeg_container::SpanRole::CfbHeader
-pub cadmpeg_container::SpanRole::CfbMiniFat
-pub cadmpeg_container::SpanRole::CfbMiniStreamPadding
-pub cadmpeg_container::SpanRole::CfbMiniStreamPayload(alloc::string::String)
-pub cadmpeg_container::SpanRole::CfbPadding
-pub cadmpeg_container::SpanRole::CfbPadding::entry: core::option::Option<alloc::string::String>
-pub cadmpeg_container::SpanRole::CfbRangeLockSector
-pub cadmpeg_container::SpanRole::CfbRegularStreamPayload(alloc::string::String)
-pub cadmpeg_container::SpanRole::CfbUnallocatedSector
-pub cadmpeg_container::SpanRole::CompressedPayload(alloc::string::String)
-pub cadmpeg_container::SpanRole::DataDescriptor(alloc::string::String)
-pub cadmpeg_container::SpanRole::EndRecord
-pub cadmpeg_container::SpanRole::LocalExtra(alloc::string::String)
-pub cadmpeg_container::SpanRole::LocalFields(alloc::string::String)
-pub cadmpeg_container::SpanRole::LocalName(alloc::string::String)
-pub cadmpeg_container::SpanRole::LocalSignature(alloc::string::String)
-pub cadmpeg_container::SpanRole::Padding
-pub cadmpeg_container::SpanRole::Padding::entry: core::option::Option<alloc::string::String>
-pub cadmpeg_container::SpanRole::Zip64EndLocator
-pub cadmpeg_container::SpanRole::Zip64EndRecord
+pub cadmpeg_container::SpanRole::Cfb(cadmpeg_container::CfbSpanRole)
+pub cadmpeg_container::SpanRole::Zip(cadmpeg_container::ZipSpanRole)
 impl cadmpeg_container::SpanRole
 pub fn cadmpeg_container::SpanRole::entry(&self) -> core::option::Option<&str>
 pub const fn cadmpeg_container::SpanRole::label(&self) -> &'static str
@@ -97,6 +83,23 @@ impl cadmpeg_container::ZipCompression
 pub const fn cadmpeg_container::ZipCompression::label(self) -> &'static str
 impl core::convert::From<cadmpeg_container::ZipCompression> for cadmpeg_core::container::EntryCompression
 pub fn cadmpeg_core::container::EntryCompression::from(cadmpeg_container::ZipCompression) -> Self
+pub enum cadmpeg_container::ZipSpanRole
+pub cadmpeg_container::ZipSpanRole::CentralComment(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::CentralExtra(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::CentralFields(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::CentralName(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::CentralSignature(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::CompressedPayload(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::DataDescriptor(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::EndRecord
+pub cadmpeg_container::ZipSpanRole::LocalExtra(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::LocalFields(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::LocalName(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::LocalSignature(alloc::string::String)
+pub cadmpeg_container::ZipSpanRole::Padding
+pub cadmpeg_container::ZipSpanRole::Padding::entry: core::option::Option<alloc::string::String>
+pub cadmpeg_container::ZipSpanRole::Zip64EndLocator
+pub cadmpeg_container::ZipSpanRole::Zip64EndRecord
 pub struct cadmpeg_container::ArchiveSnapshot<'a>
 impl<'a> cadmpeg_container::ArchiveSnapshot<'a>
 pub fn cadmpeg_container::ArchiveSnapshot<'a>::container_entries(&self, impl core::ops::function::Fn(&str) -> cadmpeg_core::container::ContainerRole) -> alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>

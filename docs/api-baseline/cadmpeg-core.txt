@@ -1,4 +1,4 @@
-# generated at 7606cda8d
+# generated at ee06f3e21
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -113,7 +113,8 @@ pub cadmpeg_core::container::ContainerEntry::role: cadmpeg_core::container::Cont
 pub cadmpeg_core::container::ContainerEntry::uncompressed_size: u64
 pub mod cadmpeg_core::decode
 pub enum cadmpeg_core::decode::AddressStepKind
-pub cadmpeg_core::decode::AddressStepKind::Member
+pub cadmpeg_core::decode::AddressStepKind::Derived
+pub cadmpeg_core::decode::AddressStepKind::Member(alloc::string::String)
 pub cadmpeg_core::decode::AddressStepKind::Root
 pub enum cadmpeg_core::decode::DecodeMode
 pub cadmpeg_core::decode::DecodeMode::Salvage
@@ -121,9 +122,6 @@ pub cadmpeg_core::decode::DecodeMode::Strict
 pub enum cadmpeg_core::decode::ExpandSpec
 pub cadmpeg_core::decode::ExpandSpec::Exact(u64)
 pub cadmpeg_core::decode::ExpandSpec::Unknown
-pub enum cadmpeg_core::decode::LimitScope
-pub cadmpeg_core::decode::LimitScope::Global
-pub cadmpeg_core::decode::LimitScope::PerExpand
 pub enum cadmpeg_core::decode::ParseErrorKind
 pub cadmpeg_core::decode::ParseErrorKind::InvalidFraming
 pub cadmpeg_core::decode::ParseErrorKind::InvalidValue
@@ -147,10 +145,12 @@ pub cadmpeg_core::decode::SpaceDerivation::Concatenated
 pub cadmpeg_core::decode::SpaceDerivation::Concatenated::additional_parents: alloc::vec::Vec<cadmpeg_core::decode::SpaceId>
 pub cadmpeg_core::decode::SpaceDerivation::Concatenated::first_parent: cadmpeg_core::decode::SpaceId
 pub cadmpeg_core::decode::SpaceDerivation::Expanded
+pub cadmpeg_core::decode::SpaceDerivation::Expanded::member: core::option::Option<alloc::string::String>
 pub cadmpeg_core::decode::SpaceDerivation::Expanded::parent: cadmpeg_core::decode::SpaceId
 pub cadmpeg_core::decode::SpaceDerivation::Expanded::source_range: cadmpeg_core::decode::ByteRange
 pub cadmpeg_core::decode::SpaceDerivation::Root
 pub cadmpeg_core::decode::SpaceDerivation::StoredSlice
+pub cadmpeg_core::decode::SpaceDerivation::StoredSlice::member: core::option::Option<alloc::string::String>
 pub cadmpeg_core::decode::SpaceDerivation::StoredSlice::parent: cadmpeg_core::decode::SpaceId
 pub cadmpeg_core::decode::SpaceDerivation::StoredSlice::range: cadmpeg_core::decode::ByteRange
 pub struct cadmpeg_core::decode::AddressStep
@@ -174,20 +174,20 @@ pub fn cadmpeg_core::decode::DecodeContext<'a>::begin_expand(&self, cadmpeg_core
 pub fn cadmpeg_core::decode::DecodeContext<'a>::begin_expand_as(&self, cadmpeg_core::decode::View<'_>, cadmpeg_core::decode::ExpandSpec, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::ExpandWriter<'_, 'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_collection_items(&self, u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_entities(&self, u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
-pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_retained(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_retained(&self, u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_work(&self, u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::concat_views(&self, &[cadmpeg_core::decode::View<'_>]) -> core::result::Result<cadmpeg_core::decode::View<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::container_only(&self) -> bool
-pub fn cadmpeg_core::decode::DecodeContext<'a>::copy_retained(&self, &[u8], &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<alloc::vec::Vec<u8>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_core::decode::DecodeContext<'a>::enter_nested(&self, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<cadmpeg_core::decode::DepthGuard<'_>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::copy_retained(&self, &[u8], &'static str) -> core::result::Result<alloc::vec::Vec<u8>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::enter_nested(&self, &'static str) -> core::result::Result<cadmpeg_core::decode::DepthGuard<'_>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::finish_session(self) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::from_root_bytes(&'a [u8], &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::policy(&self) -> &cadmpeg_core::decode::DecodePolicy
 pub fn cadmpeg_core::decode::DecodeContext<'a>::read_root(&mut dyn cadmpeg_core::io::ReadSeek, &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy, bool) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
-pub fn cadmpeg_core::decode::DecodeContext<'a>::refuse_codec_limit(&self, &'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::decode::DecodeContext<'a>::refuse_codec_limit(&self, &'static str, u64, u64) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice_as<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_core::decode::DecodeContext<'a>::reserve_scoped(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<cadmpeg_core::decode::ScopedReservation<'_>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::reserve_scoped(&self, u64, &'static str) -> core::result::Result<cadmpeg_core::decode::ScopedReservation<'_>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::resolve_location(&self, cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
 pub fn cadmpeg_core::decode::DecodeContext<'a>::space_descriptors(&self) -> alloc::vec::Vec<cadmpeg_core::decode::SpaceDescriptor>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::work_budget(&self, u64) -> cadmpeg_core::decode::WorkBudget<'_>
@@ -202,9 +202,6 @@ pub fn cadmpeg_core::decode::DecodePolicy::default() -> Self
 pub struct cadmpeg_core::decode::DepthGuard<'a>
 impl core::ops::drop::Drop for cadmpeg_core::decode::DepthGuard<'_>
 pub fn cadmpeg_core::decode::DepthGuard<'_>::drop(&mut self)
-pub struct cadmpeg_core::decode::ErrorContext
-pub cadmpeg_core::decode::ErrorContext::location: core::option::Option<cadmpeg_core::decode::SourceLocation>
-pub cadmpeg_core::decode::ErrorContext::operation: &'static str
 pub struct cadmpeg_core::decode::ExpandWriter<'ctx, 'a>
 impl<'a> cadmpeg_core::decode::ExpandWriter<'_, 'a>
 pub fn cadmpeg_core::decode::ExpandWriter<'_, 'a>::finalize(self) -> core::result::Result<cadmpeg_core::decode::View<'a>, cadmpeg_core::error::CodecError>
@@ -228,11 +225,10 @@ pub fn cadmpeg_core::decode::ResolvedAddress::inspect_commands(&self, &str) -> a
 pub fn cadmpeg_core::decode::ResolvedAddress::path(&self) -> alloc::string::String
 pub struct cadmpeg_core::decode::ResourceLimit
 pub cadmpeg_core::decode::ResourceLimit::additional: u64
-pub cadmpeg_core::decode::ResourceLimit::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::decode::ResourceLimit::dimension: cadmpeg_core::decode::ResourceDimension
 pub cadmpeg_core::decode::ResourceLimit::limit: u64
+pub cadmpeg_core::decode::ResourceLimit::operation: &'static str
 pub cadmpeg_core::decode::ResourceLimit::reason: cadmpeg_core::decode::ResourceFailure
-pub cadmpeg_core::decode::ResourceLimit::scope: cadmpeg_core::decode::LimitScope
 pub cadmpeg_core::decode::ResourceLimit::used: u64
 pub struct cadmpeg_core::decode::ResourceLimits
 pub cadmpeg_core::decode::ResourceLimits::max_collection_items: u64
@@ -361,7 +357,7 @@ impl core::ops::drop::Drop for cadmpeg_core::decode::WorkBudgetRecursionGuard<'_
 pub fn cadmpeg_core::decode::WorkBudgetRecursionGuard<'_, '_>::drop(&mut self)
 pub fn cadmpeg_core::decode::alloc_filled<T: core::clone::Clone>(usize, T, &'static str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::bounded_len(u64, usize, usize) -> core::option::Option<usize>
-pub fn cadmpeg_core::decode::refuse_local_limit(&'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::decode::refuse_local_limit(&'static str, u64, u64) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::resolve_address(&[cadmpeg_core::decode::SpaceDescriptor], cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
 pub mod cadmpeg_core::dialect
 pub enum cadmpeg_core::dialect::Admission
@@ -422,6 +418,7 @@ pub fn cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect::Dial
 pub fn cadmpeg_core::dialect::DialectMatch::declared(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub fn cadmpeg_core::dialect::DialectMatch::dialect(&self) -> &cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectMatch::format(&self) -> &str
+pub fn cadmpeg_core::dialect::DialectMatch::grammar_id(&self, &cadmpeg_core::dialect::Grammar) -> cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectMatch::instance(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::dialect::DialectMatch::refused(cadmpeg_core::dialect::DialectId) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::residual(cadmpeg_core::dialect::DialectId) -> Self
@@ -516,7 +513,7 @@ pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
 pub cadmpeg_core::target::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
 impl cadmpeg_core::target::TargetDescriptor
 pub fn cadmpeg_core::target::TargetDescriptor::accepted_tokens(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
-#[non_exhaustive] pub struct cadmpeg_core::target::TargetRefusal
+pub struct cadmpeg_core::target::TargetRefusal
 impl cadmpeg_core::target::TargetRefusal
 pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
