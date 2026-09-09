@@ -2056,7 +2056,8 @@ fn extrude_target_plane_candidate(
             else {
                 return None;
             };
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
                 return None;
             }
@@ -2141,7 +2142,8 @@ pub(crate) fn face_coincident_with_sketch(
     let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
         return false;
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return false;
     };

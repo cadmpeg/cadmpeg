@@ -152,7 +152,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     assert!(
         matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Plane(plane_surface))
         if {
-            let (origin, _, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
             *origin == Point3::new(0.0, 0.0, 0.0)
         })
     );

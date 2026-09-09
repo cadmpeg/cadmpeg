@@ -1158,7 +1158,9 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 0.25;
     *cylinder_surface =

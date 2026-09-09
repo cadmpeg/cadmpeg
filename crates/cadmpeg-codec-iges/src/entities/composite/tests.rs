@@ -393,7 +393,7 @@ fn decode_projects_a_v5_type_142_constituent_through_its_model_curve() {
     let ProceduralCurveDefinition::Compound(compound) = composite.definition() else {
         panic!("expected a compound neutral carrier");
     };
-    let (_, components) = compound.parts();
+    let components = compound.components();
 
     assert_eq!(
         components
@@ -457,7 +457,7 @@ fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
     let ProceduralCurveDefinition::Compound(compound) = composite.definition() else {
         panic!("expected a compound neutral carrier");
     };
-    let (_, components) = compound.parts();
+    let components = compound.components();
 
     assert_eq!(
         components

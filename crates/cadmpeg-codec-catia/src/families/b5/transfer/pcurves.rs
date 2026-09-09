@@ -104,7 +104,8 @@ pub(super) fn oriented_line_plan(
     let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
-    let (origin, direction) = line_curve.parts();
+    let origin = line_curve.origin();
+    let direction = line_curve.direction();
     let origin = [origin.x, origin.y, origin.z];
     let mut direction = [direction.x, direction.y, direction.z];
     let direction_length = direction[0].hypot(direction[1]).hypot(direction[2]);
@@ -185,7 +186,10 @@ pub(super) fn oriented_circle_plan(
     let CurveGeometry::Circle(circle_curve) = geometry else {
         return None;
     };
-    let (center, axis, ref_direction, radius) = circle_curve.parts();
+    let center = circle_curve.center();
+    let axis = circle_curve.axis();
+    let ref_direction = circle_curve.ref_direction();
+    let radius = &circle_curve.radius();
     let mut axis = *axis;
     let ref_direction = *ref_direction;
     let radius = *radius;

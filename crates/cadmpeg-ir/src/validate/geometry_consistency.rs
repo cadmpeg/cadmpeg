@@ -57,7 +57,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             ..
         } = procedural.definition()
         {
-            let (_, endpoints, tolerance) = intersection.parts();
+            let endpoints = intersection.endpoints();
+            let tolerance = &intersection.tolerance();
 
             let evaluated = parameterization
                 .parameter_range()
@@ -906,11 +907,11 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2
 fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
             Some(*parameter_range)
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_geometry_trim_range(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_geometry_trim_range(basis),
@@ -937,7 +938,8 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let basis = trimmed_pcurve.basis();
             if parameter_range[0] < parameter_range[1] {
                 Some(*parameter_range)
             } else {
@@ -945,7 +947,7 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             }
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_parameter_domain(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),

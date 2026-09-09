@@ -341,11 +341,11 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .model
             .curves
             .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })));
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve) if { *&circle_curve.radius() == 2.0 })));
         assert!(decoded.ir().model.surfaces.iter().any(
             |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 origin.z == 3.0
             })
         ));

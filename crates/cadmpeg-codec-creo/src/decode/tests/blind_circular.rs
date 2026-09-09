@@ -296,12 +296,14 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     );
     assert!(
         matches!(SurfaceGeometry::try_from(sweep.geometry).expect("valid hole cylinder"), SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
-            *origin == Point3::new(-12.5, -4.0, 0.0)
-                && *axis == Vector3::new(0.0, -1.0, 0.0)
-                && *radius == 0.75
-        })
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let radius = &cylinder_surface.radius();
+                    *origin == Point3::new(-12.5, -4.0, 0.0)
+                        && *axis == Vector3::new(0.0, -1.0, 0.0)
+                        && *radius == 0.75
+                })
     );
 
     for entry in &mut scan.features.entity_tables[0].entries {
@@ -757,7 +759,9 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         ..
     }) = ir.model.surfaces.first_mut()
     {
-        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
 
         let radius = 0.75;
         *cylinder_surface =
@@ -1728,7 +1732,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let SurfaceGeometry::Plane(plane_surface) = &mut oblique.model.surfaces[0].geometry else {
         panic!("plane");
     };
-    let (origin, _, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
 
     let normal = Vector3::new(
         0.0,

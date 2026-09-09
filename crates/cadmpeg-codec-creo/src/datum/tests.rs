@@ -512,7 +512,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
     assert!(
         matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (_, _, _, radius) = cylinder_surface.parts();
+            let radius = &cylinder_surface.radius();
             (radius - 0.75).abs() < EPS_DATUM_RADIUS
         })
     );

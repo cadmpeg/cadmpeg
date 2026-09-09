@@ -1847,9 +1847,17 @@ fn native_cacheless_procedural_surface_definition(
     }
     if let ProceduralSurfaceDefinition::Helix { construction } = procedural.definition() {
         use cadmpeg_ir::geometry::HelixSurfaceProfile;
-        let (&angle_range, &dimension_range, path, &profile) = construction.parts();
-        let (&path_angle_range, &center, &major, &minor, &pitch, &apex_factor, &axis) =
-            path.parts();
+        let angle_range = *construction.angle_range();
+        let dimension_range = *construction.dimension_range();
+        let path = construction.path();
+        let profile = *construction.profile();
+        let path_angle_range = *path.angle_range();
+        let center = *path.center();
+        let major = *path.major();
+        let minor = *path.minor();
+        let pitch = *path.pitch();
+        let apex_factor = path.apex_factor();
+        let axis = *path.axis();
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         let circular = matches!(profile, HelixSurfaceProfile::Circle(_));
@@ -4233,7 +4241,8 @@ fn native_interval_curve(
     }
     match geometry {
         CurveGeometry::Nurbs(curve) => Ok(curve.clone()),
-        CurveGeometry::Line(line_curve) => { let (origin, direction,) = line_curve.parts();
+        CurveGeometry::Line(line_curve) => { let origin = line_curve.origin();
+let direction = line_curve.direction();
             if !finite_point(*origin) || !finite_vector(*direction) || direction.norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "source-less F3D interval line requires finite nonzero geometry".into(),
@@ -4260,7 +4269,10 @@ fn native_interval_curve(
             )
             .map_err(|error| CodecError::Malformed(error.to_string()))
         },
-        CurveGeometry::Circle(circle_curve) => { let (center, axis, ref_direction, radius,) = circle_curve.parts(); native_conic_interval_curve(
+        CurveGeometry::Circle(circle_curve) => { let center = circle_curve.center();
+let axis = circle_curve.axis();
+let ref_direction = circle_curve.ref_direction();
+let radius = &circle_curve.radius(); native_conic_interval_curve(
             *center,
             *axis,
             *ref_direction,
@@ -4268,7 +4280,11 @@ fn native_interval_curve(
             *radius,
             parameter_range,
         ) },
-        CurveGeometry::Ellipse(ellipse_curve) => { let (center, axis, major_direction, major_radius, minor_radius,) = ellipse_curve.parts(); native_conic_interval_curve(
+        CurveGeometry::Ellipse(ellipse_curve) => { let center = ellipse_curve.center();
+let axis = ellipse_curve.axis();
+let major_direction = ellipse_curve.major_direction();
+let major_radius = &ellipse_curve.major_radius();
+let minor_radius = &ellipse_curve.minor_radius(); native_conic_interval_curve(
             *center,
             *axis,
             *major_direction,
@@ -4722,7 +4738,8 @@ pub(crate) fn native_procedural_curve(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) =
         procedural.definition()
     {
-        let (parameters, components) = compound.parts();
+        let parameters = compound.parameters();
+        let components = compound.components();
 
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
@@ -5164,9 +5181,15 @@ pub(crate) fn native_procedural_curve(
     let (angle_range, center, major, minor, pitch, apex_factor, axis) = match procedural
         .definition()
     {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) => {
-            helix_payload.parts()
-        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) => (
+            helix_payload.angle_range(),
+            helix_payload.center(),
+            helix_payload.major(),
+            helix_payload.minor(),
+            helix_payload.pitch(),
+            &helix_payload.apex_factor(),
+            helix_payload.axis(),
+        ),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset { .. } => {
             return Err(CodecError::NotImplemented(format!(
@@ -5264,7 +5287,13 @@ pub(crate) fn native_cacheless_procedural_curve(
             procedural.id
         )));
     };
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = &helix_payload.apex_factor();
+    let axis = helix_payload.axis();
 
     native_curve_base(bytes, "intcurve")?;
     bytes.push(0x0f);
@@ -5304,7 +5333,9 @@ fn native_embedded_surface(
     let geometry = geometry.solved_cache().unwrap_or(geometry);
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             native_ident(bytes, "plane")?;
             native_point(
                 bytes,
@@ -5319,11 +5350,19 @@ fn native_embedded_surface(
             bytes.push(0x0b);
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 1.0, 0.0)?;
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let ratio = &cone_surface.ratio();
+            let half_angle = &cone_surface.half_angle();
             native_embedded_cone(
                 bytes,
                 *origin,
@@ -5335,7 +5374,10 @@ fn native_embedded_surface(
             )?;
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             native_ident(bytes, "sphere")?;
             native_point(
                 bytes,
@@ -5351,7 +5393,11 @@ fn native_embedded_surface(
             bytes.extend_from_slice(&[0x0b; 5]);
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             native_ident(bytes, "torus")?;
             native_point(
                 bytes,
@@ -5418,7 +5464,7 @@ fn native_support_pcurve_for_range(
             }
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (_, _, _, radius) = cylinder_surface.parts();
+            let radius = &cylinder_surface.radius();
             if !radius.is_finite() || radius.abs() <= f64::EPSILON {
                 return Err(CodecError::Malformed(
                     "intcurve support has an invalid cone parameter scale".into(),
@@ -5431,7 +5477,8 @@ fn native_support_pcurve_for_range(
             }
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (_, _, _, radius, _, half_angle) = cone_surface.parts();
+            let radius = &cone_surface.radius();
+            let half_angle = &cone_surface.half_angle();
             let sine = half_angle.sin();
             let cosine = half_angle.cos();
             let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
@@ -5754,7 +5801,10 @@ fn native_embedded_surface_with_bounds(
             native_embedded_cone_with_bounds(bytes, geometry, bounds)?;
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             native_ident(bytes, "sphere")?;
             native_point(
                 bytes,
@@ -5773,7 +5823,11 @@ fn native_embedded_surface_with_bounds(
             }
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             native_ident(bytes, "torus")?;
             native_point(
                 bytes,
@@ -5823,11 +5877,19 @@ fn native_embedded_cone_with_bounds(
 ) -> Result<(), CodecError> {
     let (origin, axis, ref_direction, radius, ratio, half_angle) = match geometry {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             (*origin, *axis, *ref_direction, *radius, 1.0, 0.0)
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let ratio = &cone_surface.ratio();
+            let half_angle = &cone_surface.half_angle();
             (*origin, *axis, *ref_direction, *radius, *ratio, *half_angle)
         }
         _ => {
@@ -6325,7 +6387,8 @@ fn native_pcurve_geometry(
 ) -> Result<NativePcurveGeometry, CodecError> {
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
                 return Err(CodecError::Malformed(
                     "source-less F3D line pcurve requires an ordered finite range".into(),
@@ -6377,7 +6440,8 @@ fn native_pcurve_geometry(
             periodic: nurbs.periodic(),
         }),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let basis = trimmed_pcurve.basis();
             native_pcurve_geometry(basis, *parameter_range)
         }
         PcurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(

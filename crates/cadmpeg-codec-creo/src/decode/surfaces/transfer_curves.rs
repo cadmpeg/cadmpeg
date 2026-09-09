@@ -212,7 +212,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Nurbs(nurbs),
                 SurfaceGeometry::Plane(plane_surface),
             ) => {
-                let (origin, normal, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
+                let normal = plane_surface.normal();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -231,7 +232,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Plane(plane_surface_2),
                 SurfaceGeometry::Nurbs(nurbs),
             ) => {
-                let (origin, normal, _) = plane_surface_2.parts();
+                let origin = plane_surface_2.origin();
+                let normal = plane_surface_2.normal();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -481,21 +483,22 @@ mod tests {
             ])
         );
         assert!(matches!(ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id
-            == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
-        .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
-            if {
-                let (origin, direction) = line_curve.parts();
-                origin.x == 0.0
-                    && origin.y == 2.0
-                    && origin.z == 0.0
-                    && direction.x == 1.0
-                    && direction.y == 0.0
-                    && direction.z == 0.0
-            }));
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id
+                    == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
+                .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+                    if {
+                        let origin = line_curve.origin();
+        let direction = line_curve.direction();
+                        origin.x == 0.0
+                            && origin.y == 2.0
+                            && origin.z == 0.0
+                            && direction.x == 1.0
+                            && direction.y == 0.0
+                            && direction.z == 0.0
+                    }));
     }
 
     #[test]

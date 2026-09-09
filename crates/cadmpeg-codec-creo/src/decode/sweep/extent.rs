@@ -254,7 +254,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                         geometry: SurfaceGeometry::Cylinder(cylinder_surface),
                         ..
                     }] => {
-                        let (origin, axis, _, _) = cylinder_surface.parts();
+                        let origin = cylinder_surface.origin();
+                        let axis = cylinder_surface.axis();
                         let parameters = crate::surface::unique_surface_parameter(
                             &scan.surfaces.parameters,
                             row.id,

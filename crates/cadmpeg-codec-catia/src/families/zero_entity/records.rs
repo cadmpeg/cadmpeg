@@ -1352,15 +1352,16 @@ pub(crate) fn zero_entity_neutral_pcurve(
 ) -> Option<PcurveGeometry> {
     let (u_scale, v_scale) = match surface {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (_, _, _, radius) = cylinder_surface.parts();
+            let radius = &cylinder_surface.radius();
             (radius.recip(), 1.0)
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (_, _, _, _, _, half_angle) = cone_surface.parts();
+            let half_angle = &cone_surface.half_angle();
             (1.0, half_angle.cos())
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             (major_radius.recip(), minor_radius.recip())
         }
         SurfaceGeometry::Plane(_) => (1.0, 1.0),
@@ -1424,7 +1425,9 @@ fn zero_entity_model_curve(
     };
     match surface {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
             let degree_index = usize::try_from(nurbs.degree()).ok()?;
             let parameters = [
@@ -1458,7 +1461,7 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Cylinder(cylinder_surface) if { constant_coordinate(0).is_some() } => {
-            let (_, axis, _, _) = cylinder_surface.parts();
+            let axis = cylinder_surface.axis();
             let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
             Some((
                 CurveGeometry::Line(cadmpeg_ir::geometry::LineCurve::try_new(point, *axis).ok()?),
@@ -1466,7 +1469,10 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Cylinder(cylinder_surface) if { constant_coordinate(1).is_some() } => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             let height = constant_coordinate(1)?;
             Some((
                 CurveGeometry::Circle(
@@ -1486,9 +1492,11 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Cone(cone_surface)
-            if { (*cone_surface.parts().4 == 1.0) && (constant_coordinate(0).is_some()) } =>
+            if { (*&cone_surface.ratio() == 1.0) && (constant_coordinate(0).is_some()) } =>
         {
-            let (_, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let half_angle = &cone_surface.half_angle();
             let angle = constant_coordinate(0)?;
             let transverse = axis.cross(*ref_direction);
             let radial = cadmpeg_ir::math::Vector3::new(
@@ -1512,9 +1520,13 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Cone(cone_surface)
-            if { (*cone_surface.parts().4 == 1.0) && (constant_coordinate(1).is_some()) } =>
+            if { (*&cone_surface.ratio() == 1.0) && (constant_coordinate(1).is_some()) } =>
         {
-            let (origin, axis, ref_direction, radius, _, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let half_angle = &cone_surface.half_angle();
             let slant = constant_coordinate(1)?;
             let circle_radius = radius + slant * half_angle.sin();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
@@ -1544,7 +1556,11 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Torus(torus_surface) if { constant_coordinate(0).is_some() } => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             let angle = constant_coordinate(0)? / major_radius;
             let transverse = axis.cross(*ref_direction);
             let radial = cadmpeg_ir::math::Vector3::new(
@@ -1570,7 +1586,11 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Torus(torus_surface) if { constant_coordinate(1).is_some() } => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             let angle = constant_coordinate(1)? / minor_radius;
             let circle_radius = major_radius + minor_radius * angle.cos();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
@@ -1627,10 +1647,14 @@ fn zero_entity_model_curve_construction(
     else {
         return None;
     };
-    if !(*cone_surface.parts().4 == 1.0) {
+    if !(*&cone_surface.ratio() == 1.0) {
         return None;
     }
-    let (origin, axis, ref_direction, radius, _, half_angle) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = &cone_surface.radius();
+    let half_angle = &cone_surface.half_angle();
     if nurbs.degree() != 1 || nurbs.weights().is_some() || nurbs.periodic() {
         return None;
     }
@@ -1686,7 +1710,9 @@ fn zero_entity_model_curve_construction(
 fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<Point3> {
     let point = match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
             Point3::new(
                 origin.x + u * u_axis.x + v * v_axis.x,
@@ -1695,7 +1721,10 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             let angle = u / radius;
             let transverse = axis.cross(*ref_direction);
             Point3::new(
@@ -1712,11 +1741,15 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
         }
         SurfaceGeometry::Cone(cone_surface)
             if {
-                let (_, _, _, _, ratio, _) = cone_surface.parts();
+                let ratio = &cone_surface.ratio();
                 *ratio == 1.0
             } =>
         {
-            let (origin, axis, ref_direction, radius, _, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let half_angle = &cone_surface.half_angle();
             let transverse = axis.cross(*ref_direction);
             let axial = v * half_angle.cos();
             let radial = radius + v * half_angle.sin();
@@ -1733,7 +1766,11 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             let major_angle = u / major_radius;
             let minor_angle = v / minor_radius;
             let transverse = axis.cross(*ref_direction);
@@ -2456,8 +2493,13 @@ mod tests {
         else {
             panic!("conical helix")
         };
-        let (&angle_range, &center, &major, &minor, &pitch, &apex_factor, &axis) =
-            helix_payload.parts();
+        let angle_range = *helix_payload.angle_range();
+        let center = *helix_payload.center();
+        let major = *helix_payload.major();
+        let minor = *helix_payload.minor();
+        let pitch = *helix_payload.pitch();
+        let apex_factor = helix_payload.apex_factor();
+        let axis = *helix_payload.axis();
 
         let slope = 2.0;
         let start_radius = 2.0 + half_angle.sin();
@@ -2651,7 +2693,7 @@ mod tests {
         cylinder[81..89].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         assert!(
             matches!(zero_entity_cylinder(&cylinder), Some(SurfaceGeometry::Cylinder(cylinder_surface))
-                if { *cylinder_surface.parts().3 == 2_000_000.0 })
+                if { *&cylinder_surface.radius() == 2_000_000.0 })
         );
 
         let mut cone = vec![0_u8; 120];
@@ -2661,7 +2703,7 @@ mod tests {
         cone[112..120].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         assert!(
             matches!(zero_entity_cone(&cone), Some(SurfaceGeometry::Cone(cone_surface))
-                if { *cone_surface.parts().3 == 2_000_000.0 })
+                if { *&cone_surface.radius() == 2_000_000.0 })
         );
 
         let mut torus = vec![0_u8; 120];
@@ -2672,8 +2714,8 @@ mod tests {
         assert!(
             matches!(zero_entity_torus(&torus), Some(SurfaceGeometry::Torus(torus_surface))
             if {
-                (*torus_surface.parts().3 == 2_000_000.0)
-                    && (*torus_surface.parts().4 == 1_500_000.0)
+                (*&torus_surface.major_radius() == 2_000_000.0)
+                    && (*&torus_surface.minor_radius() == 1_500_000.0)
             })
         );
     }

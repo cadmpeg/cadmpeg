@@ -75,7 +75,8 @@ pub(in super::super) fn curve_contains_points(
 ) -> bool {
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             let origin = [origin.x, origin.y, origin.z];
             let Some(direction) = normalize([direction.x, direction.y, direction.z]) else {
                 return false;
@@ -202,7 +203,8 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
             let CurveGeometry::Circle(circle_curve) = geometry else {
                 return false;
             };
-            let (center, axis, _, _) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
             let axis = [axis.x, axis.y, axis.z];
             let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
                 ((value.abs() - 1.0).abs() <= EPS_AXIS_COMPONENT).then_some(index)

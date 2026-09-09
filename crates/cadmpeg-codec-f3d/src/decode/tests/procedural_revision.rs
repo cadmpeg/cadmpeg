@@ -1394,21 +1394,23 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
         .expect("rolling-ball carrier");
     assert!(matches!(round_trip
-    .ir()
-    .model
-    .surfaces
-    .iter()
-    .find(|surface| &surface.id == carrier_id)
-    .expect("rolling-ball carrier")
-    .geometry
-    .solved_cache()
-    .expect("solved rolling-ball cache"), SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
-            *origin == Point3::new(2.0, 2.0, -4.0)
-                && *axis == Vector3::new(0.0, 0.0, 1.0)
-                && *radius == 2.0
-        }));
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| &surface.id == carrier_id)
+        .expect("rolling-ball carrier")
+        .geometry
+        .solved_cache()
+        .expect("solved rolling-ball cache"), SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let radius = &cylinder_surface.radius();
+                *origin == Point3::new(2.0, 2.0, -4.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *radius == 2.0
+            }));
 }
 
 #[test]

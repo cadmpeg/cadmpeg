@@ -107,7 +107,8 @@ impl<'a> WritableObjectCurve<'a> {
         }
         let geometry = match &curve.geometry {
             CurveGeometry::Circle(circle) => {
-                let (_, axis, ref_direction, _) = circle.parts();
+                let axis = circle.axis();
+                let ref_direction = circle.ref_direction();
                 check_frame(curve.id.as_str(), *axis, *ref_direction, "circle")?;
                 ObjectCurveGeometry::Circle(circle)
             }
@@ -129,7 +130,10 @@ impl<'a> WritableObjectCurve<'a> {
     pub(super) fn payload(&self) -> ([u8; 16], Vec<u8>) {
         match self.geometry {
             ObjectCurveGeometry::Circle(circle) => {
-                let (center, axis, ref_direction, radius) = circle.parts();
+                let center = circle.center();
+                let axis = circle.axis();
+                let ref_direction = circle.ref_direction();
+                let radius = &circle.radius();
                 (
                     super::ARC_CLASS,
                     super::circle_payload(*center, *axis, *ref_direction, *radius),
@@ -162,7 +166,9 @@ impl<'a> WritableFaceSurface<'a> {
         }
         match &surface.geometry {
             SurfaceGeometry::Plane(plane) => {
-                let (origin, normal, u_axis) = plane.parts();
+                let origin = plane.origin();
+                let normal = plane.normal();
+                let u_axis = plane.u_axis();
                 check_frame(surface.id.as_str(), *normal, *u_axis, "plane")?;
                 Ok(Self::Plane {
                     origin: *origin,
@@ -427,7 +433,8 @@ impl<'a> WritableModel<'a> {
             }
             let (geometry, expected_start, expected_end) = match &curve.geometry {
                 CurveGeometry::Line(line) => {
-                    let (origin, direction) = line.parts();
+                    let origin = line.origin();
+                    let direction = line.direction();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
                         return Err(CodecError::malformed(format_args!(
                             "edge {} has an invalid line parameterization",

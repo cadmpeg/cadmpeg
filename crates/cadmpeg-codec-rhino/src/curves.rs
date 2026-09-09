@@ -589,7 +589,10 @@ fn scale_decoded_curve(
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
             CurveGeometry::Circle(circle_curve) => {
-                let (center, axis, ref_direction, radius) = circle_curve.parts();
+                let center = circle_curve.center();
+                let axis = circle_curve.axis();
+                let ref_direction = circle_curve.ref_direction();
+                let radius = &circle_curve.radius();
                 *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
                     scale_ir_point(*center, scale).ok_or_else(|| {
                         GeometryError::malformed(
@@ -604,7 +607,8 @@ fn scale_decoded_curve(
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
             CurveGeometry::Line(line_curve) => {
-                let (origin, direction) = line_curve.parts();
+                let origin = line_curve.origin();
+                let direction = line_curve.direction();
                 *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
                     scale_ir_point(*origin, scale).ok_or_else(|| {
                         GeometryError::malformed(
@@ -617,7 +621,7 @@ fn scale_decoded_curve(
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
             CurveGeometry::Degenerate(degenerate_curve) => {
-                let (point,) = degenerate_curve.parts();
+                let point = degenerate_curve.point();
                 *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(
                     scale_ir_point(*point, scale).ok_or_else(|| {
                         GeometryError::malformed(
@@ -659,7 +663,10 @@ pub(crate) fn exact_nurbs(
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Nurbs(nurbs) => Ok(nurbs.clone()),
             CurveGeometry::Circle(circle_curve) => {
-                let (center, axis, ref_direction, radius) = circle_curve.parts();
+                let center = circle_curve.center();
+                let axis = circle_curve.axis();
+                let ref_direction = circle_curve.ref_direction();
+                let radius = &circle_curve.radius();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
                     center: *center,

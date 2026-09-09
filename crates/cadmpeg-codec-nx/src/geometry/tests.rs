@@ -110,7 +110,8 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
         panic!("cylinder")
     };
-    let (origin, _, _, radius) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let radius = &cylinder_surface.radius();
     assert_eq!(origin.x, 1_001_000.0);
     assert_eq!(*radius, f64::from_bits(1) * 1000.0);
 

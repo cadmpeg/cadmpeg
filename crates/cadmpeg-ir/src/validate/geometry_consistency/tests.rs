@@ -314,7 +314,8 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     let CurveGeometry::Line(line_curve) = &mut ir.model.curves[1].geometry else {
         unreachable!();
     };
-    let (origin, direction) = line_curve.parts();
+    let origin = line_curve.origin();
+    let direction = line_curve.direction();
     let mut origin = *origin;
     origin.y = 2.0;
     *line_curve = crate::geometry::LineCurve::try_new(origin, *direction).unwrap();
@@ -339,7 +340,9 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let PcurveGeometry::Circle(circle_pcurve) = &mut mismatched.model.pcurves[0].geometry else {
         unreachable!();
     };
-    let (center, x_axis, y_axis, _) = circle_pcurve.parts();
+    let center = circle_pcurve.center();
+    let x_axis = circle_pcurve.x_axis();
+    let y_axis = circle_pcurve.y_axis();
     *circle_pcurve =
         crate::geometry::CirclePcurve::try_new(*center, *x_axis, *y_axis, 2.0).unwrap();
     super::check_pcurve_surface_consistency(&mismatched, &mut findings);

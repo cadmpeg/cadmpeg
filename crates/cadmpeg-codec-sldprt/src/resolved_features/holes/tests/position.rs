@@ -190,7 +190,9 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut opposite.geometry else {
         unreachable!();
     };
-    let (origin, _, ref_direction, radius) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let ref_direction = cylinder_surface.ref_direction();
+    let radius = &cylinder_surface.radius();
 
     let axis = Vector3::new(0.0, 0.0, -1.0);
     *cylinder_surface =
@@ -368,7 +370,9 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surface.geometry else {
                 unreachable!();
             };
-            let (origin, _, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             let mut origin = *origin;
 
             origin.z = 20.0;

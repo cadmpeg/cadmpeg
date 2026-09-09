@@ -776,7 +776,9 @@ pub fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3]
     let CurveGeometry::Circle(circle_curve) = geometry else {
         return None;
     };
-    let (center, axis, _, radius) = circle_curve.parts();
+    let center = circle_curve.center();
+    let axis = circle_curve.axis();
+    let radius = &circle_curve.radius();
     Some((
         [center.x, center.y, center.z],
         [axis.x, axis.y, axis.z],

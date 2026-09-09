@@ -1182,7 +1182,9 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     else {
         panic!("expected a plane carrier");
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 2.0));
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -1301,7 +1303,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         else {
             panic!("expected an exact plane offset carrier");
         };
-        let (&origin, _, _) = plane_surface.parts();
+        let origin = *plane_surface.origin();
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
@@ -1339,7 +1341,7 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
         else {
             panic!("expected cylindrical offset carrier")
         };
-        let (_, _, _, &radius) = cylinder_surface.parts();
+        let radius = cylinder_surface.radius();
         assert_eq!(radius, expected_radius);
         assert!(
             result.report().losses.is_empty(),

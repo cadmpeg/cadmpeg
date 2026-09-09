@@ -590,7 +590,8 @@ impl AsmEditSet {
                 parameter_range, ..
             } => patch_subset_definition(bytes, self.ref_width, record, *parameter_range),
             ProceduralCurveDefinition::Compound(compound) => {
-                let (parameters, components) = compound.parts();
+                let parameters = compound.parameters();
+                let components = compound.components();
                 patch_compound_definition(bytes, self.ref_width, record, parameters, components)
             }
             ProceduralCurveDefinition::TwoSidedOffset {
@@ -938,7 +939,13 @@ fn patch_helix_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::HelixCurveConstruction,
 ) -> Result<(), CodecError> {
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = definition.parts();
+    let angle_range = definition.angle_range();
+    let center = definition.center();
+    let major = definition.major();
+    let minor = definition.minor();
+    let pitch = definition.pitch();
+    let apex_factor = &definition.apex_factor();
+    let axis = definition.axis();
 
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)

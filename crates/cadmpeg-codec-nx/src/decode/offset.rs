@@ -2259,7 +2259,8 @@ pub(crate) fn normalize_pcurve_parameters(
 ) -> Option<()> {
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
             let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
             let converted_end = surface_parameters(surface, [end.u, end.v])?;

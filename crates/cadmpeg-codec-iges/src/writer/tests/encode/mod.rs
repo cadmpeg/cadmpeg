@@ -131,7 +131,8 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
         matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line(line_curve)
                 if {
-                    let (origin, direction) = line_curve.parts();
+                    let origin = line_curve.origin();
+let direction = line_curve.direction();
                     same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
                 })
     }));
@@ -296,7 +297,9 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
         else {
             panic!("{version:?}: expected a decoded plane");
         };
-        let (origin, normal, u_axis) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
         assert!(same_float(origin.x, 4.0), "{version:?}");
         assert!(same_float(origin.y, 5.0), "{version:?}");
         assert!(same_float(origin.z, 6.0), "{version:?}");
@@ -651,7 +654,9 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     else {
         panic!("expected a decoded plane");
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     assert!((origin.x - 4.0).abs() < 1.0e-10);
     assert!((origin.y - 5.0).abs() < 1.0e-10);
     assert!((origin.z - 6.0).abs() < 1.0e-10);

@@ -3900,17 +3900,24 @@ fn curve_parameter_at_point(
             ..
         } => curve_parameter_at_point(geometry, point, tolerance),
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             Some(offset(*origin).dot(*direction))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, _) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
             let radial = offset(*center);
             let y_axis = axis.cross(*ref_direction);
             Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             let radial = offset(*center);
             let minor_direction = axis.cross(*major_direction);
             Some(
@@ -4683,7 +4690,7 @@ fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
             pcurve_nurbs_parameter_period(nurbs.degree(), nurbs.knots(), nurbs.poles().len())?
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_parameter_period(basis)?
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_period(basis)?,

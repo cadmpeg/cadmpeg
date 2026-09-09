@@ -421,7 +421,8 @@ pub(crate) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
                 || missing_support_parameter(point.v)
         }),
         Some(PcurveGeometry::Line(line_pcurve)) => {
-            let (&origin, &direction) = line_pcurve.parts();
+            let origin = *line_pcurve.origin();
+            let direction = *line_pcurve.direction();
             [origin, direction]
                 .into_iter()
                 .any(|point| !point.u.is_finite() || !point.v.is_finite())

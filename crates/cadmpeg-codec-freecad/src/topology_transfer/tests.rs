@@ -502,7 +502,7 @@ Fa
         .expect("selected pcurve");
     match &pcurve.geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, _) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
             assert_eq!(origin.v, 0.0);
         }
         geometry => panic!("unexpected pcurve geometry: {geometry:?}"),

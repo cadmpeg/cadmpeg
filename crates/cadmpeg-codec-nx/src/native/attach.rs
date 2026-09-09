@@ -5800,7 +5800,8 @@ fn block_placement(
         let SurfaceGeometry::Plane(plane_surface) = geometry else {
             continue;
         };
-        let (origin, normal, _) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
         let normal = canonical_normal(*normal, angular_tolerance)?;
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
         let existing = bands
@@ -5961,7 +5962,8 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
     let SurfaceGeometry::Sphere(sphere_surface) = &surface.geometry else {
         return None;
     };
-    let (center, _, _, radius) = sphere_surface.parts();
+    let center = sphere_surface.center();
+    let radius = &sphere_surface.radius();
     ((*radius).is_finite()
         && *radius > 0.0
         && [center.x, center.y, center.z]
@@ -7286,7 +7288,9 @@ fn circular_loop_geometry(
         let CurveGeometry::Circle(circle_curve) = curves.get(curve_id)? else {
             return None;
         };
-        let (center, axis, _, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let radius = &circle_curve.radius();
         let axis = canonical_axis(*axis, angular_tolerance)?;
         if ![center.x, center.y, center.z, *radius]
             .into_iter()
@@ -7367,7 +7371,9 @@ fn cylindrical_face_witnesses(
         let Some(SurfaceGeometry::Cylinder(cylinder_surface)) = surfaces.get(&face.surface) else {
             continue;
         };
-        let (origin, axis, _, radius) = cylinder_surface.parts();
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let radius = &cylinder_surface.radius();
         if ![origin.x, origin.y, origin.z, *radius]
             .into_iter()
             .all(f64::is_finite)
@@ -7483,7 +7489,8 @@ fn plane_annulus_witness(
         let Some(SurfaceGeometry::Plane(plane_surface)) = surfaces.get(&face.surface) else {
             continue;
         };
-        let (origin, normal, _) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
         let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
             continue;
         };
@@ -7717,7 +7724,8 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             let Some(SurfaceGeometry::Plane(plane_surface)) = surfaces.get(&face.surface) else {
                 continue;
             };
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
                 continue;
             };
@@ -7933,7 +7941,9 @@ fn simple_hole_chamfers(
             else {
                 continue;
             };
-            let (origin, axis, _, _, _, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let half_angle = &cone_surface.half_angle();
             if !half_angle.is_finite()
                 || *half_angle <= 0.0
                 || *half_angle >= std::f64::consts::FRAC_PI_2
@@ -7970,11 +7980,11 @@ fn simple_hole_chamfers(
                 .filter_map(|curve_id| match curves.get(curve_id)? {
                     CurveGeometry::Circle(circle_curve)
                         if {
-                            let (_, _, _, radius) = circle_curve.parts();
+                            let radius = &circle_curve.radius();
                             radius.is_finite() && *radius > 0.0
                         } =>
                     {
-                        let (_, _, _, radius) = circle_curve.parts();
+                        let radius = &circle_curve.radius();
                         Some(*radius)
                     }
                     _ => None,

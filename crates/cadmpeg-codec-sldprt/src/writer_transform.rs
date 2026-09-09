@@ -205,7 +205,9 @@ fn transform_surface(
 ) -> Result<(), CodecError> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(
                 transform.apply_point(*origin),
                 transform.apply_vector(*normal),
@@ -214,7 +216,10 @@ fn transform_surface(
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
                 transform.apply_point(*origin),
                 transform.apply_vector(*axis),
@@ -224,7 +229,12 @@ fn transform_surface(
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let ratio = &cone_surface.ratio();
+            let half_angle = &cone_surface.half_angle();
             *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
                 transform.apply_point(*origin),
                 transform.apply_vector(*axis),
@@ -236,7 +246,10 @@ fn transform_surface(
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
                 transform.apply_point(*center),
                 transform.apply_vector(*axis),
@@ -246,7 +259,11 @@ fn transform_surface(
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
                 transform.apply_point(*center),
                 transform.apply_vector(*axis),
@@ -291,7 +308,8 @@ fn transform_surface(
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
                 transform.apply_point(*origin),
                 transform.apply_vector(*direction),
@@ -299,7 +317,10 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = &circle_curve.radius();
             *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
                 transform.apply_point(*center),
                 transform.apply_vector(*axis),
@@ -309,7 +330,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
                 transform.apply_point(*center),
                 transform.apply_vector(*axis),
@@ -336,7 +361,10 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             })
             .map_err(|error| CodecError::malformed(error.to_string()))?,
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = &parabola_curve.focal_distance();
             *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
                 transform.apply_point(*vertex),
                 transform.apply_vector(*axis),
@@ -346,8 +374,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = &hyperbola_curve.major_radius();
+            let minor_radius = &hyperbola_curve.minor_radius();
             *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                 transform.apply_point(*center),
                 transform.apply_vector(*axis),
@@ -358,7 +389,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (point,) = degenerate_curve.parts();
+            let point = degenerate_curve.point();
             *degenerate_curve =
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(transform.apply_point(*point))
                     .map_err(CodecError::malformed)?;

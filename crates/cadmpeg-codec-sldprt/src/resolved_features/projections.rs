@@ -2154,7 +2154,7 @@ pub(super) fn unique_cylindrical_face(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if {
-                    let (_, _, _, &candidate) = cylinder_surface.parts();
+                    let candidate = cylinder_surface.radius();
                     (candidate - radius).abs() <= tolerance
                 } =>
             {
@@ -2250,7 +2250,8 @@ pub(super) fn unique_planar_face(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Plane(plane_surface) => {
-                let (&candidate_origin, &candidate_normal, _) = plane_surface.parts();
+                let candidate_origin = *plane_surface.origin();
+                let candidate_normal = *plane_surface.normal();
                 let candidate_length = candidate_normal.norm();
                 if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
                     return None;

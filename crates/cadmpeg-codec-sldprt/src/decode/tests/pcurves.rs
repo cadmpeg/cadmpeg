@@ -155,12 +155,13 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
     );
     assert!(
         matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
-        if {
-            let (center, _, y_axis, _) = circle_pcurve.parts();
-            (*circle_pcurve.parts().3 == 500.0)
-                && matches!(y_axis, cadmpeg_ir::math::Point2 { u: 0.0, v: 1.0 })
-                && (*center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0))
-        })
+                if {
+                    let center = circle_pcurve.center();
+        let y_axis = circle_pcurve.y_axis();
+                    (*&circle_pcurve.radius() == 500.0)
+                        && matches!(y_axis, cadmpeg_ir::math::Point2 { u: 0.0, v: 1.0 })
+                        && (*center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0))
+                })
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
@@ -195,17 +196,18 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(
         matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve)
-        if {
-            let (radial_center, radial_cos, radial_sin, _, _, _) =
-                polar_harmonic_pcurve.parts();
-            (*polar_harmonic_pcurve.parts().3 == 0.0)
-                && (*polar_harmonic_pcurve.parts().5 == 0.0)
-                && (*radial_center == cadmpeg_ir::math::Point2::new(0.0, 0.0)
-                    && (radial_cos.u - 1000.0).abs() < EPS_POLAR_RADIAL_COMPONENT
-                    && radial_cos.v.abs() < EPS_POLAR_RADIAL_COMPONENT
-                    && radial_sin.u.abs() < EPS_POLAR_RADIAL_COMPONENT
-                    && (radial_sin.v - 1000.0).abs() < EPS_POLAR_RADIAL_COMPONENT)
-        })
+                if {
+                    let radial_center = polar_harmonic_pcurve.radial_center();
+        let radial_cos = polar_harmonic_pcurve.radial_cos();
+        let radial_sin = polar_harmonic_pcurve.radial_sin();
+                    (*&polar_harmonic_pcurve.axial_origin() == 0.0)
+                        && (*&polar_harmonic_pcurve.axial_sin() == 0.0)
+                        && (*radial_center == cadmpeg_ir::math::Point2::new(0.0, 0.0)
+                            && (radial_cos.u - 1000.0).abs() < EPS_POLAR_RADIAL_COMPONENT
+                            && radial_cos.v.abs() < EPS_POLAR_RADIAL_COMPONENT
+                            && radial_sin.u.abs() < EPS_POLAR_RADIAL_COMPONENT
+                            && (radial_sin.v - 1000.0).abs() < EPS_POLAR_RADIAL_COMPONENT)
+                })
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
@@ -240,7 +242,8 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     else {
         panic!("expected line pcurve");
     };
-    let (&origin, &direction) = line_pcurve.parts();
+    let origin = *line_pcurve.origin();
+    let direction = *line_pcurve.direction();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - 1000.0).abs() < 1.0e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
@@ -277,7 +280,8 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     else {
         panic!("expected line pcurve");
     };
-    let (&origin, &direction) = line_pcurve.parts();
+    let origin = *line_pcurve.origin();
+    let direction = *line_pcurve.direction();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
@@ -304,11 +308,12 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .expect("sphere pole pcurve");
     assert!(
         matches!(pole.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
-        if {
-            let (origin, direction) = line_pcurve.parts();
-            *origin == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
-                && *direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
-        })
+                if {
+                    let origin = line_pcurve.origin();
+        let direction = line_pcurve.direction();
+                    *origin == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
+                        && *direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
+                })
     );
     assert_eq!(pole.parameter_range(), Some([0.0, std::f64::consts::TAU]));
     let seam = result
@@ -337,7 +342,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert!(
         matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Degenerate(degenerate_curve)
         if {
-            let (point,) = degenerate_curve.parts();
+            let point = degenerate_curve.point();
             *point == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
         })
     );
@@ -469,7 +474,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             == Some("derived_nurbs_isoparametric_pcurve")
             && matches!(pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
             if {
-                let (_, direction) = line_pcurve.parts();
+                let direction = line_pcurve.direction();
                 direction.v == 0.0 && direction.u != 0.0
             })
     }));

@@ -274,7 +274,7 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
             assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
             assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 *origin == Point3::new(1.0, -2.0, 3.0)
             }));
             assert_eq!(cache_fit_tolerance, None);
@@ -338,15 +338,16 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let mut position = 0;
         assert!(
             matches!(decode_rolling_ball_curve(&straight, &mut position, int_width, None),
-                Some(RollingBallSupportCurve {
-                    curve: CurveGeometry::Line(line_curve),
-                    parameter_range: [Some(-2.0), Some(3.0)],
-                }) if {
-                    let (origin, direction) = line_curve.parts();
-                    *origin == Point3::new(10.0, 20.0, 30.0)
-                        && *direction == Vector3::new(0.0, 1.0, 0.0)
-                }
-            )
+                            Some(RollingBallSupportCurve {
+                                curve: CurveGeometry::Line(line_curve),
+                                parameter_range: [Some(-2.0), Some(3.0)],
+                            }) if {
+                                let origin = line_curve.origin();
+            let direction = line_curve.direction();
+                                *origin == Point3::new(10.0, 20.0, 30.0)
+                                    && *direction == Vector3::new(0.0, 1.0, 0.0)
+                            }
+                        )
         );
         assert_eq!(position, straight.len());
 

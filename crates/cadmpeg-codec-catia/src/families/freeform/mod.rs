@@ -1884,7 +1884,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
                         continue;
                     };
- let (_, _, _, radius,) = cylinder_surface.parts();
+ let radius = &cylinder_surface.radius();
                     if *radius <= 0.0 || !radius.is_finite() {
                         continue;
                     }
@@ -1905,7 +1905,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 let SurfaceGeometry::Cylinder(cylinder) = carrier else {
                     continue;
                 };
-                let radius = *cylinder.parts().3;
+                let radius = *&cylinder.radius();
                 if radius <= 0.0 || !radius.is_finite() {
                     continue;
                 }
@@ -2681,10 +2681,18 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     else {
         return false;
     };
-    let (left_origin, left_axis, left_reference, left_radius, left_ratio, left_angle) =
-        cone_surface.parts();
-    let (right_origin, right_axis, right_reference, right_radius, right_ratio, right_angle) =
-        cone_surface_2.parts();
+    let left_origin = cone_surface.origin();
+    let left_axis = cone_surface.axis();
+    let left_reference = cone_surface.ref_direction();
+    let left_radius = &cone_surface.radius();
+    let left_ratio = &cone_surface.ratio();
+    let left_angle = &cone_surface.half_angle();
+    let right_origin = cone_surface_2.origin();
+    let right_axis = cone_surface_2.axis();
+    let right_reference = cone_surface_2.ref_direction();
+    let right_radius = &cone_surface_2.radius();
+    let right_ratio = &cone_surface_2.ratio();
+    let right_angle = &cone_surface_2.half_angle();
     if left_axis != right_axis
         || left_reference != right_reference
         || left_ratio.to_bits() != right_ratio.to_bits()
@@ -2740,8 +2748,9 @@ fn rechart_equivalent_surface_pcurve(
     else {
         return Ok(None);
     };
-    let (source_origin, source_axis, _, _, _, _) = cone_surface.parts();
-    let (target_origin, _, _, _, _, _) = cone_surface_2.parts();
+    let source_origin = cone_surface.origin();
+    let source_axis = cone_surface.axis();
+    let target_origin = cone_surface_2.origin();
     if !same_surface_locus(source, target) {
         return Ok(None);
     }
@@ -2753,7 +2762,8 @@ fn rechart_equivalent_surface_pcurve(
     }
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             let shifted_v = origin.v + v_shift;
             if !shifted_v.is_finite() {
                 return Err(RechartFailure::NonFinite);
@@ -3885,14 +3895,16 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-        if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
-        if {
-            let (center, axis, ref_direction, _) = sphere_surface.parts();
-            (*sphere_surface.parts().3 == 5.0)
-                && (*center == Point3::new(1.0, 2.0, 3.0)
-                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-        })));
+                if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
+                if {
+                    let center = sphere_surface.center();
+        let axis = sphere_surface.axis();
+        let ref_direction = sphere_surface.ref_direction();
+                    (*&sphere_surface.radius() == 5.0)
+                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                            && *axis == Vector3::new(0.0, 0.0, 1.0)
+                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                })));
     }
 
     #[test]
@@ -3902,15 +3914,17 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-        if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
-        if {
-            let (center, axis, ref_direction, _, _) = torus_surface.parts();
-            (*torus_surface.parts().3 == 7.0)
-                && (*torus_surface.parts().4 == 2.0)
-                && (*center == Point3::new(1.0, 2.0, 3.0)
-                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-        })));
+                if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.axis();
+        let ref_direction = torus_surface.ref_direction();
+                    (*&torus_surface.major_radius() == 7.0)
+                        && (*&torus_surface.minor_radius() == 2.0)
+                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                            && *axis == Vector3::new(0.0, 0.0, 1.0)
+                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                })));
     }
 
     #[test]
@@ -3920,13 +3934,15 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-        if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
-            (*cylinder_surface.parts().3 == 4.0)
-                && (*origin == Point3::new(0.0, 0.0, 0.0)
-                    && *axis == Vector3::new(0.0, 1.0, 0.0)
-                    && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
-        })));
+                if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
+                    (*&cylinder_surface.radius() == 4.0)
+                        && (*origin == Point3::new(0.0, 0.0, 0.0)
+                            && *axis == Vector3::new(0.0, 1.0, 0.0)
+                            && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
+                })));
     }
 }

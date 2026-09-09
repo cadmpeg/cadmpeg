@@ -578,7 +578,8 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
     else {
         unreachable!()
     };
-    let (origin, direction) = line_pcurve.parts();
+    let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
     *line_pcurve = cadmpeg_ir::geometry::LinePcurve::try_new(
         *origin,
         cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),

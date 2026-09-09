@@ -48,7 +48,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
 
             assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 (origin.x - 5.0).abs() < f64::EPSILON
                     && (origin.y - 10.0).abs() < f64::EPSILON
                     && (origin.z - 15.0).abs() < f64::EPSILON
@@ -356,7 +356,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         assert!(
             matches!(components[0].component, SurfaceGeometry::Plane(plane_surface)
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 (origin.x - 10.0).abs() < f64::EPSILON
                     && (origin.y - 20.0).abs() < f64::EPSILON
                     && (origin.z - 30.0).abs() < f64::EPSILON
@@ -365,7 +365,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         assert!(
             matches!(components[1].component, SurfaceGeometry::Plane(plane_surface)
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 (origin.x - 40.0).abs() < f64::EPSILON
                     && (origin.y - 50.0).abs() < f64::EPSILON
                     && (origin.z - 60.0).abs() < f64::EPSILON

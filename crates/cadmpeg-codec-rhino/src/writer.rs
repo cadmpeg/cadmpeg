@@ -1197,7 +1197,8 @@ fn admit_pcurve<'a>(
     let domain = edge.domain;
     let (payload, domain_extent_points) = match &pcurve.geometry {
         cadmpeg_ir::geometry::PcurveGeometry::Line(line) => {
-            let (origin, direction) = line.parts();
+            let origin = line.origin();
+            let direction = line.direction();
             if !origin.u.is_finite()
                 || !origin.v.is_finite()
                 || !direction.u.is_finite()

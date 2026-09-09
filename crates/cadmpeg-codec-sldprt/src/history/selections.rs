@@ -484,7 +484,8 @@ pub(crate) fn resolve_planar_face_selection(
             else {
                 return None;
             };
-            let (candidate_origin, candidate_normal, _) = plane_surface.parts();
+            let candidate_origin = plane_surface.origin();
+            let candidate_normal = plane_surface.normal();
             let candidate_length = candidate_normal.norm();
             if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
                 return None;

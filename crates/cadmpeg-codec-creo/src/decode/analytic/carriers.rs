@@ -38,7 +38,8 @@ fn existing_plane_agrees_with_topology(
 ) -> Option<bool> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             Some(
                 agreed_plane(&[
                     PlaneEquation {
@@ -343,7 +344,8 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
                 }
             };
             if let SurfaceGeometry::Plane(plane_surface) = &surface.geometry {
-                let (origin, normal, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
+                let normal = plane_surface.normal();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -455,14 +457,18 @@ fn positional_cylinder_carrier(
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             Some(CarrierEquation::Plane(PlaneEquation {
                 origin: [origin.x, origin.y, origin.z],
                 normal: [normal.x, normal.y, normal.z],
             }))
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             Some(CarrierEquation::Cylinder(CylinderEquation {
                 origin: [origin.x, origin.y, origin.z],
                 axis: [axis.x, axis.y, axis.z],
@@ -471,7 +477,9 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             }))
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, _, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             Some(CarrierEquation::Sphere(SphereEquation {
                 center: [center.x, center.y, center.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -479,7 +487,12 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             }))
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let ratio = &cone_surface.ratio();
+            let half_angle = &cone_surface.half_angle();
             Some(CarrierEquation::Cone(ConeEquation::new(
                 [origin.x, origin.y, origin.z],
                 [axis.x, axis.y, axis.z],
@@ -490,7 +503,11 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             )?))
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             Some(CarrierEquation::Torus(TorusEquation {
                 center: [center.x, center.y, center.z],
                 axis: [axis.x, axis.y, axis.z],

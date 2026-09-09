@@ -74,7 +74,9 @@ fn decode_builds_valid_topology_and_geometry() {
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -922,7 +924,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_surface(&rec("cone", cyl)).unwrap().0 {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (_, &axis, &ref_direction, &radius) = cylinder_surface.parts();
+            let axis = *cylinder_surface.axis();
+            let ref_direction = *cylinder_surface.ref_direction();
+            let radius = cylinder_surface.radius();
             assert_eq!(radius, 20.0);
             assert_eq!(axis.z, 1.0);
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -943,9 +947,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(
         matches!(decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0, SurfaceGeometry::Cone(cone_surface)
         if {
-            (*cone_surface.parts().3 == 20.0)
-                && (*cone_surface.parts().4 == 0.4)
-                && (*cone_surface.parts().5 == 0.0)
+            (*&cone_surface.radius() == 20.0)
+                && (*&cone_surface.ratio() == 0.4)
+                && (*&cone_surface.half_angle() == 0.0)
         })
     );
 
@@ -967,7 +971,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(inward, "negative cosine points the native normal inward");
     match geo {
         SurfaceGeometry::Cone(cone_surface) => {
-            let (_, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let half_angle = &cone_surface.half_angle();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(
@@ -996,7 +1002,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(!inward, "positive cosine keeps the outward normal");
     match geo {
         SurfaceGeometry::Cone(cone_surface) => {
-            let (_, axis, _, radius, _, half_angle) = cone_surface.parts();
+            let axis = cone_surface.axis();
+            let radius = &cone_surface.radius();
+            let half_angle = &cone_surface.half_angle();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
             assert!((radius - 46.55).abs() < 1.0e-12);
@@ -1016,7 +1024,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(!signed);
     match geo {
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (_, axis, ref_direction, radius) = sphere_surface.parts();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             assert_eq!(*radius, -10.0);
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
@@ -1040,7 +1050,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(!inside_out);
     match geo {
         SurfaceGeometry::Torus(torus_surface) => {
-            let (_, _, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             assert_eq!(*major_radius, 10.0);
             assert_eq!(*minor_radius, -20.0);
             assert_eq!(
@@ -1061,7 +1073,7 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("ellipse", circ)).unwrap() {
         CurveGeometry::Circle(circle_curve) => {
-            let (_, _, _, radius) = circle_curve.parts();
+            let radius = &circle_curve.radius();
             assert_eq!(*radius, 30.0)
         }
         other => panic!("expected circle, got {other:?}"),
@@ -1077,7 +1089,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("ellipse", ell)).unwrap() {
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             assert_eq!(*major_radius, 40.0);
             assert_eq!(*minor_radius, 20.0);
         }
@@ -1092,7 +1105,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("straight", line)).unwrap() {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             assert_eq!(origin.x, 10.0);
             assert_eq!(direction.y, 1.0);
         }

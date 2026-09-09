@@ -1354,7 +1354,8 @@ fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vecto
     let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
     match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             Some((*origin, *normal))
         }
         _ => None,
@@ -1476,11 +1477,12 @@ fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f
     }
     match geometry {
         CurveGeometry::Circle(circle_curve) => {
-            let (_, _, _, radius) = circle_curve.parts();
+            let radius = &circle_curve.radius();
             radius.is_finite() && *radius > 0.0
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             major_radius.is_finite()
                 && *major_radius > 0.0
                 && minor_radius.is_finite()

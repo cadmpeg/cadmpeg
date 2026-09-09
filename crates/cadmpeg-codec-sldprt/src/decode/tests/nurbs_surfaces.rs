@@ -465,7 +465,8 @@ fn compact_carrier_shapes_decode() {
             geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             ..
         }) => {
-            let (_, axis, _, radius) = cylinder_surface.parts();
+            let axis = cylinder_surface.axis();
+            let radius = &cylinder_surface.radius();
             assert_eq!(*radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }
@@ -488,7 +489,7 @@ fn compact_carrier_shapes_decode() {
             geometry: CurveGeometry::Circle(circle_curve),
             ..
         }) => {
-            let (_, _, _, radius) = circle_curve.parts();
+            let radius = &circle_curve.radius();
             assert_eq!(*radius, 3.0);
         }
         other => panic!("expected circle, got {other:?}"),

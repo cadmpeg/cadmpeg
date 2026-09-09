@@ -709,11 +709,11 @@ fn encoder_bakes_rigid_body_transform() {
         .find_map(|surface| match surface.geometry {
             SurfaceGeometry::Plane(plane_surface)
                 if {
-                    let (_, &normal, _) = plane_surface.parts();
+                    let normal = *plane_surface.normal();
                     normal.x == 1.0
                 } =>
             {
-                let (_, &normal, _) = plane_surface.parts();
+                let normal = *plane_surface.normal();
                 Some(normal)
             }
             _ => None,
@@ -752,7 +752,7 @@ fn encoder_bakes_rigid_body_transform() {
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
         if {
-            let (_, normal, _) = plane_surface.parts();
+            let normal = plane_surface.normal();
             *normal == expected_normal
         })
     }));

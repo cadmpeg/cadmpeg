@@ -121,7 +121,12 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let SurfaceGeometry::Cone(cone_surface) = &mut lateral else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = &cone_surface.radius();
+    let ratio = &cone_surface.ratio();
+    let half_angle = &cone_surface.half_angle();
     let mut origin = *origin;
     origin.x = 0.1;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -139,7 +144,12 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let SurfaceGeometry::Cone(cone_surface) = &mut shifted_parameterization else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = &cone_surface.radius();
+    let ratio = &cone_surface.ratio();
+    let half_angle = &cone_surface.half_angle();
     let mut origin = *origin;
     origin.z += 0.1;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -157,7 +167,11 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let SurfaceGeometry::Cone(cone_surface) = &mut elliptical else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, radius, _, half_angle) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = &cone_surface.radius();
+    let half_angle = &cone_surface.half_angle();
 
     let ratio = 0.5;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -676,7 +690,9 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     else {
         panic!("tolerant intersection definition");
     };
-    let (supports, endpoints, tolerance) = intersection.parts();
+    let supports = intersection.supports();
+    let endpoints = intersection.endpoints();
+    let tolerance = &intersection.tolerance();
 
     assert_ne!(supports[0], supports[1]);
     assert_eq!(*endpoints, expected_endpoints);
@@ -1563,7 +1579,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     else {
         unreachable!()
     };
-    let (supports, _, _) = intersection.parts();
+    let supports = intersection.supports();
 
     assert_eq!(
         ir.model.procedural_curves[0].cache_fit_tolerance(),
@@ -1903,7 +1919,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         .iter()
         .filter_map(|s| match &s.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (_, _, _, radius) = cylinder_surface.parts();
+                let radius = &cylinder_surface.radius();
                 Some(*radius)
             }
             _ => None,
@@ -1915,14 +1931,14 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
         if {
-            let (_, _, axis) = plane_surface.parts();
+            let axis = plane_surface.u_axis();
             *axis == Vector3::new(1.0, 0.0, 0.0)
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (_, _, direction, _) = cylinder_surface.parts();
+            let direction = cylinder_surface.ref_direction();
             *direction == Vector3::new(1.0, 0.0, 0.0)
         })
     ));

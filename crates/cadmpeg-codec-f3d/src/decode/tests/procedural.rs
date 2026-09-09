@@ -739,7 +739,7 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         .find(|surface| surface.id == *support)
         .map(|surface| &surface.geometry), Some(SurfaceGeometry::Plane(plane_surface))
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
             }));
         assert!(matches!(

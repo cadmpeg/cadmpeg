@@ -168,7 +168,9 @@ fn b2_plane_geometry_uses_direction_bearing_layouts_only() {
     let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = geometry else {
         panic!("plane carrier geometry")
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
@@ -1613,7 +1615,9 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
     match cylinders[0].surface_geometry().unwrap() {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let radius = &cylinder_surface.radius();
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
             assert_eq!(*radius, 2.0);
@@ -1635,7 +1639,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         matches!(crate::families::b2::records::b2_cylinders(&large)[0]
         .surface_geometry()
         .unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
-            if { *cylinder_surface.parts().3 == 2_000_000.0 })
+            if { *&cylinder_surface.radius() == 2_000_000.0 })
     );
 
     let tiny = 1e-200_f64;
@@ -1712,7 +1716,7 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
     assert!(
         matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (_, axis, _, _) = cylinder_surface.parts();
+            let axis = cylinder_surface.axis();
             [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
         })
     );
@@ -1734,11 +1738,12 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
     ));
     assert!(
         matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (_, axis, ref_direction, _) = cylinder_surface.parts();
-            [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
-                && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
-        })
+                if {
+                    let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
+                    [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
+                        && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
+                })
     );
     assert_eq!(
         cylinders[0].range_origin().map(f64::to_bits),
