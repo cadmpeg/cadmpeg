@@ -12452,7 +12452,7 @@ impl ProceduralCurveDefinition {
             Self::SurfaceCurve { family } => family.revision_cache_mut(),
             Self::SurfaceOffset(payload) => payload.revision_cache_mut(),
             Self::Spring { layout, .. } => layout.cache_first_mut().map(|form| &mut form.cache),
-            Self::Deformable(payload) => payload.revision_cache_mut(),
+            Self::Deformable(payload) => Some(payload.revision_cache_mut()),
             _ => None,
         }
     }
