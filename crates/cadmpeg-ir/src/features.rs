@@ -9027,16 +9027,22 @@ pub struct FilletGroup {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FullRoundFilletGroup {
-    center_faces: FaceSelection,
-    side_one_faces: FullRoundSideSelection,
-    side_two_faces: FullRoundSideSelection,
+    #[serde(rename = "center_faces")]
+    center: FaceSelection,
+    #[serde(rename = "side_one_faces")]
+    side_one: FullRoundSideSelection,
+    #[serde(rename = "side_two_faces")]
+    side_two: FullRoundSideSelection,
 }
 
 #[derive(Deserialize)]
 struct FullRoundFilletGroupWire {
-    center_faces: FaceSelection,
-    side_one_faces: FullRoundSideSelection,
-    side_two_faces: FullRoundSideSelection,
+    #[serde(rename = "center_faces")]
+    center: FaceSelection,
+    #[serde(rename = "side_one_faces")]
+    side_one: FullRoundSideSelection,
+    #[serde(rename = "side_two_faces")]
+    side_two: FullRoundSideSelection,
 }
 
 impl FullRoundFilletGroup {
@@ -9065,25 +9071,25 @@ impl FullRoundFilletGroup {
             );
         }
         Ok(Self {
-            center_faces,
-            side_one_faces,
-            side_two_faces,
+            center: center_faces,
+            side_one: side_one_faces,
+            side_two: side_two_faces,
         })
     }
 
     /// Return the center-face selection.
     pub fn center_faces(&self) -> &FaceSelection {
-        &self.center_faces
+        &self.center
     }
 
     /// Return the first side-face selection.
     pub fn side_one_faces(&self) -> &FullRoundSideSelection {
-        &self.side_one_faces
+        &self.side_one
     }
 
     /// Return the second side-face selection.
     pub fn side_two_faces(&self) -> &FullRoundSideSelection {
-        &self.side_two_faces
+        &self.side_two
     }
 
     /// Admit all edited selections before replacing the group.
@@ -9091,9 +9097,9 @@ impl FullRoundFilletGroup {
         &mut self,
         edit: impl FnOnce(&mut FaceSelection, &mut FullRoundSideSelection, &mut FullRoundSideSelection),
     ) -> Result<(), &'static str> {
-        let mut center = self.center_faces.clone();
-        let mut first = self.side_one_faces.clone();
-        let mut second = self.side_two_faces.clone();
+        let mut center = self.center.clone();
+        let mut first = self.side_one.clone();
+        let mut second = self.side_two.clone();
         edit(&mut center, &mut first, &mut second);
         *self = Self::new(center, first, second)?;
         Ok(())
@@ -9103,8 +9109,7 @@ impl FullRoundFilletGroup {
 impl<'de> Deserialize<'de> for FullRoundFilletGroup {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = FullRoundFilletGroupWire::deserialize(deserializer)?;
-        Self::new(wire.center_faces, wire.side_one_faces, wire.side_two_faces)
-            .map_err(serde::de::Error::custom)
+        Self::new(wire.center, wire.side_one, wire.side_two).map_err(serde::de::Error::custom)
     }
 }
 
