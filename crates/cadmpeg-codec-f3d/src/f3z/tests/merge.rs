@@ -119,7 +119,7 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
     .expect("affine transform");
 
     assert_eq!(
-        compose_transforms(outer, inner).rows(),
+        compose_transforms(outer, inner).unwrap().rows(),
         [
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, 35.0],
