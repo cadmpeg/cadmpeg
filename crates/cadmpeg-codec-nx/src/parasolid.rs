@@ -734,7 +734,7 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
     if !kind.is_parasolid() {
         return false;
     }
-    let census = crate::deltas::walk(inflated);
+    let census = crate::deltas::census::walk(inflated);
     if !census.records.is_empty() || !census.tombstones.is_empty() {
         return true;
     }

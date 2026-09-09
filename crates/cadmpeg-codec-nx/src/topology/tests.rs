@@ -583,7 +583,7 @@ fn intersection_data_requires_complete_schema_header() {
     incomplete_header.push(0xfe);
     incomplete_header.extend_from_slice(&source[record_start..]);
     assert!(intersection_data_curves(&incomplete_header).is_empty());
-    assert!(crate::deltas::walk(&incomplete_header)
+    assert!(crate::deltas::census::walk(&incomplete_header)
         .records
         .iter()
         .all(|record| record.kind() != 90));

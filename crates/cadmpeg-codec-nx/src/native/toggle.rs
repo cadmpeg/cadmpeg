@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::View;
 use std::collections::BTreeMap;
 
+use super::hex::ToggleId;
 use crate::container::{Container, EntryContent};
 
 const ENTRY_NAME: &str = "/Root/UG_PART/LastSavedToggleInfoStream";
@@ -27,7 +28,7 @@ pub struct SavedToggleEntry {
     /// Zero-based serialized member order.
     pub ordinal: u32,
     /// Lowercase 32-hex-digit toggle identity.
-    toggle_id: String,
+    toggle_id: ToggleId,
     /// Record-order-independent identity when the toggle ID is unique in the stream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
@@ -41,7 +42,7 @@ pub struct SavedToggleEntry {
 struct SavedToggleEntryWire {
     id: String,
     ordinal: u32,
-    toggle_id: String,
+    toggle_id: ToggleId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stable_identity: Option<String>,
     state: SavedToggleState,
@@ -52,14 +53,6 @@ struct SavedToggleEntryWire {
 impl TryFrom<SavedToggleEntryWire> for SavedToggleEntry {
     type Error = &'static str;
     fn try_from(wire: SavedToggleEntryWire) -> Result<Self, Self::Error> {
-        if wire.toggle_id.len() != 32
-            || !wire
-                .toggle_id
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err("SavedToggleEntry.toggle_id must be 32 lowercase hexadecimal digits");
-        }
         if wire.id != format!("nx:saved-toggle:entry#{}", wire.ordinal) {
             return Err("SavedToggleEntry.id disagrees with ordinal");
         }
@@ -100,14 +93,21 @@ impl From<SavedToggleEntry> for SavedToggleEntryWire {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SavedToggleStreamWire", into = "SavedToggleStreamWire")]
 pub struct SavedToggleStream {
-    /// Ordered saved-toggle members.
-    entries: Vec<String>,
+    /// Number of ordered saved-toggle members.
+    entry_count: u32,
     /// Exact four-byte terminal word.
     pub trailer: [u8; 4],
     /// Absolute file offset of the version byte.
     pub source_offset: u64,
     /// Absolute file offset of the terminal word.
     pub trailer_source_offset: u64,
+}
+
+impl SavedToggleStream {
+    /// Native identity of the saved-toggle stream.
+    pub const fn id() -> &'static str {
+        "nx:saved-toggle:stream#0"
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -123,8 +123,8 @@ struct SavedToggleStreamWire {
 impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
     type Error = &'static str;
     fn try_from(wire: SavedToggleStreamWire) -> Result<Self, Self::Error> {
-        if wire.id != "nx:saved-toggle:stream#0" {
-            return Err("SavedToggleStream.id must be nx:saved-toggle:stream#0");
+        if wire.id != Self::id() {
+            return Err("SavedToggleStream.id is not the saved-toggle stream identity");
         }
         if wire.version != 1 {
             return Err("SavedToggleStream.version must be 1");
@@ -134,8 +134,16 @@ impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
         if wire.raw_count != count.to_le_bytes() {
             return Err("SavedToggleStream.raw_count disagrees with entries");
         }
+        if wire
+            .entries
+            .iter()
+            .enumerate()
+            .any(|(ordinal, id)| *id != format!("nx:saved-toggle:entry#{ordinal}"))
+        {
+            return Err("SavedToggleStream.entries must match their ordinal identities");
+        }
         Ok(Self {
-            entries: wire.entries,
+            entry_count: count,
             trailer: wire.trailer,
             source_offset: wire.source_offset,
             trailer_source_offset: wire.trailer_source_offset,
@@ -144,14 +152,16 @@ impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
 }
 impl From<SavedToggleStream> for SavedToggleStreamWire {
     fn from(value: SavedToggleStream) -> Self {
-        let id = "nx:saved-toggle:stream#0".to_string();
+        let id = SavedToggleStream::id().to_string();
         let version = 1;
-        let raw_count = (value.entries.len() as u32).to_le_bytes();
+        let raw_count = value.entry_count.to_le_bytes();
         Self {
             id,
             version,
             raw_count,
-            entries: value.entries,
+            entries: (0..value.entry_count)
+                .map(|ordinal| format!("nx:saved-toggle:entry#{ordinal}"))
+                .collect(),
             trailer: value.trailer,
             source_offset: value.source_offset,
             trailer_source_offset: value.trailer_source_offset,
@@ -229,8 +239,8 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
     if version != 1 || bytes.len() < 9 {
         return None;
     }
-    let raw_count = view.array::<4>()?;
-    let count = usize::try_from(View::u32_le_at(&raw_count, 0)?).ok()?;
+    let entry_count = view.u32_le()?;
+    let count = usize::try_from(entry_count).ok()?;
     // The shortest canonical member is a two-byte length plus 32 hex digits,
     // a colon, and `On`. Bound allocation before reading any member lengths.
     if count > (bytes.len() - 9) / 37 {
@@ -255,7 +265,7 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
             SavedToggleEntry::try_from(SavedToggleEntryWire {
                 id: format!("nx:saved-toggle:entry#{ordinal}"),
                 ordinal: u32::try_from(ordinal).ok()?,
-                toggle_id: toggle_id.to_string(),
+                toggle_id: ToggleId::try_from(toggle_id.to_string()).ok()?,
                 stable_identity: None,
                 state,
                 raw_byte_len,
@@ -271,26 +281,19 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
     if !view.is_empty() {
         return None;
     }
-    let mut entry_ids = Vec::new();
-    entry_ids.try_reserve_exact(entries.len()).ok()?;
-    entry_ids.extend(entries.iter().map(SavedToggleEntry::id));
     Some(ParsedToggleStream {
-        stream: SavedToggleStream::try_from(SavedToggleStreamWire {
-            id: "nx:saved-toggle:stream#0".to_string(),
-            version,
-            raw_count,
-            entries: entry_ids,
+        stream: SavedToggleStream {
+            entry_count,
             trailer,
             source_offset,
             trailer_source_offset: source_offset.checked_add(trailer_at as u64)?,
-        })
-        .ok()?,
+        },
         entries,
     })
 }
 
 fn assign_stable_toggle_identities(entries: &mut [SavedToggleEntry]) {
-    let mut counts = BTreeMap::<String, usize>::new();
+    let mut counts = BTreeMap::<ToggleId, usize>::new();
     for entry in entries.iter() {
         *counts.entry(entry.toggle_id.clone()).or_default() += 1;
     }
@@ -313,6 +316,26 @@ mod tests {
         }
         bytes.extend_from_slice(&trailer);
         bytes
+    }
+
+    #[test]
+    fn saved_toggle_stream_rejects_noncanonical_entry_sequences() {
+        let wire = serde_json::json!({
+            "id": "nx:saved-toggle:stream#0", "version": 1, "raw_count": [2, 0, 0, 0],
+            "entries": ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#1"],
+            "trailer": [0, 0, 0, 0], "source_offset": 0, "trailer_source_offset": 79
+        });
+        let stream: super::SavedToggleStream = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(stream).unwrap(), wire);
+        for entries in [
+            ["nx:saved-toggle:entry#1", "nx:saved-toggle:entry#0"],
+            ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#0"],
+            ["other", "nx:saved-toggle:entry#1"],
+        ] {
+            let mut invalid = wire.clone();
+            invalid["entries"] = serde_json::json!(entries);
+            assert!(serde_json::from_value::<super::SavedToggleStream>(invalid).is_err());
+        }
     }
 
     #[test]

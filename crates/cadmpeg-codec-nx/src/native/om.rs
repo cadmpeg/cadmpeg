@@ -333,7 +333,9 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
 }
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
-pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateTable> {
+pub fn operation_state_groups(
+    container: &Container,
+) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
@@ -356,14 +358,22 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateTa
                 .into_iter()
                 .filter_map(|group| group.into_absolute(entry_offset))
                 .collect();
-            Some(OmRollForwardStateTable::from_frames(
-                section_ordinal,
-                &link.id,
-                &entry.name,
-                table_footer,
-                table_end_offset,
-                frames,
-            ))
+            Some(
+                OmRollForwardStateTable::from_frames(
+                    section_ordinal,
+                    &link.id,
+                    &entry.name,
+                    table_footer,
+                    table_end_offset,
+                    frames,
+                )
+                .map_err(|error| {
+                    CodecError::malformed(format!(
+                        "{}: {error}",
+                        crate::loss::NxLossCode::RollForwardTableRejected.code()
+                    ))
+                }),
+            )
         })
         .collect()
 }

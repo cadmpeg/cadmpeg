@@ -145,8 +145,6 @@ pub struct FastLoadComponentOccurrence {
     pub marker: OccurrenceMarker,
     /// Absolute file offset of the occurrence marker.
     pub marker_source_offset: u64,
-    /// Referenced [`FastLoadComponentPrototype::id`].
-    prototype: String,
     /// One-based serialized prototype-table index.
     prototype_index: RosterIndex,
     /// Referenced [`FastLoadComponentUuid::id`].
@@ -157,6 +155,13 @@ pub struct FastLoadComponentOccurrence {
     pub source_entry: String,
     /// Absolute file offset of the prototype index.
     pub source_offset: u64,
+}
+
+impl FastLoadComponentOccurrence {
+    /// Referenced fast-load prototype identity.
+    pub fn prototype(&self) -> String {
+        format!("nx:fast-load:prototype#{}", self.prototype_index.ordinal())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -176,21 +181,21 @@ pub(crate) struct FastLoadComponentOccurrenceWire {
 impl TryFrom<FastLoadComponentOccurrenceWire> for FastLoadComponentOccurrence {
     type Error = &'static str;
     fn try_from(wire: FastLoadComponentOccurrenceWire) -> Result<Self, Self::Error> {
-        if wire.prototype != format!("nx:fast-load:prototype#{}", wire.prototype_index.ordinal()) {
-            return Err("FastLoadComponentOccurrence.prototype disagrees with prototype_index");
-        }
-        Ok(Self {
+        let occurrence = Self {
             id: wire.id,
             ordinal: wire.ordinal,
             marker: wire.marker,
             marker_source_offset: wire.marker_source_offset,
-            prototype: wire.prototype,
             prototype_index: wire.prototype_index,
             component_uuid: wire.component_uuid,
             uuid_source_offset: wire.uuid_source_offset,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
-        })
+        };
+        if wire.prototype != occurrence.prototype() {
+            return Err("FastLoadComponentOccurrence.prototype disagrees with prototype_index");
+        }
+        Ok(occurrence)
     }
 }
 impl From<(&FastLoadComponentOccurrence, OccurrenceLaneForm)> for FastLoadComponentOccurrenceWire {
@@ -203,7 +208,7 @@ impl From<(&FastLoadComponentOccurrence, OccurrenceLaneForm)> for FastLoadCompon
             occurrence_lane_form,
             marker: value.marker,
             marker_source_offset: value.marker_source_offset,
-            prototype: value.prototype.clone(),
+            prototype: value.prototype(),
             prototype_index: value.prototype_index,
             component_uuid: value.component_uuid.clone(),
             uuid_source_offset: value.uuid_source_offset,
@@ -736,8 +741,8 @@ mod tests {
             [1, 2, 2, 3]
         );
         assert_eq!(
-            occurrences.as_slice()[1].prototype,
-            occurrences.as_slice()[2].prototype
+            occurrences.as_slice()[1].prototype(),
+            occurrences.as_slice()[2].prototype()
         );
     }
 
