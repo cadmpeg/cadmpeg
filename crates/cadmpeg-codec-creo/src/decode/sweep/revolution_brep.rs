@@ -36,6 +36,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -139,6 +140,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             })
             .collect::<Option<Vec<_>>>();
         let Some(boundaries) = boundaries else {
+            losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(format!(
+                "Revolution feature {feature_id} has an unresolved boundary pcurve; its B-rep was skipped."
+            )));
             continue;
         };
         let face_senses = profile
@@ -354,56 +358,4 @@ impl PrevalidatedRevolutionBoundary {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use cadmpeg_ir::geometry::{PlaneSurface, SurfaceGeometry};
-    use cadmpeg_ir::math::{Point2, Vector3};
-
-    #[test]
-    fn unvalidated_axis_boundary_is_rejected() {
-        let transform = crate::placement::FeatureSectionTransform::new(
-            1,
-            Some(1),
-            [0.0; 3],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            0,
-        )
-        .expect("orthonormal section fixture");
-        let segment = super::super::profiles::ProfileEntity::new(
-            cadmpeg_ir::sketches::SketchGeometry::try_from(
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
-                    start: Point2::new(0.0, 0.0),
-                    end: Point2::new(1.0, 0.0),
-                },
-            )
-            .expect("line sketch fixture"),
-            false,
-        )
-        .expect("connected profile fixture");
-        let surface = SurfaceGeometry::Plane(
-            PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("plane carrier fixture"),
-        );
-        let axis = cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("finite axis origin fixture"),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .expect("nonzero axis direction fixture"),
-            reference: None,
-        };
-        assert!(PrevalidatedRevolutionBoundary::new(
-            &transform,
-            &segment,
-            &surface,
-            &axis,
-            segment.start(),
-            RevolutionBoundary::Start,
-        )
-        .is_none());
-    }
-}
+mod tests;
