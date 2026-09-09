@@ -211,7 +211,6 @@ pub enum FaceContainment {
 
 /// Native sidedness fields stored on one ASM face record.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FaceSidedness {
     /// Source namespace of the native record.
     pub source_namespace: identity::NativeRecordNamespace,
@@ -237,6 +236,17 @@ impl<'de> Deserialize<'de> for FaceSidedness {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         FaceSidednessWire::deserialize(deserializer)
             .and_then(|w| FaceSidedness::try_from(w).map_err(serde::de::Error::custom))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for FaceSidedness {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FaceSidedness".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        FaceSidednessWire::json_schema(generator)
     }
 }
 
