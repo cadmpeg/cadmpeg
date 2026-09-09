@@ -494,3 +494,112 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
         assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
     }
 }
+
+#[test]
+fn failed_procedural_curves_discard_only_their_candidate_children() {
+    use super::super::ProceduralCurveSource;
+    use crate::nurbs::proc_curve::{EmbeddedIntersection, SupportSlot};
+    use cadmpeg_ir::math::Point3;
+
+    for (parameter_range, distance, tolerance, cause) in [
+        (
+            [2.0, 1.0],
+            1.0,
+            None,
+            "support context parameter_range must be finite and ordered",
+        ),
+        (
+            [0.0, 1.0],
+            f64::NAN,
+            None,
+            "surface-offset fields are not finite and ordered",
+        ),
+        (
+            [0.0, 1.0],
+            1.0,
+            Some(-1.0),
+            "invalid procedural curve cache tolerance",
+        ),
+    ] {
+        let mut out = AsmBrep::default();
+        out.surfaces.push(Surface {
+            id: SurfaceId::mint("f3d:brep:entity#existing-surface").unwrap(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        out.curves.push(Curve {
+            id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let mut carriers = Carriers::default();
+        carriers
+            .curve_geo
+            .insert(4, CurveGeometry::Unknown { record: None });
+        carriers.procedural_curve_defs.insert(
+            4,
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::SurfaceOffset(
+                    EmbeddedSurfaceOffset {
+                        layout: EmbeddedSurfaceOffsetLayout::ContextFirst {
+                            context: Box::new(EmbeddedIntersection {
+                                surfaces: std::array::from_fn(|_| {
+                                    SupportSlot::Surface(SurfaceGeometry::Unknown { record: None })
+                                }),
+                                pcurves: [None, None],
+                                parameter_range,
+                                discontinuities: std::array::from_fn(|_| Vec::new()),
+                            }),
+                            discontinuity_flag: false,
+                        },
+                        base_u_range: [0.0, 1.0],
+                        base_v_range: [0.0, 1.0],
+                        base_range: [0.0, 1.0],
+                        base: NurbsCurve::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                            None,
+                            false,
+                        )
+                        .unwrap(),
+                        distance,
+                        shift: 0.0,
+                        scale: 1.0,
+                    },
+                )),
+                cache_fit_tolerance: tolerance,
+                parsed_domain: Some([0.0, 1.0]),
+            },
+        );
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::from([4]),
+            &HashSet::from([4]),
+            IdFormat("f3d"),
+        )
+        .unwrap();
+        assert_eq!(
+            out.surfaces
+                .iter()
+                .map(|surface| surface.id.as_str())
+                .collect::<Vec<_>>(),
+            ["f3d:brep:entity#existing-surface"]
+        );
+        assert_eq!(
+            out.curves
+                .iter()
+                .map(|curve| curve.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "f3d:brep:entity#existing-curve",
+                "f3d:brep:entity#4:reversed",
+                "f3d:brep:entity#4"
+            ]
+        );
+        assert!(out.procedural_curves.is_empty());
+        assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
+    }
+}
