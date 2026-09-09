@@ -46,35 +46,5 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for (id, tolerance) in ir
-        .model
-        .vertices
-        .iter()
-        .map(|entity| (entity.id.as_str(), entity.tolerance))
-        .chain(
-            ir.model
-                .edges
-                .iter()
-                .map(|entity| (entity.id.as_str(), entity.tolerance)),
-        )
-        .chain(
-            ir.model
-                .faces
-                .iter()
-                .map(|entity| (entity.id.as_str(), entity.tolerance)),
-        )
-    {
-        if tolerance.is_some_and(|value| value.get() > 1.0e6) {
-            findings.push(Finding {
-                check: Check::Tolerances,
-                severity: Severity::Warning,
-                message: "topology tolerance is outside a sane canonical range".into(),
-                entity: Some(id.to_owned()),
-            });
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests;
