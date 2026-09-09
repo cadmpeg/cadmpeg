@@ -696,7 +696,7 @@ fn native_procedural_surface_definition(
                 *mode,
                 bridge,
                 Some(solved_cache),
-            )?
+            )?;
         }
         ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
             let construction = definition_payload.construction();
