@@ -371,7 +371,7 @@ fn nested_member_address_is_inspect_replayable() {
     assert_eq!(
         commands,
         [
-            "cadmpeg inspect extract --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'".to_string(),
+            "cadmpeg inspect extract --force --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'".to_string(),
             "cadmpeg inspect hex --offset 120 --len 64 -- 'part.FCStd.member'".to_string(),
         ]
     );
