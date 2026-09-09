@@ -149,6 +149,8 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "container.display-jt-graph-rejected",
+                "history.roll-forward-table-rejected",
                 "source.kernel-dialect-unverified",
                 "source.dialect-layer-collision",
                 "carrier.analytic-census",
