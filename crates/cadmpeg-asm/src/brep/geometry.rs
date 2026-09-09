@@ -453,11 +453,13 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
     chunks
         .windows(2)
         .find_map(|tokens| {
-            matches!(tokens[1], Token::SubtypeOpen).then(|| match tokens[0] {
-                Token::True => true,
-                Token::False => false,
-                _ => false,
-            })
+            matches!(tokens[1], Token::SubtypeOpen)
+                .then(|| match tokens[0] {
+                    Token::True => Some(true),
+                    Token::False => Some(false),
+                    _ => None,
+                })
+                .flatten()
         })
         .or_else(|| {
             // A plain `intcurve` companion has no subtype scope after its
@@ -1147,6 +1149,39 @@ mod analytic_surface_tests {
             torus,
         ] {
             assert!(decode_surface(&record).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod sense_tests {
+    use super::*;
+
+    #[test]
+    fn intcurve_sense_falls_back_only_when_the_scope_has_no_boolean() {
+        for (header, before_scope, expected) in [
+            (Token::True, Token::Long(7), true),
+            (Token::False, Token::Long(7), false),
+            (Token::True, Token::False, false),
+            (Token::False, Token::True, true),
+        ] {
+            let record = Record {
+                index: 0,
+                name: "intcurve".into(),
+                tokens: vec![
+                    Token::Ref(-1),
+                    Token::Long(-1),
+                    Token::Ref(-1),
+                    header,
+                    before_scope,
+                    Token::SubtypeOpen,
+                    Token::SubtypeClose,
+                ]
+                .into(),
+                offset: 0,
+                len: 0,
+            };
+            assert_eq!(record_reversed(&record), expected);
         }
     }
 }
