@@ -38,27 +38,12 @@ const V5_TEXT_EXTRA: Uuid = Uuid::from_canonical([
     0xd9, 0x04, 0x90, 0xa5, 0xdb, 0x86, 0x49, 0xf8, 0xbd, 0xa1, 0x90, 0x80, 0xb1, 0xf4, 0xe9, 0x76,
 ]);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
 enum AnnotationKind {
     Leader,
     Text,
     Annotation,
-}
-
-impl AnnotationKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Leader => "leader",
-            Self::Text => "text",
-            Self::Annotation => "annotation",
-        }
-    }
-}
-
-impl Serialize for AnnotationKind {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
 }
 
 #[derive(Debug, Serialize)]
