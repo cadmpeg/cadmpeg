@@ -493,10 +493,12 @@ impl<'a> DecodeContext<'a> {
                     .push(source_order);
             }
         }
+        let mut report = ReportBuckets::default();
+        let ir = build_ir(scan, &mut report.typed_losses);
         let mut context = Self {
             scan,
             expand,
-            ir: build_ir(scan)?,
+            ir,
             annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             opaque_records: Vec::new(),
@@ -505,7 +507,7 @@ impl<'a> DecodeContext<'a> {
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
             geometry_transferred: false,
-            report: ReportBuckets::default(),
+            report,
             instance_selection: None,
             instance_display: None,
             object_candidates,
@@ -5630,21 +5632,37 @@ pub(crate) fn seal_for_test(
     .expect("test decode result satisfies the sealed codec contract")
 }
 
-fn build_ir(scan: &Scan<'_>) -> Result<CadIr, CodecError> {
+/// Admits an archive tolerance with a recorded default repair.
+pub(crate) fn admitted_tolerance(
+    value: f64,
+    default: cadmpeg_ir::units::PositiveScalar,
+    field: &str,
+    losses: &mut Vec<LossNote>,
+) -> cadmpeg_ir::units::PositiveScalar {
+    cadmpeg_ir::units::PositiveScalar::new(value).unwrap_or_else(|| {
+        losses.push(RhinoLossCode::RedundantFieldRepaired.note(format!(
+            "{field} tolerance {value} replaced with default {}",
+            default.get()
+        )));
+        default
+    })
+}
+
+fn build_ir(scan: &Scan<'_>, losses: &mut Vec<LossNote>) -> CadIr {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
             ir.tolerances.linear =
-                cadmpeg_ir::units::PositiveScalar::new(linear).ok_or_else(|| {
-                    CodecError::malformed("linear tolerance must be positive and finite")
-                })?;
+                admitted_tolerance(linear, ir.tolerances.linear, "linear", losses);
         }
-        ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(
+        ir.tolerances.angular = admitted_tolerance(
             source_units.angular_tolerance,
-        )
-        .ok_or_else(|| CodecError::malformed("angular tolerance must be positive and finite"))?;
+            ir.tolerances.angular,
+            "angular",
+            losses,
+        );
     }
-    Ok(ir)
+    ir
 }
 
 /// Builds the path-specific facts available after full decoding.
