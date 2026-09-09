@@ -3067,11 +3067,12 @@ impl<'a> Builder<'a> {
                 let compartments = groups
                     .values()
                     .filter_map(|group| {
+                        let first = group.first()?;
                         let datum_refs = group
                             .iter()
                             .map(|reference| annotation_refs.get(&reference.datum).copied())
                             .collect::<Option<Vec<_>>>()?;
-                        let (datum, modifiers) = if group[0].common_group.is_some() {
+                        let (datum, modifiers) = if first.common_group.is_some() {
                             let elements = group
                                 .iter()
                                 .zip(datum_refs)
@@ -3090,8 +3091,8 @@ impl<'a> Builder<'a> {
                             )
                         } else {
                             (
-                                datum_refs[0].to_string(),
-                                self.emit_datum_modifiers(&group[0].modifiers)?,
+                                datum_refs.first()?.to_string(),
+                                self.emit_datum_modifiers(&first.modifiers)?,
                             )
                         };
                         Some(self.emitter.emit(
