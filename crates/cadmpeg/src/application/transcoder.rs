@@ -149,7 +149,7 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 pub enum LossPolicy {
     /// Permit losses at both phases.
     #[default]
-    #[value(hide = true)]
+    #[value(skip)]
     Allow,
     /// Refuse decode losses only.
     #[value(name = "decode")]
@@ -186,6 +186,51 @@ pub enum DestinationPolicy {
     },
     /// Write to a file.
     File(FileDestination),
+}
+
+/// Conversion output and report destinations admitted from command arguments.
+#[derive(Debug)]
+pub(crate) struct ConversionDestinations {
+    /// Primary output destination.
+    pub destination: DestinationPolicy,
+    /// Optional command report output.
+    pub report: Option<FileDestination>,
+}
+
+impl clap::Args for ConversionDestinations {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        artifact_store::OutputDestinations::augment_args(command).arg(
+            clap::Arg::new("binary_stdout")
+                .long("binary-stdout")
+                .hide(true)
+                .help("Stream a binary output format to standard output anyway")
+                .action(clap::ArgAction::SetTrue),
+        )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for ConversionDestinations {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let outputs = artifact_store::OutputDestinations::from_arg_matches(matches)?;
+        Ok(Self {
+            destination: match outputs.output.0 {
+                Some(file) => DestinationPolicy::File(file),
+                None => DestinationPolicy::Stdout {
+                    allow_binary: matches.get_flag("binary_stdout"),
+                },
+            },
+            report: outputs.report,
+        })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
 }
 
 impl DestinationPolicy {

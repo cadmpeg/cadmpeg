@@ -441,7 +441,7 @@ fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
         parasolid::extract_streams(&ctx, root, &container),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.context.operation == "retain NX inflated stream"
+                && limit.operation == "retain NX inflated stream"
     ));
 }
 

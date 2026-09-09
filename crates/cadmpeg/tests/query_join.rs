@@ -64,7 +64,8 @@ fn join_help_mentions_left_key() {
             predicate::str::contains("--left-key")
                 .and(predicate::str::contains("--right-key"))
                 .and(predicate::str::contains("--mode"))
-                .and(predicate::str::contains("--right-file")),
+                .and(predicate::str::contains("--right-file"))
+                .and(predicate::str::contains("left.id,right.links")),
         );
 }
 

@@ -19,7 +19,8 @@ const FREE_SECTOR: u32 = 0xffff_ffff;
 const END_OF_CHAIN: u32 = 0xffff_fffe;
 const FAT_SECTOR: u32 = 0xffff_fffd;
 const DIFAT_SECTOR: u32 = 0xffff_fffc;
-const NO_STREAM: u32 = 0xffff_ffff;
+// NO_STREAM and FREE_SECTOR are the CFB specification names for the same value.
+const NO_STREAM: u32 = FREE_SECTOR;
 const V3_MAX_FILE_SIZE: u64 = 0x8000_0000;
 const RANGE_LOCK_START: u64 = 0x7fff_ff00;
 const RANGE_LOCK_END: u64 = 0x8000_0000;
@@ -114,9 +115,15 @@ impl SectorChain {
         1 + self.rest.len()
     }
 
-    fn into_vec(mut self) -> Vec<u32> {
-        self.rest.insert(0, self.first);
-        self.rest
+    fn iter(&self) -> impl Iterator<Item = &u32> + Clone {
+        std::iter::once(&self.first).chain(&self.rest)
+    }
+
+    fn get(&self, index: usize) -> Option<&u32> {
+        match index.checked_sub(1) {
+            None => Some(&self.first),
+            Some(index) => self.rest.get(index),
+        }
     }
 }
 
@@ -125,6 +132,7 @@ enum StreamData {
     Empty(EmptyStreamStart),
     Allocated {
         logical_size: NonZeroU64,
+        allocation: CompoundAllocation,
         chain: SectorChain,
     },
 }
@@ -157,12 +165,11 @@ impl CompoundStreamEntry {
         }
     }
 
-    /// Returns the stream allocation mechanism.
-    pub const fn allocation(&self) -> CompoundAllocation {
-        if self.logical_size() < MINI_STREAM_CUTOFF {
-            CompoundAllocation::Mini
-        } else {
-            CompoundAllocation::Regular
+    /// Returns the allocation mechanism for a nonempty stream.
+    pub const fn allocation(&self) -> Option<CompoundAllocation> {
+        match &self.data {
+            StreamData::Empty(_) => None,
+            StreamData::Allocated { allocation, .. } => Some(*allocation),
         }
     }
 
@@ -279,9 +286,9 @@ struct CompoundState {
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
     directory: Vec<DirectorySlot>,
-    directory_chain: Vec<u32>,
-    mini_fat_chain: Vec<u32>,
-    root_mini_chain: Vec<u32>,
+    directory_chain: Option<SectorChain>,
+    mini_fat_chain: Option<SectorChain>,
+    root_mini_chain: Option<SectorChain>,
     fat_sectors: BTreeSet<u32>,
     difat_sectors: BTreeSet<u32>,
     range_lock_sector: Option<u32>,
@@ -371,7 +378,7 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn stream(&self, path: &str) -> Option<&CompoundStreamEntry> {
         match self.entry(path) {
             Some(CompoundEntry::Stream(entry)) => Some(entry),
-            _ => None,
+            Some(CompoundEntry::Storage(_)) | None => None,
         }
     }
 
@@ -396,6 +403,7 @@ impl<'a> CompoundSnapshot<'a> {
         }
         let StreamData::Allocated {
             logical_size,
+            allocation,
             chain,
         } = &entry.data
         else {
@@ -403,7 +411,7 @@ impl<'a> CompoundSnapshot<'a> {
         };
         let logical_size = usize::try_from(logical_size.get())
             .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
-        let sector_view = |sector| match entry.allocation() {
+        let sector_view = |sector| match allocation {
             CompoundAllocation::Regular => self.regular_sector_view(sector),
             CompoundAllocation::Mini => self.mini_sector_view(sector),
         };
@@ -456,7 +464,14 @@ impl<'a> CompoundSnapshot<'a> {
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
-                        attributes.insert("allocation".into(), stream.allocation().label().into());
+                        attributes.insert(
+                            "allocation".into(),
+                            stream
+                                .allocation()
+                                .unwrap_or(CompoundAllocation::Mini)
+                                .label()
+                                .into(),
+                        );
                         attributes.insert("start_sector".into(), stream.start_sector().to_string());
                         ContainerEntry {
                             name: stream.path.clone(),
@@ -481,10 +496,20 @@ impl<'a> CompoundSnapshot<'a> {
         for &sector in &self.parsed.difat_sectors {
             structural.insert(sector, CfbSpanRole::Difat);
         }
-        for &sector in &self.parsed.directory_chain {
+        for &sector in self
+            .parsed
+            .directory_chain
+            .iter()
+            .flat_map(SectorChain::iter)
+        {
             structural.insert(sector, CfbSpanRole::Directory);
         }
-        for &sector in &self.parsed.mini_fat_chain {
+        for &sector in self
+            .parsed
+            .mini_fat_chain
+            .iter()
+            .flat_map(SectorChain::iter)
+        {
             structural.insert(sector, CfbSpanRole::MiniFat);
         }
         let mut regular = BTreeMap::new();
@@ -493,7 +518,10 @@ impl<'a> CompoundSnapshot<'a> {
             let CompoundEntry::Stream(stream) = entry else {
                 continue;
             };
-            let width = match stream.allocation() {
+            let Some(allocation) = stream.allocation() else {
+                continue;
+            };
+            let width = match allocation {
                 CompoundAllocation::Regular => self.parsed.version.sector_size(),
                 CompoundAllocation::Mini => MINI_SECTOR_SIZE,
             };
@@ -501,7 +529,7 @@ impl<'a> CompoundSnapshot<'a> {
             for &sector in stream.sectors() {
                 let payload = remaining.min(width as u64) as usize;
                 remaining = remaining.saturating_sub(payload as u64);
-                match stream.allocation() {
+                match allocation {
                     CompoundAllocation::Regular => {
                         regular.insert(sector, (stream.path.clone(), payload));
                     }
@@ -521,6 +549,7 @@ impl<'a> CompoundSnapshot<'a> {
             .parsed
             .root_mini_chain
             .iter()
+            .flat_map(SectorChain::iter)
             .enumerate()
             .map(|(ordinal, sector)| (*sector, ordinal))
             .collect::<BTreeMap<_, _>>();
@@ -668,7 +697,8 @@ impl<'a> CompoundSnapshot<'a> {
         let &regular_sector = self
             .parsed
             .root_mini_chain
-            .get(regular_ordinal)
+            .as_ref()
+            .and_then(|chain| chain.get(regular_ordinal))
             .ok_or_else(|| {
                 CodecError::Malformed("CFB mini sector escapes the root mini stream".into())
             })?;
@@ -865,8 +895,10 @@ impl CompoundState {
             return malformed("CFB range lock sector is not allocated as an end-of-chain sector");
         }
         let directory_expected = match version {
-            CompoundVersion::V3 => None,
-            CompoundVersion::V4 => NonZeroUsize::new(directory_sector_count),
+            CompoundVersion::V3 => Some(ChainLength::Unbounded),
+            CompoundVersion::V4 => {
+                NonZeroUsize::new(directory_sector_count).map(ChainLength::Declared)
+            }
         };
         let directory_chain = chain(
             Some(ctx),
@@ -874,39 +906,37 @@ impl CompoundState {
             sector_count,
             directory_start,
             directory_expected,
-            "directory",
-        )?
-        .into_vec();
+            ChainRole::Directory,
+        )?;
         let directory_byte_count = directory_chain
-            .len()
+            .as_ref()
+            .map_or(0, SectorChain::len)
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB directory byte size overflow".into()))?;
         let directory_scratch = ctx.reserve_scoped(
             directory_byte_count as u64,
             "assemble CFB directory sectors",
         )?;
-        let directory_bytes = join_sectors(bytes, sector_size, sector_count, &directory_chain)?;
+        let directory_bytes = join_sectors(
+            bytes,
+            sector_size,
+            sector_count,
+            directory_chain.iter().flat_map(SectorChain::iter),
+        )?;
         let directory = parse_directory(Some(ctx), &directory_bytes, version)?;
         drop(directory_scratch);
         validate_root(&directory)?;
-        let mini_fat_chain = if mini_fat_count == 0 {
-            if mini_fat_start != END_OF_CHAIN {
-                return malformed("empty CFB mini FAT has a start sector");
-            }
-            Vec::new()
-        } else {
-            chain(
-                Some(ctx),
-                &fat,
-                sector_count,
-                mini_fat_start,
-                NonZeroUsize::new(mini_fat_count),
-                "mini FAT",
-            )?
-            .into_vec()
-        };
+        let mini_fat_chain = chain(
+            Some(ctx),
+            &fat,
+            sector_count,
+            mini_fat_start,
+            NonZeroUsize::new(mini_fat_count).map(ChainLength::Declared),
+            ChainRole::MiniFat,
+        )?;
         let mini_fat_byte_count = mini_fat_chain
-            .len()
+            .as_ref()
+            .map_or(0, SectorChain::len)
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB mini FAT byte size overflow".into()))?;
         let mini_fat_scratch =
@@ -914,10 +944,15 @@ impl CompoundState {
         let mini_fat_word_count = mini_fat_byte_count / 4;
         ctx.charge_collection_items(mini_fat_word_count as u64, "parse CFB mini FAT words")?;
         ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT")?;
-        let mini_fat = join_sectors(bytes, sector_size, sector_count, &mini_fat_chain)?
-            .chunks_exact(4)
-            .map(|word| le_u32(word, 0).expect("four-byte chunk"))
-            .collect::<Vec<_>>();
+        let mini_fat = join_sectors(
+            bytes,
+            sector_size,
+            sector_count,
+            mini_fat_chain.iter().flat_map(SectorChain::iter),
+        )?
+        .chunks_exact(4)
+        .map(|word| le_u32(word, 0).expect("four-byte chunk"))
+        .collect::<Vec<_>>();
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
@@ -925,22 +960,14 @@ impl CompoundState {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
             .div_ceil(sector_size);
-        let root_mini_chain = if root.size == 0 {
-            if !matches!(root.start_sector, END_OF_CHAIN | FREE_SECTOR) {
-                return malformed("empty CFB root mini stream has an invalid start sector");
-            }
-            Vec::new()
-        } else {
-            chain(
-                Some(ctx),
-                &fat,
-                sector_count,
-                root.start_sector,
-                NonZeroUsize::new(root_sectors),
-                "root mini stream",
-            )?
-            .into_vec()
-        };
+        let root_mini_chain = chain(
+            Some(ctx),
+            &fat,
+            sector_count,
+            root.start_sector,
+            NonZeroUsize::new(root_sectors).map(ChainLength::Declared),
+            ChainRole::RootMiniStream,
+        )?;
         Ok(Self {
             version,
             sector_count,
@@ -1057,54 +1084,51 @@ impl CompoundState {
                     self.walk_tree(ctx, snapshot_id, entry.child, &path, reached, output)?;
                 }
                 DirectoryKind::Stream => {
-                    let data = if let Some(logical_size) = NonZeroU64::new(entry.size) {
-                        let allocation = if entry.size < MINI_STREAM_CUTOFF {
-                            CompoundAllocation::Mini
-                        } else {
-                            CompoundAllocation::Regular
-                        };
-                        let sector_size = match allocation {
-                            CompoundAllocation::Regular => self.version.sector_size(),
-                            CompoundAllocation::Mini => MINI_SECTOR_SIZE,
-                        };
-                        let expected = usize::try_from(entry.size)
-                            .map_err(|_| {
-                                CodecError::Malformed("CFB stream size does not fit memory".into())
-                            })?
-                            .div_ceil(sector_size);
-                        let sectors = match allocation {
-                            CompoundAllocation::Regular => chain(
-                                Some(ctx),
-                                &self.fat,
-                                self.sector_count,
-                                entry.start_sector,
-                                NonZeroUsize::new(expected),
-                                "stream",
-                            )?,
-                            CompoundAllocation::Mini => chain(
-                                Some(ctx),
-                                &self.mini_fat,
-                                self.mini_fat.len(),
-                                entry.start_sector,
-                                NonZeroUsize::new(expected),
-                                "mini stream",
-                            )?,
-                        };
-                        StreamData::Allocated {
-                            logical_size,
-                            chain: sectors,
-                        }
+                    let allocation = if entry.size < MINI_STREAM_CUTOFF {
+                        CompoundAllocation::Mini
                     } else {
-                        let start = match entry.start_sector {
-                            END_OF_CHAIN => EmptyStreamStart::EndOfChain,
-                            FREE_SECTOR => EmptyStreamStart::FreeSector,
-                            _ => {
-                                return malformed(format!(
-                                    "empty CFB stream {path} has an invalid start sector"
-                                ));
-                            }
-                        };
-                        StreamData::Empty(start)
+                        CompoundAllocation::Regular
+                    };
+                    let (fat, count, width, role) = match allocation {
+                        CompoundAllocation::Regular => (
+                            &self.fat,
+                            self.sector_count,
+                            self.version.sector_size(),
+                            ChainRole::Stream,
+                        ),
+                        CompoundAllocation::Mini => (
+                            &self.mini_fat,
+                            self.mini_fat.len(),
+                            MINI_SECTOR_SIZE,
+                            ChainRole::MiniStream,
+                        ),
+                    };
+                    let expected = usize::try_from(entry.size)
+                        .map_err(|_| {
+                            CodecError::Malformed("CFB stream size does not fit memory".into())
+                        })?
+                        .div_ceil(width);
+                    let sectors = chain(
+                        Some(ctx),
+                        fat,
+                        count,
+                        entry.start_sector,
+                        NonZeroUsize::new(expected).map(ChainLength::Declared),
+                        role,
+                    )?;
+                    let data = match sectors {
+                        Some(chain) => StreamData::Allocated {
+                            allocation,
+                            logical_size: NonZeroU64::new(entry.size).ok_or_else(|| {
+                                CodecError::Malformed("CFB allocated stream has zero size".into())
+                            })?,
+                            chain,
+                        },
+                        None => StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                            EmptyStreamStart::FreeSector
+                        } else {
+                            EmptyStreamStart::EndOfChain
+                        }),
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
                         id: CompoundStreamId(id),
@@ -1114,7 +1138,7 @@ impl CompoundState {
                     }));
                 }
                 DirectoryKind::Root => {
-                    return malformed("root or empty object appears in a storage child tree")
+                    return malformed("root object appears in a storage child tree")
                 }
             }
             if entry.left != NO_STREAM {
@@ -1133,9 +1157,9 @@ impl CompoundState {
             .fat_sectors
             .iter()
             .chain(&self.difat_sectors)
-            .chain(&self.directory_chain)
-            .chain(&self.mini_fat_chain)
-            .chain(&self.root_mini_chain)
+            .chain(self.directory_chain.iter().flat_map(SectorChain::iter))
+            .chain(self.mini_fat_chain.iter().flat_map(SectorChain::iter))
+            .chain(self.root_mini_chain.iter().flat_map(SectorChain::iter))
         {
             if !used.insert(sector) {
                 return malformed("CFB regular sector has duplicate structural ownership");
@@ -1149,7 +1173,10 @@ impl CompoundState {
             .div_ceil(MINI_SECTOR_SIZE);
         for entry in entries {
             if let CompoundEntry::Stream(stream) = entry {
-                let target = if stream.allocation() == CompoundAllocation::Regular {
+                let Some(allocation) = stream.allocation() else {
+                    continue;
+                };
+                let target = if allocation == CompoundAllocation::Regular {
                     &mut used
                 } else {
                     &mut mini_used
@@ -1158,7 +1185,7 @@ impl CompoundState {
                 for &sector in stream.sectors() {
                     let payload = remaining.min(MINI_SECTOR_SIZE as u64);
                     remaining = remaining.saturating_sub(payload);
-                    if stream.allocation() == CompoundAllocation::Mini
+                    if allocation == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
                             || u64::from(sector)
                                 .saturating_mul(MINI_SECTOR_SIZE as u64)
@@ -1379,7 +1406,8 @@ impl CompoundPrefixProbe {
         if expected_directory_count.is_some_and(|count| count != directory_chain.len()) {
             return Self::Malformed("CFB directory chain length does not match the header".into());
         }
-        let Ok(directory_bytes) = join_sectors(prefix, sector_size, available, &directory_chain)
+        let Ok(directory_bytes) =
+            join_sectors(prefix, sector_size, available, directory_chain.iter())
         else {
             return Self::Incomplete;
         };
@@ -1499,6 +1527,19 @@ pub fn read_detection_prefix(
     }
 }
 
+const DIRECTORY_NAME_LENGTH: usize = 64;
+const DIRECTORY_LEFT: usize = 68;
+const DIRECTORY_RIGHT: usize = 72;
+const DIRECTORY_CHILD: usize = 76;
+const DIRECTORY_START_SECTOR: usize = 116;
+const DIRECTORY_SIZE: usize = 120;
+const _: () = assert!(DIRECTORY_NAME_LENGTH.is_multiple_of(2));
+const _: () = assert!(DIRECTORY_LEFT.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_RIGHT.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_CHILD.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_START_SECTOR.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_SIZE.is_multiple_of(8));
+
 fn parse_directory(
     ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
@@ -1530,7 +1571,9 @@ fn parse_directory(
             5 => DirectoryKind::Root,
             _ => return malformed("invalid CFB directory object type"),
         };
-        let name_len = usize::from(le_u16_array(raw.as_chunks::<2>().0[64 / 2]));
+        let name_len = usize::from(le_u16_array(
+            raw.as_chunks::<2>().0[DIRECTORY_NAME_LENGTH / 2],
+        ));
         let name = {
             if !(2..=64).contains(&name_len)
                 || !name_len.is_multiple_of(2)
@@ -1553,7 +1596,7 @@ fn parse_directory(
             1 => DirectoryColor::Black,
             _ => return malformed("invalid CFB directory node color"),
         };
-        let mut size = le_u64_array(raw.as_chunks::<8>().0[120 / 8]);
+        let mut size = le_u64_array(raw.as_chunks::<8>().0[DIRECTORY_SIZE / 8]);
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
@@ -1561,10 +1604,10 @@ fn parse_directory(
             name,
             kind,
             color,
-            left: le_u32_array(raw.as_chunks::<4>().0[68 / 4]),
-            right: le_u32_array(raw.as_chunks::<4>().0[72 / 4]),
-            child: le_u32_array(raw.as_chunks::<4>().0[76 / 4]),
-            start_sector: le_u32_array(raw.as_chunks::<4>().0[116 / 4]),
+            left: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_LEFT / 4]),
+            right: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_RIGHT / 4]),
+            child: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_CHILD / 4]),
+            start_sector: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_START_SECTOR / 4]),
             size,
         }));
     }
@@ -1605,10 +1648,10 @@ fn validate_sibling_tree(directory: &[DirectorySlot], root: u32) -> Result<(), C
     let root_entry = directory
         .get(root as usize)
         .ok_or_else(|| CodecError::Malformed("CFB sibling root is out of range".into()))?;
-    if !root_entry
-        .live()
-        .is_some_and(|entry| entry.color == DirectoryColor::Black)
-    {
+    let root_entry = root_entry.live().ok_or_else(|| {
+        CodecError::Malformed("CFB sibling-tree root points to a free directory slot".into())
+    })?;
+    if root_entry.color != DirectoryColor::Black {
         return malformed("CFB sibling-tree root is not black");
     }
     visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new())
@@ -1684,14 +1727,56 @@ fn range_lock_sector(version: CompoundVersion, file_size: u64) -> Option<u32> {
     Some((RANGE_LOCK_START / version.sector_size() as u64 - 1) as u32)
 }
 
+#[derive(Clone, Copy)]
+enum ChainLength {
+    Declared(NonZeroUsize),
+    Unbounded,
+}
+
+#[derive(Clone, Copy)]
+enum ChainRole {
+    Directory,
+    MiniFat,
+    RootMiniStream,
+    Stream,
+    MiniStream,
+}
+
+impl ChainRole {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Directory => "directory",
+            Self::MiniFat => "mini FAT",
+            Self::RootMiniStream => "root mini stream",
+            Self::Stream => "stream",
+            Self::MiniStream => "mini stream",
+        }
+    }
+}
+
 fn chain(
     ctx: Option<&DecodeContext<'_>>,
     fat: &[u32],
     sector_count: usize,
     start: u32,
-    expected: Option<NonZeroUsize>,
-    role: &str,
-) -> Result<SectorChain, CodecError> {
+    length: Option<ChainLength>,
+    role: ChainRole,
+) -> Result<Option<SectorChain>, CodecError> {
+    let accepts_free = matches!(
+        role,
+        ChainRole::RootMiniStream | ChainRole::Stream | ChainRole::MiniStream
+    );
+    let role = role.name();
+    let expected = match length {
+        None => {
+            if start == END_OF_CHAIN || (accepts_free && start == FREE_SECTOR) {
+                return Ok(None);
+            }
+            return malformed(format!("empty CFB {role} has an invalid start sector"));
+        }
+        Some(ChainLength::Declared(count)) => Some(count),
+        Some(ChainLength::Unbounded) => None,
+    };
     let limit = expected.map_or(sector_count, NonZeroUsize::get);
     if let (Some(ctx), Some(count)) = (ctx, expected) {
         ctx.charge_collection_items(count.get() as u64, "retain CFB sector chain")?;
@@ -1752,17 +1837,18 @@ fn chain(
             "CFB {role} chain length does not match its declaration"
         ));
     }
-    Ok(output)
+    Ok(Some(output))
 }
 
-fn join_sectors(
+fn join_sectors<'a>(
     bytes: &[u8],
     sector_size: usize,
     sector_count: usize,
-    sectors: &[u32],
+    sectors: impl Iterator<Item = &'a u32> + Clone,
 ) -> Result<Vec<u8>, CodecError> {
     let length = sectors
-        .len()
+        .clone()
+        .count()
         .checked_mul(sector_size)
         .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
     let mut output = Vec::with_capacity(length);

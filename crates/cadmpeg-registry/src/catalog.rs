@@ -73,6 +73,51 @@ impl InputDescriptor {
     }
 }
 
+/// A strongest-confidence tie between at least two candidate formats.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AmbiguousDetection {
+    confidence: Confidence,
+    candidates: Vec<FormatId>,
+}
+
+impl AmbiguousDetection {
+    /// Admits a tie with at least two candidate formats.
+    pub fn new(
+        confidence: Confidence,
+        candidates: Vec<FormatId>,
+    ) -> Result<Self, ResolveSourceError> {
+        if candidates.len() < 2 {
+            return Err(ResolveSourceError::InsufficientCandidates(candidates.len()));
+        }
+        Ok(Self {
+            confidence,
+            candidates,
+        })
+    }
+
+    fn from_tie(
+        confidence: Confidence,
+        first: FormatId,
+        second: FormatId,
+        rest: impl Iterator<Item = FormatId>,
+    ) -> Self {
+        Self {
+            confidence,
+            candidates: [first, second].into_iter().chain(rest).collect(),
+        }
+    }
+
+    /// Returns the confidence shared by the candidates.
+    pub const fn confidence(&self) -> Confidence {
+        self.confidence
+    }
+
+    /// Returns candidate format ids in catalog order.
+    pub fn candidates(&self) -> &[FormatId] {
+        &self.candidates
+    }
+}
+
 /// Result of content-based detection.
 ///
 /// A detected candidate carries its codec directly: only descriptors that
@@ -89,12 +134,7 @@ pub enum DetectionOutcome<'a> {
         confidence: Confidence,
     },
     /// Multiple codecs tied at the strongest confidence.
-    Ambiguous {
-        /// Shared strongest confidence.
-        confidence: Confidence,
-        /// Candidate format ids in catalog order.
-        candidates: Vec<FormatId>,
-    },
+    Ambiguous(AmbiguousDetection),
 }
 
 /// How a native codec was selected.
@@ -144,17 +184,16 @@ pub enum ResolveSourceError {
     /// The forced native descriptor is absent from this catalog.
     #[error("forced input format {0} is not in this catalog")]
     Unregistered(FormatId),
+    /// An ambiguity request contains fewer than two candidates.
+    #[error("candidates: ambiguity requires at least two formats, received {0}")]
+    InsufficientCandidates(usize),
     /// Multiple codecs tied at the strongest confidence.
     #[error(
         "ambiguous {confidence}-confidence input format: {names}",
-        names = .candidates.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", "),
+        confidence = .0.confidence(),
+        names = .0.candidates().iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", "),
     )]
-    Ambiguous {
-        /// Shared strongest confidence.
-        confidence: Confidence,
-        /// Candidate format ids in detection order.
-        candidates: Vec<FormatId>,
-    },
+    Ambiguous(AmbiguousDetection),
 }
 
 /// Source detection and codec lookup.
@@ -216,16 +255,19 @@ impl InputCatalog {
             return DetectionOutcome::None;
         };
         matches.retain(|(_, confidence)| *confidence == best_confidence);
-        if matches.len() == 1 {
-            let codec = matches[0].0;
-            DetectionOutcome::Detected {
-                codec,
+        match matches.as_slice() {
+            [] => DetectionOutcome::None,
+            [(codec, _)] => DetectionOutcome::Detected {
+                codec: *codec,
                 confidence: best_confidence,
-            }
-        } else {
-            DetectionOutcome::Ambiguous {
-                confidence: best_confidence,
-                candidates: matches.into_iter().map(|(codec, _)| codec.id()).collect(),
+            },
+            [(first, _), (second, _), rest @ ..] => {
+                DetectionOutcome::Ambiguous(AmbiguousDetection::from_tie(
+                    best_confidence,
+                    first.id(),
+                    second.id(),
+                    rest.iter().map(|(codec, _)| codec.id()),
+                ))
             }
         }
     }
@@ -282,13 +324,7 @@ impl InputCatalog {
                     codec,
                     selection: Selection::Detected { confidence },
                 }),
-                DetectionOutcome::Ambiguous {
-                    confidence,
-                    candidates,
-                } => Err(ResolveSourceError::Ambiguous {
-                    confidence,
-                    candidates,
-                }),
+                DetectionOutcome::Ambiguous(tie) => Err(ResolveSourceError::Ambiguous(tie)),
             },
         }
     }
@@ -305,6 +341,26 @@ pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ambiguity_requires_at_least_two_candidates() {
+        for candidates in [Vec::new(), vec![FormatId::new("step")]] {
+            assert!(matches!(
+                AmbiguousDetection::new(Confidence::Low, candidates),
+                Err(ResolveSourceError::InsufficientCandidates(_))
+            ));
+        }
+        let tie = AmbiguousDetection::new(
+            Confidence::Low,
+            vec![FormatId::new("step"), FormatId::new("f3d")],
+        )
+        .unwrap();
+        assert_eq!(
+            tie.candidates(),
+            &[FormatId::new("step"), FormatId::new("f3d")]
+        );
+        assert_eq!(tie.confidence(), Confidence::Low);
+    }
 
     /// The rendered format rows retain the input catalog's readable formats
     /// and extension data while adding write capability.
@@ -327,21 +383,20 @@ mod tests {
     #[test]
     fn markerless_zip_is_explicitly_ambiguous() {
         let catalog = InputCatalog::with_builtins();
-        let DetectionOutcome::Ambiguous {
-            confidence,
-            candidates,
-        } = catalog.detect(b"PK\x03\x04 markerless")
-        else {
+        let DetectionOutcome::Ambiguous(tie) = catalog.detect(b"PK\x03\x04 markerless") else {
             panic!("markerless ZIP must remain ambiguous");
         };
-        assert_eq!(confidence, Confidence::Low);
+        assert_eq!(tie.confidence(), Confidence::Low);
         let expected = if cfg!(feature = "step") {
             vec!["fcstd", "f3d", "step"]
         } else {
             vec!["fcstd", "f3d"]
         };
         assert_eq!(
-            candidates.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+            tie.candidates()
+                .iter()
+                .map(|id| id.as_str())
+                .collect::<Vec<_>>(),
             expected
         );
     }

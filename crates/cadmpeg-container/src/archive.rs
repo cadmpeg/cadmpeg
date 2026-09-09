@@ -194,51 +194,23 @@ impl<'a> ArchiveSnapshot<'a> {
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
-        let compressed_source = || {
-            let start = usize::try_from(absolute_start)
-                .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
-            let end = usize::try_from(absolute_end)
-                .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
-            self.root.child(start, end).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "ZIP data range escapes archive for {}",
-                    entry.name
-                ))
-            })
+        let range = ByteRange {
+            start: absolute_start,
+            end: absolute_end,
         };
-        let (source, mut decoder): (_, Box<dyn Read>) = match entry.compression {
-            ZipCompression::Stored => {
-                let view = ctx.register_slice_as(
-                    self.root,
-                    ByteRange {
-                        start: absolute_start,
-                        end: absolute_end,
-                    },
-                    entry.name.clone(),
-                )?;
-                if view.window().len() as u64 != entry.uncompressed_size {
-                    return Err(CodecError::malformed(format_args!(
-                        "stored size mismatch for {}",
-                        entry.name
-                    )));
-                }
-                if crc32fast::hash(view.window()) != entry.crc32 {
-                    return Err(CodecError::malformed(format_args!(
-                        "CRC mismatch for {}",
-                        entry.name
-                    )));
-                }
-                return Ok(view);
-            }
+        match entry.compression {
+            ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
-                let source = compressed_source()?;
-                (
+                let source = self.compressed_source(entry, range)?;
+                Self::open_expanded(
+                    ctx,
+                    entry,
                     source,
-                    Box::new(flate2::read::DeflateDecoder::new(source.window())),
+                    flate2::read::DeflateDecoder::new(source.window()),
                 )
             }
             ZipCompression::Zstd => {
-                let source = compressed_source()?;
+                let source = self.compressed_source(entry, range)?;
                 let decoder =
                     zstd::stream::read::Decoder::with_buffer(source.window()).map_err(|error| {
                         CodecError::malformed(format_args!(
@@ -246,9 +218,56 @@ impl<'a> ArchiveSnapshot<'a> {
                             entry.name
                         ))
                     })?;
-                (source, Box::new(decoder))
+                Self::open_expanded(ctx, entry, source, decoder)
             }
-        };
+        }
+    }
+
+    fn compressed_source(
+        &self,
+        entry: &EntryRecord,
+        range: ByteRange,
+    ) -> Result<View<'a>, CodecError> {
+        let start = usize::try_from(range.start)
+            .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
+        let end = usize::try_from(range.end)
+            .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
+        self.root.child(start, end).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "ZIP data range escapes archive for {}",
+                entry.name
+            ))
+        })
+    }
+
+    fn open_stored(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &EntryRecord,
+        range: ByteRange,
+    ) -> Result<View<'a>, CodecError> {
+        let view = ctx.register_slice_as(self.root, range, entry.name.clone())?;
+        if view.window().len() as u64 != entry.uncompressed_size {
+            return Err(CodecError::malformed(format_args!(
+                "stored size mismatch for {}",
+                entry.name
+            )));
+        }
+        if crc32fast::hash(view.window()) != entry.crc32 {
+            return Err(CodecError::malformed(format_args!(
+                "CRC mismatch for {}",
+                entry.name
+            )));
+        }
+        Ok(view)
+    }
+
+    fn open_expanded(
+        ctx: &DecodeContext<'a>,
+        entry: &EntryRecord,
+        source: View<'a>,
+        mut decoder: impl Read,
+    ) -> Result<View<'a>, CodecError> {
         let mut writer = ctx.begin_expand_as(
             source,
             ExpandSpec::Exact(entry.uncompressed_size),
@@ -1013,7 +1032,7 @@ mod tests {
         let commands = address.inspect_commands("part.FCStd");
         assert_eq!(
             commands[0],
-            "cadmpeg inspect extract --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'"
+            "cadmpeg inspect extract --force --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'"
         );
         assert_eq!(
             commands[1],
@@ -1052,8 +1071,8 @@ mod tests {
         assert_eq!(payload.window(), b"payload bytes");
         let address = ctx.resolve_location(payload.location_at(7));
         assert_eq!(address.inspect_commands("project part.FCStd"), [
-            "cadmpeg inspect extract --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
-            "cadmpeg inspect extract --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
+            "cadmpeg inspect extract --force --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
             "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
         ]);
     }

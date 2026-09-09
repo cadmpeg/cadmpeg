@@ -12,6 +12,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::application::artifact_store::{FileDestination, OptionalFileDestination};
 use anyhow::{bail, Context, Result};
 use clap::Args;
 
@@ -19,6 +20,8 @@ use super::{detect, print_json, read_input, Artifact};
 
 /// Input selection for `query fidelity`.
 #[derive(Debug, Args)]
+#[command(mut_arg("output", |arg| arg.value_name("FILE").requires("stream")),
+    mut_arg("force", |arg| arg.requires("output")))]
 pub struct FidelityArgs {
     /// Decode sidecar (`<stem>.fidelity.json`), or `-` for standard input.
     pub file: PathBuf,
@@ -26,12 +29,8 @@ pub struct FidelityArgs {
     /// printing the table.
     #[arg(long, value_name = "NAME")]
     pub stream: Option<String>,
-    /// Write the extracted bytes to this file.
-    #[arg(short = 'o', long, value_name = "FILE", requires = "stream")]
-    pub output: Option<PathBuf>,
-    /// Replace an existing output file.
-    #[arg(long, requires = "output")]
-    pub force: bool,
+    #[command(flatten)]
+    pub output: OptionalFileDestination,
     /// Stream the extracted bytes to stdout even though they are binary.
     #[arg(long, requires = "stream")]
     pub binary_stdout: bool,
@@ -50,11 +49,8 @@ impl FidelityArgs {
                 FidelityMode::Table
             });
         };
-        let sink = if let Some(path) = self.output.as_deref() {
-            Sink::File {
-                path,
-                force: self.force,
-            }
+        let sink = if let Some(file) = self.output.0.as_ref() {
+            Sink::File(file)
         } else if self.binary_stdout {
             Sink::Stdout
         } else {
@@ -78,7 +74,7 @@ pub(crate) enum FidelityMode<'a> {
 /// Destination for extracted retained bytes.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Sink<'a> {
-    File { path: &'a Path, force: bool },
+    File(&'a FileDestination),
     Stdout,
 }
 
@@ -106,7 +102,7 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
     let payload = &sidecar.fidelity;
 
     match mode {
-        FidelityMode::Extract { stream, sink } => extract(payload, stream, sink),
+        FidelityMode::Extract { stream, sink } => extract(file, payload, stream, sink),
         FidelityMode::Json => {
             let records: Vec<serde_json::Value> = payload
                 .retained_records
@@ -161,7 +157,12 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
 }
 
 /// Reassembles one stream's retained bytes and writes them byte-exactly.
-fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -> Result<()> {
+fn extract(
+    input: &Path,
+    payload: &cadmpeg_ir::SourceFidelity,
+    stream: &str,
+    sink: Sink<'_>,
+) -> Result<()> {
     const SHOWN: usize = 20;
     let selected: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
         .retained_records
@@ -231,18 +232,13 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
     }
 
     match sink {
-        Sink::File { path, force } => {
-            if path.exists() && !force {
-                bail!("{} exists; pass --force to replace it", path.display());
-            }
-            std::fs::write(path, &assembled).with_context(|| {
-                format!("writing {} bytes to {}", assembled.len(), path.display())
-            })?;
+        Sink::File(destination) => {
+            destination.write(input, &assembled)?;
             eprintln!(
                 "wrote {} bytes from {} record(s) of stream {stream:?} to {}",
                 assembled.len(),
                 matched.len(),
-                path.display()
+                destination.path.display()
             );
             Ok(())
         }

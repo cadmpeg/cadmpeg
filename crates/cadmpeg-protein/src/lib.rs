@@ -157,11 +157,7 @@ pub struct DecodeOutcome {
 /// logical record without discarding later valid records.
 pub fn decode_detailed(protein: &[u8], instance: &[u8]) -> Result<DecodeOutcome, CodecError> {
     let schemas = schemas(protein)?;
-    let Some(frames) = framing::record_frames(instance) else {
-        return Err(CodecError::Malformed(
-            "Protein InstanceProperties page framing is invalid".into(),
-        ));
-    };
+    let frames = framing::record_frames(instance)?;
     let mut outcome = DecodeOutcome::default();
     for (ordinal, frame) in frames.into_iter().enumerate() {
         let ordinal = u64::try_from(ordinal).map_err(|_| {
@@ -390,7 +386,13 @@ fn decode_record(
                 let targets = read_connections(record, &mut at)
                     .map_err(|error| connection_error(error, at))?;
                 match count {
-                    Some(count) => PropertyContent::MultipleReferences { count, targets },
+                    Some(count) => match std::num::NonZeroUsize::new(count) {
+                        Some(count) => PropertyContent::MultipleReferences { count, targets },
+                        None => PropertyContent::Value {
+                            value: PropertyValue::Multiple(Vec::new()),
+                            connections: targets,
+                        },
+                    },
                     None => PropertyContent::Reference(targets),
                 }
             }
@@ -709,12 +711,21 @@ mod tests {
             assert!(outcome.rejected.is_empty(), "{:?}", outcome.rejected);
             let records = outcome.records;
             assert_eq!(records.len(), 1);
-            assert!(records[0].properties["targets"].value().is_none());
+            assert_eq!(
+                records[0].properties["targets"].value().is_none(),
+                count != 0
+            );
             assert_eq!(
                 records[0].properties["targets"].content,
-                PropertyContent::MultipleReferences {
-                    count: count as usize,
-                    targets: vec!["target".into()],
+                match std::num::NonZeroUsize::new(count as usize) {
+                    Some(count) => PropertyContent::MultipleReferences {
+                        count,
+                        targets: vec!["target".into()],
+                    },
+                    None => PropertyContent::Value {
+                        value: PropertyValue::Multiple(Vec::new()),
+                        connections: vec!["target".into()],
+                    },
                 }
             );
         }
@@ -888,7 +899,8 @@ mod tests {
         )]);
         let error = decode_detailed(&protein, &[0; 16])
             .expect_err("a header without any complete page is malformed");
-        assert!(error.to_string().contains("page framing is invalid"));
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "Protein page stream is shorter than its header and one page"));
     }
 
     #[test]
@@ -957,10 +969,10 @@ mod tests {
         assert_eq!(frames[1].bytes(), [RECORD_MARKER, &second].concat());
         assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
 
-        assert!(framing::record_frames(&[]).is_none());
+        assert!(framing::record_frames(&[]).is_err());
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
-        assert!(framing::record_frames(&truncated).is_none());
+        assert!(framing::record_frames(&truncated).is_err());
     }
 
     #[test]

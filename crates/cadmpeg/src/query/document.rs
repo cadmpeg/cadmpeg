@@ -21,7 +21,7 @@ pub(crate) struct Arena {
     pub records: Vec<Value>,
 }
 
-/// A record location constructed by the document index.
+/// A record location valid only in the document whose index constructed it.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) struct RecordRef {
     arena: usize,
@@ -135,11 +135,12 @@ impl CadirDocument {
         })
     }
 
-    /// Returns the record at an indexed location.
+    /// Returns a record using a location constructed by this document only.
     pub(crate) fn record(&self, location: RecordRef) -> &Value {
         &self.arenas[location.arena].records[location.rec]
     }
 
+    /// Formats a location constructed by this document only.
     pub(crate) fn locator(&self, location: RecordRef) -> String {
         let arena = &self.arenas[location.arena];
         match record_id(self.record(location)) {

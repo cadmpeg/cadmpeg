@@ -1547,7 +1547,7 @@ mod tests {
             unknown_stream(&ctx, 0, &stream),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && limit.context.operation == "retain NX unknown stream"
+                    && limit.operation == "retain NX unknown stream"
         ));
     }
 
