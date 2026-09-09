@@ -44,8 +44,7 @@ struct ViewChild {
     sha256: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy)]
 enum ViewListKind {
     Named,
     Active,
@@ -57,6 +56,12 @@ impl ViewListKind {
             Self::Named => "named",
             Self::Active => "active",
         }
+    }
+}
+
+impl Serialize for ViewListKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 
