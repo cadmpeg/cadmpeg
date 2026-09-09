@@ -1368,7 +1368,9 @@ fn decode_transfers_generated_custom_attribute() {
     )));
     assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
-        f3d_native(result.ir()).persistent_design_links[1].design_id,
+        f3d_native(result.ir()).persistent_design_links[1]
+            .design_id
+            .as_str(),
         "322"
     );
     assert_eq!(

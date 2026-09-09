@@ -1874,7 +1874,7 @@ fn body_recipe_link_candidate(
     let selector = i64::from(design.selector?.value);
     let mut matching_bodies = Vec::new();
     for link in persistent_design_links.iter().filter(|link| {
-        link.is_current && link.design_id == design_id && link.design_reference == selector
+        link.is_current && link.design_id.as_str() == design_id && link.design_reference == selector
     }) {
         let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
             continue;
@@ -8976,7 +8976,7 @@ pub(crate) fn historical_topology_with_tags(
                     entity_kind,
                     entity_ref,
                     selector: tag.selector,
-                    token: tag.token.clone(),
+                    token: tag.token.as_str().to_owned(),
                     design_references: tag.design_references.clone(),
                     ordinal: tag.ordinal,
                 },

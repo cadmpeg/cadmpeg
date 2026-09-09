@@ -809,12 +809,7 @@ pub(crate) fn validate_source_less_design_links(
                 link.id
             )));
         };
-        if link.design_id.is_empty() || !link.design_id.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D persistent body link {} has an invalid design id",
-                link.id
-            )));
-        }
+
         groups.entry(target_key).or_default().push(link);
     }
     let mut subentity_groups: BTreeMap<(u8, String), Vec<&PersistentSubentityTag>> =
@@ -835,12 +830,7 @@ pub(crate) fn validate_source_less_design_links(
                 tag.id
             )));
         };
-        if tag.token.is_empty() {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D persistent subentity tag {} requires a token",
-                tag.id
-            )));
-        }
+
         subentity_groups.entry(target_key).or_default().push(tag);
     }
     for (target, mut tags) in subentity_groups {

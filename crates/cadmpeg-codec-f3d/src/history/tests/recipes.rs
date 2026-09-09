@@ -993,7 +993,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let link = crate::records::PersistentDesignLink {
         id: "link".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
-        design_id: "301".into(),
+        design_id: "301".to_owned().try_into().unwrap(),
 
         design_reference: 9,
         ordinal: 0,
