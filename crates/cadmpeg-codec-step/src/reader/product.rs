@@ -622,12 +622,13 @@ fn apply_body_placements(
         if bodies.is_empty() {
             continue;
         }
-        let Some(transform) = mapped_item_transform(origin, target, geometry)
-            .transpose()
-            .map_err(placement_error)?
-        else {
-            warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
-            continue;
+        let transform = match mapped_item_transform(origin, target, geometry) {
+            Ok(Some(transform)) => transform,
+            Ok(None) | Err(TransformError::Singular) => {
+                warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
+                continue;
+            }
+            Err(error) => return Err(placement_error(error)),
         };
         for body in bodies {
             placements_by_body
@@ -862,21 +863,25 @@ fn occurrence_placements(
     let mut result = BTreeMap::new();
     let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
     for (record_id, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
-        if let Some((usage, transform)) = occurrence_placement(
+        match occurrence_placement(
             record,
             exchange,
             geometry,
             &pds,
             usages,
             &definition_representations,
-        )
-        .transpose()
-        .map_err(placement_error)?
-        {
-            if usages.contains_key(&usage) {
-                context_candidates.entry(usage).or_default().push(record_id);
-                result.insert(usage, transform);
+        ) {
+            Ok(Some((usage, transform))) => {
+                if usages.contains_key(&usage) {
+                    context_candidates.entry(usage).or_default().push(record_id);
+                    result.insert(usage, transform);
+                }
             }
+            Ok(None) => {}
+            Err(TransformError::Singular) => warnings.push(format!(
+                "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION #{record_id} has a singular placement"
+            )),
+            Err(error) => return Err(placement_error(error)),
         }
     }
     for (&usage, source_ids) in &context_candidates {
@@ -932,13 +937,17 @@ fn occurrence_placements(
                 if item.partial("MAPPED_ITEM").is_none() {
                     continue;
                 }
-                let Some((mapped_representation, transform)) =
-                    mapped_item_placement(item, exchange, geometry)
-                        .transpose()
-                        .map_err(placement_error)?
-                else {
-                    continue;
-                };
+                let (mapped_representation, transform) =
+                    match mapped_item_placement(item, exchange, geometry) {
+                        Ok(Some(placement)) => placement,
+                        Ok(None) => continue,
+                        Err(TransformError::Singular) => {
+                            warnings
+                                .push(format!("MAPPED_ITEM #{item_id} has a singular placement"));
+                            continue;
+                        }
+                        Err(error) => return Err(placement_error(error)),
+                    };
                 if child_representations.contains(&mapped_representation) {
                     candidates.push((source_id, transform));
                 }
@@ -1002,13 +1011,17 @@ fn occurrence_placements(
                 if item.partial("MAPPED_ITEM").is_none() {
                     continue;
                 }
-                let Some((mapped_representation, transform)) =
-                    mapped_item_placement(item, exchange, geometry)
-                        .transpose()
-                        .map_err(placement_error)?
-                else {
-                    continue;
-                };
+                let (mapped_representation, transform) =
+                    match mapped_item_placement(item, exchange, geometry) {
+                        Ok(Some(placement)) => placement,
+                        Ok(None) => continue,
+                        Err(TransformError::Singular) => {
+                            warnings
+                                .push(format!("MAPPED_ITEM #{item_id} has a singular placement"));
+                            continue;
+                        }
+                        Err(error) => return Err(placement_error(error)),
+                    };
                 let Some(mapped_definitions) =
                     definitions_by_representation.get(&mapped_representation)
                 else {
@@ -1043,26 +1056,26 @@ fn mapped_item_placement(
     item: &RawRecord,
     exchange: &Exchange,
     geometry: &GeometryData,
-) -> Option<Result<(u64, Transform), TransformError>> {
-    let (representation, origin, target) = mapped_item_definition(item, exchange)?;
-    Some(
-        mapped_item_transform(origin, target, geometry)?
-            .map(|transform| (representation, transform)),
-    )
+) -> Result<Option<(u64, Transform)>, TransformError> {
+    let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
+        return Ok(None);
+    };
+    Ok(mapped_item_transform(origin, target, geometry)?
+        .map(|transform| (representation, transform)))
 }
 
 fn mapped_item_transform(
     origin: u64,
     target: u64,
     geometry: &GeometryData,
-) -> Option<Result<Transform, TransformError>> {
-    let from = transformation_item(origin, geometry)?;
-    let to = transformation_item(target, geometry)?;
-    match from.try_inverse_affine() {
-        Ok(inverse) => Some(to.compose(inverse)),
-        Err(TransformError::Singular) => None,
-        Err(error) => Some(Err(error)),
-    }
+) -> Result<Option<Transform>, TransformError> {
+    let Some(from) = transformation_item(origin, geometry) else {
+        return Ok(None);
+    };
+    let Some(to) = transformation_item(target, geometry) else {
+        return Ok(None);
+    };
+    to.compose(from.try_inverse_affine()?).map(Some)
 }
 
 fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> bool {
@@ -1094,7 +1107,22 @@ fn occurrence_placement(
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-) -> Option<Result<(u64, Transform), TransformError>> {
+) -> Result<Option<(u64, Transform)>, TransformError> {
+    let Some((usage, from_id, to_id)) =
+        occurrence_placement_definition(record, exchange, pds, usages, definition_representations)
+    else {
+        return Ok(None);
+    };
+    Ok(mapped_item_transform(from_id, to_id, geometry)?.map(|transform| (usage, transform)))
+}
+
+fn occurrence_placement_definition(
+    record: &RawRecord,
+    exchange: &Exchange,
+    pds: &BTreeMap<u64, u64>,
+    usages: &BTreeMap<u64, Usage>,
+    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
+) -> Option<(u64, u64, u64)> {
     let relation = exchange.records.get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
             .and_then(ValueExt::reference)?,
@@ -1126,13 +1154,7 @@ fn occurrence_placement(
         (false, true) => (item_two, item_one),
         _ => return None,
     };
-    let from = transformation_item(from_id, geometry)?;
-    let to = transformation_item(to_id, geometry)?;
-    match from.try_inverse_affine() {
-        Ok(inverse) => Some(to.compose(inverse).map(|transform| (usage, transform))),
-        Err(TransformError::Singular) => None,
-        Err(error) => Some(Err(error)),
-    }
+    Some((usage, from_id, to_id))
 }
 
 fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
