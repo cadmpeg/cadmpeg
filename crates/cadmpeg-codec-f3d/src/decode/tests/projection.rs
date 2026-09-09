@@ -731,27 +731,29 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
             "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
         }),
     )));
-    let three_point = |point: serde_json::Value| {
+    let three_point = |points: [serde_json::Value; 3]| {
         serde_json::json!({
             "definition": "datum_three_point_plane",
             "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
             "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
-            "points": [point.clone(), point.clone(), point]
+            "points": points
         })
     };
     assert!(!feature_definition_is_incomplete(&definition(three_point(
-        serde_json::json!({
+        std::array::from_fn(|index| serde_json::json!({
             "kind": "historical",
             "value": {
                 "state": "test:model:feature-input#state:1",
-                "vertex": "test:model:vertex#1",
-                "native": "native:1"
+                "vertex": format!("test:model:vertex#{index}"),
+                "native": format!("native:{index}")
             }
-        }),
+        })),
     ))));
     assert!(feature_definition_is_incomplete(&definition(three_point(
-        serde_json::json!({"kind": "native", "value": "native:1"}),
+        std::array::from_fn(
+            |index| serde_json::json!({"kind": "native", "value": format!("native:{index}")})
+        ),
     ))));
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
