@@ -52,7 +52,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             relative_path: "part.f3d".into(),
             neutron_role: "role".into(),
             neutron_data: "data".into(),
-            transform: Some(transform),
+            transform: Some(transform.try_into().unwrap()),
         }],
         placement_failures: Vec::new(),
         placement_overrides: Vec::new(),
@@ -82,6 +82,31 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             object: None,
         }
     );
+}
+
+#[test]
+fn external_reference_admission_and_projection_check_affine_transforms() {
+    let mut table = super::parse(
+        br#"{"designs":[],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"STRING"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
+    ).unwrap();
+    let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+    rows[0][0] = 2.0;
+    table.references[0].transform = Some(rows.try_into().unwrap());
+    let wire = serde_json::to_value(&table.references[0]).unwrap();
+    assert_eq!(
+        serde_json::from_value::<crate::records::XrefReference>(wire.clone()).unwrap(),
+        table.references[0]
+    );
+    let mut invalid = wire;
+    invalid["transform"][3][0] = serde_json::json!(1.0);
+    assert!(serde_json::from_value::<crate::records::XrefReference>(invalid).is_err());
+    rows[0][3] = f64::MAX;
+    table.references[0].transform = Some(rows.try_into().unwrap());
+    assert!(matches!(
+        super::project_occurrences(&table),
+        Err(cadmpeg_core::CodecError::NotImplemented(message))
+            if message.contains("finite affine transform")
+    ));
 }
 
 #[test]

@@ -9590,7 +9590,7 @@ pub struct XrefReference {
     /// Source Design occurrence transform in centimetres. `None` is the
     /// serialized identity-placement form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<[[f64; 4]; 4]>,
+    pub transform: Option<DesignAffineTransform>,
 }
 
 #[cfg(test)]

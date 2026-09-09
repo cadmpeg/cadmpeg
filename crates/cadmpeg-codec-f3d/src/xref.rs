@@ -284,12 +284,15 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
         .iter()
         .enumerate()
         .map(|(ordinal, reference)| {
-            let transform = reference.transform.unwrap_or([
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]);
+            let transform = reference
+                .transform
+                .map(crate::records::DesignAffineTransform::rows)
+                .unwrap_or([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]);
             Ok(Occurrence {
                 id: crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,
@@ -325,7 +328,10 @@ pub fn bind_component_insert_features(
         };
         let mut matches = table.references.iter().filter(|reference| {
             reference.neutron_role == construction.neutron_role
-                && reference.transform == Some((*construction.transform()).into())
+                && reference
+                    .transform
+                    .map(crate::records::DesignAffineTransform::rows)
+                    == Some((*construction.transform()).into())
         });
         let Some(reference) = matches.next() else {
             continue;
@@ -449,7 +455,10 @@ fn bind_occurrences(
                 reference.ordinal
             );
             occurrence.occurrence_ordinal = occurrence_ordinal as u32;
-            occurrence.transform = transform;
+            occurrence.transform = transform
+                .map(crate::records::DesignAffineTransform::try_from)
+                .transpose()
+                .map_err(CodecError::NotImplemented)?;
             expanded.push(occurrence);
         }
     }
