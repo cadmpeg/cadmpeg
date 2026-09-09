@@ -258,7 +258,7 @@ impl CatiaConsolidatedOwnerPacket {
         }
     }
 
-    pub fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
+    pub(crate) fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
         match &mut self.payload {
             CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_mut(),
             CatiaOwnerPacketPayload::Counted { .. } => None,
