@@ -274,20 +274,20 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     )
     .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
-    assert_eq!(operation.body_group_byte_offset, body_group_at as u64);
+    assert_eq!(operation.body_group_byte_offset(), body_group_at as u64);
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.operand.value)
             .collect::<Vec<_>>(),
         [66]
     );
     assert_eq!(operation.relation_record_index, 44);
-    assert_eq!(operation.relation_byte_offset, relation_at as u64);
+    assert_eq!(operation.relation_byte_offset(), relation_at as u64);
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.source.value)
             .collect::<Vec<_>>(),
@@ -295,7 +295,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.copied.value)
             .collect::<Vec<_>>(),
@@ -357,7 +357,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&work_plane);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("exact WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
     assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
 
@@ -384,7 +384,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &extended_scope,
     )
     .expect("extended referenced WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (extended_at + 76) as u64);
     assert_eq!(decoded.reference, Some((100, (extended_at + 58) as u64)));
 
@@ -407,7 +407,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let decoded =
         exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &direct_scope)
             .expect("direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -433,7 +433,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &extended_direct_scope,
     )
     .expect("extended direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (extended_direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -459,7 +459,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &large_direct_scope,
     )
     .expect("large direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (large_direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -497,7 +497,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         axis_bytes.extend_from_slice(&record_index.to_le_bytes());
     }
     let mut axis_scope = scope.clone();
-    axis_scope.id = "f3d:native:parameter-scope#55".into();
+    axis_scope.id = "f3d:native/BulkStream.dat:parameter-scope#55".into();
     axis_scope.payload = crate::records::feature::DesignFeatureKind::WorkAxis.into();
     axis_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 101, 102, 103, 104]);
@@ -558,7 +558,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let decoded =
         exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_scope)
             .expect("compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -583,7 +583,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_431_scope,
     )
     .expect("class-431 compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_431_at + 49) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -609,7 +609,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_364_scope,
     )
     .expect("class-364 marked compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_364_at + 49) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -635,7 +635,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_364_variant_scope,
     )
     .expect("class-364 compact direct WorkPlane frame variant");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
         (compact_364_variant_at + 49) as u64
@@ -663,7 +663,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_450_scope,
     )
     .expect("class-450 compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -688,7 +688,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &class_279_scope,
     )
     .expect("class-279 compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (class_279_at + 50) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -707,7 +707,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_409_short_scope,
     )
     .expect("short class-409 compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_409_short_at + 50) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -732,7 +732,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_409_scope,
     )
     .expect("class-409 compact direct WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_409_at + 50) as u64);
     assert_eq!(decoded.reference, None);
 
@@ -760,7 +760,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &joint_origin_scope,
     )
     .expect("exact JointOrigin frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
     assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
 
@@ -803,7 +803,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_joint_origin_scope,
     )
     .expect("exact compact JointOrigin frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
         (compact_joint_origin_at + 49) as u64
@@ -836,7 +836,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &legacy_joint_origin_scope,
     )
     .expect("exact class-337/266 JointOrigin frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
         (legacy_joint_origin_at + joint_origin_class_337_266::MATRIX) as u64
@@ -862,7 +862,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     move_frame[4..7].copy_from_slice(b"368");
     move_frame[7..11].copy_from_slice(&90u32.to_le_bytes());
     move_frame[43..47].copy_from_slice(&5u32.to_le_bytes());
-    let mut move_transform = identity_matrix();
+    let mut move_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     move_transform[1][3] = 15.0;
     for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
         let at = 48 + ordinal * 8;
@@ -881,7 +881,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &move_scope,
     )
     .expect("class-368 Move frame");
-    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (move_at + 48) as u64);
     assert_eq!(u32::from(decoded.form), 5);
 
@@ -908,7 +908,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_move_scope,
     )
     .expect("class-296 Move frame");
-    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_move_at + 48) as u64);
     assert_eq!(decoded.transform_record_index, 91);
     assert_eq!(u32::from(decoded.form), 1);
@@ -921,7 +921,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &compact_move_scope,
     )
     .expect("class-362 Move frame");
-    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(u32::from(decoded.form), 5);
 
     let class_433_move_at = bytes.len();
@@ -947,7 +947,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &class_433_move_scope,
     )
     .expect("class-433 Move frame");
-    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (class_433_move_at + 48) as u64);
     assert_eq!(decoded.transform_record_index, 92);
     assert_eq!(u32::from(decoded.form), 5);
@@ -1716,7 +1716,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&extend_boundary);
 
     let mut extend_scope = scope.clone();
-    extend_scope.id = "f3d:native:parameter-scope#12".into();
+    extend_scope.id = "f3d:native/BulkStream.dat:parameter-scope#12".into();
     extend_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceExtend.into();
     extend_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         extend_distance_record_index,

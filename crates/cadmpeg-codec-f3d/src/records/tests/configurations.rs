@@ -3,7 +3,7 @@
 #[test]
 fn configuration_admission_checks_wire_and_variant_order() {
     use crate::records::DesignConfiguration;
-    let wire = serde_json::json!({"id":"config", "entry_name":"table.dsgcfg", "kind":"table",
+    let wire = serde_json::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg"), "entry_name":"table.dsgcfg", "kind":"table",
         "variant_order":["first","second"], "payload":{"configurations":{"first":{},"second":{}}}});
     let configuration: DesignConfiguration = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&configuration).unwrap(), wire);
@@ -26,7 +26,7 @@ fn configuration_parameter_overrides_require_scalar_values() {
     use crate::records::{DesignConfiguration, DesignConfigurationKind};
     let admit = |payload: serde_json::Value| {
         DesignConfiguration::try_new(
-            "config".into(),
+            crate::ids::configuration_entry_id("table.dsgcfg"),
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["variant".into()],

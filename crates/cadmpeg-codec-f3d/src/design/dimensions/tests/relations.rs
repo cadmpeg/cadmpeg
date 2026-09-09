@@ -860,21 +860,23 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             evaluated_value_offset: 90,
         })
         .unwrap();
-    let owner = DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#21"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 21,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: std::f64::consts::FRAC_PI_3,
-        evaluated_value_offset: 0,
-        parameter_record_index: 20,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 22,
-    };
+    let owner =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: std::f64::consts::FRAC_PI_3,
+            evaluated_value_offset: 40,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 22,
+        })
+        .unwrap();
     let companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 0,

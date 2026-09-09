@@ -50,14 +50,15 @@ fn container_only_dimension_parameters(
         .design_parameter_owners
         .iter()
         .filter_map(|owner| {
-            let stream = crate::ids::native_stream(&owner.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            if !container_only.contains(&(stream.to_owned(), owner.companion_record_index)) {
+            let stream =
+                crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+            if !container_only.contains(&(stream.to_owned(), owner.companion_record_index())) {
                 return None;
             }
             let mut parameters = native.design_parameters.iter().filter(|parameter| {
                 crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
                     == stream
-                    && parameter.record_index == owner.parameter_record_index
+                    && parameter.record_index == owner.parameter_record_index()
                     && parameter.kind() == crate::records::DesignParameterKind::Dimension
             });
             let parameter = parameters.next()?;
@@ -89,10 +90,11 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
         .design_parameter_owners
         .iter()
         .filter_map(|owner| {
-            let stream = crate::ids::native_stream(&owner.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            (parameters.get(&(stream, owner.parameter_record_index))
+            let stream =
+                crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+            (parameters.get(&(stream, owner.parameter_record_index()))
                 == Some(&crate::records::DesignParameterKind::Dimension))
-            .then_some((stream, owner.record_index))
+            .then_some((stream, owner.record_index()))
         })
         .collect::<HashSet<_>>();
     let mut typed = HashSet::new();
@@ -1316,11 +1318,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     return true;
                 };
                 !native.design_parameter_owners.iter().any(|owner| {
-                    crate::ids::native_stream(&owner.id) == Some(stream)
-                        && owner.record_index == owner_record_index
+                    crate::ids::native_stream(owner.id()) == Some(stream)
+                        && owner.record_index() == owner_record_index
                         && native.design_parameter_scopes.iter().any(|scope| {
                             crate::ids::native_stream(&scope.id) == Some(stream)
-                                && scope.record_index == owner.scope_record_index
+                                && scope.record_index == owner.scope_record_index()
                         })
                 })
             })
@@ -1446,10 +1448,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 .design_parameter_owners
                 .iter()
                 .filter_map(|owner| {
-                    let stream = crate::ids::native_stream(&owner.id)?;
+                    let stream = crate::ids::native_stream(owner.id())?;
                     relation_bearing_companions
-                        .contains(&(stream.to_owned(), owner.companion_record_index))
-                        .then_some((stream, owner.parameter_record_index))
+                        .contains(&(stream.to_owned(), owner.companion_record_index()))
+                        .then_some((stream, owner.parameter_record_index()))
                 })
                 .collect::<HashSet<_>>();
             native
@@ -3984,7 +3986,7 @@ fn populate_annotations(
             }
         }
         for entity in &native.design_parameter_owners {
-            note(&entity.id, "design_parameter_owner");
+            note(entity.id(), "design_parameter_owner");
         }
         for entity in &native.design_parameter_scopes {
             note(&entity.id, "design_parameter_scope");
@@ -4055,19 +4057,19 @@ fn populate_annotations(
             note(&entity.id, "persistent_subentity_tag");
         }
         for entity in &native.act_entities {
-            note(&entity.id, "ACTEntity");
+            note(entity.id(), "ACTEntity");
         }
         for entity in &native.act_guids {
-            note(&entity.id, "ACTGuid");
+            note(entity.id(), "ACTGuid");
         }
         for entity in &native.act_registry_channels {
-            note(&entity.id, "ACTRegistryChannel");
+            note(entity.id(), "ACTRegistryChannel");
         }
         for entity in &native.act_root_components {
-            note(&entity.id, "ACTRootComponent");
+            note(entity.id(), "ACTRootComponent");
         }
         for entity in &native.act_table_references {
-            note(&entity.id, "ACTTableReference");
+            note(entity.id(), "ACTTableReference");
         }
         for history in &native.asm_histories {
             note(&history.id, "history_stream");
@@ -4194,13 +4196,13 @@ fn extend_related_design_records(
         .design_parameter_owners
         .iter()
         .flat_map(|owner| {
-            let scope = crate::ids::native_stream(&owner.id)
+            let scope = crate::ids::native_stream(owner.id())
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             [
-                owner.scope_record_index,
-                owner.parameter_record_index,
-                owner.companion_record_index,
+                owner.scope_record_index(),
+                owner.parameter_record_index(),
+                owner.companion_record_index(),
             ]
             .map(|record_index| (scope.clone(), record_index))
         })
@@ -4297,11 +4299,11 @@ fn extend_related_design_records(
                     .push(crate::records::DesignRecordHeader {
                         id: format!(
                             "{stream}:design-record-header#{}",
-                            operation.relation_byte_offset
+                            operation.relation_byte_offset()
                         ),
                         record_index: operation.relation_record_index,
                         class_tag: operation.relation_class_tag.clone(),
-                        byte_offset: operation.relation_byte_offset,
+                        byte_offset: operation.relation_byte_offset(),
                     });
             }
         }

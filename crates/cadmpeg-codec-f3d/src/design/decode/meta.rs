@@ -533,9 +533,9 @@ fn parse_feature_timeline_record(
         return None;
     }
 
-    Some(DesignFeatureTimeline {
-        id: ids::native_design_feature_timeline_id(stream, start),
-        frame: crate::records::DesignTimelineFrame::new(
+    DesignFeatureTimeline::try_new(
+        ids::native_design_feature_timeline_id(stream, start),
+        crate::records::DesignTimelineFrame::new(
             start as u64,
             end.checked_sub(start)? as u64,
             context_reference_offset as u64,
@@ -543,11 +543,12 @@ fn parse_feature_timeline_record(
             items,
         )
         .ok()?,
-        class_tag: crate::records::DesignClassTag::try_from(class_tag).ok()?,
-        record_index: std::num::NonZeroU64::new(expected_entity_id)?,
+        crate::records::DesignClassTag::try_from(class_tag).ok()?,
+        std::num::NonZeroU64::new(expected_entity_id)?,
         source_ordinal,
         context_record_index,
-    })
+    )
+    .ok()
 }
 
 /// Decode the exact counted scope list that carries authored feature order.

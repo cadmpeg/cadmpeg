@@ -2338,11 +2338,10 @@ pub(crate) fn project_fixed_fillet_with_corners(
 
     let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;
-    let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match &group.law {
-        crate::records::feature::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0)
-            .then_some(RadiusSpec::Constant {
-                radius: Length(radius.value * 10.0),
-            }),
+    let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match group.law() {
+        crate::records::feature::DesignFixedFilletLaw::Constant(radius) => RadiusSpec::Constant {
+            radius: Length(radius.value * 10.0),
+        },
         crate::records::feature::DesignFixedFilletLaw::Variable {
             start,
             end,
@@ -2361,7 +2360,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 parameter: 1.0,
                 radius: Length(end.value * 10.0),
             });
-            Some(RadiusSpec::Variable { points })
+            RadiusSpec::Variable { points }
         }
     };
     let mut scope_groups = construction_groups
@@ -2402,7 +2401,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
             let [group] = scope_groups.as_slice() else {
                 return None;
             };
-            let radius = radius_spec(&fixed.groups[0])?;
+            let radius = radius_spec(&fixed.groups[0]);
             let RadiusSpec::Constant { radius } = radius else {
                 return None;
             };
@@ -2438,7 +2437,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
         .iter()
         .zip(edge_groups)
         .map(|(fixed_group, edge_group)| {
-            let radius = radius_spec(fixed_group)?;
+            let radius = radius_spec(fixed_group);
             let edge_radius = match radius {
                 RadiusSpec::Constant { radius } => Some(radius.0),
                 RadiusSpec::Chordal { .. }
@@ -2461,16 +2460,13 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 &neutral_feature_id(scope),
                 edge_radius,
             );
-            Some(FilletGroup {
+            FilletGroup {
                 edges,
                 radius,
-                tangency_weight: fixed_group
-                    .tangency_weight
-                    .as_ref()
-                    .map(|tangency| tangency.value),
-            })
+                tangency_weight: fixed_group.tangency_weight().map(|tangency| tangency.value),
+            }
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect();
     Some(FeatureDefinition::Fillet { groups })
 }
 

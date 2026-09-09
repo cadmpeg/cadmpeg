@@ -35,7 +35,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     assert_eq!(construction.component_guid.as_str(), COMPONENT);
     assert_eq!(construction.occurrence_guid.as_str(), OCCURRENCE);
     assert_eq!(
-        construction.transform.rows(),
+        construction.transform,
         occurrence.transform().as_ref().copied().unwrap().value
     );
     assert_eq!(

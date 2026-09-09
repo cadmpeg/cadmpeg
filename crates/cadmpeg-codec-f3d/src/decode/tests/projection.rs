@@ -1630,8 +1630,9 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     successor.history_state_id = Some(9);
     successor.previous_history_state_id = Some(8);
     let scopes = vec![successor, internal, predecessor];
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
                 crate::records::Located {
@@ -1644,12 +1645,12 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(2).unwrap(),
+    )
+    .unwrap();
     let (features, _) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -1693,14 +1694,14 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let mut native = F3dNative::default();
     native.design_parameters.push(
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("{stream}:design-parameter#10"),
+            id: format!("{stream}:design-parameter#28"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-            record_index: 10,
+            record_index: 28,
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(
                 "Linear Dimension-2".into(),
-                Some(20),
+                Some(29),
                 Some(crate::records::Located {
                     value: crate::records::DesignParameterDiscriminator::Code0,
                     offset: 22,
@@ -1722,21 +1723,24 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         })
         .unwrap(),
     );
-    native.design_parameter_owners.push(DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#20"),
-        byte_offset: 120,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 20,
-        scope_record_index: 1,
-        local_ordinal: 0,
-        evaluated_value: 0.5,
-        evaluated_value_offset: 160,
-        parameter_record_index: 10,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 30,
-    });
+    native.design_parameter_owners.push(
+        DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#29"),
+            byte_offset: 120,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 29,
+            scope_record_index: 1,
+            local_ordinal: 0,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 160,
+            parameter_record_index: 28,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 30,
+        })
+        .unwrap(),
+    );
     native
         .design_parameter_companions
         .push(DesignParameterCompanion {
@@ -1744,7 +1748,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             byte_offset: 220,
             class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
             record_index: 30,
-            owner_record_index: 20,
+            owner_record_index: 29,
             timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
             timestamp_micros_offset: 262,
             payload_byte_offset: 278,

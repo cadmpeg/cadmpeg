@@ -478,18 +478,18 @@ pub fn bind_work_plane_constructions(
             continue;
         }
         let Some(owner) = owners.iter().find(|owner| {
-            native_stream(&owner.id) == Some(stream.as_str())
-                && owner.record_index == *extra_offset
-                && owner.scope_record_index == scope.record_index
-                && owner.evaluated_value.is_finite()
-                && owner.evaluated_value == 0.0
+            native_stream(owner.id()) == Some(stream.as_str())
+                && owner.record_index() == *extra_offset
+                && owner.scope_record_index() == scope.record_index
+                && owner.evaluated_value().is_finite()
+                && owner.evaluated_value() == 0.0
         }) else {
             continue;
         };
         if !parameters.iter().any(|parameter| {
             native_stream(&parameter.id) == Some(stream.as_str())
-                && parameter.record_index == owner.parameter_record_index
-                && parameter.owner_record_index() == Some(owner.record_index)
+                && parameter.record_index == owner.parameter_record_index()
+                && parameter.owner_record_index() == Some(owner.record_index())
                 && parameter.source_kind() == "ExtraOffset"
                 && parameter.evaluated_value() == 0.0
         }) {
@@ -1738,13 +1738,13 @@ pub fn decode_fillet_radius_groups(
         let mut owned_parameters = owners
             .iter()
             .filter(|owner| {
-                native_stream(&owner.id) == Some(stream)
-                    && owner.scope_record_index == scope.record_index
+                native_stream(owner.id()) == Some(stream)
+                    && owner.scope_record_index() == scope.record_index
             })
             .filter_map(|owner| {
                 Some((
-                    owner.local_ordinal,
-                    *parameters.get(&(stream, owner.parameter_record_index))?,
+                    owner.local_ordinal(),
+                    *parameters.get(&(stream, owner.parameter_record_index()))?,
                 ))
             })
             .collect::<Vec<_>>();
@@ -1931,8 +1931,8 @@ pub fn disambiguate_fixed_fillet_parameters(
         .iter()
         .filter_map(|owner| {
             Some((
-                native_stream(&owner.id)?.to_owned(),
-                owner.scope_record_index,
+                native_stream(owner.id())?.to_owned(),
+                owner.scope_record_index(),
             ))
         })
         .collect::<HashSet<_>>();
@@ -2632,7 +2632,7 @@ pub(crate) fn parse_construction_operand_dual_transform(
     )
 }
 
-fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<crate::records::SketchPlacementMatrix> {
     let mut view = View::over_retained(bytes);
     view.seek(at)?;
     let mut transform = [[0.0; 4]; 4];
@@ -2641,7 +2641,7 @@ fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
             *cell = view.f64_le()?;
         }
     }
-    crate::records::valid_sketch_transform(&transform).then_some(transform)
+    transform.try_into().ok()
 }
 
 /// Take one reference naming a record of the same segment, advancing `at` past

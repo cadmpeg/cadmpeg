@@ -100,7 +100,7 @@ pub(crate) fn exact_component_occurrence(
             crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
                 transform: crate::records::Located {
-                    value: transform.try_into().ok()?,
+                    value: transform,
                     offset: u64::try_from(start.checked_add(209)?).ok()?,
                 },
             }
@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(generated.occurrence_ordinal(), 2);
         assert_eq!(
             generated.transform().map(|frame| frame.value),
-            Some(transform)
+            Some(transform.try_into().unwrap())
         );
         assert_eq!(generated.transform().map(|frame| frame.offset), Some(209));
 
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(legacy_placed.occurrence_ordinal(), 1);
         assert_eq!(
             legacy_placed.transform().map(|frame| frame.value),
-            Some(transform)
+            Some(transform.try_into().unwrap())
         );
 
         // The carrier class tag is a per-file dynamic value, so the fixed frame
@@ -235,7 +235,7 @@ mod tests {
         assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
         assert_eq!(
             dynamic_tag.transform().map(|frame| frame.value),
-            Some(transform)
+            Some(transform.try_into().unwrap())
         );
 
         // A class-256 carrier still cannot use a placed frame for ordinal one.

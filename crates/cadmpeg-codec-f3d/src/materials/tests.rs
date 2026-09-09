@@ -1000,8 +1000,8 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     assert_eq!(f3d_native(result.ir()).act_entities.len(), 1);
-    assert_eq!(f3d_native(result.ir()).act_entities[0].record_index, 7);
-    assert_eq!(f3d_native(result.ir()).act_entities[0].entity_id, "0_985");
+    assert_eq!(f3d_native(result.ir()).act_entities[0].record_index(), 7);
+    assert_eq!(f3d_native(result.ir()).act_entities[0].entity_id(), "0_985");
     assert_eq!(f3d_native(result.ir()).act_guids.len(), 1);
     assert_eq!(
         f3d_native(result.ir()).act_guids[0].guid.as_str(),
@@ -1025,13 +1025,13 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0]
-            .layout
+            .layout()
             .entity_id(),
         "0_3"
     );
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0]
-            .layout
+            .layout()
             .display_name(),
         "(Unsaved)"
     );
@@ -1053,7 +1053,7 @@ fn decode_transfers_generated_protein_appearance() {
         crate::records::ActRegistryFlag::On
     );
     assert_eq!(
-        f3d_native(result.ir()).act_entities[0].channel_class_tag(),
+        Some(f3d_native(result.ir()).act_entities[0].channel_class_tag()),
         Some("261")
     );
     assert_eq!(
@@ -1294,17 +1294,9 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated ACT decode");
 
-    let mut table_only = decoded.ir().clone();
-    update_f3d_native(&mut table_only, |native| {
-        native.act_entities[0].strip_channel_group();
-    });
-    assert!(crate::validate::validate_native(&table_only)
-        .iter()
-        .any(|finding| finding.message.contains("ACT entity")));
-
     let mut colliding_root = decoded.ir().clone();
     update_f3d_native(&mut colliding_root, |native| {
-        native.act_root_components[0].record_index = native.act_entities[0].record_index;
+        native.act_root_components[0].record_index = native.act_entities[0].record_index();
     });
     assert!(crate::validate::validate_native(&colliding_root)
         .iter()

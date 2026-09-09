@@ -303,8 +303,8 @@ pub(crate) fn project_assembly_joints(
         let (angular_limits, linear_limits) = match limits {
             Some(limits) => {
                 let projected = JointLimits::Both {
-                    minimum: limits.minimum,
-                    maximum: limits.maximum,
+                    minimum: limits.minimum(),
+                    maximum: limits.maximum(),
                 };
                 match limits.kind {
                     DesignAssemblyLimitKind::Angular => (Some(projected), None),
@@ -321,8 +321,8 @@ pub(crate) fn project_assembly_joints(
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
-                    angle: Some(alignment.angle),
-                    translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
+                    angle: Some(alignment.angle()),
+                    translation_offset: Some(alignment.offset().map(|value| value * 10.0)),
                     angular_limits,
                     linear_limits,
                 },
@@ -356,16 +356,16 @@ fn project_qualified_operands(
 ) -> Option<[JointOperand; 2]> {
     let projected = qualifiers.map(|qualifier| match qualifier {
         DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-            let root_guid = &path.occurrence_guids.first()?.value;
+            let root_guid = &path.occurrence_guids().first()?.value;
             let occurrence = occurrences
                 .get(&(stream, root_guid.as_str().to_ascii_lowercase()))
                 .copied()
                 .flatten();
-            if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
+            if occurrence.is_none() && !matches!(path.class_tag().as_str(), "330" | "386") {
                 return None;
             }
             let object = root_guid.as_str().to_ascii_lowercase();
-            let subelements = path.occurrence_guids[1..]
+            let subelements = path.occurrence_guids()[1..]
                 .iter()
                 .map(|guid| guid.value.as_str().to_ascii_lowercase())
                 .collect();
@@ -377,7 +377,7 @@ fn project_qualified_operands(
                 ),
                 None => JointOperand::external(
                     ExternalDocumentReference::document_id(
-                        path.identity_guids.first()?.value.clone(),
+                        path.identity_guids().first()?.value.clone(),
                     ),
                     object,
                     subelements,
@@ -589,7 +589,7 @@ mod tests {
                 DesignFeatureKind::JointOrigin,
                 index,
             );
-            scope.with_joint_origin_transform(cadmpeg_ir::transform::Transform::identity().rows());
+            scope.with_joint_origin_transform(crate::records::SketchPlacementMatrix::IDENTITY);
             scopes.push(scope);
         }
         let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
@@ -613,12 +613,15 @@ mod tests {
             DesignFeatureKind::Assemble,
             3,
         );
-        scope.payload = DesignScopePayload::Assemble(Some(DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owners: Vec::new(),
-            form: Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
-        }));
+        scope.payload = DesignScopePayload::Assemble(Some(
+            DesignAssemblyAlignment::try_new(
+                0.0,
+                [0.0; 3],
+                Vec::new(),
+                Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+            )
+            .unwrap(),
+        ));
         scopes.push(scope);
         let native = crate::native::F3dNative {
             design_parameter_scopes: scopes,
@@ -968,12 +971,16 @@ mod tests {
             80,
         );
         let mut origin_scope = origin_scope;
-        origin_scope.with_joint_origin_transform([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]);
+        origin_scope.with_joint_origin_transform(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+        );
         let occurrence =
             OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
         let features = [

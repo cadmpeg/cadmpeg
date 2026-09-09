@@ -1164,7 +1164,199 @@ impl From<DesignParameter> for DesignParameterSerde {
 
 /// Indexed record that owns one Design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignParameterOwnerWire",
+    into = "DesignParameterOwnerWire"
+)]
 pub struct DesignParameterOwner {
+    id: String,
+    byte_offset: u64,
+    frame_length: u64,
+    class_tag: DesignClassTag,
+    scope_record_index: u32,
+    local_ordinal: u32,
+    evaluated_value: f64,
+    evaluated_value_offset: u64,
+    owned_ordinal: u32,
+    variant: Option<u8>,
+    base_index: u32,
+    order: ParameterFrameOrder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParameterFrameOrder {
+    OwnerParameterCompanion,
+    ParameterOwnerCompanion,
+    OwnerCompanionParameter,
+}
+
+impl DesignParameterOwner {
+    /// The id value.
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+    /// The byte offset value.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    /// The frame length value.
+    pub fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+    /// The class tag value.
+    pub fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
+    }
+    /// The record index value.
+    pub fn record_index(&self) -> u32 {
+        self.base_index
+            + match self.order {
+                ParameterFrameOrder::OwnerParameterCompanion => 0,
+                ParameterFrameOrder::ParameterOwnerCompanion => 1,
+                ParameterFrameOrder::OwnerCompanionParameter => 0,
+            }
+    }
+    /// The scope record index value.
+    pub fn scope_record_index(&self) -> u32 {
+        self.scope_record_index
+    }
+    /// The local ordinal value.
+    pub fn local_ordinal(&self) -> u32 {
+        self.local_ordinal
+    }
+    /// The evaluated value value.
+    pub fn evaluated_value(&self) -> f64 {
+        self.evaluated_value
+    }
+    /// The evaluated value offset value.
+    pub fn evaluated_value_offset(&self) -> u64 {
+        self.evaluated_value_offset
+    }
+    /// The parameter record index value.
+    pub fn parameter_record_index(&self) -> u32 {
+        self.base_index
+            + match self.order {
+                ParameterFrameOrder::OwnerParameterCompanion => 1,
+                ParameterFrameOrder::ParameterOwnerCompanion => 0,
+                ParameterFrameOrder::OwnerCompanionParameter => 2,
+            }
+    }
+    /// The owned ordinal value.
+    #[cfg(test)]
+    pub fn owned_ordinal(&self) -> u32 {
+        self.owned_ordinal
+    }
+    /// The companion record index value.
+    pub fn companion_record_index(&self) -> u32 {
+        self.base_index
+            + match self.order {
+                ParameterFrameOrder::OwnerParameterCompanion => 2,
+                ParameterFrameOrder::ParameterOwnerCompanion => 2,
+                ParameterFrameOrder::OwnerCompanionParameter => 1,
+            }
+    }
+}
+
+impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
+    type Error = String;
+    fn try_from(wire: DesignParameterOwnerWire) -> Result<Self, Self::Error> {
+        if !wire.evaluated_value.is_finite() {
+            return Err("evaluated_value must be finite".into());
+        }
+        let (base_index, order) = if wire.record_index.checked_add(1)
+            == Some(wire.parameter_record_index)
+            && wire.record_index.checked_add(2) == Some(wire.companion_record_index)
+        {
+            (
+                wire.record_index,
+                ParameterFrameOrder::OwnerParameterCompanion,
+            )
+        } else if wire.parameter_record_index.checked_add(1) == Some(wire.record_index)
+            && wire.parameter_record_index.checked_add(2) == Some(wire.companion_record_index)
+        {
+            (
+                wire.parameter_record_index,
+                ParameterFrameOrder::ParameterOwnerCompanion,
+            )
+        } else if wire.record_index.checked_add(1) == Some(wire.companion_record_index)
+            && wire.record_index.checked_add(2) == Some(wire.parameter_record_index)
+        {
+            (
+                wire.record_index,
+                ParameterFrameOrder::OwnerCompanionParameter,
+            )
+        } else {
+            return Err("record_index, parameter_record_index, and companion_record_index must follow a parameter frame order".into());
+        };
+        let modern = matches!(
+            (
+                wire.frame_length,
+                wire.evaluated_value_offset.checked_sub(wire.byte_offset),
+                wire.variant
+            ),
+            (99 | 103, Some(40), None)
+                | (100, Some(41), None)
+                | (107, Some(44), None)
+                | (101, Some(41), Some(0..=1))
+                | (104, Some(40), Some(0..=1))
+                | (108, Some(44), Some(0..=1))
+        );
+        let legacy = wire.local_ordinal == 0
+            && match wire.frame_length {
+                68 => {
+                    crate::design::decode::parameters::is_legacy_parameter_owner_68_class(
+                        wire.class_tag.as_str(),
+                    ) && wire.scope_record_index == 0
+                }
+                88 => {
+                    crate::design::decode::parameters::is_legacy_parameter_owner_88_class(
+                        wire.class_tag.as_str(),
+                    ) && wire.scope_record_index != 0
+                }
+                _ => false,
+            };
+        if !modern && !legacy {
+            return Err("frame_length, evaluated_value_offset, and variant must describe a parameter owner frame".into());
+        }
+        Ok(Self {
+            base_index,
+            order,
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            frame_length: wire.frame_length,
+            class_tag: wire.class_tag,
+            scope_record_index: wire.scope_record_index,
+            local_ordinal: wire.local_ordinal,
+            evaluated_value: wire.evaluated_value,
+            evaluated_value_offset: wire.evaluated_value_offset,
+            owned_ordinal: wire.owned_ordinal,
+            variant: wire.variant,
+        })
+    }
+}
+impl From<DesignParameterOwner> for DesignParameterOwnerWire {
+    fn from(owner: DesignParameterOwner) -> Self {
+        Self {
+            id: owner.id.clone(),
+            byte_offset: owner.byte_offset,
+            frame_length: owner.frame_length,
+            class_tag: owner.class_tag.clone(),
+            record_index: owner.record_index(),
+            scope_record_index: owner.scope_record_index,
+            local_ordinal: owner.local_ordinal,
+            evaluated_value: owner.evaluated_value,
+            evaluated_value_offset: owner.evaluated_value_offset,
+            parameter_record_index: owner.parameter_record_index(),
+            owned_ordinal: owner.owned_ordinal,
+            variant: owner.variant,
+            companion_record_index: owner.companion_record_index(),
+        }
+    }
+}
+
+/// Unchecked parameter owner fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignParameterOwnerWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
@@ -2065,14 +2257,47 @@ pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
 }
 
 /// A finite affine placement with orthonormal basis columns.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SketchPlacementMatrix([[f64; 4]; 4]);
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
+pub struct SketchPlacementMatrix(DesignAffineTransform);
+
+impl SketchPlacementMatrix {
+    /// The identity placement.
+    pub const IDENTITY: Self = Self(DesignAffineTransform(IDENTITY_MATRIX));
+    /// The row-major matrix coefficients.
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        self.0.rows()
+    }
+    /// The matrix rows in storage order.
+    pub fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
+        self.0.iter()
+    }
+}
+
+impl AsRef<[[f64; 4]; 4]> for SketchPlacementMatrix {
+    fn as_ref(&self) -> &[[f64; 4]; 4] {
+        &self.0
+    }
+}
+
+impl std::ops::Index<usize> for SketchPlacementMatrix {
+    type Output = [f64; 4];
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl From<SketchPlacementMatrix> for [[f64; 4]; 4] {
+    fn from(matrix: SketchPlacementMatrix) -> Self {
+        matrix.0.rows()
+    }
+}
 
 impl TryFrom<[[f64; 4]; 4]> for SketchPlacementMatrix {
     type Error = String;
     fn try_from(value: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
         if valid_sketch_transform(&value) {
-            Ok(Self(value))
+            Ok(Self(DesignAffineTransform::try_from(value)?))
         } else {
             Err("transform must be a finite affine matrix with orthonormal columns".into())
         }
@@ -2671,31 +2896,55 @@ pub const DESIGN_MODULE_COMPONENT: &str = "Component";
 /// Add-in module that registers the root Fusion document types.
 pub const DESIGN_MODULE_FUSION: &str = "Fusion";
 
+#[derive(Debug, Clone, PartialEq)]
+struct NativeRecordId {
+    text: String,
+    stream_end: usize,
+}
+
+impl NativeRecordId {
+    fn try_new(text: String, kind: &str, key: impl std::fmt::Display) -> Result<Self, String> {
+        let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
+        if text != format!("{stream}:{kind}#{key}") {
+            return Err(format!("id must identify {kind} at {key}"));
+        }
+        let stream_end = stream.len();
+        Ok(Self { text, stream_end })
+    }
+    fn stream(&self) -> &str {
+        &self.text[..self.stream_end]
+    }
+}
+
 /// JSON configuration payload stored in a Fusion design-configuration entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignConfigurationWire")]
+#[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
 pub struct DesignConfiguration {
-    /// Stable identity derived from the ZIP entry name.
-    pub id: String,
-    /// Complete ZIP entry name used for native regeneration.
-    pub entry_name: String,
+    id: String,
+    entry_name: String,
     kind: DesignConfigurationKind,
     variant_order: Vec<String>,
     payload: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-struct DesignConfigurationWire {
-    id: String,
-    entry_name: String,
-    kind: DesignConfigurationKind,
+/// Serialized configuration identity and payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignConfigurationWire {
+    /// Stable identity derived from the ZIP entry name.
+    pub id: String,
+    /// Complete ZIP entry name used for native regeneration.
+    pub entry_name: String,
+    /// Native configuration entry family.
+    pub kind: DesignConfigurationKind,
+    /// Variant names in authored order.
     #[serde(default)]
-    variant_order: Vec<String>,
-    payload: serde_json::Value,
+    pub variant_order: Vec<String>,
+    /// Complete decoded JSON payload.
+    pub payload: serde_json::Value,
 }
 
 impl DesignConfiguration {
-    /// Admit an object payload with its configuration family and authored order.
+    /// Admit the entry identity, object payload, and authored variant order.
     pub fn try_new(
         id: String,
         entry_name: String,
@@ -2703,6 +2952,11 @@ impl DesignConfiguration {
         variant_order: Vec<String>,
         payload: serde_json::Map<String, serde_json::Value>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        if id != crate::ids::configuration_entry_id(&entry_name) {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "configuration.id must identify entry_name"
+            )));
+        }
         let value = Self {
             id,
             entry_name,
@@ -2718,17 +2972,22 @@ impl DesignConfiguration {
         crate::design::configurations::validate_configuration_variant_order(&value)?;
         Ok(value)
     }
-
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id
+    }
+    /// Returns the configuration entry name.
+    pub(crate) fn entry_name(&self) -> &String {
+        &self.entry_name
+    }
     /// Native configuration entry family.
     pub fn kind(&self) -> DesignConfigurationKind {
         self.kind
     }
-
     /// Variant names in authored order.
     pub fn variant_order(&self) -> &[String] {
         &self.variant_order
     }
-
     /// Complete object payload including unrecognized fields.
     pub fn payload(&self) -> &serde_json::Map<String, serde_json::Value> {
         &self.payload
@@ -2737,7 +2996,7 @@ impl DesignConfiguration {
 
 impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
     type Error = String;
-    fn try_from(wire: DesignConfigurationWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
         let serde_json::Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
@@ -2749,6 +3008,17 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
             payload,
         )
         .map_err(|error| error.to_string())
+    }
+}
+impl From<DesignConfiguration> for DesignConfigurationWire {
+    fn from(value: DesignConfiguration) -> Self {
+        Self {
+            id: value.id,
+            entry_name: value.entry_name,
+            kind: value.kind,
+            variant_order: value.variant_order,
+            payload: serde_json::Value::Object(value.payload),
+        }
     }
 }
 
@@ -2994,9 +3264,10 @@ impl DesignTimelineFrame {
 )]
 pub struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
+    segment_end: usize,
     /// Checked source frame and ordered item locations.
-    pub frame: DesignTimelineFrame,
+    frame: DesignTimelineFrame,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
     /// Design entity identity of the timeline record.
@@ -3005,6 +3276,44 @@ pub struct DesignFeatureTimeline {
     pub source_ordinal: u32,
     /// Same-segment context record referenced before the scope list.
     pub context_record_index: std::num::NonZeroU64,
+}
+
+impl DesignFeatureTimeline {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the timeline source frame.
+    pub(crate) fn frame(&self) -> &DesignTimelineFrame {
+        &self.frame
+    }
+    /// Returns the Design segment encoded in the identity.
+    pub(crate) fn segment(&self) -> &str {
+        &self.id.text[..self.segment_end]
+    }
+    /// Admits a record whose identity matches its source location.
+    pub(crate) fn try_new(
+        id: String,
+        frame: DesignTimelineFrame,
+        class_tag: DesignClassTag,
+        record_index: std::num::NonZeroU64,
+        source_ordinal: u32,
+        context_record_index: std::num::NonZeroU64,
+    ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "design-feature-timeline", frame.byte_offset())?;
+        let segment_end = crate::ids::design_segment(&id.text)
+            .ok_or("timeline.id must contain a Design segment")?
+            .len();
+        Ok(Self {
+            id,
+            segment_end,
+            frame,
+            class_tag,
+            record_index,
+            source_ordinal,
+            context_record_index,
+        })
+    }
 }
 
 /// Counted Design timeline-item list that carries authored feature order.
@@ -3048,22 +3357,22 @@ impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
             .zip(wire.item_record_index_offsets)
             .map(|(value, offset)| Located { value, offset })
             .collect();
-        Ok(Self {
-            frame: DesignTimelineFrame::new(
+        Self::try_new(
+            wire.id,
+            DesignTimelineFrame::new(
                 wire.byte_offset,
                 wire.frame_length,
                 wire.context_record_index_offset,
                 wire.item_count_offset,
                 items,
             )?,
-            id: wire.id,
-            class_tag: DesignClassTag::try_from(wire.class_tag)?,
-            record_index: std::num::NonZeroU64::new(wire.record_index)
+            DesignClassTag::try_from(wire.class_tag)?,
+            std::num::NonZeroU64::new(wire.record_index)
                 .ok_or("timeline.record_index must be nonzero")?,
-            source_ordinal: wire.source_ordinal,
-            context_record_index: std::num::NonZeroU64::new(wire.context_record_index)
+            wire.source_ordinal,
+            std::num::NonZeroU64::new(wire.context_record_index)
                 .ok_or("timeline.context_record_index must be nonzero")?,
-        })
+        )
     }
 }
 impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
@@ -3077,7 +3386,7 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
         Self {
             item_record_indices,
             item_record_index_offsets,
-            id: value.id,
+            id: value.id.text,
             byte_offset: value.frame.byte_offset,
             class_tag: value.class_tag.into(),
             record_index: value.record_index.get(),
@@ -8402,19 +8711,71 @@ impl ActClassTail {
 /// Channel-group payload owned by one ACT entity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActChannelGroup {
-    pub record_index_offset: u64,
-    pub entity_id_offset: Option<u64>,
-    pub class_tag: DesignClassTag,
-    pub channels: BTreeMap<String, Located<DesignGuidText>>,
-    pub class_tail: Option<ActClassTail>,
+    record_index_offset: u64,
+    entity_id_offset: Option<u64>,
+    class_tag: DesignClassTag,
+    channels: BTreeMap<String, Located<DesignGuidText>>,
+    class_tail: Option<ActClassTail>,
 }
 
-/// Whether an ACT entity is keyed in `ACTTable`, has a channel group, or both.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ActEntityMembership {
-    TableOnly(ActTableRow),
-    GroupOnly(ActChannelGroup),
-    Both(ActTableRow, ActChannelGroup),
+fn validate_act_channel_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.len() > 128 || !name.is_ascii() {
+        return Err("ACT channel name must contain 1 through 128 ASCII bytes".into());
+    }
+    Ok(())
+}
+
+impl ActChannelGroup {
+    pub(crate) fn try_new(
+        record_index_offset: u64,
+        entity_id_offset: Option<u64>,
+        class_tag: DesignClassTag,
+        channels: BTreeMap<String, Located<DesignGuidText>>,
+        class_tail: Option<ActClassTail>,
+    ) -> Result<Self, String> {
+        if channels.is_empty() || channels.len() > 8 {
+            return Err("ACT channels must contain 1 through 8 entries".into());
+        }
+        if entity_id_offset.is_some_and(|offset| offset <= record_index_offset) {
+            return Err("channel_entity_id_offset must follow channel_record_index_offset".into());
+        }
+        for (name, guid) in &channels {
+            validate_act_channel_name(name)?;
+            let end = guid
+                .offset
+                .checked_add(72)
+                .ok_or("channel_guid_offsets overflow")?;
+            if guid.offset <= record_index_offset
+                || entity_id_offset.is_some_and(|offset| end > offset)
+            {
+                return Err(
+                    "channel_guid_offsets must follow the record index and precede the entity key"
+                        .into(),
+                );
+            }
+            if class_tail.as_ref().is_some_and(|tail| end > tail.offset()) {
+                return Err("channel_guid_offsets must precede channel_class_tail_offset".into());
+            }
+        }
+        if class_tail.as_ref().is_some_and(|tail| {
+            record_index_offset >= tail.offset()
+                || entity_id_offset.is_some_and(|offset| offset >= tail.offset())
+        }) {
+            return Err(
+                "channel record and entity offsets must precede channel_class_tail_offset".into(),
+            );
+        }
+        Ok(Self {
+            record_index_offset,
+            entity_id_offset,
+            class_tag,
+            channels,
+            class_tail,
+        })
+    }
+    pub(crate) fn channels(&self) -> &BTreeMap<String, Located<DesignGuidText>> {
+        &self.channels
+    }
 }
 
 /// One Fusion ACT change-version channel group and its optional inline table row.
@@ -8422,82 +8783,92 @@ pub enum ActEntityMembership {
 #[serde(try_from = "ActEntitySerde", into = "ActEntitySerde")]
 pub struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Record index of this entity's change group. Its inline `ACTTable` row,
-    /// when present, contains the same index.
-    pub record_index: u32,
-    /// UTF-16LE-decoded design-entity key this change group tracks.
-    pub entity_id: String,
-    /// Table-row and/or channel-group membership for this entity.
-    pub membership: ActEntityMembership,
+    id: NativeRecordId,
+    /// Record index shared by the channel group and its optional `ACTTable` row.
+    record_index: u32,
+    entity_id: String,
+    table_row: Option<ActTableRow>,
+    channel_group: ActChannelGroup,
 }
 
 impl ActEntity {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the ACT entity record index.
+    pub(crate) fn record_index(&self) -> u32 {
+        self.record_index
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
+    pub(crate) fn try_new(
+        id: String,
+        record_index: u32,
+        entity_id: String,
+        table_row: Option<ActTableRow>,
+        channel_group: ActChannelGroup,
+    ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-entity", record_index)?;
+        if !crate::act::is_entity_key(&entity_id) {
+            return Err("ACT entity_id must be a decimal segment_entity key".into());
+        }
+        if table_row.is_none() && channel_group.entity_id_offset.is_none() {
+            return Err("channel_entity_id_offset is required without an ACTTable row".into());
+        }
+        Ok(Self {
+            id,
+            record_index,
+            entity_id,
+            table_row,
+            channel_group,
+        })
+    }
+    pub(crate) fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
+    pub(crate) fn try_set_entity_id(&mut self, entity_id: String) -> Result<(), String> {
+        if !crate::act::is_entity_key(&entity_id) {
+            return Err("ACT entity_id must be a decimal segment_entity key".into());
+        }
+        self.entity_id = entity_id;
+        Ok(())
+    }
     pub(crate) fn in_table(&self) -> bool {
-        !matches!(self.membership, ActEntityMembership::GroupOnly(_))
+        self.table_row.is_some()
     }
-
-    fn table_row(&self) -> Option<&ActTableRow> {
-        match &self.membership {
-            ActEntityMembership::TableOnly(row) | ActEntityMembership::Both(row, _) => Some(row),
-            ActEntityMembership::GroupOnly(_) => None,
-        }
+    pub(crate) fn channel_group(&self) -> &ActChannelGroup {
+        &self.channel_group
     }
-
-    pub(crate) fn channel_group(&self) -> Option<&ActChannelGroup> {
-        match &self.membership {
-            ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
-                Some(group)
-            }
-            ActEntityMembership::TableOnly(_) => None,
-        }
+    pub(crate) fn set_channel_guid(
+        &mut self,
+        name: &str,
+        value: DesignGuidText,
+    ) -> Result<(), String> {
+        let guid = self
+            .channel_group
+            .channels
+            .get_mut(name)
+            .ok_or("ACT channel does not exist")?;
+        guid.value = value;
+        Ok(())
     }
-
-    pub(crate) fn channel_group_mut(&mut self) -> Option<&mut ActChannelGroup> {
-        match &mut self.membership {
-            ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
-                Some(group)
-            }
-            ActEntityMembership::TableOnly(_) => None,
-        }
-    }
-
     pub(crate) fn table_record_index_offset(&self) -> Option<u64> {
-        self.table_row().map(|row| row.record_index_offset)
+        self.table_row.as_ref().map(|row| row.record_index_offset)
     }
-
     pub(crate) fn table_entity_id_offset(&self) -> Option<u64> {
-        self.table_row().map(ActTableRow::entity_id_offset)
+        self.table_row.as_ref().map(ActTableRow::entity_id_offset)
     }
-
-    pub(crate) fn channel_record_index_offset(&self) -> Option<u64> {
-        self.channel_group().map(|group| group.record_index_offset)
+    pub(crate) fn channel_record_index_offset(&self) -> u64 {
+        self.channel_group.record_index_offset
     }
-
     pub(crate) fn channel_entity_id_offset(&self) -> Option<u64> {
-        self.channel_group()
-            .and_then(|group| group.entity_id_offset)
+        self.channel_group.entity_id_offset
     }
-
-    pub(crate) fn channel_class_tag(&self) -> Option<&str> {
-        self.channel_group().map(|group| group.class_tag.as_str())
-    }
-
-    pub(crate) fn attach_channel_group(&mut self, group: ActChannelGroup) -> bool {
-        match &self.membership {
-            ActEntityMembership::TableOnly(row) => {
-                self.membership = ActEntityMembership::Both(row.clone(), group);
-                true
-            }
-            ActEntityMembership::GroupOnly(_) | ActEntityMembership::Both(_, _) => false,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn strip_channel_group(&mut self) {
-        if let ActEntityMembership::Both(row, _) = &self.membership {
-            self.membership = ActEntityMembership::TableOnly(row.clone());
-        }
+    pub(crate) fn channel_class_tag(&self) -> &str {
+        self.channel_group.class_tag.as_str()
     }
 }
 
@@ -8567,14 +8938,13 @@ impl TryFrom<ActEntitySerde> for ActEntity {
             {
                 None
             }
-            (Some(class_tag), Some(record_index_offset)) => Some(ActChannelGroup {
+            (Some(class_tag), Some(record_index_offset)) => Some(ActChannelGroup::try_new(
                 record_index_offset,
-                entity_id_offset: wire.channel_entity_id_offset,
-                class_tag: class_tag
+                wire.channel_entity_id_offset,
+                class_tag
                     .try_into()
                     .map_err(|error| format!("channel_class_tag: {error}"))?,
-                channels: wire
-                    .channels
+                wire.channels
                     .into_iter()
                     .zip(wire.channel_guid_offsets)
                     .map(|((name, value), (_, offset))| {
@@ -8587,12 +8957,12 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                         ))
                     })
                     .collect::<Result<_, String>>()?,
-                class_tail: match (wire.channel_class_tail, wire.channel_class_tail_offset) {
+                match (wire.channel_class_tail, wire.channel_class_tail_offset) {
                     (bytes, None) if bytes.is_empty() => None,
                     (bytes, Some(offset)) => Some(ActClassTail::new(bytes, offset)?),
                     _ => return Err("channel_class_tail requires channel_class_tail_offset".into()),
                 },
-            }),
+            )?),
             _ => {
                 return Err(
                     "act entity channel_class_tag disagrees with channel_record_index_offset"
@@ -8600,20 +8970,13 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                 );
             }
         };
-        let membership = match (table, group) {
-            (Some(row), None) => ActEntityMembership::TableOnly(row),
-            (None, Some(group)) => ActEntityMembership::GroupOnly(group),
-            (Some(row), Some(group)) => ActEntityMembership::Both(row, group),
-            (None, None) => {
-                return Err("act entity has neither an ACTTable row nor a channel group".into());
-            }
-        };
-        Ok(Self {
-            id: wire.id,
-            record_index: wire.record_index,
-            entity_id: wire.entity_id,
-            membership,
-        })
+        Self::try_new(
+            wire.id,
+            wire.record_index,
+            wire.entity_id,
+            table,
+            group.ok_or("ACT entity requires a channel group")?,
+        )
     }
 }
 
@@ -8622,34 +8985,26 @@ impl From<ActEntity> for ActEntitySerde {
         let in_table = entity.in_table();
         let table_record_index_offset = entity.table_record_index_offset();
         let table_entity_id_offset = entity.table_entity_id_offset();
-        let channel_record_index_offset = entity.channel_record_index_offset();
+        let channel_record_index_offset = Some(entity.channel_record_index_offset());
         let channel_entity_id_offset = entity.channel_entity_id_offset();
-        let channel_class_tag = entity.channel_class_tag().map(str::to_owned);
-        let (channels, channel_guid_offsets, channel_class_tail, channel_class_tail_offset) =
-            match entity.membership {
-                ActEntityMembership::TableOnly(_) => {
-                    (BTreeMap::new(), BTreeMap::new(), Vec::new(), None)
-                }
-                ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
-                    let (channels, offsets) = group
-                        .channels
-                        .into_iter()
-                        .map(|(name, guid)| {
-                            (
-                                (name.clone(), guid.value.as_str().to_owned()),
-                                (name, guid.offset),
-                            )
-                        })
-                        .unzip();
-                    let (tail, tail_offset) = match group.class_tail {
-                        Some(tail) => (tail.bytes, Some(tail.offset)),
-                        None => (Vec::new(), None),
-                    };
-                    (channels, offsets, tail, tail_offset)
-                }
-            };
+        let channel_class_tag = Some(entity.channel_class_tag().to_owned());
+        let group = entity.channel_group;
+        let (channels, channel_guid_offsets) = group
+            .channels
+            .into_iter()
+            .map(|(name, guid)| {
+                (
+                    (name.clone(), guid.value.as_str().to_owned()),
+                    (name, guid.offset),
+                )
+            })
+            .unzip();
+        let (channel_class_tail, channel_class_tail_offset) = match group.class_tail {
+            Some(tail) => (tail.bytes, Some(tail.offset)),
+            None => (Vec::new(), None),
+        };
         Self {
-            id: entity.id,
+            id: entity.id.text,
             record_index: entity.record_index,
             table_record_index_offset,
             channel_record_index_offset,
@@ -8671,7 +9026,7 @@ impl From<ActEntity> for ActEntitySerde {
 #[serde(try_from = "ActGuidWire", into = "ActGuidWire")]
 pub struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Byte offset of the UTF-16 length prefix in the ACT `BulkStream`.
     byte_offset: u64,
     /// Position in the pool in source order; does not assign a GUID to one table entry.
@@ -8681,7 +9036,16 @@ pub struct ActGuid {
 }
 
 impl ActGuid {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub fn new(id: String, byte_offset: u64, ordinal: u32, guid: String) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-guid", byte_offset)?;
         byte_offset
             .checked_add(4)
             .ok_or("ACT GUID byte_offset overflows guid_offset")?;
@@ -8727,7 +9091,7 @@ impl From<ActGuid> for ActGuidWire {
     fn from(guid: ActGuid) -> Self {
         let guid_offset = guid.guid_offset();
         Self {
-            id: guid.id,
+            id: guid.id.text,
             byte_offset: guid.byte_offset,
             guid_offset,
             ordinal: guid.ordinal,
@@ -8741,7 +9105,7 @@ impl From<ActGuid> for ActGuidWire {
 #[serde(try_from = "ActTableReferenceWire", into = "ActTableReferenceWire")]
 pub struct ActTableReference {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Position in the counted reference run, in source order.
     pub ordinal: u32,
     /// Byte offset of the reference-presence marker in the ACT `BulkStream`.
@@ -8751,12 +9115,21 @@ pub struct ActTableReference {
 }
 
 impl ActTableReference {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub fn new(
         id: String,
         ordinal: u32,
         byte_offset: u64,
         target_record: u32,
     ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-table-reference", byte_offset)?;
         byte_offset
             .checked_add(1)
             .ok_or("ACT table reference byte_offset overflows target_record_offset")?;
@@ -8802,7 +9175,7 @@ impl From<ActTableReference> for ActTableReferenceWire {
     fn from(reference: ActTableReference) -> Self {
         let target_record_offset = reference.target_record_offset();
         Self {
-            id: reference.id,
+            id: reference.id.text,
             ordinal: reference.ordinal,
             byte_offset: reference.byte_offset,
             target_record: reference.target_record,
@@ -8815,7 +9188,7 @@ impl From<ActTableReference> for ActTableReferenceWire {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActRegistryChannelWire", into = "ActRegistryChannelWire")]
 pub struct ActRegistryChannel {
-    pub id: String,
+    id: NativeRecordId,
     pub ordinal: u32,
     byte_offset: u64,
     name: String,
@@ -8823,6 +9196,14 @@ pub struct ActRegistryChannel {
 }
 
 impl ActRegistryChannel {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub fn new(
         id: String,
         ordinal: u32,
@@ -8830,9 +9211,8 @@ impl ActRegistryChannel {
         name: String,
         guid: String,
     ) -> Result<Self, String> {
-        if name.is_empty() || name.len() > 128 || !name.is_ascii() {
-            return Err("ACT registry name must contain 1 through 128 ASCII bytes".into());
-        }
+        let id = NativeRecordId::try_new(id, "act-registry-channel", byte_offset)?;
+        validate_act_channel_name(&name)?;
         byte_offset
             .checked_add(8 + name.len() as u64)
             .ok_or("ACT registry offset overflow")?;
@@ -8891,7 +9271,7 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
         let name_offset = channel.name_offset();
         let guid_offset = channel.guid_offset();
         Self {
-            id: channel.id,
+            id: channel.id.text,
             ordinal: channel.ordinal,
             byte_offset: channel.byte_offset,
             name: channel.name,
@@ -8907,7 +9287,7 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
 #[serde(try_from = "ActRootComponentWire", into = "ActRootComponentWire")]
 pub struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
@@ -8919,7 +9299,52 @@ pub struct ActRootComponent {
     /// Source counter/registry flag; 0 and 1 are both valid.
     pub registry_flag: ActRegistryFlag,
     /// Checked source layout and the two variable-length strings.
-    pub layout: ActRootLayout,
+    layout: ActRootLayout,
+}
+
+impl ActRootComponent {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the ACT root source layout.
+    pub(crate) fn layout(&self) -> &ActRootLayout {
+        &self.layout
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
+    /// Admits a record whose identity matches its source location.
+    pub(crate) fn try_new(
+        id: String,
+        record_index: u32,
+        class_tag: DesignClassTag,
+        instance_root_record: u32,
+        components_root_record: u32,
+        registry_flag: ActRegistryFlag,
+        layout: ActRootLayout,
+    ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-root-component", layout.byte_offset())?;
+        Ok(Self {
+            id,
+            record_index,
+            class_tag,
+            instance_root_record,
+            components_root_record,
+            registry_flag,
+            layout,
+        })
+    }
+    /// Changes root strings without changing the identity offset.
+    pub(crate) fn try_set_strings(
+        &mut self,
+        entity_id: String,
+        display_name: String,
+    ) -> Result<(), String> {
+        self.layout = self.layout.with_strings(entity_id, display_name)?;
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -9000,25 +9425,24 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
         if wire.display_name_offset != layout.display_name_offset() {
             return Err("display_name_offset disagrees with ACT root layout".into());
         }
-        Ok(Self {
-            id: wire.id,
-            record_index: wire.record_index,
-            class_tag: wire
-                .class_tag
+        Self::try_new(
+            wire.id,
+            wire.record_index,
+            wire.class_tag
                 .try_into()
                 .map_err(|error| format!("class_tag: {error}"))?,
-            instance_root_record: wire.instance_root_record,
-            components_root_record: wire.components_root_record,
-            registry_flag: wire.registry_flag,
+            wire.instance_root_record,
+            wire.components_root_record,
+            wire.registry_flag,
             layout,
-        })
+        )
     }
 }
 
 impl From<ActRootComponent> for ActRootComponentWire {
     fn from(root: ActRootComponent) -> Self {
         Self {
-            id: root.id,
+            id: root.id.text,
             record_index: root.record_index,
             class_tag: root.class_tag.into(),
             instance_root_record: root.instance_root_record,

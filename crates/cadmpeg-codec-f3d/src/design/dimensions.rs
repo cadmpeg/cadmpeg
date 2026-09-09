@@ -270,8 +270,8 @@ fn project_all_dimension_constraints(
         .iter()
         .filter_map(|owner| {
             Some((
-                (native_stream(&owner.id)?, owner.companion_record_index),
-                owner.parameter_record_index,
+                (native_stream(owner.id())?, owner.companion_record_index()),
+                owner.parameter_record_index(),
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -987,8 +987,8 @@ fn project_all_dimension_constraints(
         .filter_map(|owner| {
             Some((
                 (
-                    native_stream(&owner.id)?.to_owned(),
-                    owner.companion_record_index,
+                    native_stream(owner.id())?.to_owned(),
+                    owner.companion_record_index(),
                 ),
                 owner,
             ))
@@ -1014,7 +1014,7 @@ fn project_all_dimension_constraints(
             let (parameter, parameter_id) = parameter_for(&scope, companion_record_index)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
             let sketch = sketches_by_scope
-                .get(&(scope.as_str(), owner.scope_record_index))?
+                .get(&(scope.as_str(), owner.scope_record_index()))?
                 .clone();
             let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
                 && design_dimension_unit(parameter)
@@ -1121,7 +1121,7 @@ fn project_all_dimension_constraints(
             return None;
         }
         let sketch = sketches_by_scope
-            .get(&(scope, owner.scope_record_index))?
+            .get(&(scope, owner.scope_record_index()))?
             .clone();
         let parallel_axis_angles = groups
             .iter()
@@ -1222,7 +1222,7 @@ fn project_all_dimension_constraints(
             )
         });
         let presentation_definition =
-            presentation_for_owner(scope, owner.record_index).and_then(|frame| {
+            presentation_for_owner(scope, owner.record_index()).and_then(|frame| {
                 presentation_dimension_definition(
                     scope,
                     frame,
@@ -2638,7 +2638,7 @@ pub fn project_spatial_dimension_constraints(
         .collect::<HashSet<_>>();
     let owners_by_record = owners
         .iter()
-        .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
+        .filter_map(|owner| Some(((native_stream(owner.id())?, owner.record_index()), owner)))
         .collect::<HashMap<_, _>>();
     let companions_by_record = companions
         .iter()
@@ -2658,9 +2658,9 @@ pub fn project_spatial_dimension_constraints(
         let parameter = parameters_by_id.get(&parameter_id)?;
         let scope = native_stream(&parameter.id)?;
         let owner = owners_by_record.get(&(scope, parameter.owner_record_index()?))?;
-        let companion = companions_by_record.get(&(scope, owner.companion_record_index))?;
+        let companion = companions_by_record.get(&(scope, owner.companion_record_index()))?;
         let sketch = spatial_by_scope
-            .get(&(scope, owner.scope_record_index))?
+            .get(&(scope, owner.scope_record_index()))?
             .clone();
         Some(SpatialSketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
@@ -3798,8 +3798,8 @@ pub fn bind_dimension_loci(
         .iter()
         .filter_map(|owner| {
             Some((
-                (native_stream(&owner.id)?, owner.companion_record_index),
-                owner.scope_record_index,
+                (native_stream(owner.id())?, owner.companion_record_index()),
+                owner.scope_record_index(),
             ))
         })
         .collect::<HashMap<_, _>>();
