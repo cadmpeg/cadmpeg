@@ -404,7 +404,7 @@ fn decode_container<'a>(
                         display_name: reference.display_name.clone(),
                         state_groups: reference.state_groups.clone(),
                         state: reference.state,
-                        document_id: hex(&reference.document_id),
+                        document_id: Some(hex(&reference.document_id)),
                         database_id: hex(&reference.database_id),
                         reference_id: reference.reference_id,
                         occurrence_count: reference.occurrence_count,
