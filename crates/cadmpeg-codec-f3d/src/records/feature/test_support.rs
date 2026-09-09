@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::DesignParameterScopeDraft;
+use super::{DesignFeatureKind, DesignParameterScopeDraft};
 use crate::records::{Located, ReferenceRun};
 
 impl DesignParameterScopeDraft {
@@ -28,10 +28,16 @@ impl DesignParameterScopeDraft {
     }
 
     pub(crate) fn layout_fixture_tail(&mut self) {
-        self.feature_ordinal_offset = self.paired_byte_offset - 72;
+        let (tail_length, previous_delta) =
+            match (self.payload.kind(), self.previous_history_state_id) {
+                (DesignFeatureKind::CopyPasteBodies, Some(_)) => (110, 53),
+                (DesignFeatureKind::CopyPasteBodies, None) => (80, 0),
+                _ => (72, 30),
+            };
+        self.feature_ordinal_offset = self.paired_byte_offset - tail_length;
         self.previous_history_state_id_offset = self.previous_history_state_id.map(|previous| {
             self.history_state_id.get_or_insert(previous + 1);
-            self.feature_ordinal_offset + 30
+            self.feature_ordinal_offset + previous_delta
         });
     }
 }

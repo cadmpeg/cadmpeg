@@ -1015,7 +1015,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_joint_origin.record_index = 91;
     single_frame_joint_origin
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(Vec::new());
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![draft.record_index]);
             draft.locate_fixture_references();
             draft.kind_offset =
                 draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
