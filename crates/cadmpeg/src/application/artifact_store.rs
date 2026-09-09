@@ -414,8 +414,18 @@ mod tests {
             .unwrap()
             .command
             {
-                crate::Command::Dump { destinations, .. }
-                | crate::Command::Convert { destinations, .. } => destinations,
+                crate::Command::Dump { destinations, .. } => destinations,
+                crate::Command::Convert { destinations, .. } => {
+                    let crate::application::transcoder::DestinationPolicy::File(file) =
+                        destinations.destination
+                    else {
+                        panic!("expected file output");
+                    };
+                    OutputDestinations {
+                        output: OptionalFileDestination(Some(file)),
+                        report: destinations.report,
+                    }
+                }
                 _ => panic!("expected a writing command"),
             };
             assert_eq!(
