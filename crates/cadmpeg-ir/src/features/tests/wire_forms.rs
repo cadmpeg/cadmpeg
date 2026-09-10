@@ -505,7 +505,9 @@ fn unit_hole_wire_variants_reject_an_unknown_key_by_name() {
 
         let mut unknown = wire;
         unknown["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<T>(unknown).unwrap_err().to_string();
+        let error = serde_json::from_value::<T>(unknown)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
@@ -598,7 +600,10 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
         merge_result: Some(false),
     };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["continuity"]["continuity"], serde_json::json!("contact"));
+    assert_eq!(
+        wire["continuity"]["continuity"],
+        serde_json::json!("contact")
+    );
     assert_eq!(
         wire["continuity"]["boundary_continuities"],
         serde_json::json!(["contact", "contact"])

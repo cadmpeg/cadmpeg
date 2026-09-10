@@ -1643,7 +1643,9 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
     };
     let native = EdgeSelection::Native("native:fillet-edges".into());
     let fillet = |groups: Vec<FilletGroup>| FeatureDefinition::Fillet {
-        groups: groups.try_into().expect("a fillet keeps one or more groups"),
+        groups: groups
+            .try_into()
+            .expect("a fillet keeps one or more groups"),
     };
 
     let carried = sole_unresolved_fillet_group(&fillet(vec![group(

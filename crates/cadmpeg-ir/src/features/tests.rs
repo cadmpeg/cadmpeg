@@ -846,7 +846,8 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     let first = Point3::new(0.0, 1.0, 2.0);
     let second = Point3::new(3.0, 4.0, 5.0);
     let segment = FeatureLineSegment::new(first, second).unwrap();
-    let wire = serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":second}});
+    let wire =
+        serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":second}});
     let definition = FeatureDefinition::LineSegment { segment };
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
@@ -1237,8 +1238,7 @@ fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
     let geometry = serde_json::json!({"origin":origin,"normal":normal,"u_axis":u_axis});
     assert_eq!(serde_json::to_value(datum).unwrap(), geometry);
     assert_eq!(serde_json::to_value(support).unwrap(), geometry);
-    let datum_wire =
-        serde_json::json!({"definition":"datum_plane","frame":geometry.clone()});
+    let datum_wire = serde_json::json!({"definition":"datum_plane","frame":geometry.clone()});
     let definition = FeatureDefinition::DatumPlane { frame: datum };
     assert_eq!(serde_json::to_value(&definition).unwrap(), datum_wire);
     assert_eq!(
