@@ -2056,6 +2056,24 @@ fn deduplicate_physical_loci(candidates: &mut Vec<SketchLocus>, sketch_entities:
     });
 }
 
+/// The point-line operands a dynamic roster relation already knows.
+enum KnownOperands {
+    Point(SketchLocus),
+    Line(SketchEntityId),
+    Both(SketchLocus, SketchEntityId),
+}
+
+impl KnownOperands {
+    fn resolve(point: Option<SketchLocus>, line: Option<SketchEntityId>) -> Option<Self> {
+        match (point, line) {
+            (Some(point), Some(line)) => Some(Self::Both(point, line)),
+            (Some(point), None) => Some(Self::Point(point)),
+            (None, Some(line)) => Some(Self::Line(line)),
+            (None, None) => None,
+        }
+    }
+}
+
 fn unique_dynamic_roster_point_line_pair(
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
@@ -2075,18 +2093,19 @@ fn unique_dynamic_roster_point_line_pair(
     if (explicit_point && known_point.is_none()) || (explicit_line && known_line.is_none()) {
         return None;
     }
-    let known_point = explicit_point.then_some(known_point).flatten();
-    let known_line = explicit_line.then_some(known_line).flatten();
     // A family-local tag without an explicit reference is not an identity;
     // let the complete geometry roster arbitrate it instead of trusting a
     // provisional ordinal or a colliding solver-line alias. A single
     // explicitly referenced operand narrows that roster to the other operand.
-    if known_point.is_none() && known_line.is_none() {
+    let Some(known) = KnownOperands::resolve(
+        explicit_point.then_some(known_point).flatten(),
+        explicit_line.then_some(known_line).flatten(),
+    ) else {
         if explicit_point || explicit_line {
             return None;
         }
         return unique_roster_point_line_pair(sketch, parameter, sketch_entities);
-    }
+    };
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
@@ -2108,8 +2127,8 @@ fn unique_dynamic_roster_point_line_pair(
         .collect::<Vec<_>>();
     deduplicate_physical_loci(&mut points, sketch_entities);
     let mut candidates = Vec::new();
-    match (known_point, known_line) {
-        (Some(point), None) => {
+    match known {
+        KnownOperands::Point(point) => {
             let position = profile_locus_point(&point, sketch_entities)?;
             candidates.extend(lines.iter().filter_map(|line| {
                 point_line_distance_value(position, line)
@@ -2117,7 +2136,7 @@ fn unique_dynamic_roster_point_line_pair(
                     .map(|_| (point.clone(), line.id().clone()))
             }));
         }
-        (None, Some(line)) => {
+        KnownOperands::Line(line) => {
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             candidates.extend(points.into_iter().filter_map(|point| {
                 let position = profile_locus_point(&point, sketch_entities)?;
@@ -2126,7 +2145,7 @@ fn unique_dynamic_roster_point_line_pair(
                     .map(|_| (point, line.clone()))
             }));
         }
-        (Some(point), Some(line)) => {
+        KnownOperands::Both(point, line) => {
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             let position = profile_locus_point(&point, sketch_entities)?;
             if point_line_distance_value(position, line_entity)
@@ -2135,7 +2154,6 @@ fn unique_dynamic_roster_point_line_pair(
                 candidates.push((point, line));
             }
         }
-        (None, None) => unreachable!("the complete roster path returned above"),
     }
     candidates.sort_by(|(left_point, left_line), (right_point, right_line)| {
         locus_key(left_point)
