@@ -294,14 +294,20 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     let summary = container::summarize(&scan, &classification);
+    let cadmpeg_core::container::EntryStorage::Compressed {
+        method,
+        stored,
+        expanded,
+    } = summary.entries[0].storage
+    else {
+        panic!("a unix-compressed section stores compressed bytes");
+    };
     assert_eq!(
-        summary.entries[0].storage,
-        cadmpeg_core::container::EntryStorage::Compressed {
-            method: cadmpeg_core::container::CompressionMethod::UnixCompress,
-            stored: Some(15),
-            expanded: Some(18),
-        }
+        method,
+        cadmpeg_core::container::CompressionMethod::UnixCompress
     );
+    assert_eq!(stored, Some(section_length as u64));
+    assert_eq!(expanded, Some(18));
 }
 
 #[test]
