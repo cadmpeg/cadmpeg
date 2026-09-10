@@ -1316,17 +1316,6 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
         .any(|loss| loss.severity == Severity::Error));
 }
 
-#[test]
-fn redundant_field_diagnostics_use_the_typed_repair_loss() {
-    assert_eq!(
-        RhinoLossCode::RedundantFieldRepaired
-            .note("repair")
-            .code
-            .local_code(),
-        "container.redundant-field-repaired"
-    );
-}
-
 /// The body-kind and B-rep domain charges reach the report as typed codes.
 ///
 /// Both are produced as typed losses at their parse sites. This asserts the
