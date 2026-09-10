@@ -609,7 +609,7 @@ impl<'a> Ctx<'a> {
             .iter()
             .map(|companion| {
                 (
-                    (design_stream(&companion.id), companion.record_index),
+                    (design_stream(companion.id()), companion.record_index()),
                     companion,
                 )
             })
@@ -5476,9 +5476,7 @@ fn validate_body_recipe_operands<'a>(
             && recipe.is_some_and(|recipe| {
                 let selector_is_valid = recipe.design.as_ref().is_some_and(|design| {
                     let design_id = &design.id;
-                    let Some(design_id_offset) = design_id.offset else {
-                        return false;
-                    };
+                    let design_id_offset = design_id.offset;
                     let Some(selector) = design.selector else {
                         return false;
                     };
@@ -6825,7 +6823,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index
                 .get(&(native_stream, owner.companion_record_index()))
-                .is_some_and(|companion| companion.owner_record_index == owner.record_index())
+                .is_some_and(|companion| companion.owner_record_index() == owner.record_index())
             && parameter.is_some_and(|parameter| {
                 parameter.owner_record_index() == Some(owner.record_index())
                     && parameter.evaluated_value().to_bits() == owner.evaluated_value().to_bits()
@@ -6852,18 +6850,19 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut companion_indices = HashSet::new();
     let mut companion_owners = HashSet::new();
     for companion in &native.design_parameter_companions {
-        let native_stream = design_stream(&companion.id);
-        let payload_end = companion
-            .payload_byte_offset
-            .checked_add(companion.payload_byte_length);
+        let native_stream = design_stream(companion.id());
+        let payload = companion.payload();
+        let payload_end =
+            payload.and_then(|payload| payload.byte_offset().checked_add(payload.byte_length()));
         let mut expected_recipes = native
             .construction_recipes
             .iter()
             .filter(|recipe| {
                 design_stream(&recipe.id) == native_stream
-                    && payload_end.is_some_and(|end| {
-                        recipe.byte_offset >= companion.payload_byte_offset
-                            && recipe.byte_offset < end
+                    && payload.is_some_and(|payload| {
+                        payload_end.is_some_and(|end| {
+                            recipe.byte_offset >= payload.byte_offset() && recipe.byte_offset < end
+                        })
                     })
             })
             .collect::<Vec<_>>();
@@ -6872,19 +6871,26 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .into_iter()
             .map(|recipe| recipe.id.as_str())
             .collect::<Vec<_>>();
-        let unique_index = companion_indices.insert((native_stream, companion.record_index));
-        let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index));
-        let owner = owners_by_index.get(&(native_stream, companion.owner_record_index));
-        let valid = companion.timestamp_micros_offset == companion.byte_offset.saturating_add(42)
-            && companion.payload_byte_offset == companion.byte_offset.saturating_add(58)
-            && payload_end.is_some()
-            && companion
-                .owned_recipe_ids
+        let unique_index = companion_indices.insert((native_stream, companion.record_index()));
+        let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index()));
+        let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
+        let valid = companion.timestamp_micros_offset()
+            == companion.byte_offset().saturating_add(42)
+            && payload.is_none_or(|payload| {
+                payload.byte_offset() == companion.byte_offset().saturating_add(58)
+            })
+            && (payload.is_none() || payload_end.is_some())
+            && payload
+                .map_or(
+                    &[][..],
+                    crate::records::DesignCompanionPayload::owned_recipe_ids,
+                )
                 .iter()
                 .map(String::as_str)
                 .eq(expected_recipe_ids)
-            && records_by_index.contains_key(&(native_stream, companion.record_index))
-            && owner.is_some_and(|owner| owner.companion_record_index() == companion.record_index)
+            && records_by_index.contains_key(&(native_stream, companion.record_index()))
+            && owner
+                .is_some_and(|owner| owner.companion_record_index() == companion.record_index())
             && unique_index
             && unique_owner;
         if !valid {
@@ -6893,7 +6899,7 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 severity: Severity::Error,
                 message: "Fusion Design parameter companion has an invalid prefix or owner link"
                     .into(),
-                entity: Some(companion.id.clone()),
+                entity: Some(companion.id().to_owned()),
             });
         }
     }
@@ -6914,7 +6920,7 @@ fn validate_dimension_recipe_records<'a>(
         let companion = companions_by_index.get(&(native_stream, record.companion_record_index));
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
-                .get(&(native_stream, companion.owner_record_index))
+                .get(&(native_stream, companion.owner_record_index()))
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
@@ -6929,7 +6935,11 @@ fn validate_dimension_recipe_records<'a>(
         let companion_order_matches = companion.is_some_and(|companion| {
             usize::try_from(record.recipe_ordinal)
                 .ok()
-                .and_then(|ordinal| companion.owned_recipe_ids.get(ordinal))
+                .and_then(|ordinal| {
+                    companion
+                        .payload()
+                        .and_then(|payload| payload.owned_recipe_ids().get(ordinal))
+                })
                 == Some(&record.recipe_id)
         });
         let frame_end = record.byte_offset.checked_add(record.frame_length);
@@ -7001,16 +7011,18 @@ fn validate_dimension_companion_recipes<'a>(
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
     for companion in &native.design_parameter_companions {
-        let native_stream = design_stream(&companion.id);
+        let native_stream = design_stream(companion.id());
         let dimension_companion = owners_by_index
-            .get(&(native_stream, companion.owner_record_index))
+            .get(&(native_stream, companion.owner_record_index()))
             .and_then(|owner| {
                 parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
             })
             .is_some_and(|parameter| parameter.kind() == records::DesignParameterKind::Dimension);
         if dimension_companion
-            && companion.owned_recipe_ids.iter().any(|recipe_id| {
-                !dimension_recipe_ids.contains(&(native_stream, recipe_id.as_str()))
+            && companion.payload().is_some_and(|payload| {
+                payload.owned_recipe_ids().iter().any(|recipe_id| {
+                    !dimension_recipe_ids.contains(&(native_stream, recipe_id.as_str()))
+                })
             })
         {
             findings.push(Finding {
@@ -7018,7 +7030,7 @@ fn validate_dimension_companion_recipes<'a>(
                 severity: Severity::Error,
                 message: "Fusion Design dimension companion has an unowned construction recipe"
                     .into(),
-                entity: Some(companion.id.clone()),
+                entity: Some(companion.id().to_owned()),
             });
         }
     }
@@ -7043,16 +7055,16 @@ fn validate_dimension_locus_pairs<'a>(
             locus_pair_companions.insert((native_stream, pair.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
-            pair.byte_offset() >= companion.byte_offset.saturating_add(58)
+            pair.byte_offset() >= companion.byte_offset().saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
-                        && owner.byte_offset() > companion.byte_offset
+                        && owner.byte_offset() > companion.byte_offset()
                         && owner.byte_offset() <= pair.byte_offset()
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
-                .get(&(native_stream, companion.owner_record_index))
+                .get(&(native_stream, companion.owner_record_index()))
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
@@ -7107,12 +7119,14 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             Some(record_index) => companions_by_index
                 .get(&(native_stream, record_index))
                 .is_some_and(|companion| {
-                    frame.byte_offset() >= companion.byte_offset.saturating_add(58)
-                        && frame.paired_byte_offset()
-                            < companion
-                                .byte_offset
-                                .saturating_add(58)
-                                .saturating_add(companion.payload_byte_length)
+                    frame.byte_offset() >= companion.byte_offset().saturating_add(58)
+                        && companion.payload().is_some_and(|payload| {
+                            frame.paired_byte_offset()
+                                < companion
+                                    .byte_offset()
+                                    .saturating_add(58)
+                                    .saturating_add(payload.byte_length())
+                        })
                 }),
             None => governing_owner.is_some_and(|owner| {
                 scopes_by_index
@@ -7128,7 +7142,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .filter_map(|candidate| {
                             companions_by_index
                                 .get(&(native_stream, candidate.companion_record_index()))
-                                .map(|companion| companion.byte_offset)
+                                .map(|companion| companion.byte_offset())
                         })
                         .min()
                         .is_some_and(|end| frame.paired_byte_offset() < end)
@@ -7201,7 +7215,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
                     parameter.kind() == records::DesignParameterKind::Dimension
                 })
                 && companion
-                    .is_some_and(|companion| companion.owner_record_index == owner.record_index())
+                    .is_some_and(|companion| companion.owner_record_index() == owner.record_index())
         });
         let nearest_owner = native
             .design_parameter_owners
@@ -7281,16 +7295,16 @@ fn validate_dimension_locus_groups<'a>(
         locus_group_companions.insert((native_stream, group.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
-            group.byte_offset >= companion.byte_offset.saturating_add(58)
+            group.byte_offset >= companion.byte_offset().saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
-                        && owner.byte_offset() > companion.byte_offset
+                        && owner.byte_offset() > companion.byte_offset()
                         && owner.byte_offset() <= group.byte_offset
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
-                .get(&(native_stream, companion.owner_record_index))
+                .get(&(native_stream, companion.owner_record_index()))
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
@@ -7388,16 +7402,16 @@ fn validate_dimension_null_locus_pairs<'a>(
             null_locus_pair_companions.insert((native_stream, pair.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
-            pair.byte_offset() >= companion.byte_offset.saturating_add(58)
+            pair.byte_offset() >= companion.byte_offset().saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
-                        && owner.byte_offset() > companion.byte_offset
+                        && owner.byte_offset() > companion.byte_offset()
                         && owner.byte_offset() <= pair.byte_offset()
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
-                .get(&(native_stream, companion.owner_record_index))
+                .get(&(native_stream, companion.owner_record_index()))
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
@@ -7753,7 +7767,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let owner = companions_by_index
             .get(&(native_stream, pair.governing_companion_record_index))
             .and_then(|companion| {
-                owners_by_index.get(&(native_stream, companion.owner_record_index))
+                owners_by_index.get(&(native_stream, companion.owner_record_index()))
             })
             .and_then(|parameter_owner| {
                 placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index()))
@@ -7805,7 +7819,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let owner = companions_by_index
             .get(&(native_stream, pair.governing_companion_record_index))
             .and_then(|companion| {
-                owners_by_index.get(&(native_stream, companion.owner_record_index))
+                owners_by_index.get(&(native_stream, companion.owner_record_index()))
             })
             .and_then(|parameter_owner| {
                 placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index()))
@@ -7884,9 +7898,11 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
     for links in body_links.values_mut() {
         links.sort_by_key(|link| link.ordinal);
-        if links.iter().enumerate().any(|(ordinal, link)| {
-            link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len())
-        }) {
+        if links
+            .iter()
+            .enumerate()
+            .any(|(ordinal, link)| link.ordinal != ordinal as u32)
+        {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

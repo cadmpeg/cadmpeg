@@ -332,7 +332,7 @@ pub(in super::super) fn generated_cap_plane_extent(
     let mut end_id = None;
     let mut side_count = 0_usize;
     for entry in &table.entries {
-        match (entry.class_id, entry.source_entity_id()) {
+        match (entry.class_id(), entry.source_entity_id()) {
             (204, None) if start_id.replace(entry.entity_id).is_none() => {}
             (203, None) if end_id.replace(entry.entity_id).is_none() => {}
             (200, Some(_)) => side_count += 1,

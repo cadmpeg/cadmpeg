@@ -59,17 +59,9 @@ pub(crate) fn append_consolidated_revolutions(
         let index = carrier.revolution_index;
         let revolution = &carrier.revolution;
         let profile = &carrier.profile;
-        let direction_x = Vector3::new(
-            revolution.direction_x[0],
-            revolution.direction_x[1],
-            revolution.direction_x[2],
-        );
-        let direction_y = Vector3::new(
-            revolution.direction_y[0],
-            revolution.direction_y[1],
-            revolution.direction_y[2],
-        );
-        let axis = Vector3::new(revolution.axis[0], revolution.axis[1], revolution.axis[2]);
+        let direction_x = Vector3::from(revolution.direction_x.get());
+        let direction_y = Vector3::from(revolution.direction_y.get());
+        let axis = Vector3::from(revolution.axis.get());
         let origin = Point3::new(
             revolution.origin[0],
             revolution.origin[1],
@@ -96,7 +88,7 @@ pub(crate) fn append_consolidated_revolutions(
             center,
             direction_x,
             direction_y,
-            profile.radius,
+            profile.radius.get(),
         ) else {
             continue;
         };
@@ -142,8 +134,6 @@ pub(crate) fn append_consolidated_revolutions(
                 <= EPS_TORUS_FRAME;
         let torus_geometry = (major_radius > 0.0
             && major_radius.is_finite()
-            && profile.radius > 0.0
-            && profile.radius.is_finite()
             && profile_plane_contains_axis
             && radial_follows_profile_reference)
             .then(|| {
@@ -162,7 +152,7 @@ pub(crate) fn append_consolidated_revolutions(
                     axis,
                     ref_direction,
                     major_radius,
-                    profile.radius,
+                    profile.radius.get(),
                 )
                 .ok()
                 .map(SurfaceGeometry::Torus)
@@ -192,11 +182,11 @@ pub(crate) fn append_consolidated_revolutions(
                 directrix,
                 (origin, axis),
                 [
-                    revolution.angular_range[0] / revolution.angular_scale,
-                    revolution.angular_range[1] / revolution.angular_scale,
+                    revolution.angular_range[0] / revolution.angular_scale.get(),
+                    revolution.angular_range[1] / revolution.angular_scale.get(),
                 ],
                 Some(revolution.angular_range),
-                Some(revolution.profile_range),
+                Some(revolution.profile_range.get()),
                 false,
                 None,
             )
@@ -215,8 +205,10 @@ pub(crate) fn append_consolidated_revolutions(
         if let Some(geometry) = torus_geometry {
             bindings.push(ConsolidatedRevolutionBinding {
                 geometry,
-                profile_sweep: (revolution.profile_range[1] - revolution.profile_range[0]).abs()
-                    / profile.radius,
+                profile_sweep: (revolution.profile_range.upper()
+                    - revolution.profile_range.lower())
+                .abs()
+                    / profile.radius.get(),
             });
         }
     }
@@ -483,7 +475,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut unknowns = Vec::new();
     let payload_id =
         UnknownId::mint("catia:payload:unknown#freeform".to_string()).expect("identity grammar");
-    preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
+    let payload_index =
+        preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -587,8 +580,8 @@ pub(crate) fn try_decode_freeform_surfaces(
         let id = CurveId::mint(format!("catia:b2:circle#{}", ir.model.curves.len()))
             .expect("identity grammar");
         let parameter_range = [
-            circle.range[0] / circle.radius,
-            circle.range[1] / circle.radius,
+            circle.range.lower() / circle.radius.get(),
+            circle.range.upper() / circle.radius.get(),
         ];
         annotate(
             &mut annotations,
@@ -597,7 +590,9 @@ pub(crate) fn try_decode_freeform_surfaces(
             circle.pos as u64,
             format!(
                 "header_token:{:08x}:range:{:?}:chart_shift:{}",
-                circle.header_token, circle.range, circle.chart_shift
+                circle.header_token,
+                circle.range.get(),
+                circle.chart_shift
             ),
             Exactness::ByteExact,
         );
@@ -606,9 +601,9 @@ pub(crate) fn try_decode_freeform_surfaces(
             geometry: CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     circle.center,
-                    circle.axis,
-                    circle.ref_direction,
-                    circle.radius,
+                    cadmpeg_ir::math::Vector3::from(circle.axis.get()),
+                    cadmpeg_ir::math::Vector3::from(circle.ref_direction.get()),
+                    circle.radius.get(),
                 )
                 .ok()?,
             ),
@@ -643,7 +638,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
+    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
     let mut coverage = cadmpeg_ir::Coverage::default();
     coverage.record(
@@ -1173,7 +1168,7 @@ fn append_consolidated_line_profiles(
             .expect("identity grammar");
         let Ok(payload) = cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(line.origin[0], line.origin[1], line.origin[2]),
-            Vector3::new(line.direction[0], line.direction[1], line.direction[2]),
+            Vector3::from(line.direction.get()),
         ) else {
             continue;
         };
@@ -1193,7 +1188,7 @@ fn append_consolidated_line_profiles(
                 format!("{:010}", line.pos),
             )?),
         });
-        standalone_wires.push((id, line.range, line.pos));
+        standalone_wires.push((id, line.range.get(), line.pos));
     }
     Ok(standalone_wires)
 }
@@ -1519,10 +1514,10 @@ impl ConsolidatedCarrierChart<'_> {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [
-                u / cone.angular_scale,
-                (v - cone.slant_range[0]) * cone.half_angle.cos(),
+                u / cone.angular_scale.get(),
+                (v - cone.slant_range.lower()) * cone.half_angle.cos(),
             ],
-            Self::Torus { torus } => [u / torus.major_scale, v / torus.minor_scale],
+            Self::Torus { torus } => [u / torus.major_scale.get(), v / torus.minor_scale.get()],
             Self::Rigid { linear, offset } => [
                 linear[0][0] * u + linear[0][1] * v + offset[0],
                 linear[1][0] * u + linear[1][1] * v + offset[1],
@@ -1534,8 +1529,8 @@ impl ConsolidatedCarrierChart<'_> {
         match self {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
-            Self::Cone { cone } => [u / cone.angular_scale, v * cone.half_angle.cos()],
-            Self::Torus { torus } => [u / torus.major_scale, v / torus.minor_scale],
+            Self::Cone { cone } => [u / cone.angular_scale.get(), v * cone.half_angle.cos()],
+            Self::Torus { torus } => [u / torus.major_scale.get(), v / torus.minor_scale.get()],
             Self::Rigid { linear, .. } => [
                 linear[0][0] * u + linear[0][1] * v,
                 linear[1][0] * u + linear[1][1] * v,
@@ -1922,10 +1917,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 let Some(cone) = cones.get(pos) else {
                     continue;
                 };
-                if cone.angular_scale <= 0.0
-                    || !cone.angular_scale.is_finite()
-                    || !cone.half_angle.is_finite()
-                {
+                if !cone.half_angle.is_finite() {
                     continue;
                 }
                 (

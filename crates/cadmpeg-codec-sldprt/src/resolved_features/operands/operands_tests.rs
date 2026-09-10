@@ -33,11 +33,11 @@ fn qualified_operand_falls_back_to_marker_family_ordinal() {
         .collect::<Vec<_>>();
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
     assert_eq!(
-        resolve_operand_marker(&markers, kind, 4).map(|marker| marker.id.as_str()),
+        resolve_operand_marker(&markers, kind, 4).map(crate::records::SketchInputEntity::id),
         Some("marker-4")
     );
     assert_eq!(
-        resolve_operand_marker(&markers, kind, 2).map(|marker| marker.id.as_str()),
+        resolve_operand_marker(&markers, kind, 2).map(crate::records::SketchInputEntity::id),
         Some("marker-11")
     );
 }
@@ -78,7 +78,7 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
                 .map(|endpoint| SketchInputLink {
                     local_id: u16::try_from(endpoint.local_id().expect("local identity"))
                         .expect("u16 local identity"),
-                    entity_ref: endpoint.id.clone(),
+                    entity_ref: endpoint.id().to_string(),
                 })
                 .collect(),
         );
@@ -92,7 +92,7 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             16,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("line-handle")
     );
     assert!(resolve_operand_marker(
@@ -127,7 +127,7 @@ fn qualified_operand_selects_one_coordinate_marker_in_a_reused_local_id() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
             7,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("geometry")
     );
 }
@@ -158,7 +158,7 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
                 FeatureInputOperandKind::Native(tag.try_into().unwrap()),
                 16,
             )
-            .map(|resolved| resolved.id.as_str()),
+            .map(crate::records::SketchInputEntity::id),
             Some("line-locus")
         );
     }
@@ -187,7 +187,7 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             1
         )
-        .map(|resolved| resolved.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("point-1")
     );
 }
@@ -249,7 +249,7 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             0
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("indexed-curve-locus")
     );
     assert_eq!(
@@ -258,7 +258,7 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC87),
             0
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("indexed-curve-locus")
     );
 }
@@ -293,7 +293,7 @@ fn roster_point_operand_uses_coordinate_point_order() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
             1,
         )
-        .map(|entity| entity.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("second")
     );
     assert!(resolve_operand_marker_excluding(
@@ -340,7 +340,7 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
     ] {
         assert_eq!(
             resolve_operand_marker(markers.iter().copied(), kind, 7)
-                .map(|marker| marker.id.as_str()),
+                .map(crate::records::SketchInputEntity::id),
             Some("indexed")
         );
     }
@@ -400,12 +400,12 @@ fn relation_point_operands_use_object_index_before_local_identifier() {
     ] {
         assert_eq!(
             resolve_operand_marker(markers.iter().copied(), kind, 7)
-                .map(|resolved| resolved.id.as_str()),
+                .map(crate::records::SketchInputEntity::id),
             Some("indexed")
         );
         assert_eq!(
             resolve_operand_marker(markers.iter().copied(), kind, 9)
-                .map(|resolved| resolved.id.as_str()),
+                .map(crate::records::SketchInputEntity::id),
             Some("relation")
         );
     }
@@ -491,8 +491,14 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         },
     ];
     let resolved = resolve_scalar_operand_markers(&markers, &operands);
-    assert_eq!(resolved[0].map(|marker| marker.id.as_str()), Some("first"));
-    assert_eq!(resolved[1].map(|marker| marker.id.as_str()), Some("second"));
+    assert_eq!(
+        resolved[0].map(crate::records::SketchInputEntity::id),
+        Some("first")
+    );
+    assert_eq!(
+        resolved[1].map(crate::records::SketchInputEntity::id),
+        Some("second")
+    );
 
     let duplicate = [
         operands[1].clone(),
@@ -505,8 +511,14 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         },
     ];
     let resolved = resolve_scalar_operand_markers(&markers, &duplicate);
-    assert_eq!(resolved[0].map(|marker| marker.id.as_str()), Some("first"));
-    assert_eq!(resolved[1].map(|marker| marker.id.as_str()), Some("second"));
+    assert_eq!(
+        resolved[0].map(crate::records::SketchInputEntity::id),
+        Some("first")
+    );
+    assert_eq!(
+        resolved[1].map(crate::records::SketchInputEntity::id),
+        Some("second")
+    );
 }
 
 #[test]
@@ -548,7 +560,7 @@ fn curve_operand_selects_an_arc_by_local_identifier() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
             3,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("arc-3")
     );
 }
@@ -615,7 +627,7 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
             3,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("arc-8")
     );
 }
@@ -681,7 +693,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             10,
             &HashSet::from(["curve-7".into()]),
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("curve-5")
     );
 }
@@ -713,7 +725,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
             3,
             &HashSet::from(["first".into()]),
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("second")
     );
 }
@@ -738,7 +750,7 @@ fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
             FeatureInputOperandKind::E1,
             13
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("curve")
     );
     assert_eq!(
@@ -747,7 +759,7 @@ fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             13,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("curve")
     );
 }
@@ -789,7 +801,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
             7,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("line")
     );
     assert_eq!(
@@ -798,7 +810,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
             8,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("relation")
     );
     assert_eq!(
@@ -807,7 +819,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
             9,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("proxy")
     );
 
@@ -870,7 +882,7 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
                 .map(|endpoint| SketchInputLink {
                     local_id: u16::try_from(endpoint.local_id().expect("local identity"))
                         .expect("u16 local identity"),
-                    entity_ref: endpoint.id.clone(),
+                    entity_ref: endpoint.id().to_string(),
                 })
                 .collect(),
         );
@@ -884,7 +896,7 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             5
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("relation-line-handle")
     );
 }
@@ -934,25 +946,25 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
             vec![
                 SketchInputLink {
                     local_id: 3,
-                    entity_ref: relation.id.clone(),
+                    entity_ref: relation.id().to_string(),
                 },
                 SketchInputLink {
                     local_id: 2,
-                    entity_ref: point.id.clone(),
+                    entity_ref: point.id().to_string(),
                 },
             ],
         );
         constructed_marker
     };
     let markers = HashMap::from([
-        (marker.id.as_str(), &marker),
-        (point.id.as_str(), &point),
-        (relation.id.as_str(), &relation),
+        (marker.id(), &marker),
+        (point.id(), &point),
+        (relation.id(), &relation),
     ]);
 
     assert_eq!(
         coordinate_line_endpoints_with_linked_point(&marker, &markers)
-            .map(|endpoints| endpoints.map(|endpoint| endpoint.id.as_str())),
+            .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
         Some(["line-handle", "point"])
     );
 }

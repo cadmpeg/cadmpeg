@@ -27,7 +27,7 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
-    AsmHistoricalTransition, AsmHistory,
+    AsmHistoricalTransition, AsmHistory, AsmTopologyCacheKind,
 };
 use crate::records::dimension_locus_arenas::{
     DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
@@ -175,8 +175,6 @@ struct FlatAsmHistory<'a> {
     history_entry_count: Option<i64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     record_table_binding_budget_exceeded: bool,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    projection_finalized: bool,
     states: EmptyList,
 }
 
@@ -188,7 +186,6 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
             stream_size: history.stream_size(),
             history_entry_count: history.history_entry_count(),
             record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
-            projection_finalized: history.projection_finalized,
             states: EmptyList,
         }
     }
@@ -214,8 +211,8 @@ struct FlatAsmDeltaState<'a> {
     records: EmptyList,
     #[serde(skip_serializing_if = "slice_is_empty")]
     entity_versions: &'a [AsmEntityVersion],
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    record_table_complete: bool,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    topology_cache: AsmTopologyCacheKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     topology: Option<&'a AsmHistoricalTopology>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -239,7 +236,7 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
             bulletin_boards: EmptyList,
             records: EmptyList,
             entity_versions: &state.entity_versions,
-            record_table_complete: state.record_table_complete(),
+            topology_cache: state.topology_cache_kind(),
             topology: state.topology(),
             transition: state.transition.as_ref(),
         }

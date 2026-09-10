@@ -55,28 +55,6 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
                     "SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id
                 )));
             }
-            if entity.object_index()
-                != crate::resolved_features::markers::marker_object_index(
-                    &lane.native_payload,
-                    position,
-                )
-            {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                    "SolidWorks feature-input object index does not match its native payload"
-                        .into(),
-                ));
-            }
-            if entity.local_id()
-                != crate::resolved_features::markers::marker_local_id(
-                    &lane.native_payload,
-                    position,
-                )
-            {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                    "SolidWorks feature-input local object id does not match its native payload"
-                        .into(),
-                ));
-            }
         }
         if entities.next().is_some() {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(

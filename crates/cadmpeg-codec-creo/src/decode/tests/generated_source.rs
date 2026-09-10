@@ -47,40 +47,35 @@ const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
 
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 17,
-        table_class_id: 80,
-        entries: vec![
+    let table = crate::feature::FeatureEntityTable::new(
+        17,
+        80,
+        vec![
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 42,
-                class_id: 200,
                 payload: crate::feature::entry_payload(200, Some(10), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
-                is_surface: false,
             },
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 41,
-                class_id: 200,
                 payload: crate::feature::entry_payload(200, Some(8), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
-                is_surface: false,
             },
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 43,
-                class_id: 200,
                 payload: crate::feature::entry_payload(200, Some(9), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
-                is_surface: false,
             },
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([41, 42, 43]);
     let order = crate::feature::FeatureOrderTable {
         declared_count: 2,
@@ -179,10 +174,10 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     );
     let mut first_table = table.clone();
     first_table.entries = vec![table.entries[1].clone()];
-    first_table.entries[0].is_surface = true;
+    first_table.mark_surface_ids([first_table.entries[0].entity_id]);
     let mut second_table = table.clone();
     second_table.entries = vec![table.entries[2].clone()];
-    second_table.entries[0].is_surface = true;
+    second_table.mark_surface_ids([second_table.entries[0].entity_id]);
     assert_eq!(
         generated_surface_id_for_feature(&[first_table.clone(), second_table], 17, 9),
         Some(43)
@@ -193,8 +188,9 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     let mut wrong_class = table.clone();
-    wrong_class.entries[2].class_id = 201;
-    wrong_class.entries[2].payload = crate::feature::EntryPayload::Plain;
+    wrong_class.entries[2].payload = crate::feature::EntryPayload::Plain {
+        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert_eq!(
         generated_surface_id_for_feature(&[wrong_class], 17, 9),
         None
@@ -300,11 +296,9 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -323,12 +317,13 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry(34, 200, Some(6)),
         entry(35, 200, Some(7)),
     ];
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 9,
-        table_class_id: 29,
+    let table = crate::feature::FeatureEntityTable::new(
+        9,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([11, 12, 13, 15, 16]);
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -369,11 +364,9 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -391,12 +384,13 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry(32, 200, Some(6)),
         entry(33, 200, Some(7)),
     ];
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 9,
-        table_class_id: 29,
+    let table = crate::feature::FeatureEntityTable::new(
+        9,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([15, 16, 30, 31, 33]);
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -454,7 +448,8 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
-    extra.is_surface = false;
+    extended.unmark_surface_id(26);
+    extended.unmark_surface_id(27);
     extra.entity_id = 26;
     extra.payload = crate::feature::EntryPayload::Source { entity: Some(5) };
     extended.entries.insert(7, extra.clone());
@@ -812,24 +807,23 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
             entity_id,
-            class_id,
             prefixed: false,
             offset: 0,
             end_offset: 0,
-            is_surface: false,
         };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 9,
-            table_class_id: 29,
-            entries: vec![
+        crate::feature::FeatureEntityTable::new(
+            9,
+            29,
+            vec![
                 compact_entry(21, 204, None),
                 compact_entry(22, 203, None),
                 compact_entry(23, 200, Some(0)),
                 compact_entry(24, 200, None),
             ],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([24]),
     );
     scan.surfaces.rows.push(class_911_surface_row(
@@ -853,20 +847,19 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
 fn counterbore_sources_require_materialized_table_membership() {
     let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![entry(11, 4), entry(12, 4), entry(15, 7), entry(16, 7)];
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 9,
-        table_class_id: 29,
+    let table = crate::feature::FeatureEntityTable::new(
+        9,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([11, 15, 16]);
     let row = |id| crate::surface::SurfaceRow {
         id,
@@ -881,20 +874,19 @@ fn counterbore_sources_require_materialized_table_membership() {
     let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 9,
-            table_class_id: 29,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        crate::feature::FeatureEntityTable::new(
+            9,
+            29,
+            vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 99,
-                class_id: 0,
                 payload: crate::feature::entry_payload(0, None, None, None),
                 prefixed: true,
                 offset: 1,
                 end_offset: 2,
-                is_surface: false,
             }],
-            offset: 1,
-        }
+            &std::collections::BTreeSet::new(),
+            1,
+        )
         .with_surface_ids([]),
     );
     scan.surfaces
@@ -1172,16 +1164,17 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 
 #[test]
 fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 9,
-        table_class_id: 29,
-        entries: vec![
-            crate::feature::dummy_table_entry(11, true),
-            crate::feature::dummy_table_entry(13, true),
-            crate::feature::dummy_table_entry(15, true),
+    let table = crate::feature::FeatureEntityTable::new(
+        9,
+        29,
+        vec![
+            crate::feature::dummy_table_entry(11),
+            crate::feature::dummy_table_entry(13),
+            crate::feature::dummy_table_entry(15),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([11, 13, 15]);
     let rows = [
         class_911_surface_row(9, 11, crate::surface::SurfaceKind::Cylinder),
@@ -1372,17 +1365,18 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
         row(11, crate::surface::SurfaceKind::Plane),
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 23,
-        table_class_id: 80,
-        entries: vec![
-            crate::feature::dummy_table_entry(10, true),
-            crate::feature::dummy_table_entry(11, true),
-            crate::feature::dummy_table_entry(12, false),
-            crate::feature::dummy_table_entry(13, true),
+    let table = crate::feature::FeatureEntityTable::new(
+        23,
+        80,
+        vec![
+            crate::feature::dummy_table_entry(10),
+            crate::feature::dummy_table_entry(11),
+            crate::feature::dummy_table_entry(12),
+            crate::feature::dummy_table_entry(13),
         ],
-        offset: 47,
-    }
+        &std::collections::BTreeSet::new(),
+        47,
+    )
     .with_surface_ids([10, 11, 13]);
     assert_eq!(
         rowless_round_cylinder_pairs(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows,),

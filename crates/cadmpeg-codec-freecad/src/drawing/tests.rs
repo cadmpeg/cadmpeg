@@ -73,7 +73,10 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     );
     assert_eq!(views.as_slice(), ["fcstd:native:object#View"]);
     assert_eq!(template.side_entries, ["page.svg"]);
-    assert_eq!(view.sources[0].object(), Some("fcstd:native:object#Model"));
+    assert_eq!(
+        view.sources[0].as_ref().expect("source").object(),
+        Some("fcstd:native:object#Model")
+    );
     assert!(view.parameters.contains_key("Direction"));
     assert_eq!(
         view.parameters["Scale"],
@@ -228,7 +231,10 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("native view");
     assert_eq!(
-        native_view.relationships["Template"][0].object(),
+        native_view.relationships["Template"][0]
+            .as_ref()
+            .expect("relationship")
+            .object(),
         Some("fcstd:native:object#Template")
     );
 

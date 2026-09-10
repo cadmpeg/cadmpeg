@@ -29,7 +29,8 @@ use super::native_geometry::{
     native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, pcurve_uses_ref_form,
 };
 use super::preconditions::{
-    validate_source_less_body_kinds, validate_source_less_wire_vertices, WireVerticesValidated,
+    validate_source_less_body_kinds, validate_source_less_wire_ownership,
+    validate_source_less_wire_vertices, WireVerticesValidated,
 };
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
@@ -277,48 +278,7 @@ fn encode_wire_body_smbh(
                 .into(),
         ));
     }
-    for body in &model.bodies {
-        if body.regions.is_empty()
-            || body.regions.iter().any(|id| {
-                !model
-                    .regions
-                    .iter()
-                    .any(|region| region.id == *id && region.body == body.id)
-            })
-        {
-            return Err(CodecError::Malformed(
-                "source-less F3D wire ownership is inconsistent".into(),
-            ));
-        }
-    }
-    for region in &model.regions {
-        if region.shells.is_empty()
-            || !model
-                .bodies
-                .iter()
-                .any(|body| body.id == region.body && body.regions.contains(&region.id))
-            || region.shells.iter().any(|id| {
-                !model
-                    .shells
-                    .iter()
-                    .any(|shell| shell.id == *id && shell.region == region.id)
-            })
-        {
-            return Err(CodecError::Malformed(
-                "source-less F3D wire ownership is inconsistent".into(),
-            ));
-        }
-    }
-    if model.shells.iter().any(|shell| {
-        !model
-            .regions
-            .iter()
-            .any(|region| region.id == shell.region && region.shells.contains(&shell.id))
-    }) {
-        return Err(CodecError::Malformed(
-            "source-less F3D wire ownership is inconsistent".into(),
-        ));
-    }
+    let ownership = validate_source_less_wire_ownership(target)?;
     let wire_vertices = validate_source_less_wire_vertices(target)?;
     let body_start = 1i64;
     let region_start = native_record_index(body_start, model.bodies.len())?;
@@ -342,22 +302,9 @@ fn encode_wire_body_smbh(
     native_ident(&mut records, "asmheader")?;
     native_string(&mut records, "231.6.3.65535")?;
     records.push(0x11);
-    for (ordinal, body) in model.bodies.iter().enumerate() {
-        let first_region = body.regions.first().expect("wire ownership was validated");
-        let region_ordinal = model
-            .regions
-            .iter()
-            .position(|region| region.id == *first_region)
-            .expect("wire ownership was validated");
-        let first_shell = model.regions[region_ordinal]
-            .shells
-            .first()
-            .expect("wire ownership was validated");
-        let shell_ordinal = model
-            .shells
-            .iter()
-            .position(|shell| shell.id == *first_shell)
-            .expect("wire ownership was validated");
+    for ((ordinal, body), owned) in model.bodies.iter().enumerate().zip(ownership.bodies()) {
+        let region_ordinal = owned.first_region;
+        let shell_ordinal = owned.first_shell;
         let transform_ordinal = model.bodies[..ordinal]
             .iter()
             .filter(|candidate| candidate.transform.is_some())
@@ -390,37 +337,14 @@ fn encode_wire_body_smbh(
         );
         records.push(0x11);
     }
-    for region in &model.regions {
-        let body_ordinal = model
-            .bodies
-            .iter()
-            .position(|body| body.id == region.body)
-            .expect("wire ownership was validated");
-        let body = &model.bodies[body_ordinal];
-        let position = body
-            .regions
-            .iter()
-            .position(|id| *id == region.id)
-            .expect("wire ownership was validated");
-        let next = body
-            .regions
-            .get(position + 1)
-            .map(|id| {
-                model
-                    .regions
-                    .iter()
-                    .position(|candidate| candidate.id == *id)
-                    .expect("wire ownership was validated")
-            })
+    for owned in ownership.regions() {
+        let body_ordinal = owned.body;
+        let next = owned
+            .next_region
             .map(|position| native_record_index(region_start, position))
             .transpose()?
             .unwrap_or(-1);
-        let first_shell = region.shells.first().expect("wire ownership was validated");
-        let shell_ordinal = model
-            .shells
-            .iter()
-            .position(|shell| shell.id == *first_shell)
-            .expect("wire ownership was validated");
+        let shell_ordinal = owned.first_shell;
         native_ident(&mut records, "region")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -433,28 +357,10 @@ fn encode_wire_body_smbh(
         native_ref(&mut records, native_record_index(body_start, body_ordinal)?);
         records.push(0x11);
     }
-    for (ordinal, shell) in model.shells.iter().enumerate() {
-        let region_ordinal = model
-            .regions
-            .iter()
-            .position(|region| region.id == shell.region)
-            .expect("wire ownership was validated");
-        let region = &model.regions[region_ordinal];
-        let position = region
-            .shells
-            .iter()
-            .position(|id| *id == shell.id)
-            .expect("wire ownership was validated");
-        let next = region
-            .shells
-            .get(position + 1)
-            .map(|id| {
-                model
-                    .shells
-                    .iter()
-                    .position(|candidate| candidate.id == *id)
-                    .expect("wire ownership was validated")
-            })
+    for (ordinal, owned) in ownership.shells().iter().enumerate() {
+        let region_ordinal = owned.region;
+        let next = owned
+            .next_shell
             .map(|position| native_record_index(shell_start, position))
             .transpose()?
             .unwrap_or(-1);
@@ -1751,10 +1657,12 @@ fn native_tolerant_vertex_tail(
     // carries the fact and the sentinel is written back.
     let tolerance = match (vertex.tolerance, stored.map(|tail| tail.evaluated_slot)) {
         (Some(tolerance), _) => Some(tolerance.get()),
-        (None, Some(EvaluatedToleranceSlot::Unset)) => Some(-1.0),
+        (None, Some(EvaluatedToleranceSlot::Unset { .. })) => Some(-1.0),
         // The source record ended before the evaluated slot; only the
         // leading slots are written back.
-        (None, Some(EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Evaluated)) => None,
+        (None, Some(EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Evaluated { .. })) => {
+            None
+        }
         (None, None) => return,
     };
     // The record stores three f64 tolerance slots: the two leading slots
@@ -1767,7 +1675,9 @@ fn native_tolerant_vertex_tail(
     let leading = stored
         .as_ref()
         .map_or([-1.0; 2], |tail| tail.leading_tolerances);
-    let trailing = stored.as_ref().map_or(Some(0), |tail| tail.trailing_field);
+    let trailing = stored
+        .as_ref()
+        .map_or(Some(0), |tail| tail.evaluated_slot.trailing());
     for value in leading {
         native_f64(records, value);
     }

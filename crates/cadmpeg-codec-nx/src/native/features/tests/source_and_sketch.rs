@@ -269,8 +269,8 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         id: "nx:feature-history:operation-record#0-7".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        sha256: "00".repeat(32),
-        payload_sha256: "11".repeat(32),
+        sha256: crate::native::hex::Sha256Hex::digest(b"00"),
+        payload_sha256: crate::native::hex::Sha256Hex::digest(b"11"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(700, 733, 140)
             .unwrap(),
@@ -561,7 +561,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(areas[0].control_words, [13, 14, 44]);
     assert_eq!(areas[0].product_version.as_str(), "NX 2027.3102");
     assert!(areas[0].byte_len > 12);
-    assert_eq!(areas[0].sha256.len(), 64);
+    assert_eq!(areas[0].sha256.as_str().len(), 64);
     let labels = result
         .ir()
         .native
@@ -587,7 +587,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].operation_label, labels[0].id);
     assert!(records[0].span.byte_len() > 40);
-    assert_eq!(records[0].sha256.len(), 64);
+    assert_eq!(records[0].sha256.as_str().len(), 64);
     let booleans = result
         .ir()
         .native
@@ -1098,7 +1098,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         role: crate::native::om::DataBlockRole::Column,
         section_offset: 0,
         byte_len: 1,
-        sha256: "hash".to_string(),
+        sha256: crate::native::hex::Sha256Hex::digest(b"hash"),
         stable_identity: None,
         source_entry: "entry".to_string(),
         source_offset: 0,

@@ -36,6 +36,87 @@ pub(crate) struct CadirDocument {
     by_id: BTreeMap<String, Vec<RecordRef>>,
 }
 
+/// Which records of an arena a query selects.
+///
+/// The two forms are exclusive: a list of requested IDs, or the first N records
+/// in arena order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordSelection {
+    /// Records matching these IDs, exactly or as a unique suffix.
+    Ids(RequestedIds),
+    /// The first N records in arena order.
+    Head(usize),
+}
+
+/// A record-ID request naming at least one ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestedIds(Vec<String>);
+
+impl RequestedIds {
+    /// Returns the request, or `None` when the list names no ID.
+    pub fn new(ids: Vec<String>) -> Option<Self> {
+        (!ids.is_empty()).then_some(Self(ids))
+    }
+
+    /// Returns the requested IDs in the order they were given.
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl clap::Args for RecordSelection {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(
+                clap::Arg::new("ids")
+                    .value_name("ID")
+                    .help(
+                        "Record IDs (exact or unique suffix); omit for the first record, \
+                         conflicts with --head",
+                    )
+                    .action(clap::ArgAction::Append)
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                clap::Arg::new("head")
+                    .long("head")
+                    .value_name("N")
+                    .help("Take the first N records in arena order; conflicts with explicit IDs")
+                    .conflicts_with("ids")
+                    .value_parser(clap::value_parser!(usize)),
+            )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for RecordSelection {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let ids: Vec<String> = matches
+            .get_many::<String>("ids")
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        match (RequestedIds::new(ids), matches.get_one::<usize>("head")) {
+            (None, Some(head)) => Ok(Self::Head(*head)),
+            (None, None) => Ok(Self::Head(1)),
+            (Some(ids), None) => Ok(Self::Ids(ids)),
+            (Some(_), Some(_)) => Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                "--head cannot be used with explicit record IDs\n",
+            )),
+        }
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
 impl CadirDocument {
     /// Reads `path`, rejects reports and sidecars, and indexes every array arena.
     pub(crate) fn load(path: &Path, view: &str) -> Result<Self> {
@@ -153,8 +234,7 @@ impl CadirDocument {
     pub(crate) fn select_records(
         &self,
         target: &ArenaTarget,
-        ids: &[String],
-        head: Option<usize>,
+        selection: &RecordSelection,
     ) -> Result<(Vec<RecordRef>, Vec<String>)> {
         let (ai, arena) = self
             .arenas
@@ -162,13 +242,16 @@ impl CadirDocument {
             .enumerate()
             .find(|(_, arena)| &arena.target == target)
             .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))?;
-        if ids.is_empty() {
-            let end = head.unwrap_or(1).min(arena.records.len());
-            return Ok((
-                (0..end).map(|rec| RecordRef { arena: ai, rec }).collect(),
-                Vec::new(),
-            ));
-        }
+        let ids = match selection {
+            RecordSelection::Head(head) => {
+                let end = (*head).min(arena.records.len());
+                return Ok((
+                    (0..end).map(|rec| RecordRef { arena: ai, rec }).collect(),
+                    Vec::new(),
+                ));
+            }
+            RecordSelection::Ids(ids) => ids.as_slice(),
+        };
 
         let indexed: Vec<(Option<&str>, RecordRef)> = arena
             .records
@@ -304,6 +387,12 @@ mod tests {
         assert_eq!(doc.by_id["dup"].len(), 2);
     }
 
+    /// Selects by ID, falling back to the first record when no ID is given.
+    fn ids_selection(ids: &[&str]) -> RecordSelection {
+        RequestedIds::new(ids.iter().map(|id| (*id).to_owned()).collect())
+            .map_or(RecordSelection::Head(1), RecordSelection::Ids)
+    }
+
     #[test]
     fn select_head_and_suffix_and_ambiguous() {
         let doc = CadirDocument::from_value(&json!({
@@ -315,7 +404,9 @@ mod tests {
             ]}
         }));
         let target = ArenaTarget::parse("faces").unwrap();
-        let (idx, err) = doc.select_records(&target, &[], Some(2)).unwrap();
+        let (idx, err) = doc
+            .select_records(&target, &RecordSelection::Head(2))
+            .unwrap();
         assert_eq!(
             idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
             vec![0, 1]
@@ -323,7 +414,7 @@ mod tests {
         assert!(err.is_empty());
 
         let (idx, err) = doc
-            .select_records(&target, &["face#2".to_owned()], None)
+            .select_records(&target, &ids_selection(&["face#2"]))
             .unwrap();
         assert_eq!(
             idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
@@ -332,7 +423,7 @@ mod tests {
         assert!(err.is_empty());
 
         let (_, err) = doc
-            .select_records(&target, &["#802".to_owned()], None)
+            .select_records(&target, &ids_selection(&["#802"]))
             .unwrap();
         assert_eq!(err.len(), 1);
         assert!(err[0].contains("ambiguous"));

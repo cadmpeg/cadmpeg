@@ -285,13 +285,25 @@ enum CommandStatus {
     Refused,
 }
 
+/// A body a command report may carry.
+///
+/// The trait is closed to the payload types below, so a report body cannot be
+/// another `Payload` and cannot flatten a second `status` key into the report.
+pub(crate) trait ReportBody: Serialize {}
+
+impl ReportBody for Reports<'_> {}
+impl ReportBody for super::InspectPayload<'_> {}
+impl ReportBody for super::DiffReportPayload<'_> {}
+impl ReportBody for serde_json::Value {}
+impl<T: ReportBody + ?Sized> ReportBody for &T {}
+
 /// Status-bearing serialized command payload.
-pub(super) enum Payload<'a, P> {
+pub(super) enum Payload<'a, P: ReportBody> {
     Ok(P),
     Refused(P, &'a ConversionRefusal),
 }
 
-impl<P: Serialize> Serialize for Payload<'_, P> {
+impl<P: ReportBody> Serialize for Payload<'_, P> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Fields<'a, P> {
@@ -317,14 +329,14 @@ impl<P: Serialize> Serialize for Payload<'_, P> {
 }
 
 #[derive(Serialize)]
-struct CommandReport<'a, P> {
+struct CommandReport<'a, P: ReportBody> {
     command: &'static str,
     generator: String,
     #[serde(flatten)]
     payload: Payload<'a, P>,
 }
 
-impl<'a, P> CommandReport<'a, P> {
+impl<'a, P: ReportBody> CommandReport<'a, P> {
     fn new(command: &'static str, payload: Payload<'a, P>) -> Self {
         Self {
             command,
@@ -334,7 +346,7 @@ impl<'a, P> CommandReport<'a, P> {
     }
 }
 
-pub(crate) fn command_report_json<P: Serialize>(
+pub(crate) fn command_report_json<P: ReportBody>(
     command: &'static str,
     payload: P,
 ) -> Result<String> {
@@ -344,7 +356,7 @@ pub(crate) fn command_report_json<P: Serialize>(
     ))?)
 }
 
-pub(crate) fn refused_command_report_json<P: Serialize>(
+pub(crate) fn refused_command_report_json<P: ReportBody>(
     command: &'static str,
     payload: P,
     refusal: &ConversionRefusal,
@@ -355,7 +367,7 @@ pub(crate) fn refused_command_report_json<P: Serialize>(
     ))?)
 }
 
-pub(super) fn write_json_report<P: Serialize>(
+pub(super) fn write_json_report<P: ReportBody>(
     input: &Path,
     output: Option<&FileDestination>,
     command: &'static str,
@@ -369,7 +381,7 @@ pub(super) fn write_json_report<P: Serialize>(
 }
 
 /// Writes a status-bearing command payload.
-pub(super) fn write_payload_report<P: Serialize>(
+pub(super) fn write_payload_report<P: ReportBody>(
     input: &Path,
     output: Option<&FileDestination>,
     command: &'static str,

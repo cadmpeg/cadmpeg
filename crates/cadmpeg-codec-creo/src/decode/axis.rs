@@ -2,7 +2,7 @@
 
 /// A model-space coordinate axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Axis {
+pub(crate) enum Axis {
     X,
     Y,
     Z,
@@ -10,13 +10,13 @@ pub(super) enum Axis {
 
 impl Axis {
     /// The model axes in coordinate order.
-    pub(super) const ALL: [Self; 3] = [Self::X, Self::Y, Self::Z];
+    pub(crate) const ALL: [Self; 3] = [Self::X, Self::Y, Self::Z];
     /// The array index of the axis.
-    pub(super) const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self as usize
     }
     /// The two perpendicular model axes.
-    pub(super) const fn complement(self) -> [Self; 2] {
+    pub(crate) const fn complement(self) -> [Self; 2] {
         match self {
             Self::X => [Self::Y, Self::Z],
             Self::Y => [Self::X, Self::Z],

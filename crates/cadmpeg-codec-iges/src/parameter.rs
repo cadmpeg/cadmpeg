@@ -3172,10 +3172,15 @@ fn tokenize_macro(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Magnitude {
+    Zero,
+    Order(i64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DecimalShape {
-    order: i64,
+    magnitude: Magnitude,
     double_precision: bool,
-    zero: bool,
 }
 
 fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
@@ -3218,9 +3223,8 @@ fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
         .position(|byte| *byte != b'0');
     let Some(first_nonzero) = first_nonzero else {
         return Some(DecimalShape {
-            order: 0,
+            magnitude: Magnitude::Zero,
             double_precision,
-            zero: true,
         });
     };
     let integer_digits = i64::try_from(integer.len()).ok()?;
@@ -3230,9 +3234,8 @@ fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
         .checked_sub(first_nonzero)?
         .checked_add(exponent)?;
     Some(DecimalShape {
-        order,
+        magnitude: Magnitude::Order(order),
         double_precision,
-        zero: false,
     })
 }
 
@@ -3249,12 +3252,15 @@ fn integer_within_bits(value: i64, bits: u32) -> bool {
 }
 
 fn real_within_limits(shape: DecimalShape, limits: NumericLimits) -> bool {
-    let magnitude = if shape.double_precision {
+    let limit = if shape.double_precision {
         limits.double_magnitude
     } else {
         limits.single_magnitude
     };
-    shape.zero || magnitude.is_none_or(|maximum| shape.order <= maximum)
+    match shape.magnitude {
+        Magnitude::Zero => true,
+        Magnitude::Order(order) => limit.is_none_or(|maximum| order <= maximum),
+    }
 }
 
 fn numeric_with_limits(

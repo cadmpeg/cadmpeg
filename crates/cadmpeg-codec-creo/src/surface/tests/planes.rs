@@ -52,7 +52,6 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
                 .map(|(offset, value)| slot(value, offset))
                 .collect(),
         }],
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Plane,
         ),
@@ -129,7 +128,6 @@ fn derives_plane_from_auxiliary_corner_frame() {
                 ],
             },
         ],
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Plane,
         ),
@@ -401,7 +399,6 @@ fn derives_plane_from_marker_bounded_corner_frames() {
     let record = SurfaceParameterRecord {
         surface_id: 41,
         opaque_spans: opaque_spans(&body, &tokens),
-        terminal_scalar_frame: terminal_scalar_frame(&body, &frames),
         scalar_tokens: tokens,
         scalar_frames: frames,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(

@@ -56,21 +56,62 @@ pub struct NurbsCurveEdit<'a> {
     pub periodic: Option<bool>,
 }
 
-/// Writable values for one solved NURBS parameter-curve cache.
+/// Writable values for one solved NURBS parameter-curve cache, selected by the
+/// carrier the caller resolved.
 #[derive(Clone, Copy)]
-pub struct InlinePcurveEdit<'a> {
-    /// Parameter-curve geometry in the carrier's native chart.
-    pub native_geometry: &'a PcurveGeometry,
-    /// Optional native periodic flag.
-    pub periodic: Option<bool>,
-    /// Optional wrapper reversal flag.
-    pub wrapper_reversed: Option<bool>,
-    /// Optional four-flag native metadata tail.
-    pub native_tail_flags: Option<[bool; 4]>,
-    /// Optional native wrapper parameter range.
-    pub parameter_range: Option<[f64; 2]>,
-    /// Optional solved-cache fit tolerance.
-    pub fit_tolerance: Option<f64>,
+pub enum InlinePcurveEdit<'a> {
+    /// A `pcurve` wrapper, which carries the native wrapper metadata.
+    PcurveWrapper {
+        /// Parameter-curve geometry in the carrier's native chart.
+        native_geometry: &'a PcurveGeometry,
+        /// Optional native periodic flag.
+        periodic: Option<bool>,
+        /// Optional wrapper reversal flag.
+        wrapper_reversed: Option<bool>,
+        /// Optional four-flag native metadata tail.
+        native_tail_flags: Option<[bool; 4]>,
+        /// Optional native wrapper parameter range.
+        parameter_range: Option<[f64; 2]>,
+        /// Optional solved-cache fit tolerance.
+        fit_tolerance: Option<f64>,
+    },
+    /// An `intcurve` UV cache, which has no wrapper fields.
+    IntcurveCache {
+        /// Parameter-curve geometry in the carrier's native chart.
+        native_geometry: &'a PcurveGeometry,
+        /// Optional native periodic flag.
+        periodic: Option<bool>,
+        /// Optional solved-cache fit tolerance.
+        fit_tolerance: Option<f64>,
+    },
+}
+
+impl<'a> InlinePcurveEdit<'a> {
+    fn native_geometry(&self) -> &'a PcurveGeometry {
+        match self {
+            Self::PcurveWrapper {
+                native_geometry, ..
+            }
+            | Self::IntcurveCache {
+                native_geometry, ..
+            } => native_geometry,
+        }
+    }
+
+    fn periodic(&self) -> Option<bool> {
+        match self {
+            Self::PcurveWrapper { periodic, .. } | Self::IntcurveCache { periodic, .. } => {
+                *periodic
+            }
+        }
+    }
+
+    fn fit_tolerance(&self) -> Option<f64> {
+        match self {
+            Self::PcurveWrapper { fit_tolerance, .. }
+            | Self::IntcurveCache { fit_tolerance, .. } => *fit_tolerance,
+        }
+    }
 }
 
 /// Writable fields selected by the native pcurve form.
@@ -1661,8 +1702,8 @@ impl PcurvePatchCarrier {
         stream_width: RefWidth,
         edit: &InlinePcurveEdit<'_>,
     ) -> Result<Self, CodecError> {
-        match record.head() {
-            "pcurve" => {
+        match (record.head(), edit) {
+            ("pcurve", _) => {
                 let scope =
                     sab::payload_subtype_range(bytes, record, 5, stream_width, "exp_par_cur")
                         .ok_or_else(|| {
@@ -1673,25 +1714,16 @@ impl PcurvePatchCarrier {
                         })?;
                 Ok(Self::Pcurve(scope))
             }
-            "intcurve" => match (
-                edit.wrapper_reversed,
-                edit.native_tail_flags,
-                edit.parameter_range,
-            ) {
-                (None, None, None) => {
-                    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-                        CodecError::Malformed(
-                            "NURBS pcurve record extent overflows address space".into(),
-                        )
-                    })?;
-                    Ok(Self::Intcurve(record.offset..end))
-                }
-                _ => Err(CodecError::NotImplemented(
-                    "intcurve UV caches have no pcurve wrapper fields".into(),
-                )),
-            },
+            ("intcurve", InlinePcurveEdit::IntcurveCache { .. }) => {
+                let end = record.offset.checked_add(record.len).ok_or_else(|| {
+                    CodecError::Malformed(
+                        "NURBS pcurve record extent overflows address space".into(),
+                    )
+                })?;
+                Ok(Self::Intcurve(record.offset..end))
+            }
             _ => Err(CodecError::malformed(format_args!(
-                "record {} is not a pcurve carrier",
+                "record {} is not a pcurve wrapper carrier",
                 record.index
             ))),
         }
@@ -1710,7 +1742,16 @@ fn patch_nurbs_pcurve_record(
     record: &sab::Record,
     edit: &InlinePcurveEdit<'_>,
 ) -> Result<(), CodecError> {
-    let geometry = edit.native_geometry;
+    let (wrapper_reversed, native_tail_flags, parameter_range) = match edit {
+        InlinePcurveEdit::PcurveWrapper {
+            wrapper_reversed,
+            native_tail_flags,
+            parameter_range,
+            ..
+        } => (*wrapper_reversed, *native_tail_flags, *parameter_range),
+        InlinePcurveEdit::IntcurveCache { .. } => (None, None, None),
+    };
+    let geometry = edit.native_geometry();
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return Err(CodecError::NotImplemented(format!(
             "pcurve record {} is not a writable NURBS cache",
@@ -1748,13 +1789,13 @@ fn patch_nurbs_pcurve_record(
     )?;
     let at = scope.start + layout.degree_value_offset;
     AsmEditSet::patch_layout_integer(bytes, at, stream_width, i64::from(nurbs.degree()))?;
-    if let Some(periodic) = edit.periodic {
+    if let Some(periodic) = edit.periodic() {
         let value = if periodic { 2i64 } else { 0i64 };
         let at = scope.start + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
     }
     if let PcurvePatchCarrier::Pcurve(_) = &carrier {
-        if let Some(reversed) = edit.wrapper_reversed {
+        if let Some(reversed) = wrapper_reversed {
             let offset =
                 sab::payload_token_offset(bytes, record, stream_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1793,7 +1834,7 @@ fn patch_nurbs_pcurve_record(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if let Some(flags) = edit.native_tail_flags {
+        if let Some(flags) = native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
                     return Err(CodecError::malformed(format_args!(
@@ -1813,7 +1854,7 @@ fn patch_nurbs_pcurve_record(
                 }
             }
         }
-        if let Some(range) = edit.parameter_range {
+        if let Some(range) = parameter_range {
             for (offset, value) in suffix_offsets[4..].iter().zip(range) {
                 if bytes.get(*offset) != Some(&0x06) {
                     return Err(CodecError::malformed(format_args!(
@@ -1825,7 +1866,7 @@ fn patch_nurbs_pcurve_record(
             }
         }
     }
-    if let Some(tolerance) = edit.fit_tolerance {
+    if let Some(tolerance) = edit.fit_tolerance() {
         if bytes.get(scope.start + layout.control_end()) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "pcurve record {} has no writable fit-tolerance carrier",
@@ -2148,7 +2189,7 @@ mod tests {
     }
 
     #[test]
-    fn intcurve_uv_cache_rejects_pcurve_wrapper_edits() {
+    fn intcurve_uv_cache_admits_only_the_intcurve_cache_edit() {
         use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
         use cadmpeg_ir::math::Point2;
         let mut original = vec![0x0d, 8];
@@ -2180,12 +2221,9 @@ mod tests {
             )
             .unwrap(),
         };
-        let base = super::InlinePcurveEdit {
+        let base = super::InlinePcurveEdit::IntcurveCache {
             native_geometry: &geometry,
             periodic: None,
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
             fit_tolerance: None,
         };
         let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
@@ -2196,24 +2234,23 @@ mod tests {
                 super::PcurveEdit::Inline(base),
             )
             .unwrap();
-        for edit in [
-            super::InlinePcurveEdit {
-                wrapper_reversed: Some(true),
-                ..base
-            },
-            super::InlinePcurveEdit {
-                native_tail_flags: Some([true; 4]),
-                ..base
-            },
-            super::InlinePcurveEdit {
-                parameter_range: Some([2.0, 3.0]),
-                ..base
-            },
+        for (wrapper_reversed, native_tail_flags, parameter_range) in [
+            (Some(true), None, None),
+            (None, Some([true; 4]), None),
+            (None, None, Some([2.0, 3.0])),
         ] {
+            let edit = super::InlinePcurveEdit::PcurveWrapper {
+                native_geometry: &geometry,
+                periodic: None,
+                wrapper_reversed,
+                native_tail_flags,
+                parameter_range,
+                fit_tolerance: None,
+            };
             let mut bytes = original.clone();
             assert!(matches!(
                 edits.patch_pcurve(&mut bytes, &records[0], super::PcurveEdit::Inline(edit)),
-                Err(cadmpeg_core::CodecError::NotImplemented(_))
+                Err(cadmpeg_core::CodecError::Malformed(_))
             ));
             assert_eq!(bytes, original);
         }

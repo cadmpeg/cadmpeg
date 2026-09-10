@@ -6,6 +6,10 @@ use super::axes::{
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
+#[cfg(test)]
+use crate::records::FeatureSource;
+#[cfg(test)]
+use crate::records::ObjectId;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
@@ -370,7 +374,7 @@ mod tests {
                 parent: "history".into(),
                 xml_tag: "Feature".into(),
                 tree_parent: None,
-                source_id: Some("7".into()),
+                source_id: FeatureSource::from_value(7),
                 ordinal: 0,
                 name: "Move Face".into(),
                 kind: "Move Face".into(),
@@ -428,7 +432,7 @@ mod tests {
                     ordinal: 0,
                     offset: 8,
                     value: "Move Face".into(),
-                    object_id: Some(7),
+                    object_id: ObjectId::from_value(7),
                 },
                 FeatureInputName {
                     id: "d1-name".into(),

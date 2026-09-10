@@ -35,6 +35,7 @@ use crate::container::configuration_index;
 use crate::brep::{self, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
+use crate::records::ObjectId;
 
 struct DecodedBrep<'a> {
     /// Representative stream whose header is common to every merged site.
@@ -1693,11 +1694,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .iter()
         .flat_map(|history| &history.features)
     {
-        let Some(source) = feature
-            .source_id
-            .as_deref()
-            .and_then(|source| source.parse::<u32>().ok())
-        else {
+        let Some(source) = feature.source_value() else {
             continue;
         };
         *source_counts.entry(source).or_default() += 1;
@@ -1739,7 +1736,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                 })
         })
         .filter(|(lane, class, name)| {
-            let source_bound = name.object_id.is_some_and(|id| {
+            let source_bound = name.object_id.and_then(ObjectId::value).is_some_and(|id| {
                 source_counts.get(&id).copied() == Some(1)
                     && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
                         || native_object_class(&class.name)
@@ -1750,11 +1747,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                                     .iter()
                                     .flat_map(|history| &history.features)
                                     .any(|feature| {
-                                        feature
-                                            .source_id
-                                            .as_deref()
-                                            .and_then(|source| source.parse::<u32>().ok())
-                                            == Some(id)
+                                        feature.source_value() == Some(id)
                                             && feature.input_class.is_none()
                                             && classify(feature) == Some(expected)
                                     })
@@ -1820,7 +1813,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             let markers_by_id = lane
                 .sketch_entities
                 .iter()
-                .map(|marker| (marker.id.as_str(), marker))
+                .map(|marker| (marker.id(), marker))
                 .collect();
             let instances = lane
                 .relation_instances
@@ -1857,7 +1850,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                             marker,
                             &markers_by_id,
                         )
-                        && !projected.contains(&marker.id)
+                        && !projected.contains(marker.id())
                 })
                 .count();
             instances + bindings + markers
@@ -1876,7 +1869,7 @@ fn multiply_projected_sketch_relation_records(
             let markers_by_id = lane
                 .sketch_entities
                 .iter()
-                .map(|marker| (marker.id.as_str(), marker))
+                .map(|marker| (marker.id(), marker))
                 .collect();
             lane.relation_instances
                 .iter()
@@ -1886,7 +1879,7 @@ fn multiply_projected_sketch_relation_records(
                         marker,
                         &markers_by_id,
                     )
-                    .then_some(marker.id.as_str())
+                    .then_some(marker.id())
                 }))
         })
         .collect::<std::collections::HashSet<_>>();
@@ -2790,7 +2783,7 @@ fn build_geometry_ir(
                 &mut annotations,
                 id.clone(),
                 display_stream,
-                display_face.table.start as u64,
+                display_face.table.start() as u64,
                 "displaylist_tessellation",
                 Exactness::ByteExact,
             );
@@ -3018,7 +3011,10 @@ fn source_meta(
         attributes.insert("sldprt_active_partition_unresolved".into(), "true".into());
     }
     if let Some(header) = header {
-        attributes.insert("parasolid_schema".to_string(), header.schema.clone());
+        attributes.insert(
+            "parasolid_schema".to_string(),
+            header.schema.value().to_owned(),
+        );
         attributes.insert(
             "parasolid_description".to_string(),
             header.description.clone(),
@@ -3259,7 +3255,10 @@ fn build_metadata_ir(
             ),
         };
         attributes.insert("active_parasolid_block".to_string(), name.clone());
-        attributes.insert("parasolid_schema".to_string(), site.header.schema.clone());
+        attributes.insert(
+            "parasolid_schema".to_string(),
+            site.header.schema.value().to_owned(),
+        );
         crate::annotations::note(
             &mut annotations,
             id.clone(),

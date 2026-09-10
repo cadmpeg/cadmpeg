@@ -93,20 +93,24 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
 
 #[test]
 fn material_assignment_preserves_located_and_authored_token_wire() {
-    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
+    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
     for field in ["physical_token", "visual_preset"] {
         for value in ["\"\"", "\"Prism-002\""] {
-            for offset in [None, Some(0), Some(50)] {
+            for offset in [0, 50] {
                 let mut wire = format!("{prefix},\"{field}\":{value}");
-                if let Some(offset) = offset {
-                    write!(wire, ",\"{field}_offset\":{offset}").unwrap();
-                }
+                write!(wire, ",\"{field}_offset\":{offset}").unwrap();
                 wire.push('}');
                 let parsed: crate::records::DesignMaterialAssignment =
                     serde_json::from_str(&wire).expect("material token");
                 assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
             }
         }
+        let wire = format!("{prefix},\"{field}\":\"Prism-002\"}}");
+        let error = serde_json::from_str::<crate::records::DesignMaterialAssignment>(&wire)
+            .expect_err("unlocated material token")
+            .to_string();
+        assert!(error.contains(field));
+        assert!(error.contains(&format!("{field}_offset")));
         let wire = format!("{prefix},\"{field}_offset\":50}}");
         let error = serde_json::from_str::<crate::records::DesignMaterialAssignment>(&wire)
             .expect_err("orphan material offset")
@@ -118,14 +122,6 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
     let parsed: crate::records::DesignMaterialAssignment =
         serde_json::from_str(&wire).expect("absent tokens");
     assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
-    let mut mismatch: serde_json::Value = serde_json::from_str(&wire).unwrap();
-    mismatch["entity_suffix"] = 986.into();
-    assert!(
-        serde_json::from_value::<crate::records::DesignMaterialAssignment>(mismatch)
-            .expect_err("mismatched material suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
     let padded = wire.replace("0_985", "0_+00985");
     let parsed: crate::records::DesignMaterialAssignment =
         serde_json::from_str(&padded).expect("preserved numeric spelling");
@@ -137,11 +133,9 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"recipe#0","byte_offset":27,"kind":"body""#;
     let suffix = r#","recipe_index":0,"record_index":12}"#;
     for value in ["\"\"", "\"301\""] {
-        for offset in [None, Some(0), Some(4)] {
+        for offset in [0, 4] {
             let mut wire = format!("{prefix},\"design_id\":{value}");
-            if let Some(offset) = offset {
-                write!(wire, ",\"design_id_offset\":{offset}").unwrap();
-            }
+            write!(wire, ",\"design_id_offset\":{offset}").unwrap();
             wire.push_str(suffix);
             let parsed: crate::records::ConstructionRecipe =
                 serde_json::from_str(&wire).expect("recipe id");
@@ -157,6 +151,12 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
         .expect_err("orphan design id offset")
         .to_string();
     assert!(error.contains("design_id_offset"));
+    let wire = format!("{prefix},\"design_id\":\"301\"{suffix}");
+    let error = serde_json::from_str::<crate::records::ConstructionRecipe>(&wire)
+        .expect_err("unlocated design id")
+        .to_string();
+    assert!(error.contains("design_id"));
+    assert!(error.contains("design_id_offset"));
 }
 
 #[test]
@@ -164,29 +164,40 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
     let suffix = r#","version":1,"version_offset":80,"module":"Fusion","entity_ids":[1],"entity_id_offsets":[]}"#;
     for value in ["\"\"", "\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\""] {
-        for offset in [None, Some(0), Some(44)] {
+        for offset in [0, 44] {
             let mut wire = format!("{prefix},\"base_type_guid\":{value}");
-            if let Some(offset) = offset {
-                write!(wire, ",\"base_type_guid_offset\":{offset}").unwrap();
-            }
+            write!(wire, ",\"base_type_guid_offset\":{offset}").unwrap();
             wire.push_str(suffix);
             let parsed: crate::records::SegmentType =
                 serde_json::from_str(&wire).expect("base GUID");
-            assert_eq!(
-                parsed.base_type_guid.as_ref().unwrap().value.is_none(),
-                value == "\"\""
-            );
+            let expected = if value == "\"\"" {
+                crate::records::BaseTypeGuid::EmptyRoot { offset }
+            } else {
+                crate::records::BaseTypeGuid::Guid {
+                    value: value.trim_matches('"').to_owned().try_into().unwrap(),
+                    offset,
+                }
+            };
+            assert_eq!(parsed.base_type_guid, expected);
             assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
         }
     }
     let wire = format!("{prefix}{suffix}");
     let parsed: crate::records::SegmentType = serde_json::from_str(&wire).expect("root type");
+    assert_eq!(parsed.base_type_guid, crate::records::BaseTypeGuid::Absent);
     assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
     let wire = format!("{prefix},\"base_type_guid_offset\":44{suffix}");
     let error = serde_json::from_str::<crate::records::SegmentType>(&wire)
         .expect_err("orphan base GUID offset")
         .to_string();
     assert!(error.contains("base_type_guid_offset"));
+    let wire =
+        format!("{prefix},\"base_type_guid\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\"{suffix}");
+    let error = serde_json::from_str::<crate::records::SegmentType>(&wire)
+        .expect_err("unlocated base GUID")
+        .to_string();
+    assert!(error.contains("base_type_guid"), "{error}");
+    assert!(error.contains("base_type_guid_offset"), "{error}");
 }
 
 #[test]
@@ -340,7 +351,7 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
 
 #[test]
 fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
-    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch""#;
+    let prefix = r#"{"id":"header","byte_offset":0,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch""#;
     for (fields, references, offsets, members) in [
         ("", "[]", "[]", ""),
         (
@@ -559,9 +570,7 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
     let suffix = r#","recipe_index":0,"record_index":7}"#;
     for fields in [
         "",
-        ",\"design_id\":\"301\"",
         ",\"design_id\":\"301\",\"design_id_offset\":12",
-        ",\"design_id\":\"301\",\"design_selector\":{\"value\":2,\"byte_offset\":0}",
         ",\"design_id\":\"301\",\"design_id_offset\":12,\"design_selector\":{\"value\":2,\"byte_offset\":15}",
     ] {
         let wire = format!("{prefix}\"{fields}{suffix}");
@@ -574,6 +583,54 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
         .to_string();
     assert!(error.contains("design_id"));
     assert!(error.contains("design_selector"));
+    for fields in [
+        ",\"design_id\":\"301\"",
+        ",\"design_id\":\"301\",\"design_selector\":{\"value\":2,\"byte_offset\":0}",
+    ] {
+        let wire = format!("{prefix}\"{fields}{suffix}");
+        let error = serde_json::from_str::<crate::records::ConstructionRecipe>(&wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("design_id_offset"), "{error}");
+    }
+}
+
+#[test]
+fn companion_payload_absence_is_distinct_from_an_empty_payload() {
+    let prefix = r#"{"id":"companion","byte_offset":0,"class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"timestamp_micros_offset":42"#;
+    let unbound = format!("{prefix}}}");
+    let empty = format!("{prefix},\"payload_byte_offset\":58,\"payload_byte_length\":0}}");
+
+    let companion: crate::records::DesignParameterCompanion =
+        serde_json::from_str(&unbound).unwrap();
+    assert!(companion.payload().is_none());
+    assert_eq!(serde_json::to_string(&companion).unwrap(), unbound);
+
+    let companion: crate::records::DesignParameterCompanion = serde_json::from_str(&empty).unwrap();
+    let payload = companion.payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 58);
+    assert_eq!(payload.byte_length(), 0);
+    assert_eq!(serde_json::to_string(&companion).unwrap(), empty);
+
+    for (invalid, field) in [
+        (
+            format!("{prefix},\"payload_byte_offset\":58}}"),
+            "payload_byte_length",
+        ),
+        (
+            format!("{prefix},\"payload_byte_length\":4}}"),
+            "payload_byte_offset",
+        ),
+        (
+            format!("{prefix},\"owned_recipe_ids\":[\"recipe\"]}}"),
+            "owned_recipe_ids",
+        ),
+    ] {
+        let error = serde_json::from_str::<crate::records::DesignParameterCompanion>(&invalid)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(field), "{error}");
+    }
 }
 
 #[test]
@@ -693,9 +750,9 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
 }
 
 #[test]
-fn sketch_placement_preserves_identity_wire_and_rejects_suffix_mismatch() {
+fn sketch_placement_preserves_identity_wire() {
     let wire = serde_json::json!({
-        "id": "placement", "entity_id": "Sketch_+0007", "entity_suffix": 7,
+        "id": "placement", "entity_id": "Sketch_+0007",
         "byte_offset": 10, "class_tag": "300", "record_index": 1,
         "frame_length": 201,
         "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
@@ -718,30 +775,15 @@ fn sketch_placement_preserves_identity_wire_and_rejects_suffix_mismatch() {
             );
         }
     }
-    let mut mismatch = wire;
-    mismatch["entity_suffix"] = 8.into();
-    assert!(
-        serde_json::from_value::<crate::records::DesignSketchPlacement>(mismatch)
-            .expect_err("mismatched suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
 }
 
 #[test]
-fn entity_header_identity_preserves_wire_spelling_and_rejects_a_conflicting_suffix() {
-    let wire = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_+001","class_tag":"256","optional_slot_present":false,"reference_indices":[],"reference_offsets":[]}"#;
+fn entity_header_identity_preserves_wire_spelling() {
+    let wire = r#"{"id":"header","byte_offset":0,"entity_id":"0_+001","class_tag":"256","optional_slot_present":false,"reference_indices":[],"reference_offsets":[]}"#;
     let header: crate::records::DesignEntityHeader =
         serde_json::from_str(wire).expect("matching identity");
     assert_eq!(header.entity_id.suffix(), 1);
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
-    let mismatched = wire.replace("\"entity_suffix\":1", "\"entity_suffix\":2");
-    assert!(
-        serde_json::from_str::<crate::records::DesignEntityHeader>(&mismatched)
-            .expect_err("mismatched suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
     for class_tag in ["", "25", "25x", "2560", "٢٥٦"] {
         let mut invalid = serde_json::to_value(&header).unwrap();
         invalid["class_tag"] = class_tag.into();
@@ -893,7 +935,7 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
         let paired = if member { 50 } else { 100 + length };
         let mut wire = serde_json::json!({
             "id": "placement", "scope_record_index": 1,
-            "entity_id": "Sketch_7", "entity_suffix": 7,
+            "entity_id": "Sketch_7",
             "byte_offset": 100, "class_tag": "300", "record_index": 1,
             "frame_length": length, "transform": transform,
             "paired_class_tag": "301", "paired_byte_offset": paired,
@@ -1276,11 +1318,13 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             7,
         ),
         (
-            json!({"kind": "version11", "padded_paired_reference": false}),
+            json!({"kind": "version11", "padded_paired_reference": false,
+                "companion_prefix_present_zero": false}),
             8,
         ),
         (
-            json!({"kind": "version11_inline_typed", "trailing_reference": 3}),
+            json!({"kind": "version11_inline_typed", "trailing_reference": 3,
+                "companion_prefix_present_zero": false}),
             8,
         ),
     ] {
@@ -1289,41 +1333,27 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0
         });
-        base["companion"] = json!({"prefix_present_zero": false, "incident_curves": [],
-            "reference_encoding": if base["record_form"]["kind"].as_str().unwrap().ends_with("inline_typed") { "inline_typed" } else { "same_segment" }});
+        base["companion"] = json!({"incident_curves": []});
         if count > 1 {
             base["persistent_id"] = json!(4);
             base["closure"] = json!({"selector": 0, "state": 0});
         }
         let point: SketchPoint = serde_json::from_value(base.clone()).expect("omitted zero flags");
         assert_eq!(serde_json::to_value(point).unwrap(), base);
-        for reference_encoding in ["same_segment", "inline_typed"] {
-            for prefix_present_zero in [false, true] {
-                let mut wire = base.clone();
-                wire["companion"] = json!({
-                    "prefix_present_zero": prefix_present_zero,
-                    "reference_encoding": reference_encoding,
-                    "incident_curves": [7, 2]
-                });
-                let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
-                let expected_inline = base["record_form"]["kind"]
-                    .as_str()
-                    .unwrap()
-                    .ends_with("inline_typed");
-                if expected_inline != (reference_encoding == "inline_typed") {
-                    let error = decoded.unwrap_err();
-                    assert!(error.to_string().contains("reference_encoding"), "{error}");
-                } else if prefix_present_zero && count != 8 {
-                    let error = decoded.unwrap_err();
-                    assert!(error.to_string().contains("prefix_present_zero"), "{error}");
-                } else {
-                    let point = decoded.expect("companion matches point form");
-                    let companion = point.companion();
-                    assert_eq!(companion.prefix_present_zero, prefix_present_zero);
-                    assert_eq!(companion.incident_curves, [7, 2]);
-                    assert_eq!(serde_json::to_value(point).unwrap(), wire);
-                }
+        for prefix_present_zero in [false, true] {
+            let mut wire = base.clone();
+            wire["companion"] = json!({"incident_curves": [7, 2]});
+            if count == 8 {
+                wire["record_form"]["companion_prefix_present_zero"] = json!(prefix_present_zero);
+            } else if prefix_present_zero {
+                continue;
             }
+            let point =
+                serde_json::from_value::<SketchPoint>(wire.clone()).expect("companion wire");
+            let companion = point.companion();
+            assert_eq!(companion.prefix_present_zero, prefix_present_zero);
+            assert_eq!(companion.incident_curves, [7, 2]);
+            assert_eq!(serde_json::to_value(point).unwrap(), wire);
         }
         for depth in [-7.5, 2.5] {
             let mut wire = base.clone();
@@ -1415,7 +1445,7 @@ fn empty_reference_runs_have_one_representation() {
         )
         .unwrap(),
     };
-    let wire = r#"{"id":"header","byte_offset":10,"entity_suffix":7,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
+    let wire = r#"{"id":"header","byte_offset":10,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     assert_eq!(
         serde_json::from_str::<crate::records::DesignEntityHeader>(wire).unwrap(),
@@ -1505,7 +1535,7 @@ fn segment_base_guid_rejects_invalid_text() {
 fn material_assignment_sidecar_rejects_invalid_visual_guid() {
     let wire = serde_json::json!({
         "id": "material#0", "asm_body_key": 42, "asm_body_key_offset": 10,
-        "entity_suffix": 985, "entity_suffix_offset": 20, "entity_id": "0_985",
+        "entity_suffix_offset": 20, "entity_id": "0_985",
         "entity_id_offset": 30, "visual_guid": "not-a-guid", "visual_guid_offset": 40
     });
     assert!(serde_json::from_value::<super::DesignMaterialAssignment>(wire).is_err());
@@ -1573,7 +1603,8 @@ fn sketch_identity_sidecar_rejects_zero() {
     let point = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
-        "persistent_id": 0, "closure": {"selector": 0, "state": 0}});
+        "persistent_id": 0, "closure": {"selector": 0, "state": 0},
+        "companion": {"incident_curves": []}});
     assert!(serde_json::from_value::<super::SketchPoint>(point)
         .unwrap_err()
         .to_string()
@@ -1597,7 +1628,6 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
         byte_offset: 0,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: super::SketchPointRecordForm::version11(
@@ -1645,7 +1675,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 1, "closure": {"selector": 0, "state": 0},
-        "companion": {"prefix_present_zero": false, "reference_encoding": "same_segment", "incident_curves": []}});
+        "companion": {"incident_curves": []}});
     let original: super::SketchPoint = serde_json::from_value(wire.clone()).unwrap();
     assert!(original.companion().incident_curves.is_empty());
     assert_eq!(serde_json::to_value(&original).unwrap(), wire);
@@ -1660,7 +1690,6 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         .to_string()
         .contains("companion"));
     let duplicate = super::SketchPointCompanion {
-        prefix_present_zero: false,
         incident_curves: vec![7, 7],
     };
     let draft = super::SketchPointDraft {

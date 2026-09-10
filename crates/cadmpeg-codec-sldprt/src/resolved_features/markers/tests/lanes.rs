@@ -43,7 +43,7 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
     assert_eq!(operand.entity_index, 2);
     assert_eq!(
         operand.entity_ref.as_deref(),
-        Some(lane.sketch_entities[0].id.as_str())
+        Some(lane.sketch_entities[0].id())
     );
 }
 
@@ -88,7 +88,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
         lane.sketch_entities[0]
             .links
             .as_ref()
-            .map(|links| links.selector),
+            .map(crate::records::SketchInputLinks::selector),
         Some(1)
     );
     assert_eq!(
@@ -97,7 +97,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
             .iter()
             .map(|link| (link.local_id, link.entity_ref.as_str()))
             .collect::<Vec<_>>(),
-        [(2, lane.sketch_entities[1].id.as_str())]
+        [(2, lane.sketch_entities[1].id())]
     );
     crate::test_support::plan_inherited_write(
         decoded.ir(),

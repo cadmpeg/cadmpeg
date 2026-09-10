@@ -311,15 +311,16 @@ mod tests {
     #[test]
     fn numbered_intersect_name_identifies_section_shape_feature() {
         let table = || {
-            crate::feature::FeatureEntityTable {
-                feature_id: 50,
-                table_class_id: 29,
-                entries: vec![
-                    crate::feature::dummy_table_entry(61, true),
-                    crate::feature::dummy_table_entry(75, true),
+            crate::feature::FeatureEntityTable::new(
+                50,
+                29,
+                vec![
+                    crate::feature::dummy_table_entry(61),
+                    crate::feature::dummy_table_entry(75),
                 ],
-                offset: 0,
-            }
+                &std::collections::BTreeSet::new(),
+                0,
+            )
             .with_surface_ids([61, 75])
         };
         let surface = |id, feature_id| crate::surface::SurfaceRow {
@@ -381,7 +382,7 @@ mod tests {
         let mut duplicate_surface_id = valid_scan();
         duplicate_surface_id.features.entity_tables[0]
             .entries
-            .push(crate::feature::dummy_table_entry(61, true));
+            .push(crate::feature::dummy_table_entry(61));
         assert_eq!(
             surface_intersect_feature_definition(&duplicate_surface_id, 50, "Intersect 1"),
             None

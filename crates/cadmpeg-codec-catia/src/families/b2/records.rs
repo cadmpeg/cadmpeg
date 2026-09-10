@@ -12,8 +12,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
+use crate::checked::{
+    CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
+    OrderedInterval, PositiveFinite, RelaxedHypotUnitVector3, RelaxedUnitVector2,
+    RelaxedUnitVector3,
+};
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
+use crate::native::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
@@ -215,19 +221,6 @@ pub struct B2ReferenceList {
     pub references: Vec<u32>,
 }
 
-/// Typed 62-byte tail of a fixed-nine class-`0x62` owner packet.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct B2OwnerNumericTail {
-    /// Five-byte class-specific header.
-    pub header: [u8; 5],
-    /// Lower coordinate pair of a strictly increasing binary64 box.
-    pub lower: [f64; 2],
-    /// Upper coordinate pair of a strictly increasing binary64 box.
-    pub upper: [f64; 2],
-    /// Model-space X, Y, and Z bounds in serialization order.
-    pub bounds: [[f32; 2]; 3],
-}
-
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
 /// structurally decoded numeric tail.
 #[derive(Debug, Clone, PartialEq)]
@@ -245,7 +238,7 @@ pub struct B2OwnerPacket {
     /// Exact wire addressing form of each identity in source order.
     pub identity_encodings: [B2OwnerIdentityEncoding; 9],
     /// Fixed-width class-specific numeric tail.
-    pub numeric_tail: B2OwnerNumericTail,
+    pub numeric_tail: CatiaOwnerNumericTail,
 }
 
 /// One fixed-nine owner identity resolved by its backward-distance token.
@@ -314,7 +307,7 @@ pub enum B2OwnerChartBridge {
         /// Independent terminal control.
         terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
-        construction_radius: f64,
+        construction_radius: crate::checked::PositiveFinite,
     },
     /// Eight-reference A-family production without an assigned object role.
     Extended {
@@ -1130,7 +1123,7 @@ fn owner_chart_bridge(
     at += 1;
     if count == 5 {
         let unit_token = *data.get(at)?;
-        let construction_radius = f64_le(data, at + 1)?;
+        let construction_radius = crate::checked::PositiveFinite::new(f64_le(data, at + 1)?)?;
         let middle_controls = [
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
@@ -1138,7 +1131,6 @@ fn owner_chart_bridge(
         let zeros = data.get(at + 11..at + 19)?;
         let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 19)?)?;
         if unit_token != 0x05
-            || construction_radius <= 0.0
             || zeros != [0; 8]
             || data.get(at + 20) != Some(&0x05)
             || at + 21 != frame.end
@@ -1178,13 +1170,23 @@ fn owner_chart_bridge(
 fn owner_chart_bounds_match(
     carrier: B2OwnerChartCarrier,
     points: &[B2ParameterPoint; 4],
-    tail: &B2OwnerNumericTail,
+    tail: &CatiaOwnerNumericTail,
 ) -> bool {
     let [first_lower, first_upper, second_lower, second_upper] =
         if carrier == B2OwnerChartCarrier::B28 {
-            [tail.lower[0], tail.upper[0], tail.lower[1], tail.upper[1]]
+            [
+                tail.lower()[0],
+                tail.upper()[0],
+                tail.lower()[1],
+                tail.upper()[1],
+            ]
         } else {
-            [tail.lower[1], tail.upper[1], tail.lower[0], tail.upper[0]]
+            [
+                tail.lower()[1],
+                tail.upper()[1],
+                tail.lower()[0],
+                tail.upper()[0],
+            ]
         };
     let side_lower = [first_lower, second_lower, second_upper];
     let side_upper = [first_upper, second_lower, second_upper];
@@ -1302,7 +1304,7 @@ fn tagged_u16_ref(data: &[u8], at: &mut usize) -> Option<u32> {
     persistent_ref(data, at)
 }
 
-fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
+fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
     if data.len() != 62 {
         return None;
     }
@@ -1314,9 +1316,6 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
     let values = read_f64_array::<4>(data, 5)?;
     let lower = [values[0], values[1]];
     let upper = [values[2], values[3]];
-    if lower[0] >= upper[0] || lower[1] >= upper[1] {
-        return None;
-    }
     if data.get(37) != Some(&0x01) {
         return None;
     }
@@ -1326,16 +1325,8 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
     for bound in &mut bounds {
         bound[0] = view.f32_le()?;
         bound[1] = view.f32_le()?;
-        if !bound[0].is_finite() || !bound[1].is_finite() || bound[0] >= bound[1] {
-            return None;
-        }
     }
-    Some(B2OwnerNumericTail {
-        header,
-        lower,
-        upper,
-        bounds,
-    })
+    CatiaOwnerNumericTail::new(header, lower, upper, bounds)
 }
 
 /// Decode the count-prefixed class-`0x61` payload family. Long class-`0x61`
@@ -1824,38 +1815,35 @@ fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
 }
 
 pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
-    if !parameter_in_closed_range(uv[1], cone.slant_range) {
+    if !parameter_in_closed_range(uv[1], cone.slant_range.get()) {
         return None;
     }
-    let phi = uv[0] / cone.angular_scale;
+    let phi = uv[0] / cone.angular_scale.get();
+    let (t1, t2, axis) = (cone.t1.get(), cone.t2.get(), cone.axis.get());
     let radial = [
-        phi.cos() * cone.t1[0] + phi.sin() * cone.t2[0],
-        phi.cos() * cone.t1[1] + phi.sin() * cone.t2[1],
-        phi.cos() * cone.t1[2] + phi.sin() * cone.t2[2],
+        phi.cos() * t1[0] + phi.sin() * t2[0],
+        phi.cos() * t1[1] + phi.sin() * t2[1],
+        phi.cos() * t1[2] + phi.sin() * t2[2],
     ];
     let axial = cone.half_angle.cos();
     let transverse = cone.half_angle.sin();
     Some(Point3::new(
-        cone.apex[0] + uv[1] * (axial * cone.axis[0] + transverse * radial[0]),
-        cone.apex[1] + uv[1] * (axial * cone.axis[1] + transverse * radial[1]),
-        cone.apex[2] + uv[1] * (axial * cone.axis[2] + transverse * radial[2]),
+        cone.apex[0] + uv[1] * (axial * axis[0] + transverse * radial[0]),
+        cone.apex[1] + uv[1] * (axial * axis[1] + transverse * radial[1]),
+        cone.apex[2] + uv[1] * (axial * axis[2] + transverse * radial[2]),
     ))
 }
 
 pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<Point3> {
-    if !parameter_in_closed_range(uv[0], cylinder.u_range)
-        || !parameter_in_closed_range(uv[1], cylinder.v_range)
+    if !parameter_in_closed_range(uv[0], cylinder.u_range.get())
+        || !parameter_in_closed_range(uv[1], cylinder.v_range.get())
     {
         return None;
     }
-    let radius = cylinder.radius;
+    let radius = cylinder.radius.get();
     let angle = uv[0] / radius;
-    let axis = Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]);
-    let ref_direction = Vector3::new(
-        cylinder.reference_direction[0],
-        cylinder.reference_direction[1],
-        cylinder.reference_direction[2],
-    );
+    let axis = Vector3::from(cylinder.axis.get());
+    let ref_direction = Vector3::from(cylinder.reference_direction.get());
     let perpendicular = axis.cross(ref_direction);
     Some(Point3::new(
         cylinder.origin[0]
@@ -1888,9 +1876,9 @@ pub struct B2Circle {
     /// Two center coordinates in the host-implied carrier plane.
     pub center_pair: [f64; 2],
     /// Circle radius in millimetres.
-    pub radius: f64,
+    pub radius: PositiveFinite,
     /// Arc-length parameter interval.
-    pub range: [f64; 2],
+    pub range: OrderedInterval,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
 }
@@ -1899,7 +1887,7 @@ pub struct B2Circle {
 impl B2Circle {
     /// Whether the interval spans one complete circumference.
     pub fn full_circle(&self) -> bool {
-        circle_range_is_full_turn(self.radius, self.range)
+        circle_range_is_full_turn(self.radius.get(), self.range.get())
     }
 }
 
@@ -1924,13 +1912,13 @@ pub struct B2SpatialCircle {
     /// Circle centre.
     pub center: Point3,
     /// Unit circle-plane normal.
-    pub axis: Vector3,
+    pub axis: ExactNormUnitVector3,
     /// Unit radial reference direction.
-    pub ref_direction: Vector3,
+    pub ref_direction: ExactNormUnitVector3,
     /// Positive radius in millimetres.
-    pub radius: f64,
+    pub radius: PositiveFinite,
     /// Stored arc-length interval.
-    pub range: [f64; 2],
+    pub range: OrderedInterval,
     /// Stored chart shift.
     pub chart_shift: f64,
 }
@@ -1959,24 +1947,25 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
         return None;
     }
     let center = Point3::new(values[0], values[1], values[2]);
-    let ref_direction = Vector3::new(values[3], values[4], values[5]);
+    let stored_reference = Vector3::new(values[3], values[4], values[5]);
     let transverse = Vector3::new(values[6], values[7], values[8]);
-    let ref_norm = ref_direction.norm();
     let transverse_norm = transverse.norm();
-    let orthogonality = ref_direction.dot(transverse).abs();
-    let axis = ref_direction.cross(transverse).unit()?;
+    let orthogonality = stored_reference.dot(transverse).abs();
+    let cross = stored_reference.cross(transverse);
+    let axis = ExactNormUnitVector3::normalized([cross.x, cross.y, cross.z])?;
     let radius = values[9];
     let range = [values[10], values[11]];
     if !values.iter().all(|value| value.is_finite())
-        || (ref_norm - 1.0).abs() > EPS_B2_RECORD_EXACT_GEOMETRY
         || (transverse_norm - 1.0).abs() > EPS_B2_RECORD_EXACT_GEOMETRY
         || orthogonality > EPS_B2_RECORD_EXACT_GEOMETRY
-        || radius <= 0.0
-        || range[0] >= range[1]
         || values[12].to_bits() != 1.0f64.to_bits()
     {
         return None;
     }
+    let ref_direction =
+        ExactNormUnitVector3::new([stored_reference.x, stored_reference.y, stored_reference.z])?;
+    let radius = PositiveFinite::new(radius)?;
+    let range = OrderedInterval::new(range)?;
     Some(B2SpatialCircle {
         pos: frame.pos,
         header_token: frame.header_token,
@@ -2087,15 +2076,15 @@ pub struct B2Cylinder {
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: [f64; 3],
+    pub reference_direction: RelaxedHypotUnitVector3,
     /// Cylinder radius.
-    pub radius: f64,
+    pub radius: PositiveFinite,
     /// Arc-length circumferential range.
-    pub u_range: [f64; 2],
+    pub u_range: OrderedInterval,
     /// Axial range.
-    pub v_range: [f64; 2],
+    pub v_range: OrderedInterval,
     /// Layout-specific frame data.
     pub layout: B2CylinderLayout,
 }
@@ -2108,7 +2097,7 @@ pub enum B2CylinderLayout {
     /// Layout `0x52` with a fixed X-axis frame.
     Full52,
     /// Layout `0x62` with a stored planar vector.
-    RangeOrigin { stored_vector: [f64; 2] },
+    RangeOrigin { stored_vector: RelaxedUnitVector2 },
 }
 
 impl B2Cylinder {
@@ -2122,20 +2111,16 @@ impl B2Cylinder {
 
     pub(crate) fn range_origin(&self) -> Option<f64> {
         matches!(self.layout, B2CylinderLayout::RangeOrigin { .. })
-            .then(|| cylinder_range_origin(self.radius, self.u_range))
+            .then(|| cylinder_range_origin(self.radius.get(), self.u_range.get()))
     }
 
     pub(crate) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
         Some(SurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
-                Point3::new(self.origin[0], self.origin[1], self.origin[2]),
-                Vector3::new(self.axis[0], self.axis[1], self.axis[2]),
-                Vector3::new(
-                    self.reference_direction[0],
-                    self.reference_direction[1],
-                    self.reference_direction[2],
-                ),
-                self.radius,
+                Point3::from(self.origin),
+                Vector3::from(self.axis.get()),
+                Vector3::from(self.reference_direction.get()),
+                self.radius.get(),
             )
             .ok()?,
         ))
@@ -2150,11 +2135,11 @@ pub struct B2Cone {
     /// Cone apex.
     pub apex: [f64; 3],
     /// First transverse unit direction.
-    pub t1: [f64; 3],
+    pub t1: RelaxedUnitVector3,
     /// Second transverse unit direction.
-    pub t2: [f64; 3],
+    pub t2: RelaxedUnitVector3,
     /// Cone-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: RelaxedUnitVector3,
     /// Cone half-angle in radians.
     pub half_angle: f64,
     /// Reference radius of the conical surface, independent of the active chart ranges.
@@ -2162,9 +2147,9 @@ pub struct B2Cone {
     /// Active azimuth interval.
     pub angular_range: [f64; 2],
     /// Native slant-coordinate range.
-    pub slant_range: [f64; 2],
+    pub slant_range: OrderedInterval,
     /// Divisor mapping the stored U coordinate to azimuth.
-    pub angular_scale: f64,
+    pub angular_scale: PositiveFinite,
     /// Full-turn azimuth chart domain.
     pub angular_domain: [f64; 2],
 }
@@ -2181,17 +2166,17 @@ pub struct B2Revolution {
     /// Axis-frame origin.
     pub origin: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: ExactUnitVector3,
     /// Revolution-axis direction.
-    pub axis: [f64; 3],
+    pub axis: ExactUnitVector3,
     /// Stored angular parameter interval.
     pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
-    pub profile_range: [f64; 2],
+    pub profile_range: OrderedInterval,
     /// Positive angular chart scale.
-    pub angular_scale: f64,
+    pub angular_scale: PositiveFinite,
 }
 
 /// One revolution record whose profile interval identifies exactly one
@@ -2214,9 +2199,9 @@ pub struct B2LineProfile {
     /// Stored line origin.
     pub origin: [f64; 3],
     /// Unit line direction.
-    pub direction: [f64; 3],
+    pub direction: ExactUnitVector3,
     /// Increasing stored parameter interval.
-    pub range: [f64; 2],
+    pub range: OrderedInterval,
 }
 
 /// Radius-scaled sphere chart stored in a `b2 03 2a` record.
@@ -2227,13 +2212,13 @@ pub struct B2Sphere {
     /// Sphere centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: ExactHypotUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: ExactHypotUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: ExactHypotUnitVector3,
     /// Sphere radius.
-    pub radius: f64,
+    pub radius: PositiveFinite,
     /// Active azimuth interval.
     pub azimuth_range: [f64; 2],
     /// Active latitude interval.
@@ -2248,15 +2233,15 @@ pub struct B2Torus {
     /// Torus centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: ExactUnitVector3,
     /// Torus-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: ExactUnitVector3,
     /// Major radius.
-    pub major_radius: f64,
+    pub major_radius: PositiveFinite,
     /// Minor radius.
-    pub minor_radius: f64,
+    pub minor_radius: PositiveFinite,
     /// Active major-angle interval.
     pub major_angular_range: [f64; 2],
     /// Full-turn major-angle chart domain.
@@ -2266,9 +2251,9 @@ pub struct B2Torus {
     /// Full-turn minor-angle chart domain.
     pub minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
-    pub major_scale: f64,
+    pub major_scale: PositiveFinite,
     /// Scale from minor angle to stored V parameter.
-    pub minor_scale: f64,
+    pub minor_scale: PositiveFinite,
 }
 
 /// Constant `b2 03 65` separator preceding a typed group opener.
@@ -2458,30 +2443,32 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         if slant_range[0].abs() <= EPS_B2_RECORD_EXACT_GEOMETRY {
             slant_range[0] = 0.0;
         }
-        let unit = |v: [f64; 3]| {
-            ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < EPS_B2_RECORD_GEOMETRY
-        };
         let cross = [
             t1[1] * t2[2] - t1[2] * t2[1],
             t1[2] * t2[0] - t1[0] * t2[2],
             t1[0] * t2[1] - t1[1] * t2[0],
         ];
+        let unit = RelaxedUnitVector3::new;
+        let (Some(t1), Some(t2), Some(axis)) = (unit(t1), unit(t2), unit(axis)) else {
+            continue;
+        };
+        let (Some(slant_range), Some(angular_scale)) = (
+            OrderedInterval::new(slant_range),
+            PositiveFinite::new(angular_scale),
+        ) else {
+            continue;
+        };
         if values.iter().all(|value| value.is_finite())
-            && unit(t1)
-            && unit(t2)
-            && unit(axis)
             && cross
                 .iter()
-                .zip(axis)
+                .zip(axis.get())
                 .all(|(cross, axis)| (cross - axis).abs() <= EPS_B2_RECORD_GEOMETRY)
             && 0.0 < half_angle
             && half_angle < std::f64::consts::FRAC_PI_2
             && periodic_angular_range_is_valid(angular_range, angular_domain)
-            && 0.0 < angular_scale
             && values[19] == 1.0
             && values[20] == 0.0
-            && 0.0 <= slant_range[0]
-            && slant_range[0] < slant_range[1]
+            && 0.0 <= slant_range.lower()
         {
             out.push(B2Cone {
                 pos,
@@ -2552,37 +2539,36 @@ pub(crate) fn b2_revolutions_from_records(
             .try_into()
             .expect("three second-direction values");
         let axis: [f64; 3] = axis_frame[9..12].try_into().expect("three axis values");
-        let squared_length = |direction: [f64; 3]| {
-            direction
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>()
-        };
         let cross = [
             direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
             direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
             direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
+        let unit = ExactUnitVector3::new;
+        let (Some(direction_x), Some(direction_y), Some(axis)) =
+            (unit(direction_x), unit(direction_y), unit(axis))
+        else {
+            continue;
+        };
+        let (Some(profile_range), Some(angular_scale)) = (
+            OrderedInterval::new([bounds[2], bounds[3]]),
+            PositiveFinite::new(angular_scale),
+        ) else {
+            continue;
+        };
         if axis_frame
             .iter()
             .chain(&bounds)
-            .chain(&[angular_scale, mean_angle_parameter])
+            .chain(&[mean_angle_parameter])
             .any(|value| !value.is_finite())
             || profile_allocation_id == 0
-            || angular_scale <= 0.0
-            || bounds[2] >= bounds[3]
-            || [direction_x, direction_y, axis]
-                .into_iter()
-                .any(|direction| {
-                    (squared_length(direction) - 1.0).abs() > EPS_B2_RECORD_EXACT_GEOMETRY
-                })
             || cross
                 .iter()
-                .zip(axis)
+                .zip(axis.get())
                 .any(|(cross, axis)| (cross - axis).abs() > EPS_B2_RECORD_EXACT_GEOMETRY)
-            || bounds[0] / angular_scale != 0.5
-            || (bounds[1] - bounds[0]) / angular_scale != std::f64::consts::TAU
-            || mean_angle_parameter / angular_scale != std::f64::consts::PI + 0.5
+            || bounds[0] / angular_scale.get() != 0.5
+            || (bounds[1] - bounds[0]) / angular_scale.get() != std::f64::consts::TAU
+            || mean_angle_parameter / angular_scale.get() != std::f64::consts::PI + 0.5
         {
             continue;
         }
@@ -2595,7 +2581,7 @@ pub(crate) fn b2_revolutions_from_records(
             direction_y,
             axis,
             angular_range: [bounds[0], bounds[1]],
-            profile_range: [bounds[2], bounds[3]],
+            profile_range,
             angular_scale,
         });
     }
@@ -2626,15 +2612,18 @@ pub(crate) fn b2_resolved_revolutions_from_records(
             let identity_profiles = identity_profiles.collect::<Vec<_>>();
             let profile = match identity_profiles.as_slice() {
                 [profile]
-                    if profile.range[0].to_bits() == revolution.profile_range[0].to_bits()
-                        && profile.range[1].to_bits() == revolution.profile_range[1].to_bits() =>
+                    if profile.range.lower().to_bits()
+                        == revolution.profile_range.lower().to_bits()
+                        && profile.range.upper().to_bits()
+                            == revolution.profile_range.upper().to_bits() =>
                 {
                     (*profile).clone()
                 }
                 [] => {
                     let mut interval_profiles = circles.iter().filter(|circle| {
-                        circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
-                            && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
+                        circle.range.lower().to_bits() == revolution.profile_range.lower().to_bits()
+                            && circle.range.upper().to_bits()
+                                == revolution.profile_range.upper().to_bits()
                     });
                     let profile = interval_profiles.next()?;
                     interval_profiles
@@ -2673,19 +2662,14 @@ pub(crate) fn b2_line_profiles_from_records(
             }
             let values = read_f64_array::<9>(data, frame.payload)?;
             let direction: [f64; 3] = values[3..6].try_into().expect("three direction values");
-            let squared_length = direction
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>();
-            ((squared_length - 1.0).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
-                && values[6].to_bits() == 1.0_f64.to_bits()
-                && values[7] < values[8])
-                .then_some(B2LineProfile {
-                    pos: frame.pos,
-                    origin: values[0..3].try_into().expect("three origin values"),
-                    direction,
-                    range: [values[7], values[8]],
-                })
+            let direction = ExactUnitVector3::new(direction)?;
+            let range = OrderedInterval::new([values[7], values[8]])?;
+            (values[6].to_bits() == 1.0_f64.to_bits()).then_some(B2LineProfile {
+                pos: frame.pos,
+                origin: values[0..3].try_into().expect("three origin values"),
+                direction,
+                range,
+            })
         })
         .collect()
 }
@@ -2724,33 +2708,31 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let dot = |first: [f64; 3], second: [f64; 3]| {
                 first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
             };
-            let unit =
-                |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY;
             let cross = [
                 direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
                 direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
                 direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
             ];
-            (values.iter().all(|value| value.is_finite())
-                && unit(direction_x)
-                && unit(direction_y)
-                && unit(axis)
-                && dot(direction_x, direction_y).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
-                && dot(direction_x, axis).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
-                && dot(direction_y, axis).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
+            values.iter().all(|value| value.is_finite()).then_some(())?;
+            let direction_x = ExactUnitVector3::new(direction_x)?;
+            let direction_y = ExactUnitVector3::new(direction_y)?;
+            let axis = ExactUnitVector3::new(axis)?;
+            let major_radius = PositiveFinite::new(major_radius)?;
+            let minor_radius = PositiveFinite::new(minor_radius)?;
+            let major_scale = PositiveFinite::new(major_scale)?;
+            let minor_scale = PositiveFinite::new(minor_scale)?;
+            (dot(direction_x.get(), direction_y.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
+                && dot(direction_x.get(), axis.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
+                && dot(direction_y.get(), axis.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
                 && cross
                     .iter()
-                    .zip(axis)
+                    .zip(axis.get())
                     .map(|(first, second)| (first - second).powi(2))
                     .sum::<f64>()
                     .sqrt()
                     <= EPS_B2_RECORD_EXACT_GEOMETRY
-                && major_radius > 0.0
-                && minor_radius > 0.0
                 && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
                 && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
-                && major_scale > 0.0
-                && minor_scale > 0.0
                 && values[24] == 0.0)
                 .then_some(B2Torus {
                     pos: frame.pos,
@@ -2802,34 +2784,31 @@ pub(crate) fn b2_spheres_from_records(
             let latitude_range = [values[15], values[16]];
             let construction_radius = values[17];
             let chart_origin = values[18];
-            let scaled_length_is_radius = |value: [f64; 3]| {
-                let length = value[0].hypot(value[1]).hypot(value[2]);
-                length.is_finite()
-                    && ((length / radius) - 1.0).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
-            };
             (values.iter().all(|value| value.is_finite())
-                && radius > 0.0
                 && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
                 && construction_radius.to_bits() == radius.to_bits()
                 && chart_origin.to_bits()
                     == (radius
                         * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI))
-                        .to_bits()
-                && scaled_length_is_radius(stored_x)
-                && scaled_length_is_radius(stored_y)
-                && scaled_length_is_radius(stored_axis))
+                        .to_bits())
             .then_some(())?;
-            let direction_x = stored_x.map(|value| value / radius);
-            let direction_y = stored_y.map(|value| value / radius);
-            let axis = stored_axis.map(|value| value / radius);
+            let radius = PositiveFinite::new(radius)?;
+            let unit_direction =
+                |stored: [f64; 3]| ExactHypotUnitVector3::from_scaled(stored, radius.get());
+            let direction_x = unit_direction(stored_x)?;
+            let direction_y = unit_direction(stored_y)?;
+            let axis = unit_direction(stored_axis)?;
             let cross = [
-                direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
-                direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
-                direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+                direction_x.get()[1] * direction_y.get()[2]
+                    - direction_x.get()[2] * direction_y.get()[1],
+                direction_x.get()[2] * direction_y.get()[0]
+                    - direction_x.get()[0] * direction_y.get()[2],
+                direction_x.get()[0] * direction_y.get()[1]
+                    - direction_x.get()[1] * direction_y.get()[0],
             ];
             cross
                 .iter()
-                .zip(axis)
+                .zip(axis.get())
                 .all(|(cross, axis)| (cross - axis).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY)
                 .then_some(B2Sphere {
                     pos: frame.pos,
@@ -2888,17 +2867,18 @@ pub(crate) fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]
 /// Convert a decoded B2 slant-coordinate cone chart to its equivalent IR carrier.
 #[must_use]
 pub fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
-    let slant = cone.slant_range[0];
+    let slant = cone.slant_range.lower();
     let axial = slant * cone.half_angle.cos();
+    let axis = cone.axis.get();
     Some(SurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(
-                cone.apex[0] + axial * cone.axis[0],
-                cone.apex[1] + axial * cone.axis[1],
-                cone.apex[2] + axial * cone.axis[2],
+                cone.apex[0] + axial * axis[0],
+                cone.apex[1] + axial * axis[1],
+                cone.apex[2] + axial * axis[2],
             ),
-            Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
-            Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
+            Vector3::from(axis),
+            Vector3::from(cone.t1.get()),
             slant * cone.half_angle.sin(),
             1.0,
             cone.half_angle,
@@ -2913,13 +2893,9 @@ pub fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
-            Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
-            Vector3::new(
-                sphere.direction_x[0],
-                sphere.direction_x[1],
-                sphere.direction_x[2],
-            ),
-            sphere.radius,
+            Vector3::from(sphere.axis.get()),
+            Vector3::from(sphere.direction_x.get()),
+            sphere.radius.get(),
         )
         .ok()?,
     ))
@@ -2931,14 +2907,10 @@ pub fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             Point3::new(torus.center[0], torus.center[1], torus.center[2]),
-            Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
-            Vector3::new(
-                torus.direction_x[0],
-                torus.direction_x[1],
-                torus.direction_x[2],
-            ),
-            torus.major_radius,
-            torus.minor_radius,
+            Vector3::from(torus.axis.get()),
+            Vector3::from(torus.direction_x.get()),
+            torus.major_radius.get(),
+            torus.minor_radius.get(),
         )
         .ok()?,
     ))
@@ -2984,29 +2956,26 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = read_f64_array::<2>(data, p + 57)?;
             let v_range = read_f64_array::<2>(data, p + 73)?;
             if one != 1.0
-                || radius <= 0.0
                 || origin_values.iter().any(|value| !value.is_finite())
-                || vector.iter().any(|value| !value.is_finite())
-                || u_range.iter().any(|value| !value.is_finite())
-                || v_range.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_B2_RECORD_GEOMETRY
-                || u_range[0] >= u_range[1]
-                || v_range[0] >= v_range[1]
                 || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
+            let vector = RelaxedUnitVector2::from_hypot(vector)?;
+            let radius = PositiveFinite::new(radius)?;
+            let u_range = OrderedInterval::new(u_range)?;
+            let v_range = OrderedInterval::new(v_range)?;
             let axis = match frame_token {
-                0x19 => Vector3::new(vector[0], vector[1], 0.0),
-                0x1c => Vector3::new(vector[1], -vector[0], 0.0),
+                0x19 => vector,
+                0x1c => vector.reverse_quarter_turn(),
                 _ => return None,
             };
-            let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
+            let ref_direction = axis.quarter_turn();
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: [axis.x, axis.y, axis.z],
-                reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                axis: axis.in_plane(CoordinatePlane::Xy),
+                reference_direction: ref_direction.in_plane(CoordinatePlane::Xy),
                 radius,
                 u_range,
                 v_range,
@@ -3024,21 +2993,19 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let radius = f64_le(data, p + 41)?;
             let u_range = read_f64_array::<2>(data, p + 49)?;
             let v_range = read_f64_array::<2>(data, p + 65)?;
-            if radius <= 0.0
-                || origin_values.iter().any(|value| !value.is_finite())
-                || u_range.iter().any(|value| !value.is_finite())
-                || v_range.iter().any(|value| !value.is_finite())
-                || u_range[0] >= u_range[1]
-                || v_range[0] >= v_range[1]
+            if origin_values.iter().any(|value| !value.is_finite())
                 || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
+            let radius = PositiveFinite::new(radius)?;
+            let u_range = OrderedInterval::new(u_range)?;
+            let v_range = OrderedInterval::new(v_range)?;
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: [1.0, 0.0, 0.0],
-                reference_direction: [0.0, 1.0, 0.0],
+                axis: RelaxedHypotUnitVector3::X,
+                reference_direction: RelaxedHypotUnitVector3::Y,
                 radius,
                 u_range,
                 v_range,
@@ -3054,25 +3021,22 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let range_origin = f64_le(data, p + 90)?;
             let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
-                || radius <= 0.0
                 || origin_values.iter().any(|value| !value.is_finite())
-                || vector.iter().any(|value| !value.is_finite())
-                || u_range.iter().any(|value| !value.is_finite())
-                || v_range.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_B2_RECORD_GEOMETRY
                 || !range_origin.is_finite()
                 || range_origin.to_bits() != expected_range_origin.to_bits()
-                || u_range[0] >= u_range[1]
-                || v_range[0] >= v_range[1]
                 || !circle_range_is_within_full_turn(radius, u_range)
             {
                 return None;
             }
+            let vector = RelaxedUnitVector2::from_hypot(vector)?;
+            let radius = PositiveFinite::new(radius)?;
+            let u_range = OrderedInterval::new(u_range)?;
+            let v_range = OrderedInterval::new(v_range)?;
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: [0.0, 1.0, 0.0],
-                reference_direction: [vector[0], 0.0, vector[1]],
+                axis: RelaxedHypotUnitVector3::Y,
+                reference_direction: vector.in_plane(CoordinatePlane::Xz),
                 radius,
                 u_range,
                 v_range,
@@ -3128,11 +3092,14 @@ pub(crate) fn b2_circles_from_records(
             continue;
         };
         let [c1, c2, radius, lo, hi] = values;
+        let (Some(radius), Some(range)) =
+            (PositiveFinite::new(radius), OrderedInterval::new([lo, hi]))
+        else {
+            continue;
+        };
         if values.iter().all(|v| v.is_finite())
-            && 0.0 < radius
             && c1.abs() <= 1e6
             && c2.abs() <= 1e6
-            && hi > lo
             && chart_shift.is_finite()
         {
             out.push(B2Circle {
@@ -3142,7 +3109,7 @@ pub(crate) fn b2_circles_from_records(
                 frame_token,
                 center_pair: [c1, c2],
                 radius,
-                range: [lo, hi],
+                range,
                 chart_shift,
             });
         }

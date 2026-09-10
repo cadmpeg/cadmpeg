@@ -7,6 +7,8 @@ use super::{
     represented_sketch_features,
 };
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName, FeatureInputScalar,
@@ -33,7 +35,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         parent: "history".into(),
         xml_tag: xml_tag.into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal,
         name: name.into(),
         kind: name.into(),
@@ -80,7 +82,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         parent: "lane".into(),
         ordinal: 0,
         offset,
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
     let scalar = |id: &str, offset, name: &str| FeatureInputScalar {
@@ -224,7 +226,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("50".into()),
+            source_id: FeatureSource::from_value(50),
             ordinal: 0,
             name: "Mirror".into(),
             kind: "Mirror".into(),
@@ -385,7 +387,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("228".into()),
+        source_id: FeatureSource::from_value(228),
         ordinal: 1,
         name: "CirPattern1".into(),
         kind: "CirPattern".into(),
@@ -402,7 +404,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("224".into()),
+        source_id: FeatureSource::from_value(224),
         ordinal: 0,
         name: "HoleWizard1".into(),
         kind: "HoleWizard".into(),
@@ -432,7 +434,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(228),
+            object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
         scalars: Vec::new(),
@@ -561,7 +563,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("228".into()),
+        source_id: FeatureSource::from_value(228),
         ordinal: 1,
         name: "CirPattern1".into(),
         kind: "CirPattern".into(),
@@ -594,7 +596,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(228),
+            object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
         scalars: Vec::new(),
@@ -720,7 +722,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     normalize_indexed_curve_entities(&mut lane);
     bind_resolved_curve_vertices(&mut lane);
 
-    assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
+    assert_eq!(lane.sketch_entities[4].kind(), SketchInputKind::Point);
 }
 
 #[test]
@@ -787,8 +789,11 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
 
     bind_resolved_curve_vertices(&mut lane);
 
-    assert_eq!(lane.sketch_entities[0].kind, SketchInputKind::LineOrCircle);
-    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
+    assert_eq!(
+        lane.sketch_entities[0].kind(),
+        SketchInputKind::LineOrCircle
+    );
+    assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
 }
 
 #[test]
@@ -798,7 +803,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("7".into()),
+        source_id: FeatureSource::from_value(7),
         ordinal: 0,
         name: "Position".into(),
         kind: "3DSketch".into(),

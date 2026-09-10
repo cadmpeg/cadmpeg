@@ -797,13 +797,9 @@ pub(crate) fn project_surface_sweep_profiles(
                 .filter(|prefix| (start..end).contains(prefix))
                 .and_then(|prefix| component_profile_source_at(&lane.native_payload, prefix))
                 .and_then(|source| {
-                    let native = history_features.iter().find(|candidate| {
-                        candidate
-                            .source_id
-                            .as_deref()
-                            .and_then(|value| value.parse::<u32>().ok())
-                            == Some(source)
-                    })?;
+                    let native = history_features
+                        .iter()
+                        .find(|candidate| candidate.source_value() == Some(source))?;
                     feature_ids_by_native
                         .get(native.id.as_str())
                         .cloned()

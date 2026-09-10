@@ -142,10 +142,35 @@ pub(crate) struct MeshAttribute {
     pub(crate) groups: Vec<(u32, String)>,
     /// The channel's encoded elements.
     pub(crate) elements: MeshElements,
-    /// Which entities the values address.
-    pub(crate) domain: MeshAttributeDomain,
-    /// Explicit corner positions selected by the optional index stream.
-    pub(crate) indices: Option<Vec<u32>>,
+    /// Which entities the values address, with the corner positions the
+    /// addressing carries.
+    pub(crate) addressing: MeshAttributeAddressing,
+}
+
+/// How an attribute channel's values are addressed, with the data that form
+/// carries.
+pub(crate) enum MeshAttributeAddressing {
+    /// One value per vertex.
+    Vertex,
+    /// One value per triangle corner, selected by the decoded corner positions
+    /// of the channel's index stream.
+    Corner(Vec<u32>),
+    /// A corner channel whose unsettled element width leaves its index stream
+    /// undecoded.
+    UndecodedCorner,
+    /// One value per triangle.
+    Triangle,
+}
+
+impl MeshAttributeAddressing {
+    /// The domain the addressing belongs to.
+    pub(crate) fn domain(&self) -> MeshAttributeDomain {
+        match self {
+            Self::Vertex => MeshAttributeDomain::Vertex,
+            Self::Corner(_) | Self::UndecodedCorner => MeshAttributeDomain::Corner,
+            Self::Triangle => MeshAttributeDomain::Triangle,
+        }
+    }
 }
 
 /// The width of a floating-point element.
@@ -276,16 +301,15 @@ impl MeshAttribute {
     ) -> Option<Vec<u32>> {
         let count = self.count()?;
         let vertex_count = u32::try_from(vertices).ok()?;
-        let positions = match self.domain {
-            MeshAttributeDomain::Vertex => {
-                (count == vertex_count && self.indices.is_none()).then_some(&[][..])?
-            }
-            MeshAttributeDomain::Corner => {
-                let positions = self.indices.as_deref()?;
+        let positions = match &self.addressing {
+            MeshAttributeAddressing::Vertex => (count == vertex_count).then_some(&[][..])?,
+            MeshAttributeAddressing::Corner(positions) => {
                 let overrides = count.checked_sub(vertex_count)?;
-                (usize::try_from(overrides).ok()? == positions.len()).then_some(positions)?
+                (usize::try_from(overrides).ok()? == positions.len()).then_some(&positions[..])?
             }
-            MeshAttributeDomain::Triangle => return None,
+            MeshAttributeAddressing::UndecodedCorner | MeshAttributeAddressing::Triangle => {
+                return None
+            }
         };
 
         let mut selectors = Vec::with_capacity(triangles.len().checked_mul(3)?);
@@ -1415,7 +1439,7 @@ fn decode_corner_normals(
         ])?);
     }
 
-    if attribute.domain == MeshAttributeDomain::Triangle {
+    if attribute.addressing.domain() == MeshAttributeDomain::Triangle {
         return Err(malformed(
             "paramesh role-0 packed directions do not address triangles",
         ));
@@ -1765,8 +1789,11 @@ fn registry_attributes(
                     values: stream.bytes.clone(),
                 },
             },
-            domain: registration.domain,
-            indices: None,
+            addressing: match registration.domain {
+                MeshAttributeDomain::Vertex => MeshAttributeAddressing::Vertex,
+                MeshAttributeDomain::Corner => MeshAttributeAddressing::UndecodedCorner,
+                MeshAttributeDomain::Triangle => MeshAttributeAddressing::Triangle,
+            },
         };
         if attribute.item_size().is_some() && attribute.count().is_none() {
             return Err(malformed(
@@ -1774,7 +1801,7 @@ fn registry_attributes(
             ));
         }
         if let (Some(index_stream), Some(count)) = (index_stream, attribute.count()) {
-            attribute.indices = Some(decode_index_positions(
+            attribute.addressing = MeshAttributeAddressing::Corner(decode_index_positions(
                 &index_stream.bytes,
                 count,
                 vertices,
@@ -1782,7 +1809,7 @@ fn registry_attributes(
             )?);
         }
         if attribute.item_size().is_some()
-            && attribute.domain == MeshAttributeDomain::Vertex
+            && attribute.addressing.domain() == MeshAttributeDomain::Vertex
             && attribute
                 .count()
                 .is_none_or(|count| usize::try_from(count) != Ok(vertices))
@@ -1792,7 +1819,7 @@ fn registry_attributes(
             ));
         }
         if attribute.item_size().is_some()
-            && attribute.domain == MeshAttributeDomain::Triangle
+            && attribute.addressing.domain() == MeshAttributeDomain::Triangle
             && attribute
                 .count()
                 .is_none_or(|count| usize::try_from(count).ok() != corners.checked_div(3))
@@ -1833,7 +1860,8 @@ fn registry_triangle_groups(
         .iter()
         .filter_map(|attribute| match &attribute.elements {
             MeshElements::TriangleDelta(stream)
-                if attribute.domain == MeshAttributeDomain::Triangle && attribute.role == 0 =>
+                if attribute.addressing.domain() == MeshAttributeDomain::Triangle
+                    && attribute.role == 0 =>
             {
                 Some((attribute, stream.decoded()))
             }
@@ -1914,7 +1942,7 @@ fn registry_texture_ids(attributes: &[MeshAttribute]) -> Result<Option<Vec<u32>>
             "paramesh registry declares more than one tid channel",
         ));
     };
-    if channel.domain != MeshAttributeDomain::Triangle
+    if channel.addressing.domain() != MeshAttributeDomain::Triangle
         || channel.role != 1
         || channel.resource_guid.is_none()
         || !channel.groups.is_empty()
@@ -2270,7 +2298,7 @@ mod tests {
         ))
         .expect("mesh container");
         let attribute = &mesh.attributes[0];
-        assert_eq!(attribute.domain, MeshAttributeDomain::Vertex);
+        assert_eq!(attribute.addressing.domain(), MeshAttributeDomain::Vertex);
         assert_eq!(attribute.role, 3);
         assert_eq!(attribute.item_size(), Some(8));
         assert_eq!(attribute.count(), Some(3));
@@ -2307,10 +2335,12 @@ mod tests {
         ))
         .expect("mesh container");
         let attribute = &mesh.attributes[0];
-        assert_eq!(attribute.domain, MeshAttributeDomain::Corner);
         assert_eq!(attribute.item_size(), Some(16));
         assert_eq!(attribute.count(), Some(5));
-        assert_eq!(attribute.indices, Some(vec![0, 1]));
+        assert!(matches!(
+            &attribute.addressing,
+            MeshAttributeAddressing::Corner(positions) if positions == &[0, 1]
+        ));
     }
 
     #[test]
@@ -2391,8 +2421,10 @@ mod tests {
             mesh.corner_normals,
             [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
         );
-        assert_eq!(mesh.attributes[0].domain, MeshAttributeDomain::Corner);
-        assert_eq!(mesh.attributes[0].indices, Some(vec![1]));
+        assert!(matches!(
+            &mesh.attributes[0].addressing,
+            MeshAttributeAddressing::Corner(positions) if positions == &[1]
+        ));
     }
 
     #[test]
@@ -2548,7 +2580,7 @@ mod tests {
         ))
         .expect("mesh container");
         let attribute = &mesh.attributes[0];
-        assert_eq!(attribute.domain, MeshAttributeDomain::Triangle);
+        assert_eq!(attribute.addressing.domain(), MeshAttributeDomain::Triangle);
         assert_eq!(attribute.element_code(), 7);
         assert_eq!(attribute.item_size(), Some(4));
         assert_eq!(attribute.count(), Some(1));

@@ -45,6 +45,7 @@ pub(crate) fn write_seekable(
     let ir = resolution.ir();
     let namespace = resolution.namespace();
     let document = resolution.document();
+    let schema_version = resolution.schema_version();
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
@@ -57,7 +58,8 @@ pub(crate) fn write_seekable(
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
     let document_xml = patch_document(&source_document.data, &properties)?;
-    let written_graph = crate::persistence::parse_with_context(&document_xml, document, None)?;
+    let written_graph =
+        crate::persistence::parse_with_context(&document_xml, schema_version, None)?;
     validate_declarations(
         &objects,
         &extensions,
@@ -103,7 +105,7 @@ pub(crate) fn write_seekable(
     let notes = vec![
         format!(
             "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-            document.schema_version,
+            schema_version,
             document.file_version.as_str()
         ),
         "unsupported retained entries and unedited XML records were preserved".into(),

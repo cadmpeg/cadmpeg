@@ -550,12 +550,11 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     // A base type need not be registered by the same segment, so an unresolved
     // base GUID is legal; a resolved chain must still terminate.
     for design_type in &native.design_types {
-        if design_type.base_type_guid.as_ref().and_then(|field| {
-            field
-                .value
-                .as_ref()
-                .map(crate::records::DesignRelaxedGuidText::as_str)
-        }) == Some(design_type.type_guid.as_str())
+        if design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str)
+            == Some(design_type.type_guid.as_str())
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design type {} is its own base type",
@@ -566,13 +565,8 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         let mut cursor = design_type;
         while let Some(base) = cursor
             .base_type_guid
-            .as_ref()
-            .and_then(|field| {
-                field
-                    .value
-                    .as_ref()
-                    .map(crate::records::DesignRelaxedGuidText::as_str)
-            })
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str)
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {
@@ -847,9 +841,9 @@ pub(crate) fn validate_source_less_design_links(
     for (target, mut links) in groups {
         links.sort_by_key(|link| link.ordinal);
         for (ordinal, link) in links.iter().enumerate() {
-            if link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len()) {
+            if link.ordinal != ordinal as u32 {
                 return Err(CodecError::InvalidInput(format!(
-                    "F3D persistent design links for {target:?} require contiguous ordinals and only the final link current"
+                    "F3D persistent design links for {target:?} require contiguous ordinals"
                 )));
             }
         }
@@ -1093,14 +1087,15 @@ pub(crate) fn validate_source_less_design_links(
             .leading_tolerances
             .iter()
             .any(|value| !value.is_finite())
-            || (tail.evaluated_slot == EvaluatedToleranceSlot::Absent
-                && tail.trailing_field.is_some())
             || vertex_by_id
                 .get(tail.vertex.as_str())
                 .copied()
                 .is_none_or(|vertex| {
                     vertex.tolerance.is_some()
-                        != (tail.evaluated_slot == EvaluatedToleranceSlot::Evaluated)
+                        != matches!(
+                            tail.evaluated_slot,
+                            EvaluatedToleranceSlot::Evaluated { .. }
+                        )
                 })
         {
             return Err(CodecError::InvalidInput(format!(
@@ -1265,6 +1260,158 @@ pub(crate) fn validate_source_less_wire_vertices(
     Ok(WireVerticesValidated { target })
 }
 
+/// Resolved wire-ownership ordinals of one body.
+#[derive(Clone, Copy)]
+pub(crate) struct WireBodyOwnership {
+    /// Ordinal of the body's first region in `model.regions`.
+    pub(super) first_region: usize,
+    /// Ordinal of that region's first shell in `model.shells`.
+    pub(super) first_shell: usize,
+}
+
+/// Resolved wire-ownership ordinals of one region.
+#[derive(Clone, Copy)]
+pub(crate) struct WireRegionOwnership {
+    /// Ordinal of the owning body in `model.bodies`.
+    pub(super) body: usize,
+    /// Ordinal of the next region of the same body in `model.regions`.
+    pub(super) next_region: Option<usize>,
+    /// Ordinal of the region's first shell in `model.shells`.
+    pub(super) first_shell: usize,
+}
+
+/// Resolved wire-ownership ordinals of one shell.
+#[derive(Clone, Copy)]
+pub(crate) struct WireShellOwnership {
+    /// Ordinal of the owning region in `model.regions`.
+    pub(super) region: usize,
+    /// Ordinal of the next shell of the same region in `model.shells`.
+    pub(super) next_shell: Option<usize>,
+}
+
+/// Proof that [`validate_source_less_wire_ownership`] ran against the borrowed
+/// `CadIr`. The private fields keep construction inside this module, so the wire
+/// encoder reads resolved ordinals instead of re-searching the model and
+/// asserting that every lookup succeeds.
+pub(crate) struct WireOwnershipValidated {
+    bodies: Vec<WireBodyOwnership>,
+    regions: Vec<WireRegionOwnership>,
+    shells: Vec<WireShellOwnership>,
+}
+
+impl WireOwnershipValidated {
+    /// Per-body ordinals in `model.bodies` order.
+    pub(super) fn bodies(&self) -> &[WireBodyOwnership] {
+        &self.bodies
+    }
+
+    /// Per-region ordinals in `model.regions` order.
+    pub(super) fn regions(&self) -> &[WireRegionOwnership] {
+        &self.regions
+    }
+
+    /// Per-shell ordinals in `model.shells` order.
+    pub(super) fn shells(&self) -> &[WireShellOwnership] {
+        &self.shells
+    }
+}
+
+pub(crate) fn validate_source_less_wire_ownership(
+    target: &CadIr,
+) -> Result<WireOwnershipValidated, CodecError> {
+    let model = &target.model;
+    let inconsistent =
+        || CodecError::Malformed("source-less F3D wire ownership is inconsistent".into());
+    let region_ordinal =
+        |id: &cadmpeg_ir::ids::RegionId| model.regions.iter().position(|region| region.id == *id);
+    let shell_ordinal =
+        |id: &cadmpeg_ir::ids::ShellId| model.shells.iter().position(|shell| shell.id == *id);
+
+    let mut regions = Vec::with_capacity(model.regions.len());
+    for region in &model.regions {
+        let body = model
+            .bodies
+            .iter()
+            .position(|body| body.id == region.body && body.regions.contains(&region.id))
+            .ok_or_else(inconsistent)?;
+        let position = model.bodies[body]
+            .regions
+            .iter()
+            .position(|id| *id == region.id)
+            .ok_or_else(inconsistent)?;
+        let next_region = model.bodies[body]
+            .regions
+            .get(position + 1)
+            .map(|id| region_ordinal(id).ok_or_else(inconsistent))
+            .transpose()?;
+        let first_shell = region
+            .shells
+            .first()
+            .and_then(&shell_ordinal)
+            .ok_or_else(inconsistent)?;
+        if region.shells.iter().any(|id| {
+            !model
+                .shells
+                .iter()
+                .any(|shell| shell.id == *id && shell.region == region.id)
+        }) {
+            return Err(inconsistent());
+        }
+        regions.push(WireRegionOwnership {
+            body,
+            next_region,
+            first_shell,
+        });
+    }
+
+    let mut bodies = Vec::with_capacity(model.bodies.len());
+    for body in &model.bodies {
+        let first_region = body
+            .regions
+            .first()
+            .and_then(&region_ordinal)
+            .ok_or_else(inconsistent)?;
+        if body.regions.iter().any(|id| {
+            !model
+                .regions
+                .iter()
+                .any(|region| region.id == *id && region.body == body.id)
+        }) {
+            return Err(inconsistent());
+        }
+        bodies.push(WireBodyOwnership {
+            first_region,
+            first_shell: regions[first_region].first_shell,
+        });
+    }
+
+    let mut shells = Vec::with_capacity(model.shells.len());
+    for shell in &model.shells {
+        let region = model
+            .regions
+            .iter()
+            .position(|region| region.id == shell.region && region.shells.contains(&shell.id))
+            .ok_or_else(inconsistent)?;
+        let position = model.regions[region]
+            .shells
+            .iter()
+            .position(|id| *id == shell.id)
+            .ok_or_else(inconsistent)?;
+        let next_shell = model.regions[region]
+            .shells
+            .get(position + 1)
+            .map(|id| shell_ordinal(id).ok_or_else(inconsistent))
+            .transpose()?;
+        shells.push(WireShellOwnership { region, next_shell });
+    }
+
+    Ok(WireOwnershipValidated {
+        bodies,
+        regions,
+        shells,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{validate_source_less_design_links, F3dNative};
@@ -1284,8 +1431,7 @@ mod tests {
                 record_index: 0,
                 vertex: target.model.vertices[0].id.clone(),
                 leading_tolerances: [-1.0, -1.0],
-                trailing_field: Some(0),
-                evaluated_slot: EvaluatedToleranceSlot::Unset,
+                evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
             }],
             ..F3dNative::default()
         };

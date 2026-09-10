@@ -7,14 +7,14 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
-    let facts =
+    let (_facts, schema_version) =
         crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
             cadmpeg_core::CodecError::WrongFormat(message) => {
                 cadmpeg_core::CodecError::Malformed(message)
             }
             error => error,
         })?;
-    super::parse_with_context(document.as_bytes(), &facts, None)
+    super::parse_with_context(document.as_bytes(), &schema_version, None)
 }
 
 #[test]
@@ -47,7 +47,7 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
     assert_eq!(objects[0].type_name, "App::FeaturePython");
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links()[0].object(),
+        properties[1].links()[0].as_ref().expect("link").object(),
         Some(objects[0].id.as_str())
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -82,7 +82,7 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
     );
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links()[0].object(),
+        properties[1].links()[0].as_ref().expect("link").object(),
         Some(objects[0].id.as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
@@ -249,11 +249,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("support");
     assert_eq!(support.owner, "fcstd:native:object#Body");
     assert_eq!(
-        support.links()[0].object(),
+        support.links()[0].as_ref().expect("link").object(),
         Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
-    assert_eq!(support.links()[0].subelements(), vec!["Face1"]);
+    assert_eq!(
+        support.links()[0].as_ref().expect("link").subelements(),
+        vec!["Face1"]
+    );
     let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
         panic!("support property is not persisted");
     };
@@ -264,10 +267,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("members");
     assert_eq!(members.links().len(), 2);
     assert_eq!(
-        members.links()[0].object(),
+        members.links()[0].as_ref().expect("link").object(),
         Some("fcstd:native:object#Sketch")
     );
-    assert_eq!(members.links()[1].object(), None);
+    assert!(members.links()[1].is_none());
     let transient = properties
         .iter()
         .find(|property| property.name == "TransientState")
@@ -622,6 +625,7 @@ fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
     let empty = link(r#"<XLink file="" name="Body"/>"#);
     let absent = link(r#"<XLink name="Body"/>"#);
     assert_eq!(empty, absent);
+    let empty = empty.as_ref().expect("link");
     assert_eq!(empty.document(), None);
     assert_eq!(empty.document_attribute(), None);
 }
@@ -635,11 +639,13 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         let xml = roxmltree::Document::parse(&markup).unwrap();
         let links = super::parse_link_targets(xml.root_element(), type_name).unwrap();
         assert_eq!(links.len(), 2);
-        assert_eq!(links[0].object(), Some("Local"));
-        assert_eq!(links[0].document_name(), None);
-        assert_eq!(links[1].object(), Some("Remote"));
-        assert_eq!(links[1].document_name(), Some("parts.FCStd"));
-        assert_eq!(links[1].subelements(), ["Face1"]);
+        let first = links[0].as_ref().expect("first link");
+        let second = links[1].as_ref().expect("second link");
+        assert_eq!(first.object(), Some("Local"));
+        assert_eq!(first.document_name(), None);
+        assert_eq!(second.object(), Some("Remote"));
+        assert_eq!(second.document_name(), Some("parts.FCStd"));
+        assert_eq!(second.subelements(), ["Face1"]);
         let invalid = markup.replace("XLinkSubList", "XLinkList");
         let xml = roxmltree::Document::parse(&invalid).unwrap();
         assert!(super::parse_link_targets(xml.root_element(), type_name).is_err());

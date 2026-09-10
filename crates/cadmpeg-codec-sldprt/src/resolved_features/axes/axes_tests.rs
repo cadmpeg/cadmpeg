@@ -7,6 +7,8 @@ use super::super::{
 };
 use super::*;
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputLane, FeatureInputName, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
@@ -471,8 +473,8 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
             marker("axis", 200, None, None),
         ],
     };
-    lane.sketch_entities[1].kind = SketchInputKind::Relation(SketchRelationKind::Distance);
-    lane.sketch_entities[3].kind = SketchInputKind::LineOrCircle;
+    lane.sketch_entities[1].reclassify(SketchInputKind::Relation(SketchRelationKind::Distance));
+    lane.sketch_entities[3].reclassify(SketchInputKind::LineOrCircle);
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -501,7 +503,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     assert_eq!(
         roster_curve_endpoint_markers(&lane.native_payload, &lane.sketch_entities[3], &markers,)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -521,7 +523,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.native_payload[266..268].copy_from_slice(&1u16.to_le_bytes());
     lane.native_payload[272..280].copy_from_slice(&(-1.0f64).to_le_bytes());
     lane.native_payload[292..297].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     assert_eq!(
         profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
@@ -546,7 +548,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.native_payload[258..260].copy_from_slice(&1u16.to_le_bytes());
     lane.native_payload[264..272].copy_from_slice(&(-1.0f64).to_le_bytes());
     lane.native_payload[284..289].copy_from_slice(SKETCH_MARKER);
-    lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+    lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     assert_eq!(
         profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
@@ -577,7 +579,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         lane.native_payload[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
     }
     lane.native_payload[312..317].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     assert_eq!(
         profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
@@ -644,7 +646,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
             marker("axis", 200, None, None),
         ],
     };
-    lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -669,7 +671,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
             reference: None,
         })
     );
-    lane.sketch_entities[0].kind = SketchInputKind::Arc;
+    lane.sketch_entities[0].reclassify(SketchInputKind::Arc);
     assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 }
 
@@ -728,7 +730,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
             marker("axis-chord", curve as u64, None, None),
         ],
     };
-    lane.sketch_entities[3].kind = SketchInputKind::Arc;
+    lane.sketch_entities[3].reclassify(SketchInputKind::Arc);
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -778,10 +780,10 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     ));
     lane.sketch_entities.pop();
 
-    lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
-    lane.sketch_entities[2].kind = SketchInputKind::Point;
+    lane.sketch_entities[2].reclassify(SketchInputKind::Point);
     lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.01]);
 
     lane.native_payload[curve + 56..curve + 60].fill(0);
@@ -834,7 +836,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.native_payload[curve + 17..curve + 21].copy_from_slice(&1u32.to_le_bytes());
     lane.sketch_entities[0].coordinates_m = Some([-0.01, 0.0]);
     lane.sketch_entities[1].coordinates_m = Some([-0.01, 0.02]);
-    lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     lane.sketch_entities
         .push(marker("axis-start", 450, None, Some([0.0, 0.0])));
     lane.sketch_entities
@@ -962,7 +964,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         marker("curve-c", 568, None, None),
     ];
     for entity in &mut entities[4..] {
-        entity.kind = SketchInputKind::LineOrCircle;
+        entity.reclassify(SketchInputKind::LineOrCircle);
     }
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -999,7 +1001,7 @@ fn revolution_consumes_the_preceding_profile_object() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: 0,
         name: id.into(),
         kind: String::new(),
@@ -1035,7 +1037,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: 100,
-                object_id: Some(23),
+                object_id: ObjectId::from_value(23),
                 value: "profile".into(),
             },
             FeatureInputName {
@@ -1043,7 +1045,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 200,
-                object_id: Some(28),
+                object_id: ObjectId::from_value(28),
                 value: "revolution".into(),
             },
             FeatureInputName {
@@ -1051,7 +1053,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 2,
                 offset: 220,
-                object_id: Some(29),
+                object_id: ObjectId::from_value(29),
                 value: "cut-profile".into(),
             },
             FeatureInputName {
@@ -1059,7 +1061,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 3,
                 offset: 240,
-                object_id: Some(30),
+                object_id: ObjectId::from_value(30),
                 value: "cut".into(),
             },
         ],

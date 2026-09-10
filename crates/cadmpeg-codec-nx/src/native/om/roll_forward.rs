@@ -17,27 +17,13 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct OmRollForwardStateGroup {
     /// Globally unique group identity.
     pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based group ordinal within the table.
-    pub ordinal: u32,
     pub(crate) frame: OperationStateGroup<u64>,
-    /// Exact bytes between the final group and the counter-map boundary.
-    pub table_footer: GroupTableFooter,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the counter-map boundary.
-    pub table_end_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
 struct OmRollForwardStateGroupWire {
     /// Globally unique group identity.
     id: String,
-    /// Owning feature-history section link.
-    section_link: String,
-    /// Zero-based group ordinal within the table.
-    ordinal: u32,
     /// Exact two-byte group opener.
     opener: [u8; 2],
     /// Whether the count used the nonempty `01 count` form.
@@ -46,14 +32,8 @@ struct OmRollForwardStateGroupWire {
     declared_count: u8,
     /// Ordered typed rows in the group.
     rows: Vec<state_index_wire::OmRollForwardStateRowWire>,
-    /// Exact bytes between the final group and the counter-map boundary.
-    table_trailing_bytes: Vec<u8>,
-    /// Directory entry containing the feature-history section.
-    source_entry: String,
     /// Absolute file offset of the group opener.
     source_offset: u64,
-    /// Absolute file offset of the counter-map boundary.
-    table_end_offset: u64,
 }
 
 impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
@@ -63,16 +43,11 @@ impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
             count_prefix: value.frame.members().count().prefix(),
             declared_count: value.frame.members().count().declared_count(),
             id: value.id,
-            section_link: value.section_link,
-            ordinal: value.ordinal,
             source_offset: value.frame.offset(),
             rows: value
                 .frame
                 .map_rows(state_index_wire::OmRollForwardStateRowWire::from_row)
                 .into_rows(),
-            table_trailing_bytes: value.table_footer.bytes().to_vec(),
-            source_entry: value.source_entry,
-            table_end_offset: value.table_end_offset,
         }
     }
 }
@@ -101,25 +76,35 @@ impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
             OperationStateGroupOpener::try_from(wire.opener)?,
             members,
         )?;
-        Ok(Self {
-            id: wire.id,
-            section_link: wire.section_link,
-            ordinal: wire.ordinal,
-            frame,
-            table_footer: GroupTableFooter::try_from(wire.table_trailing_bytes.as_slice())?,
-            source_entry: wire.source_entry,
-            table_end_offset: wire.table_end_offset,
-        })
+        Ok(Self { id: wire.id, frame })
     }
 }
 
 /// Roll-forward groups with one set of table facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
-    try_from = "Vec<OmRollForwardStateGroup>",
-    into = "Vec<OmRollForwardStateGroup>"
+    try_from = "OmRollForwardStateTableWire",
+    into = "OmRollForwardStateTableWire"
 )]
 pub(crate) struct OmRollForwardStateTable {
+    section_link: String,
+    source_entry: String,
+    table_footer: GroupTableFooter,
+    table_end_offset: u64,
+    groups: Vec<OmRollForwardStateGroup>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OmRollForwardStateTableWire {
+    /// Owning feature-history section link.
+    section_link: String,
+    /// Directory entry containing the feature-history section.
+    source_entry: String,
+    /// Exact bytes between the final group and the counter-map boundary.
+    table_trailing_bytes: Vec<u8>,
+    /// Absolute file offset of the counter-map boundary.
+    table_end_offset: u64,
+    /// Ordered groups of the table.
     groups: Vec<OmRollForwardStateGroup>,
 }
 
@@ -132,54 +117,67 @@ impl OmRollForwardStateTable {
         table_end_offset: u64,
         frames: Vec<OperationStateGroup<u64>>,
     ) -> Result<Self, &'static str> {
-        let groups = frames.into_iter().enumerate().map(|(ordinal, frame)| {
+        let groups = frames
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, frame)| {
                 let ordinal = u32::try_from(ordinal)
                     .map_err(|_| "ordinal exceeds the roll-forward group range")?;
                 Ok(OmRollForwardStateGroup {
-                    id: format!("nx:feature-history:roll-forward-state-group#{section_ordinal:010}-{ordinal:010}"),
-                    section_link: section_link.to_owned(), ordinal, frame, table_footer,
-                    source_entry: source_entry.to_owned(), table_end_offset,
+                    id: format!(
+                        "nx:feature-history:roll-forward-state-group#{section_ordinal:010}-{ordinal:010}"
+                    ),
+                    frame,
                 })
-            }).collect::<Result<Vec<_>, &'static str>>()?;
-        Self::try_from(groups)
+            })
+            .collect::<Result<Vec<_>, &'static str>>()?;
+        Ok(Self {
+            section_link: section_link.to_owned(),
+            source_entry: source_entry.to_owned(),
+            table_footer,
+            table_end_offset,
+            groups,
+        })
     }
 
     pub(crate) fn groups(&self) -> &[OmRollForwardStateGroup] {
         &self.groups
     }
-}
 
-impl From<OmRollForwardStateTable> for Vec<OmRollForwardStateGroup> {
-    fn from(table: OmRollForwardStateTable) -> Self {
-        table.groups
+    #[cfg(test)]
+    pub(crate) fn table_footer(&self) -> GroupTableFooter {
+        self.table_footer
+    }
+
+    #[cfg(test)]
+    pub(crate) fn table_end_offset(&self) -> u64 {
+        self.table_end_offset
     }
 }
 
-impl TryFrom<Vec<OmRollForwardStateGroup>> for OmRollForwardStateTable {
-    type Error = &'static str;
+impl From<OmRollForwardStateTable> for OmRollForwardStateTableWire {
+    fn from(table: OmRollForwardStateTable) -> Self {
+        Self {
+            section_link: table.section_link,
+            source_entry: table.source_entry,
+            table_trailing_bytes: table.table_footer.bytes().to_vec(),
+            table_end_offset: table.table_end_offset,
+            groups: table.groups,
+        }
+    }
+}
 
-    fn try_from(groups: Vec<OmRollForwardStateGroup>) -> Result<Self, Self::Error> {
-        for (index, group) in groups.iter().enumerate() {
-            if usize::try_from(group.ordinal).ok() != Some(index) {
-                return Err("ordinal must equal the group index");
-            }
-        }
-        if let Some(first) = groups.first() {
-            for group in &groups[1..] {
-                if group.section_link != first.section_link
-                    || group.source_entry != first.source_entry
-                {
-                    return Err("section_link and source_entry must identify one table");
-                }
-                if group.table_footer != first.table_footer {
-                    return Err("table_trailing_bytes must agree across table groups");
-                }
-                if group.table_end_offset != first.table_end_offset {
-                    return Err("table_end_offset must agree across table groups");
-                }
-            }
-        }
-        Ok(Self { groups })
+impl TryFrom<OmRollForwardStateTableWire> for OmRollForwardStateTable {
+    type Error = String;
+
+    fn try_from(wire: OmRollForwardStateTableWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            section_link: wire.section_link,
+            source_entry: wire.source_entry,
+            table_footer: GroupTableFooter::try_from(wire.table_trailing_bytes.as_slice())?,
+            table_end_offset: wire.table_end_offset,
+            groups: wire.groups,
+        })
     }
 }
 
@@ -188,39 +186,35 @@ mod tests {
     use super::OmRollForwardStateGroup;
 
     #[test]
-    fn table_admission_rejects_disagreeing_group_facts() {
+    fn table_wire_carries_the_table_facts_once() {
         let group = serde_json::json!({
-            "id": "group", "section_link": "section", "ordinal": 0,
-            "opener": [1, 0], "count_prefix": null, "declared_count": 0,
-            "rows": [], "table_trailing_bytes": [], "source_entry": "om",
-            "source_offset": 0, "table_end_offset": 8
+            "id": "group", "opener": [1, 0], "count_prefix": null, "declared_count": 0,
+            "rows": [], "source_offset": 0
         });
-        let mut wire = serde_json::json!([group, group]);
-        wire[1]["ordinal"] = 1.into();
+        let wire = serde_json::json!({
+            "section_link": "section",
+            "source_entry": "om",
+            "table_trailing_bytes": [],
+            "table_end_offset": 8,
+            "groups": [group.clone(), group],
+        });
         let table: super::OmRollForwardStateTable = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(table.groups().len(), 2);
         assert_eq!(serde_json::to_value(table).unwrap(), wire);
-        for (field, value) in [
-            ("ordinal", serde_json::json!(0)),
-            ("ordinal", serde_json::json!(2)),
-            ("table_trailing_bytes", serde_json::json!([1, 1])),
-            ("table_end_offset", serde_json::json!(9)),
-            ("section_link", serde_json::json!("other")),
-            ("source_entry", serde_json::json!("other")),
-        ] {
-            let mut invalid = wire.clone();
-            invalid[1][field] = value;
-            assert!(
-                serde_json::from_value::<super::OmRollForwardStateTable>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
-        }
+
+        let mut invalid = wire;
+        invalid["table_trailing_bytes"] = serde_json::json!([1]);
+        assert!(
+            serde_json::from_value::<super::OmRollForwardStateTable>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("table_trailing_bytes")
+        );
     }
 
     #[test]
     fn wire_rows_follow_group_header_and_preceding_tokens() {
-        let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":3,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}},{"Pair":{"ordinal":1,"tag":79,"first":2,"raw_first":[2],"second":3,"raw_second":[3],"source_offset":8}}],"table_trailing_bytes":[1,1],"source_entry":"om","source_offset":0,"table_end_offset":15}"#;
+        let json = r#"{"id":"group","opener":[1,0],"count_prefix":1,"declared_count":3,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}},{"Pair":{"ordinal":1,"tag":79,"first":2,"raw_first":[2],"second":3,"raw_second":[3],"source_offset":8}}],"source_offset":0}"#;
         let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
         assert_eq!(group.frame.end_offset(), 13);
         assert_eq!(serde_json::to_string(&group).unwrap(), json);
@@ -233,12 +227,6 @@ mod tests {
                 .to_string()
                 .contains("rows.source_offset"));
         }
-        let mut invalid = wire.clone();
-        invalid["table_trailing_bytes"] = serde_json::json!([1]);
-        assert!(serde_json::from_value::<OmRollForwardStateGroup>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("table_trailing_bytes"));
         let mut overflow = wire;
         overflow["source_offset"] = u64::MAX.into();
         assert!(serde_json::from_value::<OmRollForwardStateGroup>(overflow)

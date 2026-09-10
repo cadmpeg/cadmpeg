@@ -412,7 +412,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     .unwrap();
     assignment.visual_preset = Some(crate::records::RecordedValue {
         value: "Prism-017".into(),
-        offset: None,
+        offset: 0,
     });
     appearance.name = Some("Prism-017".into());
     assert!(
@@ -1078,8 +1078,15 @@ fn decode_transfers_generated_custom_attribute() {
         f3d_native(result.ir()).persistent_design_links[1].design_reference,
         7
     );
-    assert!(!f3d_native(result.ir()).persistent_design_links[0].is_current);
-    assert!(f3d_native(result.ir()).persistent_design_links[1].is_current);
+    let native = f3d_native(result.ir());
+    let current = crate::records::current_persistent_design_links(&native.persistent_design_links);
+    assert_eq!(
+        current
+            .values()
+            .map(|link| link.ordinal)
+            .collect::<Vec<_>>(),
+        [native.persistent_design_links[1].ordinal]
+    );
     assert!(attribute.values.iter().any(|value| matches!(
         value,
         cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"

@@ -210,7 +210,6 @@ pub(crate) fn decode(
         byte_offset: offset as u64,
         preamble,
         record_table_binding_budget_exceeded,
-        projection_finalized: false,
         states,
     })
 }
@@ -682,10 +681,10 @@ fn retain_mirror_plane_topology(
 /// plane-selection topology remain retained.
 pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
     for history in histories {
-        history.projection_finalized = true;
         for state in &mut history.states {
             let topology = match std::mem::take(&mut state.topology_cache) {
-                crate::history_records::AsmTopologyCache::Absent => None,
+                crate::history_records::AsmTopologyCache::Absent
+                | crate::history_records::AsmTopologyCache::Released => None,
                 crate::history_records::AsmTopologyCache::Complete(topology)
                 | crate::history_records::AsmTopologyCache::Retained(topology) => {
                     retain_mirror_plane_topology(topology)
@@ -699,13 +698,17 @@ pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
                 state.topology_cache = crate::history_records::AsmTopologyCache::Retained(topology);
             } else {
                 state.entity_versions.clear();
+                state.topology_cache = crate::history_records::AsmTopologyCache::Released;
             }
         }
     }
 }
 
 pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
-    !histories.is_empty() && histories.iter().all(|history| history.projection_finalized)
+    !histories.is_empty()
+        && histories
+            .iter()
+            .all(crate::history_records::AsmHistory::projection_finalized)
 }
 
 fn historical_transition(
@@ -1586,15 +1589,10 @@ fn bind_pattern_body_selections(
             let [group] = matching_groups.as_slice() else {
                 break 'feature_edit;
             };
-            let selection = if let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() {
-                selection
-            } else if seeds.is_empty() {
+            if seeds.is_empty() {
                 seeds.push(PatternSeed::Bodies(BodySelection::Native(group.id.clone())));
-                let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
-                    unreachable!("the inserted pattern seed is a body selection")
-                };
-                selection
-            } else {
+            }
+            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
                 break 'feature_edit;
             };
             if let Some(previous_state_id) = scope.previous_history_state_id() {
@@ -1932,9 +1930,10 @@ fn body_recipe_link_candidate(
     let design_id = design.id.value.as_str();
     let selector = i64::from(design.selector?.value);
     let mut matching_bodies = Vec::new();
-    for link in persistent_design_links.iter().filter(|link| {
-        link.is_current && link.design_id.as_str() == design_id && link.design_reference == selector
-    }) {
+    for link in crate::records::current_persistent_design_links(persistent_design_links)
+        .into_values()
+        .filter(|link| link.design_id.as_str() == design_id && link.design_reference == selector)
+    {
         let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
             continue;
         };
@@ -6781,8 +6780,9 @@ impl HistoricalIdentityIndex {
                         crate::history_records::AsmTopologyCache::Absent => false,
                         crate::history_records::AsmTopologyCache::Complete(_) => true,
                         crate::history_records::AsmTopologyCache::Retained(_) => {
-                            history.projection_finalized
+                            history.projection_finalized()
                         }
+                        crate::history_records::AsmTopologyCache::Released => false,
                     })
         }) {
             for change in history
@@ -6970,14 +6970,13 @@ fn component_histories<'a>(
                 && candidate.component_record_index > space.component_record_index
         })
         .map(|candidate| candidate.component_record_index)
-        .min()
-        .unwrap_or(u64::MAX);
+        .min();
     let blobs = body_bindings
         .iter()
         .filter(|binding| {
             crate::ids::native_stream(&binding.id) == Some(stream)
                 && binding.entity_suffix >= space.component_record_index
-                && binding.entity_suffix < cluster_end
+                && cluster_end.is_none_or(|end| binding.entity_suffix < end)
         })
         .map(crate::records::DesignBodyBinding::blob_name)
         .collect::<HashSet<_>>();

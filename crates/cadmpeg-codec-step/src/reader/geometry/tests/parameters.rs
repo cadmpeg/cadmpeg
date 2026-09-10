@@ -572,7 +572,7 @@ ENDSEC;END-ISO-10303-21;",
     assert!(unit_scale_radians(1, &exchange, &mut active).is_none());
     assert!(active.is_empty());
 
-    let mut warnings = Vec::new();
+    let mut losses = Vec::new();
     assert!(decode_pcurve_geometry(
         3,
         &exchange,
@@ -581,7 +581,7 @@ ENDSEC;END-ISO-10303-21;",
         &BTreeMap::new(),
         &BTreeMap::new(),
         1.0,
-        &mut warnings,
+        &mut losses,
         &mut active,
         0,
     )
@@ -595,7 +595,7 @@ ENDSEC;END-ISO-10303-21;",
         &BTreeMap::new(),
         &BTreeMap::new(),
         1.0,
-        &mut warnings,
+        &mut losses,
         &mut active,
         0,
     )

@@ -191,6 +191,15 @@ pub(crate) fn decode_with_scopes(
     Ok(Some(table))
 }
 
+/// The `u32` ordinal for an enumerated position, or a malformed-input error.
+fn ordinal_at(position: usize) -> Result<u32, CodecError> {
+    u32::try_from(position).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "F3D external-reference ordinal {position} exceeds u32"
+        ))
+    })
+}
+
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
     let parsed: RedirectionsJson = serde_json::from_slice(bytes).map_err(|error| {
@@ -202,16 +211,18 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
         .designs
         .into_iter()
         .enumerate()
-        .map(|(ordinal, design)| XrefDesign {
-            id: format!("f3d:xref:design#{ordinal}"),
-            ordinal: ordinal as u32,
-            file_version: design.file_version,
-            target_file_name: design.target_file_name,
-            display_name: design.display_name,
-            lineage_urn: design.lineage_urn,
-            version_urn: design.version_urn,
+        .map(|(ordinal, design)| {
+            Ok(XrefDesign {
+                id: format!("f3d:xref:design#{ordinal}"),
+                ordinal: ordinal_at(ordinal)?,
+                file_version: design.file_version,
+                target_file_name: design.target_file_name,
+                display_name: design.display_name,
+                lineage_urn: design.lineage_urn,
+                version_urn: design.version_urn,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let references = match parsed.references {
         ReferencesJson::List(references) => references,
         ReferencesJson::Other(_) => Vec::new(),
@@ -220,17 +231,19 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
         .into_iter()
         .filter(|reference| reference.reference_type == "XREF")
         .enumerate()
-        .map(|(ordinal, reference)| XrefReference {
-            id: format!("f3d:xref:reference#{ordinal}"),
-            ordinal: ordinal as u32,
-            occurrence_ordinal: 0,
-            neutron_role: reference.property("neutronRole"),
-            neutron_data: reference.property("neutronData"),
-            from: reference.from,
-            relative_path: reference.relative_path,
-            transform: None,
+        .map(|(ordinal, reference)| {
+            Ok(XrefReference {
+                id: format!("f3d:xref:reference#{ordinal}"),
+                ordinal: ordinal_at(ordinal)?,
+                occurrence_ordinal: 0,
+                neutron_role: reference.property("neutronRole"),
+                neutron_data: reference.property("neutronData"),
+                from: reference.from,
+                relative_path: reference.relative_path,
+                transform: None,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(XrefTable {
         designs,
         references,
@@ -302,7 +315,7 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
                     object: None,
                 },
                 parent: OccurrenceParent::Root,
-                ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                ordinal: ordinal_at(ordinal)?,
                 transform: crate::design::components::neutral_transform(transform)?,
                 linked_prototype: None,
                 scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
@@ -461,7 +474,7 @@ fn bind_occurrences(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
             );
-            occurrence.occurrence_ordinal = occurrence_ordinal as u32;
+            occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
                 .map(crate::records::DesignAffineTransform::try_from)
                 .transpose()

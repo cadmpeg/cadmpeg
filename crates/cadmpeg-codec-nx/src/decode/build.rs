@@ -29,6 +29,7 @@ use super::support_uv::{
     IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
+use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::geometry;
 use crate::topology::{Graph, Node};
@@ -245,6 +246,7 @@ pub(crate) fn try_decode_geometry(
         if !stream.kind().is_parasolid() {
             continue;
         }
+        let scope = IdScope::stream(si);
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         support_uv_geometry_budget.clear_blend_frame_cache();
@@ -298,8 +300,8 @@ pub(crate) fn try_decode_geometry(
             .into_iter()
             .enumerate()
         {
-            let pid = PointId::mint(format!("nx:s{si}:pt#{pi}")).expect("identity grammar");
-            let vid = VertexId::mint(format!("nx:s{si}:v#{pi}")).expect("identity grammar");
+            let pid: PointId = scope.id("pt", pi);
+            let vid: VertexId = scope.id("v", pi);
             annotate_node(&mut annotations, &pid, &source_stream, node, "POINT");
             annotations
                 .derived(&pid, "position")
@@ -333,7 +335,7 @@ pub(crate) fn try_decode_geometry(
                 | SurfaceGeometry::Transformed { .. }
                 | SurfaceGeometry::Unknown { .. } => {}
             }
-            let id = SurfaceId::mint(format!("nx:s{si}:surf#{fi}")).expect("identity grammar");
+            let id: SurfaceId = scope.id("surf", fi);
             annotate_node(
                 &mut annotations,
                 &id,
@@ -353,8 +355,7 @@ pub(crate) fn try_decode_geometry(
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
-            let id =
-                SurfaceId::mint(format!("nx:s{si}:nurbs-surf#{fi}")).expect("identity grammar");
+            let id: SurfaceId = scope.id("nurbs-surf", fi);
             annotations
                 .note(&id, &source_stream, surf.pos as u64)
                 .tag("B_SPLINE_SURFACE");
@@ -382,14 +383,12 @@ pub(crate) fn try_decode_geometry(
             let Some(support) = surfaces_by_xmt.get(&offset.state.support()).cloned() else {
                 continue;
             };
-            let procedural_id = ProceduralSurfaceId::mint(format!("nx:s{si}:offset#{oi}"))
-                .expect("identity grammar");
+            let procedural_id: ProceduralSurfaceId = scope.id("offset", oi);
             let (surface_id, cache_fit_tolerance) =
                 if let Some((surface, fit_tolerance)) = saved_offset_carriers.get(&offset.xmt) {
                     (surface.clone(), Some(*fit_tolerance))
                 } else {
-                    let surface_id = SurfaceId::mint(format!("nx:s{si}:offset-surf#{oi}"))
-                        .expect("identity grammar");
+                    let surface_id: SurfaceId = scope.id("offset-surf", oi);
                     annotations
                         .note(&surface_id, &source_stream, offset.pos as u64)
                         .tag("OFFSET_SURF");
@@ -458,10 +457,8 @@ pub(crate) fn try_decode_geometry(
         }
 
         for (bi, blend) in view.blend_surfaces.iter().copied().enumerate() {
-            let surface_id =
-                SurfaceId::mint(format!("nx:s{si}:blend-surf#{bi}")).expect("identity grammar");
-            let procedural_id = ProceduralSurfaceId::mint(format!("nx:s{si}:blend#{bi}"))
-                .expect("identity grammar");
+            let surface_id: SurfaceId = scope.id("blend-surf", bi);
+            let procedural_id: ProceduralSurfaceId = scope.id("blend", bi);
             annotations
                 .note(&surface_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
@@ -570,7 +567,7 @@ pub(crate) fn try_decode_geometry(
                 CurveGeometry::Transformed { .. } => {}
                 CurveGeometry::Unknown { .. } => {}
             }
-            let id = CurveId::mint(format!("nx:s{si}:crv#{ci}")).expect("identity grammar");
+            let id: CurveId = scope.id("crv", ci);
             annotate_node(
                 &mut annotations,
                 &id,
@@ -590,7 +587,7 @@ pub(crate) fn try_decode_geometry(
         }
         for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
-            let id = CurveId::mint(format!("nx:s{si}:nurbs-crv#{ci}")).expect("identity grammar");
+            let id: CurveId = scope.id("nurbs-crv", ci);
             annotations
                 .note(&id, &source_stream, crv.pos as u64)
                 .tag("B_SPLINE_CURVE");
@@ -608,7 +605,7 @@ pub(crate) fn try_decode_geometry(
         }
 
         for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
-            let id = PcurveId::mint(format!("nx:s{si}:pcurve#{pi}")).expect("identity grammar");
+            let id: PcurveId = scope.id("pcurve", pi);
             annotations
                 .note(&id, &source_stream, pcurve.pos as u64)
                 .tag("B_CURVE_2D");
@@ -674,12 +671,9 @@ pub(crate) fn try_decode_geometry(
                 .collect::<BTreeMap<_, _>>()
         };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
-            let curve_id =
-                CurveId::mint(format!("nx:s{si}:intersection-crv#{ci}")).expect("identity grammar");
-            let procedural_id = ProceduralCurveId::mint(format!("nx:s{si}:intersection#{ci}"))
-                .expect("identity grammar");
-            let unknown_id =
-                UnknownId::mint(format!("nx:container:parasolid#{si}")).expect("identity grammar");
+            let curve_id: CurveId = scope.id("intersection-crv", ci);
+            let procedural_id: ProceduralCurveId = scope.id("intersection", ci);
+            let unknown_id: UnknownId = IdScope::container().id("parasolid", si);
             let charted = charted_intersections.get(&construction.xmt);
             let uncharted = uncharted_intersections
                 .get(&construction.xmt)
@@ -1079,7 +1073,7 @@ pub(crate) fn try_decode_geometry(
         attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,
-            &format!("nx:s{si}"),
+            &IdScope::stream(si),
             intersection_starts.coedges,
             intersection_starts.procedural_curves,
             source_stream.clone(),
@@ -1113,7 +1107,7 @@ pub(crate) fn try_decode_geometry(
     let completion_sources = completion_streams
         .iter()
         .map(|(si, source_stream)| IntersectionCompletionSource {
-            prefix: format!("nx:s{si}"),
+            scope: IdScope::stream(*si),
             graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
             source_stream: source_stream.clone(),
             coedge_start: 0,
@@ -1378,7 +1372,7 @@ pub(crate) fn topology_body_node_ids(
     stream_index: usize,
     graph: &Graph,
 ) -> BTreeMap<BodyId, BTreeSet<u32>> {
-    let prefix = format!("nx:s{stream_index}");
+    let scope = IdScope::stream(stream_index);
     let body_xmts: BTreeSet<_> = graph
         .body_shape_shells()
         .into_iter()
@@ -1473,10 +1467,7 @@ pub(crate) fn topology_body_node_ids(
                 .chain(edge_ids)
                 .chain(vertex_ids)
                 .collect();
-            Some((
-                BodyId::mint(format!("{prefix}:body#{body_xmt}")).expect("identity grammar"),
-                ids,
-            ))
+            Some((scope.id::<BodyId>("body", body_xmt), ids))
         })
         .collect()
 }
@@ -1814,10 +1805,10 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
         return;
     }
 
-    let body_id = BodyId::mint("nx:derived:point-body#0".to_string()).expect("identity grammar");
-    let region_id =
-        RegionId::mint("nx:derived:point-region#0".to_string()).expect("identity grammar");
-    let shell_id = ShellId::mint("nx:derived:point-shell#0".to_string()).expect("identity grammar");
+    let derived = IdScope::derived();
+    let body_id: BodyId = derived.id("point-body", 0);
+    let region_id: RegionId = derived.id("point-region", 0);
+    let shell_id: ShellId = derived.id("point-shell", 0);
     let stream = annotations.stream("nx:container");
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations
@@ -1828,8 +1819,7 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
 
     let mut free_vertices = Vec::with_capacity(ir.model.points.len());
     for (index, point) in ir.model.points.iter().enumerate() {
-        let vertex_id =
-            VertexId::mint(format!("nx:derived:point-vertex#{index}")).expect("identity grammar");
+        let vertex_id: VertexId = derived.id("point-vertex", index);
         annotations
             .note(&vertex_id, &stream, 0)
             .tag("derived_point_topology");

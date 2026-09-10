@@ -3481,20 +3481,20 @@ pub(crate) fn emit_vertices(
                                 vertex: VertexId::mint(id(format, i)).expect("identity grammar"),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
-                                evaluated_slot: match r.chunk(8) {
-                                    Some(Token::Double(value)) if *value < 0.0 => {
-                                        EvaluatedToleranceSlot::Unset
+                                evaluated_slot: {
+                                    let trailing = match r.chunk(9) {
+                                        Some(Token::Long(value)) => Some(*value),
+                                        _ => None,
+                                    };
+                                    match r.chunk(8) {
+                                        Some(Token::Double(value)) if *value < 0.0 => {
+                                            EvaluatedToleranceSlot::Unset { trailing }
+                                        }
+                                        Some(Token::Double(_)) => {
+                                            EvaluatedToleranceSlot::Evaluated { trailing }
+                                        }
+                                        _ => EvaluatedToleranceSlot::Absent,
                                     }
-                                    Some(Token::Double(_)) => EvaluatedToleranceSlot::Evaluated,
-                                    _ => EvaluatedToleranceSlot::Absent,
-                                },
-                                // The trailing LONG follows the evaluated
-                                // slot; without that slot there is no tail.
-                                trailing_field: match (r.chunk(8), r.chunk(9)) {
-                                    (Some(Token::Double(_)), Some(Token::Long(value))) => {
-                                        Some(*value)
-                                    }
-                                    _ => None,
                                 },
                             });
                         }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole placement, cap outlines, and cylinder construction from envelopes.
 
+use crate::decode::axis::Axis;
 use crate::vecmath::normalize;
 use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -94,13 +95,20 @@ pub struct CapOutline {
     pub corners: [[f64; 3]; 2],
 }
 
-pub fn cap_square_center_radius(
-    corners: [[f64; 3]; 2],
-    axis_index: usize,
-) -> Option<([f64; 3], f64)> {
-    let radial = (0..3)
-        .filter(|index| *index != axis_index)
-        .collect::<Vec<_>>();
+/// The model axis a direction is aligned with, when it is aligned with one.
+pub fn axis_aligned_with(direction: [f64; 3], component_tolerance: f64) -> Option<Axis> {
+    Axis::ALL.into_iter().find(|axis| {
+        direction[axis.index()].abs() > 1.0 - EPS_AXIS_ALIGNMENT
+            && axis
+                .complement()
+                .iter()
+                .all(|other| direction[other.index()].abs() < component_tolerance)
+    })
+}
+
+pub fn cap_square_center_radius(corners: [[f64; 3]; 2], axis: Axis) -> Option<([f64; 3], f64)> {
+    let axis_index = axis.index();
+    let radial = axis.complement().map(Axis::index);
     let spans = [
         (corners[1][radial[0]] - corners[0][radial[0]]).abs(),
         (corners[1][radial[1]] - corners[0][radial[1]]).abs(),
@@ -124,14 +132,10 @@ pub fn cap_square_center_radius(
 
 pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
     let axis = normalize(cap.normal)?;
-    let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
-            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
-    })?;
-    let (center, radius) = cap_square_center_radius(cap.corners, axis_index)?;
-    let radial_axis = (0..3).find(|index| *index != axis_index)?;
+    let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
+    let (center, radius) = cap_square_center_radius(cap.corners, aligned_axis)?;
     let mut ref_direction = [0.0; 3];
-    ref_direction[radial_axis] = 1.0;
+    ref_direction[aligned_axis.complement()[0].index()] = 1.0;
     Some(HoleCylinder {
         origin: Point3::new(center[0], center[1], center[2]),
         axis: Vector3::new(axis[0], axis[1], axis[2]),
@@ -143,17 +147,12 @@ pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder>
 pub fn hole_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCylinder> {
     let placement = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     let axis = placement.1;
-    let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
-            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
-    })?;
-    let radial = (0..3)
-        .filter(|index| *index != axis_index)
-        .collect::<Vec<_>>();
+    let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
+    let radial = aligned_axis.complement().map(Axis::index);
     let mut centers = Vec::<[f64; 3]>::new();
     let mut radii = Vec::new();
     for cap in caps {
-        let (center, radius) = cap_square_center_radius(cap.corners, axis_index)?;
+        let (center, radius) = cap_square_center_radius(cap.corners, aligned_axis)?;
         centers.push(center);
         radii.push(radius);
     }
@@ -190,13 +189,8 @@ pub fn cylinder_from_complementary_outline_bounds(
     let origin = plane_surface.origin();
     let normal = plane_surface.normal();
     let axis = normalize([normal.x, normal.y, normal.z])?;
-    let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
-            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
-    })?;
-    let radial = (0..3)
-        .filter(|index| *index != axis_index)
-        .collect::<Vec<_>>();
+    let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
+    let radial = aligned_axis.complement().map(Axis::index);
     let scale = bounds
         .iter()
         .flatten()

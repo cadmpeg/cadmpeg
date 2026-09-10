@@ -3,6 +3,8 @@
 use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -29,7 +31,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: name.into(),
         kind: String::new(),
@@ -62,7 +64,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         ordinal: 0,
         offset,
         value: value.into(),
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
     };
     let line_ref_offset = 120usize;
     let mut native_payload = vec![0; 400];
@@ -125,7 +127,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(u32::MAX),
+            object_id: Some(ObjectId::Absent),
             value: "D3".into(),
         },
         FeatureInputName {
@@ -133,7 +135,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 1,
             offset: 300,
-            object_id: Some(u32::MAX),
+            object_id: Some(ObjectId::Absent),
             value: "D4".into(),
         },
     ];
@@ -1007,14 +1009,14 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .map(|marker| {
             let [u, v] = marker.coordinates_m.unwrap();
             SketchEntity::new(
-                SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id)).unwrap(),
+                SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id())).unwrap(),
                 sketch.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
                 })
                 .unwrap(),
             )
-            .with_native_ref(Some(marker.id.clone()))
+            .with_native_ref(Some(marker.id().to_string()))
         })
         .collect::<Vec<_>>();
     let operand = |offset: u64, index: u16| FeatureInputOperand {
@@ -1653,7 +1655,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci = profile_loci_by_marker(
         std::slice::from_ref(&feature),

@@ -209,31 +209,20 @@ pub(in super::super) fn source_meta(
             crate::coverage::UNDECODED_LEGACY_STRING_ENCODING_COUNT,
             undecoded_encodings,
         );
-        for (scalar_key, unresolved_key, undecoded_key, records, unresolved) in [
-            (
-                crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
-                crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
-                legacy.persistence.type_3_values.rows.as_slice(),
-                legacy.persistence.type_3_values.unresolved_count,
-            ),
-            (
-                crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
-                crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
-                legacy.persistence.type_4_values.rows.as_slice(),
-                legacy.persistence.type_4_values.unresolved_count,
-            ),
-        ] {
-            let scalars = records.len();
-            let undecoded_encodings = records
-                .iter()
-                .map(|record| record.payload.undecoded_encoding_count())
-                .sum();
-            coverage.record(scalar_key, scalars);
-            coverage.record(unresolved_key, unresolved);
-            coverage.record(undecoded_key, undecoded_encodings);
-        }
+        record_scalar_string_coverage(
+            &mut coverage,
+            crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
+            crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
+            &legacy.persistence.type_3_values,
+        );
+        record_scalar_string_coverage(
+            &mut coverage,
+            crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
+            crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
+            &legacy.persistence.type_4_values,
+        );
         let mut insert_numbered_numeric_coverage =
             |scalar_key,
              array_key,
@@ -955,4 +944,23 @@ pub(in super::super) fn source_meta(
         ),
         coverage,
     )
+}
+
+fn record_scalar_string_coverage<K>(
+    coverage: &mut cadmpeg_ir::Coverage,
+    scalar_key: cadmpeg_ir::CoverageKey,
+    unresolved_key: cadmpeg_ir::CoverageKey,
+    undecoded_key: cadmpeg_ir::CoverageKey,
+    values: &crate::legacy::TypedValues<crate::legacy::ValueRecord<K>>,
+) where
+    K: crate::legacy::LegacyCode<Payload = crate::legacy::StringValue>,
+{
+    let undecoded_encodings = values
+        .rows
+        .iter()
+        .map(|record| record.payload.undecoded_encoding_count())
+        .sum();
+    coverage.record(scalar_key, values.rows.len());
+    coverage.record(unresolved_key, values.unresolved_count);
+    coverage.record(undecoded_key, undecoded_encodings);
 }

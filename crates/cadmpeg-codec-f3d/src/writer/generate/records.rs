@@ -489,6 +489,7 @@ fn encode_sketch_point(
         persistent_id,
         flags,
         closure,
+        ..
     } = point.record_form()
     else {
         return Err(CodecError::NotImplemented(format!(

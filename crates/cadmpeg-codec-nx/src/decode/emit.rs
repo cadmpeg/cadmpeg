@@ -14,6 +14,7 @@ use super::pcurves::{
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
 use super::{offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
@@ -63,7 +64,7 @@ pub(super) fn emit_topology(
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<EndpointWitnesses, CodecError> {
-    let prefix = format!("nx:s{stream_index}");
+    let scope = IdScope::stream(stream_index);
     let body_shape_shells = graph.body_shape_shells();
     let valid_face_xmts: BTreeSet<u32> = body_shape_shells
         .iter()
@@ -116,7 +117,7 @@ pub(super) fn emit_topology(
         .collect();
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
-        let id = BodyId::mint(format!("{prefix}:body#{body_xmt}")).expect("identity grammar");
+        let id: BodyId = scope.id("body", body_xmt);
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(annotations, &id, source_stream, node, "BODY");
         } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
@@ -163,8 +164,7 @@ pub(super) fn emit_topology(
             }
             region.clone()
         } else {
-            let region =
-                RegionId::mint(format!("{prefix}:region#{region_xmt}")).expect("identity grammar");
+            let region: RegionId = scope.id("region", region_xmt);
             if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
                 annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
@@ -192,8 +192,7 @@ pub(super) fn emit_topology(
             regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
-        let shell_id =
-            ShellId::mint(format!("{prefix}:shell#{}", node.xmt)).expect("identity grammar");
+        let shell_id: ShellId = scope.id("shell", node.xmt);
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
         ir.model.shells.push(
             Shell::new(
@@ -206,10 +205,7 @@ pub(super) fn emit_topology(
                         let face_fields = face.face_fields()?;
                         (u32::from(face_fields.shell?) == node.xmt
                             && surfaces.contains_key(&u32::from(face_fields.surface?)))
-                        .then(|| {
-                            FaceId::mint(format!("{prefix}:face#{}", face.xmt))
-                                .expect("identity grammar")
-                        })
+                        .then(|| scope.id::<FaceId>("face", face.xmt))
                     })
                     .collect(),
                 Vec::new(),
@@ -255,8 +251,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance);
-        let vertex =
-            VertexId::mint(format!("{prefix}:vertex#{}", node.xmt)).expect("identity grammar");
+        let vertex: VertexId = scope.id("vertex", node.xmt);
         annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
             annotations
@@ -341,13 +336,9 @@ pub(super) fn emit_topology(
                     ))
                 });
             if let Some((surface, pcurve, parameter_range, _fit_tolerance)) = lifted {
-                let carrier = CurveId::mint(format!("{prefix}:edge-parametric-curve#{}", node.xmt))
-                    .expect("identity grammar");
-                let construction = ProceduralCurveId::mint(format!(
-                    "{prefix}:edge-parametric-construction#{}",
-                    node.xmt
-                ))
-                .expect("identity grammar");
+                let carrier: CurveId = scope.id("edge-parametric-curve", node.xmt);
+                let construction: ProceduralCurveId =
+                    scope.id("edge-parametric-construction", node.xmt);
                 annotations
                     .note(&carrier, source_stream, node.pos as u64)
                     .tag("PARAMETRIC_SURFACE_CURVE");
@@ -408,7 +399,7 @@ pub(super) fn emit_topology(
                         synthesize_closed_edge_vertex_with_curve_index_and_budget(
                             ir,
                             annotations,
-                            &prefix,
+                            &scope,
                             node,
                             curve,
                             curve_index,
@@ -452,7 +443,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let (mut start, mut end) = (start, end);
-        let id = EdgeId::mint(format!("{prefix}:edge#{}", node.xmt)).expect("identity grammar");
+        let id: EdgeId = scope.id("edge", node.xmt);
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations
@@ -527,7 +518,7 @@ pub(super) fn emit_topology(
         else {
             continue;
         };
-        let id = FaceId::mint(format!("{prefix}:face#{}", node.xmt)).expect("identity grammar");
+        let id: FaceId = scope.id("face", node.xmt);
         annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations
@@ -576,7 +567,7 @@ pub(super) fn emit_topology(
         else {
             continue;
         };
-        let id = LoopId::mint(format!("{prefix}:loop#{}", node.xmt)).expect("identity grammar");
+        let id: LoopId = scope.id("loop", node.xmt);
         annotate_node(annotations, &id, source_stream, node, "LOOP");
         loop_specs.insert(node.xmt, (id.clone(), face));
         loops.insert(node.xmt, id);
@@ -593,12 +584,7 @@ pub(super) fn emit_topology(
                         .is_some_and(|target| loops.contains_key(&u32::from(target)))
                 })
         })
-        .map(|xmt| {
-            (
-                *xmt,
-                CoedgeId::mint(format!("{prefix}:fin#{xmt}")).expect("identity grammar"),
-            )
-        })
+        .map(|xmt| (*xmt, scope.id::<CoedgeId>("fin", xmt)))
         .collect();
     // Preserve the endpoint proof only when the admitted carrier is the exact
     // intersection candidate consumed by the later attachment pass. A valid
@@ -748,16 +734,6 @@ pub(super) fn emit_topology(
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
         annotate_node(annotations, &id, source_stream, node, "FIN");
-        let _next = fields
-            .forward
-            .and_then(|target| fin_ids.get(&u32::from(target)))
-            .cloned()
-            .expect("validated FIN ring resolves forward link");
-        let _previous = fields
-            .backward
-            .and_then(|target| fin_ids.get(&u32::from(target)))
-            .cloned()
-            .expect("validated FIN ring resolves backward link");
         let partner = fields
             .other
             .and_then(|target| fin_ids.get(&u32::from(target)))
@@ -812,8 +788,7 @@ pub(super) fn emit_topology(
             if let Some((_support, geometry, parameter_range, fit_tolerance)) =
                 fallback_pcurves.get(&fin_xmt).cloned()
             {
-                let pcurve_id = PcurveId::mint(format!("{prefix}:intersection-pcurve#{fin_xmt}"))
-                    .expect("identity grammar");
+                let pcurve_id: PcurveId = scope.id("intersection-pcurve", fin_xmt);
                 annotations
                     .note(&pcurve_id, source_stream, node.pos as u64)
                     .tag("INTERSECTION_PCURVE");
@@ -894,7 +869,7 @@ pub(super) fn emit_topology(
         ir,
         graph,
         &edges,
-        &prefix,
+        &scope,
         source_stream,
         annotations,
         adaptive_geometry_budget,
@@ -940,7 +915,7 @@ pub(super) fn emit_topology(
         .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
         .collect();
     ir.model.vertices.retain(|vertex| {
-        !vertex.id.as_str().starts_with(&prefix) || retained_vertices.contains(&vertex.id)
+        !vertex.id.as_str().starts_with(scope.as_str()) || retained_vertices.contains(&vertex.id)
     });
     Ok(endpoint_witnesses)
 }
@@ -956,8 +931,8 @@ pub(crate) fn retain_unresolved_topology_carriers(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let unknown = UnknownId::mint(format!("nx:container:parasolid#{stream_index}"))
-        .expect("identity grammar");
+    let scope = IdScope::stream(stream_index);
+    let unknown: UnknownId = IdScope::container().id("parasolid", stream_index);
     for face in graph.of_kind(NodeKind::Face) {
         let Some(surface_xmt) = face
             .face_fields()
@@ -968,8 +943,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         if surface_xmt <= 1 || surfaces.contains_key(&surface_xmt) {
             continue;
         }
-        let id = SurfaceId::mint(format!("nx:s{stream_index}:surface#unknown-{surface_xmt}"))
-            .expect("identity grammar");
+        let id: SurfaceId = scope.id("surface", format_args!("unknown-{surface_xmt}"));
         annotations
             .note(&id, source_stream, face.pos as u64)
             .tag("UNRESOLVED_SURFACE_REFERENCE");
@@ -994,8 +968,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         if curve_xmt <= 1 || curves.contains_key(&curve_xmt) || pcurves.contains_key(&curve_xmt) {
             continue;
         }
-        let id = CurveId::mint(format!("nx:s{stream_index}:curve#unknown-{curve_xmt}"))
-            .expect("identity grammar");
+        let id: CurveId = scope.id("curve", format_args!("unknown-{curve_xmt}"));
         annotations
             .note(&id, source_stream, edge.pos as u64)
             .tag("UNRESOLVED_CURVE_REFERENCE");
@@ -1067,7 +1040,7 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::units::Positiv
 fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    prefix: &str,
+    scope: &IdScope,
     edge: &Node,
     curve: &CurveId,
     curve_index: usize,
@@ -1091,10 +1064,8 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         let geometry = &ir.model.curves[curve_index].geometry;
         curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
     };
-    let point = PointId::mint(format!("{prefix}:point#closed-edge-{}", edge.xmt))
-        .expect("identity grammar");
-    let vertex = VertexId::mint(format!("{prefix}:vertex#closed-edge-{}", edge.xmt))
-        .expect("identity grammar");
+    let point: PointId = scope.id("point", format_args!("closed-edge-{}", edge.xmt));
+    let vertex: VertexId = scope.id("vertex", format_args!("closed-edge-{}", edge.xmt));
     annotations
         .note(&point, source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_POINT");
@@ -1335,7 +1306,7 @@ pub(crate) fn retain_unknown_stream_data(
 }
 
 fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> UnknownRecord {
-    let id = UnknownId::mint(format!("nx:container:parasolid#{si}")).expect("identity grammar");
+    let id: UnknownId = IdScope::container().id("parasolid", si);
     let offset = stream.file_offset as u64;
     match data {
         Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),

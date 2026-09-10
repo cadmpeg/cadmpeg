@@ -112,7 +112,8 @@ pub(crate) fn pair_stream_indices(
             .enumerate()
             .rev()
             .find(|(_, candidate)| {
-                candidate.kind() == StreamKind::Partition && candidate.schema() == stream.schema()
+                candidate.kind() == StreamKind::Partition
+                    && candidate.schema_token() == stream.schema_token()
             })
             .map(|(partition, _)| partition);
         if let Some(partition) = partition {
@@ -404,7 +405,10 @@ mod tests {
                 inflated: vec![1, 2, 3],
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
-                    schema: Some("schema".into()),
+                    schema: Some(
+                        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+                            .expect("the fixture text is a schema token"),
+                    ),
                 },
             }],
         };
@@ -434,7 +438,10 @@ mod tests {
                 inflated,
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
-                    schema: Some("schema".into()),
+                    schema: Some(
+                        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+                            .expect("the fixture text is a schema token"),
+                    ),
                 },
             }
         };
@@ -511,7 +518,10 @@ mod tests {
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
-                schema: schema.map(str::to_string),
+                schema: schema.map(|schema| {
+                    cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+                        .expect("the fixture text is a schema token")
+                }),
             },
         };
         let streams = vec![

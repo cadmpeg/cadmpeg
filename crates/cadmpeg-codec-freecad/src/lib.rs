@@ -204,7 +204,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for attachment in &attachments {
-        let missing_support = attachment.supports.iter().any(|support| {
+        let missing_support = attachment.supports.iter().flatten().any(|support| {
             support.document().is_none()
                 && support
                     .object()
@@ -345,7 +345,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for drawing in &drawings {
         let missing_object = !object_ids.contains(drawing.object.as_str())
-            || drawing.sources.iter().any(|source| {
+            || drawing.sources.iter().flatten().any(|source| {
                 source.document().is_none()
                     && source
                         .object()
@@ -355,12 +355,17 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .side_entries
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
-        let missing_relationship = drawing.relationships.values().flatten().any(|link| {
-            link.document().is_none()
-                && link
-                    .object()
-                    .is_some_and(|object| !object_ids.contains(object))
-        });
+        let missing_relationship = drawing
+            .relationships
+            .values()
+            .flatten()
+            .flatten()
+            .any(|link| {
+                link.document().is_none()
+                    && link
+                        .object()
+                        .is_some_and(|object| !object_ids.contains(object))
+            });
         if missing_object || missing_entry || missing_relationship {
             findings.push(finding(
                 Check::NativeLinks,
@@ -371,12 +376,18 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for annotation in &annotations {
         let object = object_by_id.get(annotation.object.as_str());
-        let missing_reference = annotation.references.values().flatten().any(|reference| {
-            reference.document().is_none()
-                && reference
-                    .object()
-                    .is_some_and(|object| !object_ids.contains(object))
-        });
+        let missing_reference =
+            annotation
+                .references
+                .values()
+                .flatten()
+                .flatten()
+                .any(|reference| {
+                    reference.document().is_none()
+                        && reference
+                            .object()
+                            .is_some_and(|object| !object_ids.contains(object))
+                });
         let missing_entry = annotation
             .side_entries
             .iter()
@@ -455,7 +466,12 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(property.id.clone()),
             ));
         }
-        for target in property.links().iter().filter_map(|link| link.object()) {
+        for target in property
+            .links()
+            .iter()
+            .flatten()
+            .filter_map(crate::native::LinkTarget::object)
+        {
             if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
@@ -812,7 +828,7 @@ impl CodecBackend for FcstdCodec {
         let mut gui_losses = Vec::new();
         let mut topology_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
-        let primary = dialect::FcstdDialect::classify(&scan.document);
+        let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
@@ -841,7 +857,8 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, &scan.document, Some(ctx))?;
+            let graph =
+                persistence::parse_with_context(document_bytes, &scan.schema_version, Some(ctx))?;
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {

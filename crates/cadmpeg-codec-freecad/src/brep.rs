@@ -1853,43 +1853,13 @@ pub(crate) fn parse_text(
         "PolygonOnTriangulations",
         "Surfaces",
         "Triangulations",
-        "TShapes",
     ] {
-        let mut section_tokens = tokens
-            .iter()
-            .enumerate()
-            .filter(|(_, token)| **token == section);
-        let Some((index, _)) = section_tokens.next() else {
-            return Err(CodecError::malformed(format_args!(
-                "text B-rep has no {section} table"
-            )));
-        };
-        if section_tokens.next().is_some() {
-            return Err(CodecError::Malformed(
-                "text B-rep has duplicate section markers".into(),
-            ));
-        }
-        let count = tokens
-            .get(index + 1)
-            .and_then(|value| value.parse::<usize>().ok())
-            .ok_or_else(|| CodecError::malformed(format_args!("invalid {section} count")))?;
-        if count > 1_000_000 {
-            return Err(CodecError::malformed(format_args!(
-                "{section} count limit exceeded"
-            )));
-        }
-        if previous_section.is_some_and(|previous| index <= previous) {
-            return Err(CodecError::malformed(format_args!(
-                "text B-rep {section} table is out of order"
-            )));
-        }
+        let (index, count) = text_brep_section(&tokens, section, previous_section)?;
         previous_section = Some(index);
         section_counts.insert(section.to_owned(), count);
     }
-    let tshapes = tokens
-        .iter()
-        .position(|token| *token == "TShapes")
-        .expect("TShapes was validated");
+    let (tshapes, declared_shapes) = text_brep_section(&tokens, "TShapes", previous_section)?;
+    section_counts.insert("TShapes".to_owned(), declared_shapes);
     let mut shape_types = BTreeMap::new();
     for token in &tokens[tshapes + 2..] {
         let name = match *token {
@@ -1905,7 +1875,6 @@ pub(crate) fn parse_text(
         };
         *shape_types.entry(name.to_owned()).or_insert(0) += 1;
     }
-    let declared_shapes = section_counts.get("TShapes").copied().unwrap_or(0);
     if shape_types.values().sum::<usize>() != declared_shapes {
         return Err(CodecError::malformed(format_args!(
             "TShapes declares {declared_shapes} records but the shape-type census found {}",
@@ -1935,6 +1904,43 @@ pub(crate) fn parse_text(
         shape_types,
         TextTopologyVersion::try_from(topology_version).map_err(CodecError::Malformed)?,
     ))
+}
+
+/// The token position of one text B-rep section marker and its declared count.
+fn text_brep_section(
+    tokens: &[&str],
+    section: &str,
+    previous_section: Option<usize>,
+) -> Result<(usize, usize), CodecError> {
+    let mut section_tokens = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| **token == section);
+    let Some((index, _)) = section_tokens.next() else {
+        return Err(CodecError::malformed(format_args!(
+            "text B-rep has no {section} table"
+        )));
+    };
+    if section_tokens.next().is_some() {
+        return Err(CodecError::Malformed(
+            "text B-rep has duplicate section markers".into(),
+        ));
+    }
+    let count = tokens
+        .get(index + 1)
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| CodecError::malformed(format_args!("invalid {section} count")))?;
+    if count > 1_000_000 {
+        return Err(CodecError::malformed(format_args!(
+            "{section} count limit exceeded"
+        )));
+    }
+    if previous_section.is_some_and(|previous| index <= previous) {
+        return Err(CodecError::malformed(format_args!(
+            "text B-rep {section} table is out of order"
+        )));
+    }
+    Ok((index, count))
 }
 
 pub(crate) fn parse_binary_prefix(

@@ -14,6 +14,8 @@ use cadmpeg_ir::sketches::{
 };
 
 use super::super::*;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     FeatureInputClass, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
@@ -120,7 +122,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     )));
 
     for marker in &mut lane.sketch_entities {
-        marker.kind = SketchInputKind::Arc;
+        marker.reclassify(SketchInputKind::Arc);
     }
     lane.sketch_entities.extend([
         {
@@ -346,7 +348,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
 
     let paired = paired_object_locus_markers(&lane, "position")
         .into_iter()
-        .map(|marker| marker.id.as_str())
+        .map(|(marker, _)| marker.id())
         .collect::<Vec<_>>();
     assert_eq!(paired, ["first", "second", "paired-duplicate"]);
 
@@ -440,6 +442,57 @@ fn hole_temporary_axis_decodes_depth_point_direction_layout() {
 }
 
 #[test]
+fn an_absent_object_name_trailer_sources_no_hole_position() {
+    // The trailer's absent marker is not an object identifier: a hole whose XML
+    // record carries no source must not join through it.
+    let mut history = native_history();
+    history.features[0].source_id = None;
+    let mut lane = lane();
+    lane.native_payload.resize(200, 0);
+    lane.names.push(FeatureInputName {
+        id: "hole-name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        value: "Hole".into(),
+        object_id: Some(ObjectId::Absent),
+    });
+    let hole_trailer = 6 + "Hole".encode_utf16().count() * 2;
+    lane.native_payload[hole_trailer..hole_trailer + 8]
+        .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+    lane.native_payload[hole_trailer + 8..hole_trailer + 12]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+
+    let child_offset = hole_trailer + 32;
+    lane.names.push(FeatureInputName {
+        id: "position-name".into(),
+        parent: "lane".into(),
+        ordinal: 1,
+        offset: child_offset as u64,
+        value: "Position".into(),
+        object_id: ObjectId::from_value(6),
+    });
+    let child_trailer = child_offset + 6 + "Position".encode_utf16().count() * 2;
+    lane.native_payload[child_trailer..child_trailer + 8]
+        .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+    lane.native_payload[child_trailer + 8..child_trailer + 12].copy_from_slice(&6u32.to_le_bytes());
+
+    assert_eq!(
+        hole_position_sketch_source(&history.features[0], &lane),
+        None
+    );
+
+    // The same fixture with a real identifier in the trailer still joins, so the
+    // absent marker is what stops it.
+    lane.names[0].object_id = ObjectId::from_value(7);
+    lane.native_payload[hole_trailer + 8..hole_trailer + 12].copy_from_slice(&7u32.to_le_bytes());
+    assert_eq!(
+        hole_position_sketch_source(&history.features[0], &lane),
+        Some(6)
+    );
+}
+
+#[test]
 fn embedded_position_sketch_name_resolves_its_typed_source() {
     let history = native_history();
     let mut lane = lane();
@@ -450,7 +503,7 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         ordinal: 0,
         offset: 0,
         value: "Hole".into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     });
     let hole_trailer = 6 + "Hole".encode_utf16().count() * 2;
     lane.native_payload[hole_trailer..hole_trailer + 8]
@@ -464,7 +517,7 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         ordinal: 1,
         offset: child_offset as u64,
         value: "Position".into(),
-        object_id: Some(6),
+        object_id: ObjectId::from_value(6),
     });
     let child_trailer = child_offset + 6 + "Position".encode_utf16().count() * 2;
     lane.native_payload[child_trailer..child_trailer + 8]
@@ -556,7 +609,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -596,7 +649,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 1;
         let offset = 90;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "origin-marker".into();
+        constructed_marker.set_test_id("origin-marker");
         constructed_marker =
             constructed_marker.with_test_identity(None, constructed_marker.local_id());
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
@@ -607,7 +660,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 4;
         let offset = 120;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "point-identity".into();
+        constructed_marker.set_test_id("point-identity");
         constructed_marker =
             constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
         constructed_marker.coordinates_m = None;
@@ -618,10 +671,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 2;
         let offset = 100;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "authored-arc-locus".into();
+        constructed_marker.set_test_id("authored-arc-locus");
         constructed_marker =
             constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker.coordinates_m = Some([0.014, 0.025]);
         constructed_marker
     });
@@ -630,10 +683,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 3;
         let offset = 110;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "arc-origin-marker".into();
+        constructed_marker.set_test_id("arc-origin-marker");
         constructed_marker =
             constructed_marker.with_test_identity(None, constructed_marker.local_id());
-        constructed_marker.kind = SketchInputKind::Point;
+        constructed_marker.reclassify(SketchInputKind::Point);
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker
     });
@@ -665,7 +718,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let mut features = vec![hole, sketch_feature];
     let mut paired_lane = lane.clone();
     paired_lane.sketch_entities.truncate(4);
-    paired_lane.sketch_entities[0].kind = SketchInputKind::Arc;
+    paired_lane.sketch_entities[0].reclassify(SketchInputKind::Arc);
     paired_lane.sketch_entities[0].coordinates_m = Some([0.012, 0.023]);
     let mut alternate_configuration = lane.clone();
     alternate_configuration.id = "alternate-lane".into();
@@ -762,10 +815,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 4;
         let offset = 120;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "unpaired-object-locus".into();
+        constructed_marker.set_test_id("unpaired-object-locus");
         constructed_marker =
             constructed_marker.with_test_identity(Some(3), constructed_marker.local_id());
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker.coordinates_m = Some([0.016, 0.027]);
         constructed_marker
     });
@@ -814,7 +867,7 @@ fn unique_unindexed_point_locus_is_projected() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -938,7 +991,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1091,7 +1144,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1202,7 +1255,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1348,7 +1401,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("9".into()),
+        source_id: FeatureSource::from_value(9),
         ordinal: 1,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1385,7 +1438,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         ordinal: 2,
         offset: 100,
         value: "Profile".into(),
-        object_id: Some(8),
+        object_id: ObjectId::from_value(8),
     });
     lane.scalars.push(FeatureInputScalar {
         id: "depth-scalar".into(),
@@ -1418,7 +1471,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     histories[0].features[1].ordinal = 5;
     let mut next_hole = histories[0].features[0].clone();
     next_hole.id = "next-hole".into();
-    next_hole.source_id = Some("20".into());
+    next_hole.source_id = FeatureSource::from_value(20);
     next_hole.ordinal = 1;
     histories[0].features.push(next_hole);
     enrich_history_hole_constructions(&mut histories, &[]);
@@ -1436,7 +1489,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
-    position.source_id = Some("12".into());
+    position.source_id = FeatureSource::from_value(12);
     position.ordinal = 5;
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();
@@ -1449,7 +1502,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("58".into()),
+        source_id: FeatureSource::from_value(58),
         ordinal: 9,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1479,7 +1532,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 1,
             offset: 100,
             value: "Position".into(),
-            object_id: Some(12),
+            object_id: ObjectId::from_value(12),
         },
         FeatureInputName {
             id: "profile-name".into(),
@@ -1487,7 +1540,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 2,
             offset: 200,
             value: "Profile".into(),
-            object_id: Some(58),
+            object_id: ObjectId::from_value(58),
         },
     ]);
 
@@ -1503,7 +1556,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     history.features[0].properties.remove("DissectableChildren");
     let mut alternate_profile = profile;
     alternate_profile.id = "alternate-profile-sketch".into();
-    alternate_profile.source_id = Some("59".into());
+    alternate_profile.source_id = FeatureSource::from_value(59);
     alternate_profile.ordinal = 10;
     history.features.push(alternate_profile);
     let mut alternate_lane = lane_with_position_reference(12);
@@ -1515,7 +1568,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 1,
             offset: 100,
             value: "Position".into(),
-            object_id: Some(12),
+            object_id: ObjectId::from_value(12),
         },
         FeatureInputName {
             id: "alternate-profile-name".into(),
@@ -1523,7 +1576,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 2,
             offset: 150,
             value: "Alternate profile".into(),
-            object_id: Some(59),
+            object_id: ObjectId::from_value(59),
         },
         FeatureInputName {
             id: "later-profile-name".into(),
@@ -1531,7 +1584,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 3,
             offset: 200,
             value: "Profile".into(),
-            object_id: Some(58),
+            object_id: ObjectId::from_value(58),
         },
     ]);
     enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane]);
@@ -1545,7 +1598,7 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
-    position.source_id = Some("8".into());
+    position.source_id = FeatureSource::from_value(8);
     position.ordinal = 1;
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();

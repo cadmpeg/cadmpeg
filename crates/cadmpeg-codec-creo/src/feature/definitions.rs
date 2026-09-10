@@ -2142,7 +2142,7 @@ pub(crate) fn segment_table(
     {
         cursor += 1;
     }
-    segment_table_body(payload, table, cursor, end, false)
+    segment_table_body(payload, table, cursor, end, PrototypeRow::Present)
 }
 
 pub(crate) fn positional_segment_table(
@@ -2152,7 +2152,16 @@ pub(crate) fn positional_segment_table(
 ) -> Option<FeatureSegmentTable> {
     let name_end = find_bytes(payload, b"S2D", start, start.saturating_add(256).min(end))?;
     let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
-    segment_table_body(payload, cursor, cursor, end, true)
+    segment_table_body(payload, cursor, cursor, end, PrototypeRow::Elided)
+}
+
+/// Whether a segment table's declared count includes an elided prototype row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrototypeRow {
+    /// The first declared row is elided from the body.
+    Elided,
+    /// Every declared row is present in the body.
+    Present,
 }
 
 pub(crate) fn segment_table_body(
@@ -2160,8 +2169,9 @@ pub(crate) fn segment_table_body(
     table: usize,
     mut cursor: usize,
     end: usize,
-    has_elided_prototype: bool,
+    prototype_row: PrototypeRow,
 ) -> Option<FeatureSegmentTable> {
+    let has_elided_prototype = prototype_row == PrototypeRow::Elided;
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;

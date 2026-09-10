@@ -23,6 +23,7 @@ pub(crate) use selections::*;
 pub(crate) use write::*;
 
 use crate::container::ContainerScan;
+use crate::records::FeatureSource;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
@@ -122,13 +123,14 @@ pub(crate) fn histories(
                             let record_id = feature_ids.get(&ancestor.range().start)?.clone();
                             Some(crate::records::TreeParent::Record {
                                 record_id,
-                                source_id: ancestor.attribute("id").map(str::to_string),
+                                source_id: ancestor
+                                    .attribute("id")
+                                    .and_then(|value| FeatureSource::try_from(value).ok()),
                             })
                         }),
                         source_id: node
                             .attribute("id")
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_string),
+                            .and_then(|value| FeatureSource::try_from(value).ok()),
                         ordinal: ordinal as u32,
                         name: node.attribute("Name").unwrap_or("").into(),
                         kind: node
@@ -271,17 +273,17 @@ pub(crate) fn histories(
 
 pub(crate) fn enrich_scene_classes(
     histories: &mut [FeatureHistory],
-    scene_classes: &HashMap<String, String>,
+    scene_classes: &HashMap<u32, String>,
 ) {
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
-        let Some(source) = feature.source_id.as_deref() else {
+        let Some(source) = feature.source_value() else {
             continue;
         };
         if feature.input_class.is_none() && classless_builtin_node(feature) {
-            feature.input_class = scene_classes.get(source).cloned();
+            feature.input_class = scene_classes.get(&source).cloned();
         }
     }
 }

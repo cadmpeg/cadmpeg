@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product prototypes, occurrence identity, and relative placement.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -54,7 +55,6 @@ pub(super) fn decode(
     admitted_ir_entities: &mut u64,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let formations = exchange
         .entities_any(PRODUCT_DEFINITION_FORMATION_TYPES)
@@ -227,15 +227,15 @@ pub(super) fn decode(
                 |definition| format!("PRODUCT_DEFINITION #{definition}"),
             );
             if !missing.is_empty() {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} omitted uncommitted shape body reference(s): {}",
                     missing.join(", ")
-                ));
+                )));
             }
             if has_shape_binding && bodies.is_empty() {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} has a shape representation with no committed topology body"
-                ));
+                )));
             }
             ir.model.product_definitions.push(ProductDefinition {
                 id: product_definition_id.clone(),
@@ -306,13 +306,13 @@ pub(super) fn decode(
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRODUCT_DEFINITION #{definition} has no local product prototype"
-            ));
+            )));
             continue;
         };
         let id = OccurrenceId::from(ids::product(
-            "occurrence",
+            kind!("occurrence"),
             format!("definition-{definition}"),
         ));
         ir.model.occurrences.push(Occurrence {
@@ -341,7 +341,7 @@ pub(super) fn decode(
         exchange,
         geometry,
         &usages,
-        &mut warnings,
+        &mut losses,
         &mut ambiguous_placements,
         &mut competing_placements,
     )?;
@@ -391,23 +391,23 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} references an unresolved child definition"
-                ));
+                )));
                 continue;
             };
             let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
             let depth_limit = assembly_depth_limit(ctx);
             if parent_path.len() >= depth_limit {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} exceeds the {depth_limit}-level assembly depth limit"
-                ));
+                )));
                 continue;
             }
             if parent_path.contains(&usage.child_definition) {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
-                ));
+                )));
                 continue;
             }
             let instance = usage_instances.entry(usage_id).or_default();
@@ -417,12 +417,15 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId::from(ids::product("occurrence", format!("{usage_id}{suffix}")));
+            let id = OccurrenceId::from(ids::product(
+                kind!("occurrence"),
+                format!("{usage_id}{suffix}"),
+            ));
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "assembly occurrence expansion exceeds the {occurrence_cap}-occurrence limit"
-                ));
+                )));
                 break 'expansion;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
@@ -464,18 +467,11 @@ pub(super) fn decode(
         }
     }
     if !had_roots && !usages.is_empty() {
-        warnings.push("assembly occurrence graph has no resolvable root".into());
+        losses.push(
+            StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
+        );
     }
-    apply_body_placements(
-        exchange,
-        geometry,
-        topology,
-        &usages,
-        ir,
-        &mut warnings,
-        &mut losses,
-        ctx,
-    )?;
+    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut losses, ctx)?;
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -522,7 +518,6 @@ pub(super) fn decode(
             product_definition_ids_by_shape,
         },
         claims: typed,
-        warnings,
         losses,
         notes: Vec::new(),
     })
@@ -559,7 +554,6 @@ fn apply_body_placements(
     topology: &TopologyData,
     usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
-    warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
@@ -625,7 +619,10 @@ fn apply_body_placements(
         let transform = match mapped_item_transform(origin, target, geometry) {
             Ok(Some(transform)) => transform,
             Ok(None) | Err(TransformError::Singular) => {
-                warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
+                losses.push(
+                    StepLossCode::DecodeWarning
+                        .note(format!("MAPPED_ITEM #{id} has no resolved body placement")),
+                );
                 continue;
             }
             Err(error) => return Err(placement_error(error)),
@@ -835,7 +832,7 @@ fn occurrence_placements(
     exchange: &Exchange,
     geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
     ambiguous: &mut BTreeMap<u64, Vec<u64>>,
     competing: &mut BTreeMap<u64, Vec<u64>>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
@@ -878,9 +875,11 @@ fn occurrence_placements(
                 }
             }
             Ok(None) => {}
-            Err(TransformError::Singular) => warnings.push(format!(
-                "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION #{record_id} has a singular placement"
-            )),
+            Err(TransformError::Singular) => {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION #{record_id} has a singular placement"
+                )));
+            }
             Err(error) => return Err(placement_error(error)),
         }
     }
@@ -942,8 +941,11 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
-                            warnings
-                                .push(format!("MAPPED_ITEM #{item_id} has a singular placement"));
+                            losses.push(
+                                StepLossCode::DecodeWarning.note(format!(
+                                    "MAPPED_ITEM #{item_id} has a singular placement"
+                                )),
+                            );
                             continue;
                         }
                         Err(error) => return Err(placement_error(error)),
@@ -973,9 +975,9 @@ fn occurrence_placements(
                 result.insert(usage_id, *transform);
             }
             [] => {}
-            _ => warnings.push(format!(
+            _ => losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous occurrence shape placement"
-            )),
+            ))),
         }
     }
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
@@ -1016,8 +1018,11 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
-                            warnings
-                                .push(format!("MAPPED_ITEM #{item_id} has a singular placement"));
+                            losses.push(
+                                StepLossCode::DecodeWarning.note(format!(
+                                    "MAPPED_ITEM #{item_id} has a singular placement"
+                                )),
+                            );
                             continue;
                         }
                         Err(error) => return Err(placement_error(error)),
@@ -1040,9 +1045,9 @@ fn occurrence_placements(
         if sibling_usage_count == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
         } else if !placements.is_empty() {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous mapped-item placement"
-            ));
+            )));
         }
     }
     Ok(result)
@@ -1178,7 +1183,7 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId::from(ids::product("product", id))
+    ProductDefinitionId::from(ids::product(kind!("product"), id))
 }
 
 fn product_definition_ir_id(
@@ -1190,7 +1195,7 @@ fn product_definition_ir_id(
         product_ir_id(product)
     } else {
         ProductDefinitionId::from(ids::product(
-            "product",
+            kind!("product"),
             format!("{product}-definition-{definition}"),
         ))
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! AP242 indexed tessellation decoding.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
@@ -37,7 +38,6 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
     let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
@@ -50,7 +50,9 @@ pub(super) fn decode(
             continue;
         };
         let Some(items) = entity_parameter(record, kind, 0, 1).and_then(ValueExt::list) else {
-            warnings.push(format!("{kind} #{id} has no structured items"));
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no structured items")),
+            );
             continue;
         };
         let item_ids = items
@@ -136,9 +138,9 @@ pub(super) fn decode(
             continue;
         }
         let Some(item) = tessellated_annotation_item(record) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_ANNOTATION_OCCURRENCE #{id} has no tessellated item"
-            ));
+            )));
             continue;
         };
         let mut associator = TessellationItemAssociator {
@@ -161,7 +163,6 @@ pub(super) fn decode(
         let message = format!(
             "repositioned tessellated item #{id} has no valid AXIS2_PLACEMENT_3D; unresolved placement is not applied"
         );
-        warnings.push(message.clone());
         losses.push(StepLossCode::TessellationPlacementUnresolved.note(message));
     }
     for id in unresolved_containers {
@@ -171,7 +172,10 @@ pub(super) fn decode(
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
         };
-        warnings.push(format!("{kind} #{id} has no decoded exact body link"));
+        losses.push(
+            StepLossCode::DecodeWarning
+                .note(format!("{kind} #{id} has no decoded exact body link")),
+        );
     }
     let unresolved_items = item_bodies
         .iter()
@@ -187,7 +191,6 @@ pub(super) fn decode(
                 "tessellation item #{item} has {} distinct repositioning placements; mesh retained in source coordinates",
                 distinct.len()
             );
-            warnings.push(message.clone());
             losses.push(StepLossCode::TessellationPlacementAmbiguous.note(message));
         }
     }
@@ -202,58 +205,58 @@ pub(super) fn decode(
             };
             let message =
                 format!("tessellation item #{item} has {detail}; mesh retained as detached");
-            warnings.push(message.clone());
             losses.push(StepLossCode::TessellationItemBodyUnresolved.note(message));
         }
     }
     for (&id, record) in &exchange.records {
-        let Some(kind) = entity_kind(
-            record,
-            &[
-                "TRIANGULATED_FACE",
-                "COMPLEX_TRIANGULATED_FACE",
-                "TRIANGULATED_SURFACE_SET",
-                "COMPLEX_TRIANGULATED_SURFACE_SET",
-            ],
-        ) else {
+        let Some(entity) = TriangulatedEntity::of(record) else {
             continue;
         };
-        let base_kind = if matches!(kind, "TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") {
-            "TESSELLATED_FACE"
-        } else {
-            "TESSELLATED_SURFACE_SET"
-        };
+        let kind = entity.name();
+        let base_kind = entity.base_name();
         let Some(coordinate_id) =
             inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
         else {
-            warnings.push(format!("{kind} #{id} has no COORDINATES_LIST reference"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{kind} #{id} has no COORDINATES_LIST reference")),
+            );
             continue;
         };
         let Some(vertices) = coordinates.get(&coordinate_id) else {
-            warnings.push(format!("{kind} #{id} has no resolved COORDINATES_LIST"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{kind} #{id} has no resolved COORDINATES_LIST")),
+            );
             continue;
         };
-        let (triangles, strip_lengths) = match kind {
-            "TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET" => (
-                entity_parameter(record, kind, 1, own_parameter_offset(kind))
-                    .and_then(triangle_rows),
+        let offset = entity.own_parameter_offset();
+        let (triangles, strip_lengths) = match entity {
+            TriangulatedEntity::Face | TriangulatedEntity::SurfaceSet => (
+                entity_parameter(record, kind, 1, offset).and_then(triangle_rows),
                 Vec::new(),
             ),
-            "COMPLEX_TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_SURFACE_SET" => complex_triangles(
-                entity_parameter(record, kind, 1, own_parameter_offset(kind)),
-                entity_parameter(record, kind, 2, own_parameter_offset(kind)),
-            ),
-            _ => unreachable!("tessellation kind was checked above"),
+            TriangulatedEntity::ComplexFace | TriangulatedEntity::ComplexSurfaceSet => {
+                complex_triangles(
+                    entity_parameter(record, kind, 1, offset),
+                    entity_parameter(record, kind, 2, offset),
+                )
+            }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
-            warnings.push(format!("{kind} #{id} has no triangle indices"));
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no triangle indices")),
+            );
             continue;
         };
-        let pnindex = match entity_parameter(record, kind, 0, own_parameter_offset(kind)) {
+        let pnindex = match entity_parameter(record, kind, 0, offset) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
-                    warnings.push(format!("{kind} #{id} has an invalid pnindex"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("{kind} #{id} has an invalid pnindex")),
+                    );
                     continue;
                 };
                 indices
@@ -265,9 +268,9 @@ pub(super) fn decode(
                 .flatten()
                 .any(|index| *index == 0 || *index as usize > vertices.len())
             {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} has an out-of-range one-based coordinate index"
-                ));
+                )));
                 continue;
             }
             let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
@@ -294,9 +297,9 @@ pub(super) fn decode(
                     .flatten()
                     .any(|index| *index == 0 || *index as usize > pnindex.len())
             {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} has an out-of-range one-based tessellation index"
-                ));
+                )));
                 continue;
             }
             (
@@ -322,9 +325,9 @@ pub(super) fn decode(
             ) {
                 Ok(normals) => normals,
                 Err(error) => {
-                    warnings.push(format!(
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
                         "{kind} #{id} normal-row allocation refused: {error}"
-                    ));
+                    )));
                     Vec::new()
                 }
             },
@@ -335,10 +338,10 @@ pub(super) fn decode(
                 .map(|index| source_normals[*index as usize - 1])
                 .collect(),
             count => {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} carries {count} normals for {} coordinates",
                     local_vertices.len()
-                ));
+                )));
                 Vec::new()
             }
         };
@@ -356,7 +359,7 @@ pub(super) fn decode(
             }
         }
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
-            let surface_id = ids::data("surface", surface_step);
+            let surface_id = ids::data(kind!("surface"), surface_step);
             if let Some(surface) = ir
                 .model
                 .surfaces
@@ -369,7 +372,7 @@ pub(super) fn decode(
             }
         }
         let mesh = match Tessellation::from_decoded(
-            ids::tessellation("mesh", id).into_string(),
+            ids::tessellation(kind!("mesh"), id).into_string(),
             local_vertices,
             local_triangles,
             strip_lengths,
@@ -388,7 +391,6 @@ pub(super) fn decode(
             let message = format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
             );
-            warnings.push(message.clone());
             losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
         ir.model.tessellations.push(
@@ -421,7 +423,6 @@ pub(super) fn decode(
     Ok(StageOutcome {
         value: (),
         claims: typed,
-        warnings,
         losses,
         notes: Vec::new(),
     })
@@ -736,11 +737,49 @@ fn entity_parameter<'a>(
     partial.parameters.get(index + offset)
 }
 
-fn own_parameter_offset(entity: &str) -> usize {
-    match entity {
-        "TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" => 5,
-        "TRIANGULATED_SURFACE_SET" | "COMPLEX_TRIANGULATED_SURFACE_SET" => 4,
-        _ => unreachable!("tessellation entity has no indexed subtype fields"),
+/// One triangulated tessellation entity, parsed from the record's partial names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TriangulatedEntity {
+    Face,
+    ComplexFace,
+    SurfaceSet,
+    ComplexSurfaceSet,
+}
+
+impl TriangulatedEntity {
+    fn of(record: &RawRecord) -> Option<Self> {
+        record.partials.iter().find_map(|partial| {
+            Some(match partial.name.as_str() {
+                "TRIANGULATED_FACE" => Self::Face,
+                "COMPLEX_TRIANGULATED_FACE" => Self::ComplexFace,
+                "TRIANGULATED_SURFACE_SET" => Self::SurfaceSet,
+                "COMPLEX_TRIANGULATED_SURFACE_SET" => Self::ComplexSurfaceSet,
+                _ => return None,
+            })
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Face => "TRIANGULATED_FACE",
+            Self::ComplexFace => "COMPLEX_TRIANGULATED_FACE",
+            Self::SurfaceSet => "TRIANGULATED_SURFACE_SET",
+            Self::ComplexSurfaceSet => "COMPLEX_TRIANGULATED_SURFACE_SET",
+        }
+    }
+
+    fn base_name(self) -> &'static str {
+        match self {
+            Self::Face | Self::ComplexFace => "TESSELLATED_FACE",
+            Self::SurfaceSet | Self::ComplexSurfaceSet => "TESSELLATED_SURFACE_SET",
+        }
+    }
+
+    fn own_parameter_offset(self) -> usize {
+        match self {
+            Self::Face | Self::ComplexFace => 5,
+            Self::SurfaceSet | Self::ComplexSurfaceSet => 4,
+        }
     }
 }
 

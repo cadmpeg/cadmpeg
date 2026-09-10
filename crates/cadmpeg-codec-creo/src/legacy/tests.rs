@@ -1148,19 +1148,18 @@ fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
 }
 
 #[test]
-fn value_kind_shares_payload_types_and_preserves_identity_tokens() {
-    let unsigned: [ValueKind<NumericPayload<u32>>; 4] = [
-        ValueKind::TYPE5,
-        ValueKind::TYPE7,
-        ValueKind::TYPE9,
-        ValueKind::TYPE11,
-    ];
+fn value_kind_types_are_distinct_and_preserve_identity_tokens() {
+    let token = |code: crate::legacy::type_code::LegacyTypeCode| code.identity_token();
     assert_eq!(
-        unsigned.map(ValueKind::as_str),
-        ["type_5", "type_7", "type_9", "type_11"]
+        token(super::declaration_code(ValueKind::INTEGER)),
+        "integer"
     );
-    let real: [ValueKind<NumericPayload<Real>>; 2] = [ValueKind::REAL, ValueKind::TYPE6];
-    assert_eq!(real.map(ValueKind::as_str), ["real", "type_6"]);
-    let strings: [ValueKind<StringValue>; 2] = [ValueKind::TYPE3, ValueKind::TYPE4];
-    assert_eq!(strings.map(ValueKind::as_str), ["type_3", "type_4"]);
+    assert_eq!(token(super::declaration_code(ValueKind::REAL)), "real");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE3)), "type_3");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE4)), "type_4");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE5)), "type_5");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE6)), "type_6");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE7)), "type_7");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE9)), "type_9");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE11)), "type_11");
 }

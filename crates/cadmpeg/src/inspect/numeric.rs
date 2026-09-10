@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset argument parsing and fixed-width scalar reads.
 
+use std::num::NonZeroUsize;
+
 use clap::ValueEnum;
 
 use cadmpeg_core::bytes::assemble_u64_le;
@@ -130,19 +132,23 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
+    /// The widest encoding any variant uses.
+    pub const MAX_WIDTH: usize = 8;
+
     /// Returns the encoded width in bytes.
-    pub const fn width(self) -> usize {
-        match self {
+    pub const fn width(self) -> NonZeroUsize {
+        let width = match self {
             Self::U8 | Self::I8 => 1,
             Self::U16 | Self::I16 => 2,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
-        }
+        };
+        NonZeroUsize::new(width).expect("every encoding is at least one byte wide")
     }
 
     /// Returns true when the encoding is one byte wide and byte order is moot.
     pub const fn is_single_byte(self) -> bool {
-        self.width() == 1
+        self.width().get() == 1
     }
 
     /// Returns the spec name without a byte-order suffix.
@@ -188,35 +194,43 @@ impl ScalarType {
         .find(|candidate| candidate.base_name() == name)
     }
 
-    /// Decodes one value from exactly [`ScalarType::width`] bytes.
-    ///
-    /// # Panics
-    ///
-    /// Panics when `bytes` is not exactly the encoded width. Callers slice the
-    /// window before calling, so a mismatch is a programming error.
-    pub fn read(self, bytes: &[u8], endian: Endian) -> ScalarValue {
-        assert_eq!(
-            bytes.len(),
-            self.width(),
-            "scalar read needs an exact slice"
-        );
-        let mut raw = [0u8; 8];
+    /// Returns a window over the leading [`ScalarType::width`] bytes of a maximum-width buffer.
+    pub fn window_of(self, buffer: &[u8; ScalarType::MAX_WIDTH]) -> ScalarWindow<'_> {
+        ScalarWindow {
+            ty: self,
+            bytes: &buffer[..self.width().get()],
+        }
+    }
+}
+
+/// A byte window of exactly the width of the scalar type that minted it.
+#[derive(Debug, Clone, Copy)]
+pub struct ScalarWindow<'a> {
+    ty: ScalarType,
+    bytes: &'a [u8],
+}
+
+impl ScalarWindow<'_> {
+    /// Decodes the window in the stated byte order.
+    pub fn read(self, endian: Endian) -> ScalarValue {
+        let bytes = self.bytes;
+        let mut raw = [0u8; ScalarType::MAX_WIDTH];
         raw[..bytes.len()].copy_from_slice(bytes);
         if endian == Endian::Be {
             raw[..bytes.len()].reverse();
         }
         let bits = assemble_u64_le(raw);
-        match self {
-            Self::U8 => ScalarValue::U8(bits as u8),
-            Self::I8 => ScalarValue::I8(bits as i8),
-            Self::U16 => ScalarValue::U16(bits as u16),
-            Self::I16 => ScalarValue::I16(bits as i16),
-            Self::U32 => ScalarValue::U32(bits as u32),
-            Self::I32 => ScalarValue::I32(bits as i32),
-            Self::U64 => ScalarValue::U64(bits),
-            Self::I64 => ScalarValue::I64(bits as i64),
-            Self::F32 => ScalarValue::F32(f32::from_bits(bits as u32)),
-            Self::F64 => ScalarValue::F64(f64::from_bits(bits)),
+        match self.ty {
+            ScalarType::U8 => ScalarValue::U8(bits as u8),
+            ScalarType::I8 => ScalarValue::I8(bits as i8),
+            ScalarType::U16 => ScalarValue::U16(bits as u16),
+            ScalarType::I16 => ScalarValue::I16(bits as i16),
+            ScalarType::U32 => ScalarValue::U32(bits as u32),
+            ScalarType::I32 => ScalarValue::I32(bits as i32),
+            ScalarType::U64 => ScalarValue::U64(bits),
+            ScalarType::I64 => ScalarValue::I64(bits as i64),
+            ScalarType::F32 => ScalarValue::F32(f32::from_bits(bits as u32)),
+            ScalarType::F64 => ScalarValue::F64(f64::from_bits(bits)),
         }
     }
 }
@@ -237,6 +251,22 @@ pub enum ScalarValue {
 }
 
 impl ScalarValue {
+    /// Returns the encoded type the value was decoded from.
+    pub const fn ty(self) -> ScalarType {
+        match self {
+            Self::U8(_) => ScalarType::U8,
+            Self::I8(_) => ScalarType::I8,
+            Self::U16(_) => ScalarType::U16,
+            Self::I16(_) => ScalarType::I16,
+            Self::U32(_) => ScalarType::U32,
+            Self::I32(_) => ScalarType::I32,
+            Self::U64(_) => ScalarType::U64,
+            Self::I64(_) => ScalarType::I64,
+            Self::F32(_) => ScalarType::F32,
+            Self::F64(_) => ScalarType::F64,
+        }
+    }
+
     /// Renders the value the way a human reads it.
     pub fn decimal(self) -> String {
         match self {
@@ -284,6 +314,13 @@ impl ScalarValue {
 mod tests {
     use super::*;
 
+    #[track_caller]
+    fn read(ty: ScalarType, bytes: &[u8], endian: Endian) -> ScalarValue {
+        let mut raw = [0u8; ScalarType::MAX_WIDTH];
+        raw[..bytes.len()].copy_from_slice(bytes);
+        ty.window_of(&raw).read(endian)
+    }
+
     #[test]
     fn parse_offset_reads_both_radixes() {
         assert_eq!(parse_offset("0"), Ok(0));
@@ -312,11 +349,11 @@ mod tests {
         // 0x0102 big-endian is 258; the same bytes little-endian are 0x0201.
         let bytes = [0x01, 0x02];
         assert_eq!(
-            ScalarType::U16.read(&bytes, Endian::Be),
+            read(ScalarType::U16, &bytes, Endian::Be),
             ScalarValue::U16(258)
         );
         assert_eq!(
-            ScalarType::U16.read(&bytes, Endian::Le),
+            read(ScalarType::U16, &bytes, Endian::Le),
             ScalarValue::U16(513)
         );
     }
@@ -324,19 +361,19 @@ mod tests {
     #[test]
     fn signed_reads_sign_extend_at_each_width() {
         assert_eq!(
-            ScalarType::I8.read(&[0xff], Endian::Le),
+            read(ScalarType::I8, &[0xff], Endian::Le),
             ScalarValue::I8(-1)
         );
         assert_eq!(
-            ScalarType::I16.read(&[0x00, 0x80], Endian::Le),
+            read(ScalarType::I16, &[0x00, 0x80], Endian::Le),
             ScalarValue::I16(-32768)
         );
         assert_eq!(
-            ScalarType::I32.read(&[0xff, 0xff, 0xff, 0xff], Endian::Be),
+            read(ScalarType::I32, &[0xff, 0xff, 0xff, 0xff], Endian::Be),
             ScalarValue::I32(-1)
         );
         assert_eq!(
-            ScalarType::I64.read(&[0, 0, 0, 0, 0, 0, 0, 0x80], Endian::Le),
+            read(ScalarType::I64, &[0, 0, 0, 0, 0, 0, 0, 0x80], Endian::Le),
             ScalarValue::I64(i64::MIN)
         );
     }
@@ -346,13 +383,13 @@ mod tests {
         // 1.5f64 is sign 0, exponent 0x3ff, mantissa 0x8000000000000.
         let one_point_five = 0x3ff8_0000_0000_0000u64.to_le_bytes();
         assert_eq!(
-            ScalarType::F64.read(&one_point_five, Endian::Le),
+            read(ScalarType::F64, &one_point_five, Endian::Le),
             ScalarValue::F64(1.5)
         );
         // -2.0f32 is sign 1, exponent 0x80, mantissa 0.
         let minus_two = 0xc000_0000u32.to_be_bytes();
         assert_eq!(
-            ScalarType::F32.read(&minus_two, Endian::Be),
+            read(ScalarType::F32, &minus_two, Endian::Be),
             ScalarValue::F32(-2.0)
         );
     }

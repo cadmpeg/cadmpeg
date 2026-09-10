@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino point and simple-curve payload decoding.
 
+use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
@@ -97,7 +98,7 @@ pub(crate) struct PointCloud {
     /// Whether a unit conversion was applied.
     pub(crate) scaled: bool,
     /// Repairs applied to optional channels that do not match the point count.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// A curve carrier or a recursive polycurve construction.
@@ -108,7 +109,7 @@ pub(crate) enum DecodedCurve {
         /// Solved carrier geometry.
         geometry: CurveGeometry,
         /// Non-fatal source warnings.
-        warnings: Vec<String>,
+        warnings: Diagnostics,
     },
     /// Polycurve with one start parameter per child and a closing end parameter.
     Compound {
@@ -117,22 +118,22 @@ pub(crate) enum DecodedCurve {
         /// End parameter of the last child.
         end_parameter: f64,
         /// Non-fatal source warnings.
-        warnings: Vec<String>,
+        warnings: Diagnostics,
     },
 }
 
 impl DecodedCurve {
-    pub(crate) fn leaf(geometry: CurveGeometry, warnings: Vec<String>) -> Self {
+    pub(crate) fn leaf(geometry: CurveGeometry, warnings: Diagnostics) -> Self {
         Self::Leaf { geometry, warnings }
     }
 
-    pub(crate) fn warnings(&self) -> &[String] {
+    pub(crate) fn warnings(&self) -> &Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
         }
     }
 
-    pub(crate) fn warnings_mut(&mut self) -> &mut Vec<String> {
+    pub(crate) fn warnings_mut(&mut self) -> &mut Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
         }
@@ -387,7 +388,7 @@ pub(crate) fn decode_inner(
                 "curve-on-surface has no stored model-space carrier",
             ));
         };
-        curve.warnings_mut().splice(0..0, construction.warnings);
+        curve.warnings_mut().prepend(construction.warnings);
         return Ok(DecodedGeometry::Curve { curve });
     }
     if matches!(
@@ -418,7 +419,7 @@ pub(crate) fn decode_inner(
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
-                Vec::new(),
+                Diagnostics::new(),
             ),
         },
         ARC => {
@@ -430,7 +431,7 @@ pub(crate) fn decode_inner(
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
-                Vec::new(),
+                Diagnostics::new(),
             ),
         },
         POLYCURVE | POLYCURVE_LEGACY => {
@@ -440,7 +441,7 @@ pub(crate) fn decode_inner(
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(&mut reader, scale)?),
-                Vec::new(),
+                Diagnostics::new(),
             ),
         },
         _ => {
@@ -470,7 +471,7 @@ pub(crate) fn decode_embedded_curve(
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-    let mut wrapper_warnings = Vec::new();
+    let mut wrapper_warnings = Diagnostics::new();
     let class = parse_class_wrapper(
         data,
         start..wrapper.next_offset(),
@@ -507,7 +508,7 @@ pub(crate) fn decode_embedded_curve(
             "embedded surface child is not a curve",
         ));
     };
-    curve.warnings_mut().splice(0..0, wrapper_warnings);
+    curve.warnings_mut().prepend(wrapper_warnings);
     Ok(curve)
 }
 
@@ -527,7 +528,7 @@ pub(crate) fn decode_embedded_curve_2d(
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-    let mut wrapper_warnings = Vec::new();
+    let mut wrapper_warnings = Diagnostics::new();
     let class = parse_class_wrapper(
         data,
         start..wrapper.next_offset(),
@@ -556,7 +557,7 @@ pub(crate) fn decode_embedded_curve_2d(
         ));
     };
     scale_decoded_curve(&mut curve, scale, start)?;
-    curve.warnings_mut().splice(0..0, wrapper_warnings);
+    curve.warnings_mut().prepend(wrapper_warnings);
     Ok(curve)
 }
 
@@ -749,7 +750,7 @@ pub(crate) fn remap_nurbs_domain(
 /// Exact joined curve and recoverable join diagnostics.
 pub(crate) struct NurbsJoin {
     pub(crate) curve: NurbsCurve,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 #[derive(Clone, Copy)]
@@ -951,7 +952,7 @@ pub(crate) fn join_nurbs_segments(
     if segments.len() == 1 {
         return Ok(NurbsJoin {
             curve: segments.remove(0),
-            warnings: Vec::new(),
+            warnings: Diagnostics::new(),
         });
     }
     let multiplicity = usize::try_from(degree)
@@ -999,7 +1000,7 @@ pub(crate) fn join_nurbs_segments(
     let mut control_points: Vec<Point3> = Vec::with_capacity(control_count);
     let mut knots: Vec<f64> = Vec::with_capacity(knot_count);
     let mut weights = rational.then(|| Vec::with_capacity(control_count));
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     for (index, mut segment) in segments.into_iter().enumerate() {
         if index > 0 {
             let previous = *control_points.last().expect("previous segment endpoint");
@@ -1014,9 +1015,10 @@ pub(crate) fn join_nurbs_segments(
                 + (previous.z - next.z).powi(2))
             .sqrt();
             if gap > 0.0 {
-                warnings.push(format!(
-                    "polycurve join moved endpoints by half of gap {gap}"
-                ));
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::PolycurveJoinGap,
+                    format!("polycurve join moved endpoints by half of gap {gap}"),
+                );
             }
             *control_points.last_mut().expect("previous endpoint") = midpoint;
             segment
@@ -1077,19 +1079,19 @@ pub(crate) fn decode_inner_2d(
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
-                Vec::new(),
+                Diagnostics::new(),
             ),
         },
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Nurbs(read_line(&mut reader, 1.0, Some(2))?),
-                Vec::new(),
+                Diagnostics::new(),
             ),
         },
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Nurbs(read_polyline(&mut reader, 1.0, Some(2))?),
-                Vec::new(),
+                Diagnostics::new(),
             ),
         },
         ARC => {
@@ -1142,7 +1144,7 @@ fn read_polycurve_2d(
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-        let mut wrapper_warnings = Vec::new();
+        let mut wrapper_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
             data,
             start..wrapper.next_offset(),
@@ -1163,13 +1165,13 @@ fn read_polycurve_2d(
                 "C2 polycurve child is not a curve",
             ));
         };
-        curve.warnings_mut().splice(0..0, wrapper_warnings);
+        curve.warnings_mut().prepend(wrapper_warnings);
         children.push((parameter, curve));
     }
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     })
 }
 
@@ -1208,12 +1210,14 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     plane(reader)?;
     bbox(reader)?;
     reader.i32()?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if minor >= 1 {
         let normal_count = count(reader, 24)?;
         if normal_count != 0 && normal_count != point_count {
-            warnings
-                .push("redundant point-cloud normal count mismatch; channel dropped".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "redundant point-cloud normal count mismatch; channel dropped",
+            );
         }
         for _ in 0..normal_count {
             crate::settings::vector(reader)?;
@@ -1223,8 +1227,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
             reader.take(4)?;
         }
         if color_count != 0 && color_count != point_count {
-            warnings
-                .push("redundant point-cloud color count mismatch; channel dropped".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "redundant point-cloud color count mismatch; channel dropped",
+            );
         }
     }
     if minor >= 2 {
@@ -1236,8 +1242,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
             }
         }
         if value_count != 0 && value_count != point_count {
-            warnings
-                .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "redundant point-cloud scalar count mismatch; channel dropped",
+            );
         }
     }
     if point_count == 0 {
@@ -1345,14 +1353,14 @@ fn read_arc(
     scale: f64,
     expected_dimension: Option<i32>,
     force_nurbs: bool,
-) -> Result<(CurveGeometry, Vec<String>), GeometryError> {
+) -> Result<(CurveGeometry, Diagnostics), GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let circle = read_circle(reader, scale)?;
     let angle = finite_interval(interval(reader)?, reader.position())?;
     let domain = finite_interval(interval(reader)?, reader.position())?;
     let dimension = reader.i32()?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if expected_dimension.is_some_and(|expected| dimension != expected) {
         return Err(error(reader.position(), "arc dimension is invalid"));
     }
@@ -1468,7 +1476,7 @@ fn read_polycurve(
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-        let mut wrapper_warnings = Vec::new();
+        let mut wrapper_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
             data,
             start..wrapper.next_offset(),
@@ -1496,13 +1504,13 @@ fn read_polycurve(
                 "polycurve child is not a curve",
             ));
         };
-        curve.warnings_mut().splice(0..0, wrapper_warnings);
+        curve.warnings_mut().prepend(wrapper_warnings);
         children.push((parameter, curve));
     }
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     })
 }
 
@@ -1717,6 +1725,64 @@ mod tests {
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
 
+    /// A point cloud whose optional channels disagree with the point count.
+    fn mismatched_point_cloud_payload() -> Vec<u8> {
+        let mut payload = vec![0x12];
+        payload.extend(2_i32.to_le_bytes());
+        for point in [[0.0_f64, 0.0, 0.0], [1.0, 1.0, 1.0]] {
+            payload.extend(point.into_iter().flat_map(f64::to_le_bytes));
+        }
+        payload.extend(
+            [
+                0.0_f64, 0.0, 0.0, // origin
+                1.0, 0.0, 0.0, // x
+                0.0, 1.0, 0.0, // y
+                0.0, 0.0, 1.0, // z
+                0.0, 0.0, 1.0, 0.0, // equation
+            ]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+        );
+        payload.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0.0_f64, 0.0, 1.0].into_iter().flat_map(f64::to_le_bytes));
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0_u8; 4]);
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend(0.5_f64.to_le_bytes());
+        payload
+    }
+
+    /// Every redundant point-cloud channel repair carries the repair code itself.
+    #[test]
+    fn point_cloud_channel_repairs_carry_the_redundant_field_code() {
+        let payload = mismatched_point_cloud_payload();
+        let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+        let cloud = read_cloud(&mut reader, 1.0).expect("point cloud");
+        assert_eq!(
+            cloud
+                .warnings
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud normal count mismatch; channel dropped"
+                ),
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud color count mismatch; channel dropped"
+                ),
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud scalar count mismatch; channel dropped"
+                ),
+            ]
+        );
+    }
+
     #[test]
     fn stored_count_above_legacy_limit_is_bounded_by_payload() {
         let item_count = 65_537_usize;
@@ -1847,7 +1913,7 @@ mod tests {
             false,
         )
         .expect("valid test curve");
-        let mut decoded = DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new());
+        let mut decoded = DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Diagnostics::new());
         let error = scale_decoded_curve(&mut decoded, f64::MAX, 17)
             .expect_err("scaling overflow must reject the NURBS curve");
         assert!(error
@@ -1908,7 +1974,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            Vec::new(),
+            Diagnostics::new(),
         );
         let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
         assert_eq!(nurbs.degree(), 2);
@@ -1936,13 +2002,13 @@ mod tests {
                     )
                     .expect("valid test line"),
                 ),
-                Vec::new(),
+                Diagnostics::new(),
             )
         };
         let nested = DecodedCurve::Compound {
             children: vec![(2.0, line(0.0, 1.0)), (3.0, line(0.0, 1.0))],
             end_parameter: 5.0,
-            warnings: Vec::new(),
+            warnings: Diagnostics::new(),
         };
         let converted = exact_nurbs(&nested, 0).expect("required invariant");
         assert_eq!(converted.knots(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);

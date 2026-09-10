@@ -271,16 +271,17 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         byte_offset: 0,
         type_guid: type_guid.to_owned().try_into().expect("type GUID"),
         type_guid_offset: 4,
-        base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
-            .then(|| crate::records::RecordedValue {
-                value: Some(
-                    crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
-                offset: Some(8),
-            }),
+        base_type_guid: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
+            crate::records::BaseTypeGuid::Guid {
+                value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
+                offset: 8,
+            }
+        } else {
+            crate::records::BaseTypeGuid::Absent
+        },
         version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
             crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
         } else {
@@ -515,7 +516,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             design: Some(crate::records::ConstructionRecipeDesign {
                 id: crate::records::RecordedValue {
                     value: "301".into(),
-                    offset: Some(byte_offset + 197),
+                    offset: byte_offset + 197,
                 },
                 selector: Some(ConstructionRecipeSelector {
                     value: operand_record_index + 4,
@@ -1099,7 +1100,7 @@ fn validation_accepts_user_design_parameter_frame() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(210),
+                offset: 210,
             }),
             name: "Width".into(),
             name_offset: 220,
@@ -1136,7 +1137,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "cm".into(),
-                offset: Some(1_120),
+                offset: 1_120,
             }),
             name: "Length".into(),
             name_offset: 1_130,
@@ -1160,18 +1161,20 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         companion_record_index: 102,
     })
     .unwrap();
-    let companion = DesignParameterCompanion {
-        id: crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
-        byte_offset: 1_200,
-        class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        record_index: 102,
-        owner_record_index: 100,
-        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
-        timestamp_micros_offset: 1_242,
-        payload_byte_offset: 1_258,
-        payload_byte_length: 0,
-        owned_recipe_ids: Vec::new(),
-    };
+    let companion = DesignParameterCompanion::unbound(
+        crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
+        1_200,
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        102,
+        100,
+        std::num::NonZeroU64::new(1).unwrap(),
+        1_242,
+    )
+    .bound(crate::records::DesignCompanionPayload::new(
+        1_258,
+        0,
+        Vec::new(),
+    ));
     let ownerless_parameter =
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),

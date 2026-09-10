@@ -43,7 +43,6 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Torus(
                 crate::surface::PositionalTorusFrame::new(

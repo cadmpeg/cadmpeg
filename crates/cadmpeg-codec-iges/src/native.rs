@@ -1155,18 +1155,128 @@ struct NativeUnitsData {
     owners: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeProductOccurrence {
-    id: String,
-    root: bool,
-    source_instance: String,
-    definition: String,
-    member: Option<String>,
-    neutral_links: Vec<String>,
-    instance_path: Vec<String>,
-    local_transform: [[f64; 4]; 3],
-    world_transform: [[f64; 4]; 3],
+/// The product-occurrence record and the one route that builds it.
+///
+/// The fields are private to this module, so `role` and `instance_path` cannot
+/// be set independently: [`NativeProductOccurrence::new`] derives both from the
+/// instance path and the optional member, and the id from the same path.
+mod occurrence {
+    use serde::{Serialize, Serializer};
+
+    /// What one product occurrence record is: the assembly root, a nested
+    /// occurrence, or one member of an occurrence's definition.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum OccurrenceRole {
+        Root,
+        Nested,
+        Member(String),
+    }
+
+    impl OccurrenceRole {
+        const fn is_root(&self) -> bool {
+            matches!(self, Self::Root)
+        }
+
+        fn member(&self) -> Option<&str> {
+            match self {
+                Self::Root | Self::Nested => None,
+                Self::Member(member) => Some(member),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub(super) struct NativeProductOccurrence {
+        id: String,
+        role: OccurrenceRole,
+        source_instance: String,
+        definition: String,
+        neutral_links: Vec<String>,
+        instance_path: Vec<String>,
+        local_transform: [[f64; 4]; 3],
+        world_transform: [[f64; 4]; 3],
+    }
+
+    impl NativeProductOccurrence {
+        /// The occurrence reached by `path`, or one member of its definition.
+        ///
+        /// The assembly root is the occurrence at the head of the path that
+        /// names no member; every other record is nested or a member.
+        pub(super) fn new(
+            path: &[u32],
+            member: Option<u32>,
+            instance_sequence: u32,
+            definition_sequence: u32,
+            neutral_links: Vec<String>,
+            local_transform: [[f64; 4]; 3],
+            world_transform: [[f64; 4]; 3],
+        ) -> Self {
+            let path_key = path
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("/");
+            let (id, role) = match member {
+                Some(member) => (
+                    format!("iges:product:occurrence#{path_key}/D{member}"),
+                    OccurrenceRole::Member(format!("iges:entity:directory#{member}")),
+                ),
+                None if path.len() == 1 => (
+                    format!("iges:product:occurrence#{path_key}"),
+                    OccurrenceRole::Root,
+                ),
+                None => (
+                    format!("iges:product:occurrence#{path_key}"),
+                    OccurrenceRole::Nested,
+                ),
+            };
+            Self {
+                id,
+                role,
+                source_instance: format!("iges:entity:directory#{instance_sequence}"),
+                definition: format!("iges:entity:directory#{definition_sequence}"),
+                neutral_links,
+                instance_path: path
+                    .iter()
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    .collect(),
+                local_transform,
+                world_transform,
+            }
+        }
+    }
+
+    impl Serialize for NativeProductOccurrence {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            #[derive(Serialize)]
+            struct Wire<'a> {
+                id: &'a str,
+                root: bool,
+                source_instance: &'a str,
+                definition: &'a str,
+                member: Option<&'a str>,
+                neutral_links: &'a [String],
+                instance_path: &'a [String],
+                local_transform: [[f64; 4]; 3],
+                world_transform: [[f64; 4]; 3],
+            }
+            Wire {
+                id: &self.id,
+                root: self.role.is_root(),
+                source_instance: &self.source_instance,
+                definition: &self.definition,
+                member: self.role.member(),
+                neutral_links: &self.neutral_links,
+                instance_path: &self.instance_path,
+                local_transform: self.local_transform,
+                world_transform: self.world_transform,
+            }
+            .serialize(serializer)
+        }
+    }
 }
+
+use occurrence::NativeProductOccurrence;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeProductOccurrenceExpansion {
@@ -1674,18 +1784,6 @@ fn binary_integer(value: Option<i64>) -> Option<bool> {
     }
 }
 
-fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
-    let suffix = id.strip_prefix(prefix)?;
-    let digits = suffix
-        .as_bytes()
-        .iter()
-        .take_while(|byte| byte.is_ascii_digit())
-        .count();
-    (digits > 0)
-        .then(|| suffix[..digits].parse::<u32>().ok())
-        .flatten()
-}
-
 fn member_affine(
     entry: &DirectoryEntry,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -1777,31 +1875,19 @@ impl OccurrenceExpansion<'_, '_> {
             malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
-        let root = path.is_empty();
         path.push(instance_sequence);
-        let path_ids = path
-            .iter()
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
-            .collect::<Vec<_>>();
-        let path_key = path
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join("/");
         if let Some(ctx) = self.ctx {
             ctx.charge_collection_items(1, "iges_product_occurrences")?;
         }
-        occurrences.push(NativeProductOccurrence {
-            id: format!("iges:product:occurrence#{path_key}"),
-            root,
-            source_instance: format!("iges:entity:directory#{instance_sequence}"),
-            definition: format!("iges:entity:directory#{definition_sequence}"),
-            member: None,
-            neutral_links: Vec::new(),
-            instance_path: path_ids.clone(),
-            local_transform: local.rows(),
-            world_transform: definition_world.rows(),
-        });
+        occurrences.push(NativeProductOccurrence::new(
+            path,
+            None,
+            instance_sequence,
+            definition_sequence,
+            Vec::new(),
+            local.rows(),
+            definition_world.rows(),
+        ));
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
                 path.pop();
@@ -1847,17 +1933,15 @@ impl OccurrenceExpansion<'_, '_> {
                 malformed_placement_sequences.insert(*member);
                 continue;
             };
-            occurrences.push(NativeProductOccurrence {
-                id: format!("iges:product:occurrence#{path_key}/D{member}"),
-                root: false,
-                source_instance: format!("iges:entity:directory#{instance_sequence}"),
-                definition: format!("iges:entity:directory#{definition_sequence}"),
-                member: Some(format!("iges:entity:directory#{member}")),
-                neutral_links: self.neutral_links.get(member).cloned().unwrap_or_default(),
-                instance_path: path_ids.clone(),
-                local_transform: member_local.rows(),
-                world_transform: member_world.rows(),
-            });
+            occurrences.push(NativeProductOccurrence::new(
+                path,
+                Some(*member),
+                instance_sequence,
+                definition_sequence,
+                self.neutral_links.get(member).cloned().unwrap_or_default(),
+                member_local.rows(),
+                member_world.rows(),
+            ));
         }
         path.pop();
         Ok(None)
@@ -1879,6 +1963,7 @@ pub(crate) fn store(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     quarantine: QuarantinedRecords<'_>,
     structure_admitted: Option<&crate::entities::geometry::Projection>,
+    sequences: &crate::entities::geometry::SourceSequences,
     boundary_vertex_derivations: &[BoundaryVertexDerivation],
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
@@ -5142,8 +5227,7 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
-            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(|_| sequences.curve(&curve.id))
         {
             occurrence_neutral_links
                 .entry(sequence)
@@ -5156,8 +5240,7 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
-            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(|_| sequences.surface(&surface.id))
         {
             occurrence_neutral_links
                 .entry(sequence)
@@ -5166,7 +5249,7 @@ pub(crate) fn store(
         }
     }
     for body in &ir.model.bodies {
-        if let Some(sequence) = model_id_directory_sequence(body.id.as_str(), "iges:model:body#D") {
+        if let Some(sequence) = sequences.body_neutral_form(&body.id) {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
@@ -5174,8 +5257,7 @@ pub(crate) fn store(
         }
     }
     for point in &ir.model.points {
-        if let Some(sequence) = model_id_directory_sequence(point.id.as_str(), "iges:model:point#D")
-        {
+        if let Some(sequence) = sequences.point(&point.id) {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino `ON_SubD` control-cage decoding.
 
+use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
@@ -46,7 +47,7 @@ pub(crate) struct DecodedSubd {
     /// Unknown symmetry enumeration values mapped to their neutral values.
     pub(crate) enum_diagnostics: Vec<SubdEnumDiagnostic>,
     /// Recoverable nested checksum warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// Native mesh-array identity saved beside a `SubD` proxy.
@@ -200,7 +201,7 @@ pub(crate) fn decode(
         return Err(malformed(range.start, "invalid SubD unit scale"));
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let has_subdimple = reader.u8()?;
     match has_subdimple {
         0 => {
@@ -362,7 +363,7 @@ fn read_subdimple(
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(SubdSurface, usize, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
     reader.u32()?;
@@ -413,7 +414,7 @@ fn read_level(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawLevel, SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD level")?;
     let mut reader =
@@ -443,10 +444,11 @@ fn read_level(
     }
     read_finite_values(&mut reader, 6, "SubD control bounding box")?;
     let partitions = [reader.u32()?, reader.u32()?, reader.u32()?, reader.u32()?];
-    validate_partitions(partitions, reader.position() - 16)?;
-    let vertex_count = partition_count(partitions[0], partitions[1])?;
-    let edge_count = partition_count(partitions[1], partitions[2])?;
-    let face_count = partition_count(partitions[2], partitions[3])?;
+    let partitions_offset = reader.position() - 16;
+    validate_partitions(partitions, partitions_offset)?;
+    let vertex_count = partition_count(partitions[0], partitions[1], partitions_offset)?;
+    let edge_count = partition_count(partitions[1], partitions[2], partitions_offset)?;
+    let face_count = partition_count(partitions[2], partitions[3], partitions_offset)?;
     let component_count = vertex_count
         .checked_add(edge_count)
         .and_then(|value| value.checked_add(face_count))
@@ -519,7 +521,7 @@ fn read_vertex(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawVertex, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
     let tag = match reader.u8()? {
@@ -588,7 +590,7 @@ fn read_edge(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawEdge, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
     let tag = match reader.u8()? {
@@ -669,7 +671,7 @@ fn read_face(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawFace, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
     reader.u32()?;
@@ -760,7 +762,7 @@ fn read_base(
     archive: ArchiveVersion,
     expected_id: u32,
     expected_level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<ComponentBase, SubdError> {
     let source_offset = reader.position();
     let archive_id = reader.u32()?;
@@ -845,7 +847,7 @@ fn consume_known_addition(
     archive: ArchiveVersion,
     expected: u8,
     label: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Addition, SubdError> {
     loop {
         match reader.u8()? {
@@ -866,7 +868,7 @@ fn consume_known_addition(
 fn finish_additions(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     loop {
         match reader.u8()? {
@@ -881,7 +883,7 @@ fn finish_additions(
 fn read_record_end(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     if archive.value() < 70 {
         expect_zero(reader, "SubD component end marker")
@@ -962,9 +964,9 @@ fn validate_level(level: &RawLevel, expected_level: usize) -> Result<(), SubdErr
             .len()
             .checked_add(level.edges.len())
             .and_then(|value| value.checked_add(level.faces.len()))
-            .ok_or_else(|| malformed(0, "SubD map size overflow"))?
+            .ok_or_else(|| malformed(level.source_offset, "SubD map size overflow"))?
     {
-        return Err(malformed(0, "duplicate SubD archive ID"));
+        return Err(malformed(level.source_offset, "duplicate SubD archive ID"));
     }
     for vertex in &level.vertices {
         resolve_all(&types, &vertex.edges, ComponentType::Edge)?;
@@ -974,13 +976,19 @@ fn validate_level(level: &RawLevel, expected_level: usize) -> Result<(), SubdErr
         resolve_all(&types, &edge.vertices, ComponentType::Vertex)?;
         resolve_all(&types, &edge.faces, ComponentType::Face)?;
         if edge.vertices[0].archive_id == edge.vertices[1].archive_id {
-            return Err(malformed(0, "SubD edge has identical endpoints"));
+            return Err(malformed(
+                edge.base.source_offset,
+                "SubD edge has identical endpoints",
+            ));
         }
     }
     for face in &level.faces {
         resolve_all(&types, &face.edges, ComponentType::Edge)?;
         if face.edges.len() < 3 {
-            return Err(malformed(0, "SubD face has fewer than three edge uses"));
+            return Err(malformed(
+                face.base.source_offset,
+                "SubD face has fewer than three edge uses",
+            ));
         }
     }
 
@@ -1007,11 +1015,17 @@ fn validate_level(level: &RawLevel, expected_level: usize) -> Result<(), SubdErr
         )?;
     }
     if expected_level == 0 {
-        if level.vertices.iter().any(|vertex| vertex.tag.is_none()) {
-            return Err(malformed(0, "level-zero SubD vertex has unset tag"));
+        if let Some(vertex) = level.vertices.iter().find(|vertex| vertex.tag.is_none()) {
+            return Err(malformed(
+                vertex.base.source_offset,
+                "level-zero SubD vertex has unset tag",
+            ));
         }
-        if level.edges.iter().any(|edge| edge.tag.is_none()) {
-            return Err(malformed(0, "level-zero SubD edge has unset tag"));
+        if let Some(edge) = level.edges.iter().find(|edge| edge.tag.is_none()) {
+            return Err(malformed(
+                edge.base.source_offset,
+                "level-zero SubD edge has unset tag",
+            ));
         }
     }
     Ok(())
@@ -1041,9 +1055,9 @@ fn incidence_from_faces(level: &RawLevel) -> Result<BTreeMap<u32, BTreeSet<u32>>
         let mut first = None;
         let mut previous_end = None;
         for edge_use in &face.edges {
-            let edge = edges
-                .get(&edge_use.archive_id)
-                .ok_or_else(|| malformed(0, "face references missing SubD edge"))?;
+            let edge = edges.get(&edge_use.archive_id).ok_or_else(|| {
+                malformed(face.base.source_offset, "face references missing SubD edge")
+            })?;
             let endpoints = [edge.vertices[0].archive_id, edge.vertices[1].archive_id];
             let (start, end) = if edge_use.direction {
                 (endpoints[1], endpoints[0])
@@ -1051,7 +1065,10 @@ fn incidence_from_faces(level: &RawLevel) -> Result<BTreeMap<u32, BTreeSet<u32>>
                 (endpoints[0], endpoints[1])
             };
             if previous_end.is_some_and(|value| value != start) {
-                return Err(malformed(0, "SubD face ring is not endpoint-continuous"));
+                return Err(malformed(
+                    face.base.source_offset,
+                    "SubD face ring is not endpoint-continuous",
+                ));
             }
             first.get_or_insert(start);
             previous_end = Some(end);
@@ -1062,7 +1079,10 @@ fn incidence_from_faces(level: &RawLevel) -> Result<BTreeMap<u32, BTreeSet<u32>>
             result.entry(end).or_default().insert(face.base.archive_id);
         }
         if first != previous_end {
-            return Err(malformed(0, "SubD face ring is not closed"));
+            return Err(malformed(
+                face.base.source_offset,
+                "SubD face ring is not closed",
+            ));
         }
     }
     Ok(result)
@@ -1077,7 +1097,10 @@ fn edge_face_incidence(level: &RawLevel) -> Result<BTreeMap<u32, BTreeSet<u32>>,
                 .or_default()
                 .insert(face.base.archive_id)
             {
-                return Err(malformed(0, "SubD face repeats an edge"));
+                return Err(malformed(
+                    face.base.source_offset,
+                    "SubD face repeats an edge",
+                ));
             }
         }
     }
@@ -1251,12 +1274,12 @@ fn validate_partitions(partitions: [u32; 4], offset: usize) -> Result<(), SubdEr
     Ok(())
 }
 
-fn partition_count(start: u32, end: u32) -> Result<usize, SubdError> {
+fn partition_count(start: u32, end: u32, offset: usize) -> Result<usize, SubdError> {
     usize::try_from(
         end.checked_sub(start)
-            .ok_or_else(|| malformed(0, "SubD partition underflow"))?,
+            .ok_or_else(|| malformed(offset, "SubD partition underflow"))?,
     )
-    .map_err(|_| malformed(0, "SubD partition conversion overflow"))
+    .map_err(|_| malformed(offset, "SubD partition conversion overflow"))
 }
 
 fn capped_u32(reader: &mut BoundedReader<'_>, cap: usize, label: &str) -> Result<usize, SubdError> {
@@ -1307,7 +1330,7 @@ fn validate_sharpness(value: f64, offset: usize) -> Result<(), SubdError> {
 fn read_mapping_tag(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD texture mapping tag")?;
     let mut reader =
@@ -1329,11 +1352,46 @@ fn read_mapping_tag(
     finish_direct_chunk(parent, &chunk, reader, warnings)
 }
 
+/// One `SubD` symmetry construction, with the layout its transform chunk carries.
+#[derive(Debug, Clone, Copy)]
+enum SubdSymmetryType {
+    Reflect,
+    Rotate { new_prototype: bool },
+    ReflectAndRotate,
+    Transform,
+}
+
+/// The symmetry byte of a `SubD` symmetry chunk, parsed once.
+#[derive(Debug, Clone, Copy)]
+enum SubdSymmetry {
+    Absent,
+    Known(SubdSymmetryType),
+    Invalid(u8),
+}
+
+impl SubdSymmetry {
+    fn parse(raw: u8) -> Self {
+        match raw {
+            0 => Self::Absent,
+            1 => Self::Known(SubdSymmetryType::Reflect),
+            2 => Self::Known(SubdSymmetryType::Rotate {
+                new_prototype: false,
+            }),
+            113 => Self::Known(SubdSymmetryType::Rotate {
+                new_prototype: true,
+            }),
+            3 => Self::Known(SubdSymmetryType::ReflectAndRotate),
+            4 | 5 => Self::Known(SubdSymmetryType::Transform),
+            other => Self::Invalid(other),
+        }
+    }
+}
+
 fn read_symmetry(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD symmetry")?;
     let mut reader =
@@ -1346,19 +1404,14 @@ fn read_symmetry(
             message: format!("unsupported SubD symmetry version {major}.{version}"),
         });
     }
-    let raw_symmetry_type = reader.u8()?;
-    let mut symmetry_type = raw_symmetry_type;
-    let new_rotate_prototype = symmetry_type == 113;
-    if new_rotate_prototype {
-        symmetry_type = 2;
-    }
-    if symmetry_type == 0 {
-        return finish_direct_chunk(parent, &chunk, reader, warnings);
-    }
-    if !(1..=5).contains(&symmetry_type) {
-        enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw_symmetry_type));
-        return finish_direct_chunk(parent, &chunk, reader, warnings);
-    }
+    let symmetry_type = match SubdSymmetry::parse(reader.u8()?) {
+        SubdSymmetry::Absent => return finish_direct_chunk(parent, &chunk, reader, warnings),
+        SubdSymmetry::Invalid(raw) => {
+            enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw));
+            return finish_direct_chunk(parent, &chunk, reader, warnings);
+        }
+        SubdSymmetry::Known(symmetry_type) => symmetry_type,
+    };
     reader.u32()?;
     reader.u32()?;
     reader.take(16)?;
@@ -1376,24 +1429,25 @@ fn read_symmetry(
         });
     }
     match symmetry_type {
-        1 => read_finite_values(&mut transform, 4, "SubD reflection plane")?,
-        2 => {
+        SubdSymmetryType::Reflect => {
+            read_finite_values(&mut transform, 4, "SubD reflection plane")?;
+        }
+        SubdSymmetryType::Rotate { new_prototype } => {
             read_finite_values(&mut transform, 6, "SubD rotation axis")?;
-            if inner_version >= 2 && !new_rotate_prototype {
+            if inner_version >= 2 && !new_prototype {
                 transform.skip(4 * std::mem::size_of::<f64>())?;
             }
         }
-        3 => {
+        SubdSymmetryType::ReflectAndRotate => {
             read_finite_values(&mut transform, 4, "SubD reflection plane")?;
             read_finite_values(&mut transform, 6, "SubD rotation axis")?;
         }
-        4 | 5 => {
+        SubdSymmetryType::Transform => {
             read_finite_values(&mut transform, 16, "SubD symmetry transform")?;
             if inner_version >= 2 {
                 read_finite_values(&mut transform, 4, "SubD symmetry plane")?;
             }
         }
-        _ => unreachable!("symmetry type checked"),
     }
     finish_direct_chunk(&mut reader, &inner, transform, warnings)?;
     if version >= 2 {
@@ -1417,7 +1471,7 @@ fn read_symmetry(
 fn read_subd_hash(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD topology hash")?;
     let mut reader =
@@ -1445,7 +1499,7 @@ fn read_subd_hash(
 fn read_sha1(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SHA-1 hash")?;
     let mut reader =
@@ -1498,7 +1552,7 @@ fn consume_anonymous(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
-    _warnings: &mut Vec<String>,
+    _warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(reader, archive, label)?;
     reader.skip(chunk.next_offset() - reader.position())?;
@@ -1509,7 +1563,7 @@ fn finish_chunk(
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
@@ -1525,7 +1579,7 @@ fn finish_direct_chunk(
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
@@ -1537,10 +1591,13 @@ fn finish_direct_chunk(
         verify_checksum(parent.backing_bytes(), chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "SubD anonymous CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "SubD anonymous CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
@@ -1551,7 +1608,7 @@ fn finish_chunk_children(
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
     children: &[Range<usize>],
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
@@ -1564,10 +1621,13 @@ fn finish_chunk_children(
         crate::chunks::verify_checksum_ranges(parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "SubD anonymous CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "SubD anonymous CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())

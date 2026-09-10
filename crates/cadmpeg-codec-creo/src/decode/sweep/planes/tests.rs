@@ -82,24 +82,23 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 7,
-            table_class_id: 29,
-            entries: vec![
+        crate::feature::FeatureEntityTable::new(
+            7,
+            29,
+            vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32, 33]),
     );
     for id in [31, 32, 33] {
@@ -231,12 +230,10 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
 fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     let entry = crate::feature::FeatureEntityTableEntry {
         entity_id: 33,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(11), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let frame = crate::surface::PositionalCylinderFrame::new(
         [0.0, 4.0, 0.0],
@@ -248,12 +245,13 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     .expect("valid positional cylinder frame");
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 7,
-            table_class_id: 29,
-            entries: vec![entry],
-            offset: 0,
-        }
+        crate::feature::FeatureEntityTable::new(
+            7,
+            29,
+            vec![entry],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([33]),
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -273,7 +271,6 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame,

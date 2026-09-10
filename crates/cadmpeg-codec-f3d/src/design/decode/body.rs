@@ -277,7 +277,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 crate::records::ConstructionRecipeDesign {
                     id: crate::records::RecordedValue {
                         value,
-                        offset: Some(design_id_at as u64),
+                        offset: design_id_at as u64,
                     },
                     selector,
                 }
@@ -497,13 +497,8 @@ pub(crate) fn snapshot_body_map_records(
         if design_type.module != DESIGN_MODULE_BODY
             || !design_type
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
-                })
+                .value()
+                .map(crate::records::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -704,13 +699,8 @@ fn body_map_records(
         if design_type.module != DESIGN_MODULE_BODY
             || !design_type
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
-                })
+                .value()
+                .map(crate::records::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -1278,9 +1268,11 @@ mod tests {
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
-                value: Some(value.to_owned().try_into().expect("base GUID")),
-                offset: Some(0),
+            base_type_guid: base_type_guid.map_or(crate::records::BaseTypeGuid::Absent, |value| {
+                crate::records::BaseTypeGuid::Guid {
+                    value: value.to_owned().try_into().expect("base GUID"),
+                    offset: 0,
+                }
             }),
             version,
             version_offset: 0,
@@ -1346,15 +1338,13 @@ mod tests {
                         .try_into()
                         .expect("type GUID"),
                     type_guid_offset: 0,
-                    base_type_guid: Some(crate::records::RecordedValue {
-                        value: Some(
-                            crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
-                                .to_owned()
-                                .try_into()
-                                .expect("base GUID"),
-                        ),
-                        offset: Some(0),
-                    }),
+                    base_type_guid: crate::records::BaseTypeGuid::Guid {
+                        value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                            .to_owned()
+                            .try_into()
+                            .expect("base GUID"),
+                        offset: 0,
+                    },
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
@@ -1824,10 +1814,7 @@ mod tests {
             Some("2265")
         );
         assert_eq!(
-            recipes[0]
-                .design
-                .as_ref()
-                .and_then(|design| design.id.offset),
+            recipes[0].design.as_ref().map(|design| design.id.offset),
             Some(4)
         );
         assert_eq!(
