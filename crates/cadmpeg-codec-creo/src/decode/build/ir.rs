@@ -412,12 +412,13 @@ fn transfer_display_tessellations(
                     .collect(),
                 triangles,
                 strip.strip_lengths.clone(),
-                strip
-                    .normals
-                    .iter()
-                    .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
-                    .collect(),
-                Vec::new(),
+                cadmpeg_ir::tessellation::TessellationNormals::per_vertex(
+                    strip
+                        .normals
+                        .iter()
+                        .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
+                        .collect(),
+                ),
                 Vec::new(),
             )
             .map_err(|error| {

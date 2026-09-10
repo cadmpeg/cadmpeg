@@ -2162,8 +2162,7 @@ pub(super) fn sequential_tessellation(
         vertices,
         triangles,
         strip_lengths,
-        normals,
-        Vec::new(),
+        cadmpeg_ir::tessellation::TessellationNormals::per_vertex(normals),
         channels,
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))?
