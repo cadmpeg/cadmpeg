@@ -920,18 +920,20 @@ pub(super) fn fixed_kind_path_operations(
         );
     }
 
-    let mut companion = DesignParameterCompanion {
-        id: "f3d:native:parameter-companion#11".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        record_index: 11,
-        owner_record_index: 10,
-        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
-        timestamp_micros_offset: 42,
-        payload_byte_offset: 58,
-        payload_byte_length: 0,
-        owned_recipe_ids: Vec::new(),
-    };
+    let companion = DesignParameterCompanion::unbound(
+        "f3d:native:parameter-companion#11".into(),
+        0,
+        crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        11,
+        10,
+        std::num::NonZeroU64::new(1).unwrap(),
+        42,
+    )
+    .bound(crate::records::DesignCompanionPayload::new(
+        58,
+        0,
+        Vec::new(),
+    ));
     scope.id = "f3d:native:parameter-scope#12".into();
     scope
         .try_edit(|draft| {
@@ -1026,8 +1028,8 @@ pub(super) fn fixed_kind_path_operations(
         recipe_index: 0,
         record_index: 303,
     };
-    bind_parameter_companion_payloads(
-        std::slice::from_mut(&mut companion),
+    let bound = bind_parameter_companion_payloads(
+        vec![companion.clone()],
         std::slice::from_ref(&parameter),
         &[],
         &[],
@@ -1036,12 +1038,11 @@ pub(super) fn fixed_kind_path_operations(
         std::slice::from_ref(&recipe),
         &HashMap::from([("f3d:native".into(), 100)]),
     );
-    assert_eq!(companion.payload_byte_offset, 58);
-    assert_eq!(companion.payload_byte_length, 7);
-    assert_eq!(companion.owned_recipe_ids, [recipe.id]);
+    let payload = bound[0].payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 58);
+    assert_eq!(payload.byte_length(), 7);
+    assert_eq!(payload.owned_recipe_ids(), [recipe.id]);
 
-    companion.payload_byte_length = 0;
-    companion.owned_recipe_ids.clear();
     if let crate::records::feature::DesignScopePayloadMut::Sketch(slot)
     | crate::records::feature::DesignScopePayloadMut::Esquisse(slot)
     | crate::records::feature::DesignScopePayloadMut::Skizze(slot)
@@ -1068,8 +1069,8 @@ pub(super) fn fixed_kind_path_operations(
         )
         .expect("valid module registration"),
     };
-    bind_parameter_companion_payloads(
-        std::slice::from_mut(&mut companion),
+    let bound = bind_parameter_companion_payloads(
+        vec![companion],
         &[],
         &[],
         std::slice::from_ref(&scope),
@@ -1078,6 +1079,7 @@ pub(super) fn fixed_kind_path_operations(
         &[],
         &HashMap::from([("f3d:native".into(), 100)]),
     );
-    assert_eq!(companion.payload_byte_offset, 58);
-    assert_eq!(companion.payload_byte_length, 12);
+    let payload = bound[0].payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 58);
+    assert_eq!(payload.byte_length(), 12);
 }

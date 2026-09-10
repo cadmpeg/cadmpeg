@@ -64,19 +64,7 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
                     position = end;
                     continue;
                 }
-                let frame_start = u64::try_from(at).map_err(|_| {
-                    crate::error::malformed(
-                        "Fusion Design parameter frame offset exceeds the addressable stream",
-                    )
-                })?;
-                let parameter = parsed
-                    .into_record(&entry.name, frame_start)
-                    .ok_or_else(|| {
-                        crate::error::malformed(
-                            "Fusion Design parameter frame has invalid fields or offsets",
-                        )
-                    })?;
-                out.push(parameter);
+                out.push(locate_design_parameter(parsed, &entry.name, at)?);
                 position = end;
             } else {
                 position = at + 1;
@@ -166,6 +154,22 @@ pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignPara
 /// Design `BulkStream` name used when a test parses one isolated frame.
 #[cfg(test)]
 const TEST_PARAMETER_STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+
+/// Locate one parsed parameter frame in its containing stream.
+fn locate_design_parameter(
+    parsed: ParsedDesignParameter,
+    stream: &str,
+    at: usize,
+) -> Result<DesignParameter, CodecError> {
+    let frame_start = u64::try_from(at).map_err(|_| {
+        crate::error::malformed(
+            "Fusion Design parameter frame offset exceeds the addressable stream",
+        )
+    })?;
+    parsed.into_record(stream, frame_start).ok_or_else(|| {
+        crate::error::malformed("Fusion Design parameter frame has invalid fields or offsets")
+    })
+}
 
 pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<ParsedDesignParameter> {
     let (class_tag, after_tag) = lp_ascii_filtered(payload, 0, 0..=2000, u8::is_ascii_graphic)?;
@@ -888,7 +892,7 @@ pub fn decode_parameter_companions(
         };
         out.push(companion);
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
 }
 
@@ -899,7 +903,6 @@ pub(crate) struct ParsedParameterCompanion {
     pub(crate) owner_record_index: u32,
     pub(crate) timestamp_micros: std::num::NonZeroU64,
     pub(crate) timestamp_micros_offset: FrameRelative,
-    pub(crate) payload_byte_offset: FrameRelative,
 }
 
 impl ParsedParameterCompanion {
@@ -911,18 +914,15 @@ impl ParsedParameterCompanion {
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterCompanion> {
-        Some(DesignParameterCompanion {
-            id: ids::native_design_parameter_companion_id(stream, frame_start),
-            byte_offset: frame_start,
-            class_tag: self.class_tag,
-            record_index: self.record_index,
-            owner_record_index: self.owner_record_index,
-            timestamp_micros: self.timestamp_micros,
-            timestamp_micros_offset: self.timestamp_micros_offset.absolute(frame_start)?,
-            payload_byte_offset: self.payload_byte_offset.absolute(frame_start)?,
-            payload_byte_length: 0,
-            owned_recipe_ids: Vec::new(),
-        })
+        Some(DesignParameterCompanion::unbound(
+            ids::native_design_parameter_companion_id(stream, frame_start),
+            frame_start,
+            self.class_tag,
+            self.record_index,
+            self.owner_record_index,
+            self.timestamp_micros,
+            self.timestamp_micros_offset.absolute(frame_start)?,
+        ))
     }
 }
 
@@ -948,15 +948,15 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameter
         owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
         timestamp_micros,
         timestamp_micros_offset: FrameRelative(companion_prefix::TIMESTAMP_MICROS as i128),
-        payload_byte_offset: FrameRelative(companion_prefix::LEN as i128),
     })
 }
 
 /// Bind each companion to its exact owned byte interval and the construction
-/// recipes nested in that interval.
+/// recipes nested in that interval. A companion whose payload cannot be
+/// resolved is returned unbound.
 #[allow(clippy::too_many_arguments)]
 pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
-    companions: &mut [DesignParameterCompanion],
+    companions: Vec<DesignParameterCompanion>,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
@@ -964,73 +964,94 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
     stream_lengths: &HashMap<String, usize, S>,
-) {
-    for companion in companions {
-        let Some(stream) = native_stream(&companion.id) else {
-            continue;
-        };
-        let Some(stream_length) = stream_lengths.get(stream).copied() else {
-            continue;
-        };
-        let Some((start, mut end)) = companion_owned_interval(
-            companion,
-            parameters.iter(),
-            owners,
-            scopes,
-            headers,
-            stream_length,
-        ) else {
-            continue;
-        };
-        // Entity headers precede their owning scope record. A parameter
-        // companion immediately before a new scope does not own that scope's
-        // preamble even though no indexed sibling separates the two records.
-        // Bind the preamble through the scope's entity identity, not by an
-        // assumed class-tag or byte length.
-        let Ok(preamble_limit) = u64::try_from(end) else {
-            continue;
-        };
-        end = scopes
-            .iter()
-            .filter(|scope| {
-                native_stream(&scope.id) == Some(stream)
-                    && scope.byte_offset() >= preamble_limit
-                    && scope.sketch_entity().is_some()
-            })
-            .filter_map(|scope| {
-                entities
-                    .iter()
-                    .filter(|entity| {
-                        native_stream(&entity.id) == Some(stream)
-                            && scope.sketch_entity().is_some_and(|binding| {
-                                binding.entity_id.suffix() == entity.entity_id.suffix()
-                            })
-                            && usize::try_from(entity.byte_offset)
-                                .is_ok_and(|offset| offset >= start && offset < end)
-                    })
-                    .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
-                    .min()
-            })
-            .min()
-            .unwrap_or(end);
-        let (Ok(payload_byte_offset), Ok(payload_byte_length)) =
-            (u64::try_from(start), u64::try_from(end - start))
-        else {
-            continue;
-        };
-        companion.payload_byte_offset = payload_byte_offset;
-        companion.payload_byte_length = payload_byte_length;
-        let mut owned = recipes
-            .iter()
-            .filter(|recipe| {
-                native_stream(&recipe.id) == Some(stream)
-                    && usize::try_from(recipe.byte_offset)
-                        .is_ok_and(|offset| offset >= start && offset < end)
-            })
-            .collect::<Vec<_>>();
-        owned.sort_by_key(|recipe| recipe.byte_offset);
-        companion.owned_recipe_ids = owned.into_iter().map(|recipe| recipe.id.clone()).collect();
-    }
+) -> Vec<DesignParameterCompanion> {
+    companions
+        .into_iter()
+        .map(|companion| {
+            match companion_payload(
+                &companion,
+                parameters,
+                owners,
+                scopes,
+                entities,
+                headers,
+                recipes,
+                stream_lengths,
+            ) {
+                Some(payload) => companion.bound(payload),
+                None => companion,
+            }
+        })
+        .collect()
+}
+
+/// Resolve the byte interval and nested recipes one companion owns.
+#[allow(clippy::too_many_arguments)]
+fn companion_payload<S: std::hash::BuildHasher>(
+    companion: &DesignParameterCompanion,
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    scopes: &[DesignParameterScope],
+    entities: &[DesignEntityHeader],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+    stream_lengths: &HashMap<String, usize, S>,
+) -> Option<crate::records::DesignCompanionPayload> {
+    let stream = native_stream(companion.id())?;
+    let stream_length = stream_lengths.get(stream).copied()?;
+    let (start, mut end) = companion_owned_interval(
+        companion,
+        parameters.iter(),
+        owners,
+        scopes,
+        headers,
+        stream_length,
+    )?;
+    // Entity headers precede their owning scope record. A parameter companion
+    // immediately before a new scope does not own that scope's preamble even
+    // though no indexed sibling separates the two records. Bind the preamble
+    // through the scope's entity identity, not by an assumed class-tag or byte
+    // length.
+    let preamble_limit = u64::try_from(end).ok()?;
+    end = scopes
+        .iter()
+        .filter(|scope| {
+            native_stream(&scope.id) == Some(stream)
+                && scope.byte_offset() >= preamble_limit
+                && scope.sketch_entity().is_some()
+        })
+        .filter_map(|scope| {
+            entities
+                .iter()
+                .filter(|entity| {
+                    native_stream(&entity.id) == Some(stream)
+                        && scope.sketch_entity().is_some_and(|binding| {
+                            binding.entity_id.suffix() == entity.entity_id.suffix()
+                        })
+                        && usize::try_from(entity.byte_offset)
+                            .is_ok_and(|offset| offset >= start && offset < end)
+                })
+                .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
+                .min()
+        })
+        .min()
+        .unwrap_or(end);
+    let byte_offset = u64::try_from(start).ok()?;
+    let byte_length = u64::try_from(end - start).ok()?;
+    let mut owned = recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream)
+                && usize::try_from(recipe.byte_offset)
+                    .is_ok_and(|offset| offset >= start && offset < end)
+        })
+        .collect::<Vec<_>>();
+    owned.sort_by_key(|recipe| recipe.byte_offset);
+    Some(crate::records::DesignCompanionPayload::new(
+        byte_offset,
+        byte_length,
+        owned.into_iter().map(|recipe| recipe.id.clone()).collect(),
+    ))
 }
 
 #[cfg(test)]
