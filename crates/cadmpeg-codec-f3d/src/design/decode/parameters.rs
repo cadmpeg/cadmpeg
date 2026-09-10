@@ -951,52 +951,54 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameter
     })
 }
 
+/// Records a companion payload is resolved against.
+pub struct ParameterCompanionInputs<'a, S: std::hash::BuildHasher> {
+    /// Indexed parameter records.
+    pub parameters: &'a [DesignParameter],
+    /// Parameter owner frames.
+    pub owners: &'a [DesignParameterOwner],
+    /// Parameter scope records.
+    pub scopes: &'a [DesignParameterScope],
+    /// Design entity headers.
+    pub entities: &'a [DesignEntityHeader],
+    /// Indexed Design record headers.
+    pub headers: &'a [DesignRecordHeader],
+    /// Construction recipes.
+    pub recipes: &'a [ConstructionRecipe],
+    /// Byte length of each Design `BulkStream`, by scope.
+    pub stream_lengths: &'a HashMap<String, usize, S>,
+}
+
 /// Bind each companion to its exact owned byte interval and the construction
 /// recipes nested in that interval. A companion whose payload cannot be
 /// resolved is returned unbound.
-#[allow(clippy::too_many_arguments)]
 pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    scopes: &[DesignParameterScope],
-    entities: &[DesignEntityHeader],
-    headers: &[DesignRecordHeader],
-    recipes: &[ConstructionRecipe],
-    stream_lengths: &HashMap<String, usize, S>,
+    inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Vec<DesignParameterCompanion> {
     companions
         .into_iter()
-        .map(|companion| {
-            match companion_payload(
-                &companion,
-                parameters,
-                owners,
-                scopes,
-                entities,
-                headers,
-                recipes,
-                stream_lengths,
-            ) {
-                Some(payload) => companion.bound(payload),
-                None => companion,
-            }
+        .map(|companion| match companion_payload(&companion, inputs) {
+            Some(payload) => companion.bound(payload),
+            None => companion,
         })
         .collect()
 }
 
 /// Resolve the byte interval and nested recipes one companion owns.
-#[allow(clippy::too_many_arguments)]
 fn companion_payload<S: std::hash::BuildHasher>(
     companion: &DesignParameterCompanion,
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    scopes: &[DesignParameterScope],
-    entities: &[DesignEntityHeader],
-    headers: &[DesignRecordHeader],
-    recipes: &[ConstructionRecipe],
-    stream_lengths: &HashMap<String, usize, S>,
+    inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Option<crate::records::DesignCompanionPayload> {
+    let ParameterCompanionInputs {
+        parameters,
+        owners,
+        scopes,
+        entities,
+        headers,
+        recipes,
+        stream_lengths,
+    } = inputs;
     let stream = native_stream(companion.id())?;
     let stream_length = stream_lengths.get(stream).copied()?;
     let (start, mut end) = companion_owned_interval(
