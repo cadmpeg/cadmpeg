@@ -122,30 +122,38 @@ pub fn decode_dimension_recipe_records(
             ) else {
                 continue;
             };
-            let references = decode_recipe_references(
-                &prefix_bytes,
-                u64::try_from(prefix_offset).unwrap_or(u64::MAX),
-            );
+            let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
+                continue;
+            };
+            let references = decode_recipe_references(&prefix_bytes, prefix_offset);
             let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
                 continue;
             };
             let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
                 continue;
             };
+            let (Ok(recipe_ordinal), Ok(byte_offset), Ok(frame_length), Ok(program_offset)) = (
+                u32::try_from(recipe_ordinal),
+                u64::try_from(at),
+                u64::try_from(record_end - at),
+                u64::try_from(program_offset),
+            ) else {
+                continue;
+            };
             out.push(DesignDimensionRecipeRecord {
                 id: ids::native_design_dimension_recipe_record_id(&entry.name, recipe.byte_offset),
                 companion_record_index: companion.record_index,
-                recipe_ordinal: u32::try_from(recipe_ordinal).unwrap_or(u32::MAX),
+                recipe_ordinal,
                 recipe_id: recipe.id.clone(),
                 recipe_kind: recipe.kind,
-                byte_offset: u64::try_from(at).unwrap_or(u64::MAX),
+                byte_offset,
                 class_tag,
                 record_index,
-                frame_length: u64::try_from(record_end - at).unwrap_or(u64::MAX),
-                prefix_offset: u64::try_from(prefix_offset).unwrap_or(u64::MAX),
+                frame_length,
+                prefix_offset,
                 prefix_bytes,
                 references,
-                program_offset: u64::try_from(program_offset).unwrap_or(u64::MAX),
+                program_offset,
                 program,
                 matching_edge_operand_ids: Vec::new(),
             });

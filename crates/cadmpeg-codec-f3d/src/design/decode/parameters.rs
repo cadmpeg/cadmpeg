@@ -987,11 +987,14 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         // preamble even though no indexed sibling separates the two records.
         // Bind the preamble through the scope's entity identity, not by an
         // assumed class-tag or byte length.
+        let Ok(preamble_limit) = u64::try_from(end) else {
+            continue;
+        };
         end = scopes
             .iter()
             .filter(|scope| {
                 native_stream(&scope.id) == Some(stream)
-                    && scope.byte_offset() >= u64::try_from(end).unwrap_or(u64::MAX)
+                    && scope.byte_offset() >= preamble_limit
                     && scope.sketch_entity().is_some()
             })
             .filter_map(|scope| {
@@ -1010,8 +1013,13 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
             })
             .min()
             .unwrap_or(end);
-        companion.payload_byte_offset = u64::try_from(start).unwrap_or(u64::MAX);
-        companion.payload_byte_length = u64::try_from(end - start).unwrap_or(u64::MAX);
+        let (Ok(payload_byte_offset), Ok(payload_byte_length)) =
+            (u64::try_from(start), u64::try_from(end - start))
+        else {
+            continue;
+        };
+        companion.payload_byte_offset = payload_byte_offset;
+        companion.payload_byte_length = payload_byte_length;
         let mut owned = recipes
             .iter()
             .filter(|recipe| {

@@ -6965,14 +6965,13 @@ fn component_histories<'a>(
                 && candidate.component_record_index > space.component_record_index
         })
         .map(|candidate| candidate.component_record_index)
-        .min()
-        .unwrap_or(u64::MAX);
+        .min();
     let blobs = body_bindings
         .iter()
         .filter(|binding| {
             crate::ids::native_stream(&binding.id) == Some(stream)
                 && binding.entity_suffix >= space.component_record_index
-                && binding.entity_suffix < cluster_end
+                && cluster_end.is_none_or(|end| binding.entity_suffix < end)
         })
         .map(crate::records::DesignBodyBinding::blob_name)
         .collect::<HashSet<_>>();

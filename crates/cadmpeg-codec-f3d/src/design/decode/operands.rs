@@ -155,6 +155,9 @@ pub fn decode_edge_operands(
                 scope.record_index,
                 header.record_index,
             ));
+            let stream_end = u64::try_from(bytes.len()).map_err(|_| {
+                CodecError::malformed("Fusion Design BulkStream exceeds the addressable range")
+            })?;
             let terminal_group_limit = terminal_group_member.then(|| {
                 stream_offsets
                     .get(stream)
@@ -162,7 +165,7 @@ pub fn decode_edge_operands(
                         let at = offsets.partition_point(|offset| *offset <= header.byte_offset);
                         offsets.get(at).copied()
                     })
-                    .unwrap_or_else(|| u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                    .unwrap_or(stream_end)
             });
             let Some(operand) = parse_edge_operand(
                 bytes,
