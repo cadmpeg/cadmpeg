@@ -718,8 +718,31 @@ pub(crate) enum PcurveEdit {
 
 #[derive(Clone)]
 pub(crate) struct ProceduralCurveEdit {
-    pub(crate) definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
-    pub(crate) fit_tolerance: Option<f64>,
+    definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    fit_tolerance: Option<f64>,
+}
+
+impl ProceduralCurveEdit {
+    /// An edit that changes at least one of the definition and the fit tolerance.
+    pub(crate) fn new(
+        definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+        fit_tolerance: Option<f64>,
+    ) -> Option<Self> {
+        (definition.is_some() || fit_tolerance.is_some()).then_some(Self {
+            definition,
+            fit_tolerance,
+        })
+    }
+
+    /// Replacement procedural definition, when the edit changes it.
+    pub(crate) fn definition(&self) -> Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+        self.definition.as_ref()
+    }
+
+    /// Replacement cache fit tolerance, when the edit changes it.
+    pub(crate) fn fit_tolerance(&self) -> Option<f64> {
+        self.fit_tolerance
+    }
 }
 
 pub(crate) fn validate_material_assignment_appearances(
@@ -3747,14 +3770,8 @@ pub(crate) fn validate_procedural_curve_edits(
             }
             Some(tolerance)
         };
-        if definition.is_some() || fit_tolerance.is_some() {
-            edits.insert(
-                id.to_owned(),
-                ProceduralCurveEdit {
-                    definition,
-                    fit_tolerance,
-                },
-            );
+        if let Some(edit) = ProceduralCurveEdit::new(definition, fit_tolerance) {
+            edits.insert(id.to_owned(), edit);
         }
     }
     Ok(edits)
