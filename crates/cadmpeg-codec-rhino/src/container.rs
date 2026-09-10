@@ -1167,10 +1167,12 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
-        let storage = table.body_bytes(scan.data).map_or_else(
-            || EntryStorage::unreported(VerbatimLabel::None),
-            |body| EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing()),
-        );
+        let storage = table
+            .body_bytes(scan.data)
+            .and_then(|body| {
+                EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing())
+            })
+            .unwrap_or_else(|| EntryStorage::unreported(VerbatimLabel::None));
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
