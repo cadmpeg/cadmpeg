@@ -8708,12 +8708,10 @@ fn resolve_owner_chart_support_aliases(
         .collect::<UniqueIndex<_, _>>();
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
-            *alias = unique_by_tag
-                .get(&reference.value)
-                .map(|row| CatiaOwnerChartAliasBinding {
-                    row: row.id.clone(),
-                    canonical_tag: row.canonical_surface_tag,
-                });
+            *alias = unique_by_tag.get(&reference.value).and_then(|row| {
+                cadmpeg_ir::products::NonEmptyString::new(row.id.clone())
+                    .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
+            });
         }
     };
     for packet in packets {

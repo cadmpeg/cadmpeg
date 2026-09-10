@@ -1043,25 +1043,25 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     assert_eq!(
         support_surfaces[0]
             .alias()
-            .map(|binding| binding.row.as_str()),
-        Some(surface_alias.id.as_str())
+            .map(|binding| binding.row().to_owned()),
+        Some(surface_alias.id.clone())
     );
     assert_eq!(
         support_surfaces[0]
             .alias()
-            .and_then(|binding| binding.canonical_tag),
+            .and_then(|binding| binding.canonical_tag()),
         Some(200)
     );
     assert_eq!(
         support_pcurves[0]
             .alias()
-            .map(|binding| binding.row.as_str()),
-        Some(pcurve_alias.id.as_str())
+            .map(|binding| binding.row().to_owned()),
+        Some(pcurve_alias.id.clone())
     );
     assert_eq!(
         support_pcurves[0]
             .alias()
-            .and_then(|binding| binding.canonical_tag),
+            .and_then(|binding| binding.canonical_tag()),
         Some(101)
     );
     assert_ne!(
@@ -1084,7 +1084,11 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     if let CatiaOwnerChartAddress::WidthCoded { alias: Some(alias) } =
         &mut support_surfaces[0].address
     {
-        alias.canonical_tag = Some(100);
+        *alias = crate::native::CatiaOwnerChartAliasBinding::new(
+            cadmpeg_ir::products::NonEmptyString::new(alias.row().to_owned())
+                .expect("alias row is non-empty"),
+            Some(100),
+        );
     }
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
