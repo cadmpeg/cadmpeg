@@ -2048,8 +2048,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             units: unit_scales,
         },
         claims: typed,
-        warnings,
-        losses,
+        losses: super::fold_warnings(losses, warnings),
         notes: Vec::new(),
     }
 }

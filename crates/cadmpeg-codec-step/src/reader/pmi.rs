@@ -46,7 +46,6 @@ pub(super) fn decode(
         return StageOutcome {
             value: (),
             claims: HashSet::new(),
-            warnings: Vec::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -706,8 +705,7 @@ pub(super) fn decode(
     StageOutcome {
         value: (),
         claims: typed,
-        warnings,
-        losses,
+        losses: super::fold_warnings(losses, warnings),
         notes: Vec::new(),
     }
 }

@@ -77,10 +77,19 @@ pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
         })
 }
 
+/// Appends untyped stage warnings to a stage's typed losses.
+fn fold_warnings(mut losses: Vec<LossNote>, warnings: Vec<String>) -> Vec<LossNote> {
+    losses.extend(
+        warnings
+            .into_iter()
+            .map(|message| StepLossCode::DecodeWarning.note(message)),
+    );
+    losses
+}
+
 struct StageOutcome<T> {
     value: T,
     claims: HashSet<u64>,
-    warnings: Vec<String>,
     losses: Vec<LossNote>,
     notes: Vec<String>,
 }
@@ -201,14 +210,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         self.typed_records.extend(outcome.claims.drain());
         self.body.losses.append(&mut outcome.losses);
         self.body.notes.append(&mut outcome.notes);
-    }
-
-    fn absorb_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
-        self.body.losses.extend(
-            warnings
-                .into_iter()
-                .map(|message| StepLossCode::DecodeWarning.note(message)),
-        );
     }
 
     fn into_result(
@@ -400,16 +401,9 @@ fn decode_exchange_mode(
     session.absorb(&mut dependencies);
     session.absorb(&mut presentation);
     session.absorb(&mut product);
-    session.absorb_warnings(std::mem::take(&mut geometry.warnings));
-    session.absorb_warnings(std::mem::take(&mut topology.warnings));
-    session.absorb_warnings(std::mem::take(&mut presentation.warnings));
-    session.absorb_warnings(std::mem::take(&mut product.warnings));
-    session.absorb_warnings(std::mem::take(&mut tessellation.warnings));
     session.absorb(&mut tessellation);
     session.absorb(&mut topology);
     session.absorb(&mut geometry);
-    session.absorb_warnings(std::mem::take(&mut pmi.warnings));
-    session.absorb_warnings(std::mem::take(&mut validation.warnings));
     session.absorb(&mut pmi);
     session.absorb(&mut validation);
 
@@ -429,7 +423,11 @@ fn decode_exchange_mode(
         &mut session.typed_records,
         &mut post_decode_warnings,
     );
-    session.absorb_warnings(post_decode_warnings);
+    session.body.losses.extend(
+        post_decode_warnings
+            .into_iter()
+            .map(|message| StepLossCode::DecodeWarning.note(message)),
+    );
 
     session.charge_stage("step_opaque_record_retention")?;
     let opaque_offsets = match mode {

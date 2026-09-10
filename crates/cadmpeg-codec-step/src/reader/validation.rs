@@ -33,7 +33,6 @@ pub(super) fn decode(
             value: (),
             claims: HashSet::new(),
             notes: Vec::new(),
-            warnings: Vec::new(),
             losses: Vec::new(),
         };
     }
@@ -184,8 +183,7 @@ pub(super) fn decode(
         value: (),
         claims: typed,
         notes,
-        warnings,
-        losses,
+        losses: super::fold_warnings(losses, warnings),
     }
 }
 

@@ -526,8 +526,7 @@ pub(super) fn decode(
             product_definition_ids_by_shape,
         },
         claims: typed,
-        warnings,
-        losses,
+        losses: super::fold_warnings(losses, warnings),
         notes: Vec::new(),
     })
 }
