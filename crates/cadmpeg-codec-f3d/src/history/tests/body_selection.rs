@@ -106,7 +106,6 @@ fn move_body_selection_uses_unique_owning_history() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: true,
         states: vec![
             state(42, "history", Some(transition)),
             state(41, "history", None),
@@ -117,7 +116,6 @@ fn move_body_selection_uses_unique_owning_history() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: true,
         states: vec![state(41, "unrelated-history", None)],
     };
     let histories = [history, unrelated_history];

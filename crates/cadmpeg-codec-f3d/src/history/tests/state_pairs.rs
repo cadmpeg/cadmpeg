@@ -46,7 +46,6 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state(id, current, Some(2)), state(id, 2, None)],
     };
     let histories = [history("first", 7), history("second", 9)];
@@ -121,7 +120,6 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             byte_offset: 0,
             preamble: None,
             record_table_binding_budget_exceeded: false,
-            projection_finalized: false,
             states: vec![state(&id, 9, Some(2)), state(&id, 2, None)],
         }
     };
@@ -241,7 +239,6 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(10, 0, None, Some(2)),
             state(6, 2, Some(0), Some(3)),
@@ -518,7 +515,6 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "state".into(),
             parent: "history".into(),
@@ -624,7 +620,6 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "state".into(),
             parent: "history".into(),
@@ -950,7 +945,6 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(id, 11, Some(10)),
             state(id, 10, Some(9)),
@@ -1055,7 +1049,6 @@ fn active_face_support_retains_invariant_preceding_owners() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state(2, active.clone()), state(3, active)],
     };
     let preceding = AsmHistoricalTopology {
@@ -1599,7 +1592,6 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(
                 3,
@@ -1711,7 +1703,6 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state(
             3,
             AsmHistoricalTopology {
@@ -1741,7 +1732,6 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state(
             7,
             AsmHistoricalTopology {
@@ -1786,7 +1776,6 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "state-3".into(),
             parent: "history".into(),

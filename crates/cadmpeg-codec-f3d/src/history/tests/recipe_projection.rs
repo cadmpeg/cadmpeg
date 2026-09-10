@@ -48,14 +48,13 @@ fn projection_caches_end_after_history_consumers() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state],
     }];
 
     discard_projection_caches(&mut histories);
 
     let state = &histories[0].states[0];
-    assert!(histories[0].projection_finalized);
+    assert!(histories[0].projection_finalized());
     assert!(state.entity_versions.is_empty());
     assert!(!state.record_table_complete());
     assert!(state.topology().is_none());
@@ -68,7 +67,7 @@ fn projection_caches_end_after_history_consumers() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store native history");
     native = crate::native::F3dNative::load(&namespace).expect("load native history");
-    assert!(native.asm_histories[0].projection_finalized);
+    assert!(native.asm_histories[0].projection_finalized());
 }
 
 #[test]
