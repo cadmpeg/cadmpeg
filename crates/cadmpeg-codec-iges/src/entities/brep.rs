@@ -120,11 +120,13 @@ fn topology_vertex(
     stem: &crate::ids::Stem,
     list: u32,
     index: usize,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> VertexId {
     vertex_ids
         .entry((list, index))
         .or_insert_with(|| {
             let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
+            sequences.record_point(&point_id, stem);
             let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
             candidate.model_mut().points.push(Point {
                 source_object: None,
@@ -769,7 +771,7 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
-        sequences.record_body(&body_id, entry.sequence);
+        sequences.record_body(&body_id, entry.sequence, &stem);
         let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
@@ -847,6 +849,7 @@ pub(super) fn project(
                                 &stem,
                                 *vertex_list,
                                 *vertex_index,
+                                sequences,
                             );
                             let after = if coedge_ids.is_empty() {
                                 None
@@ -907,6 +910,7 @@ pub(super) fn project(
                                 &stem,
                                 list,
                                 index,
+                                sequences,
                             );
                         }
                         let edge_key = (*edge_list, *edge_index);

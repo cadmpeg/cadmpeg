@@ -1711,7 +1711,7 @@ fn plane_face_draft(
         None
     };
     let body_id = crate::ids::body(stem);
-    sequences.record_body(&body_id, source_sequence);
+    sequences.record_body(&body_id, source_sequence, stem);
     let region_id = crate::ids::region(stem);
     let shell_id = crate::ids::shell(stem);
     let face_id = crate::ids::face(stem);

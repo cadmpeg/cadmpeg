@@ -807,9 +807,11 @@ pub(super) fn project(
         let start_point = crate::ids::point(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
         );
+        sequences.record_point(&start_point, &crate::ids::Stem::directory(entry.sequence));
         let end_point = crate::ids::point(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
         );
+        sequences.record_point(&end_point, &crate::ids::Stem::directory(entry.sequence));
         let start_vertex = crate::ids::vertex(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
         );

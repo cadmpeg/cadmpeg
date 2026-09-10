@@ -197,6 +197,7 @@ fn create_boundary_vertices(
     boundary: usize,
     source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: cadmpeg_ir::units::PositiveScalar,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexClusterError> {
     let positions = source_endpoints
         .iter()
@@ -209,6 +210,7 @@ fn create_boundary_vertices(
     let mut derivations = Vec::new();
     for (index, cluster) in clusters.into_iter().enumerate() {
         let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
+        sequences.record_point(&point_id, stem);
         let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
         candidate.model_mut().points.push(Point {
             source_object: None,
@@ -1936,7 +1938,7 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
-        sequences.record_body(&body_id, entry.sequence);
+        sequences.record_body(&body_id, entry.sequence, &stem);
         let region_id = crate::ids::region(&stem);
         let shell_id = crate::ids::shell(&stem);
         let face_id = crate::ids::face(&stem);
@@ -2187,6 +2189,7 @@ pub(super) fn project(
                 boundary_index,
                 &source_endpoints,
                 checked_sewing_tolerance,
+                sequences,
             ) {
                 Ok(result) => result,
                 Err(BoundaryVertexClusterError::NonTransitive) => {

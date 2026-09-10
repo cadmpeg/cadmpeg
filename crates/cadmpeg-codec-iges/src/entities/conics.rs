@@ -45,7 +45,9 @@ fn add_bounded_curve(
     } = span;
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    sequences.record_point(&start_point, &stem);
     let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    sequences.record_point(&end_point, &stem);
     let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
     let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
     let curve = crate::ids::curve(&stem);

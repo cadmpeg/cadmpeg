@@ -1784,18 +1784,6 @@ fn binary_integer(value: Option<i64>) -> Option<bool> {
     }
 }
 
-fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
-    let suffix = id.strip_prefix(prefix)?;
-    let digits = suffix
-        .as_bytes()
-        .iter()
-        .take_while(|byte| byte.is_ascii_digit())
-        .count();
-    (digits > 0)
-        .then(|| suffix[..digits].parse::<u32>().ok())
-        .flatten()
-}
-
 fn member_affine(
     entry: &DirectoryEntry,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -5261,7 +5249,7 @@ pub(crate) fn store(
         }
     }
     for body in &ir.model.bodies {
-        if let Some(sequence) = model_id_directory_sequence(body.id.as_str(), "iges:model:body#D") {
+        if let Some(sequence) = sequences.body_neutral_form(&body.id) {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
@@ -5269,8 +5257,7 @@ pub(crate) fn store(
         }
     }
     for point in &ir.model.points {
-        if let Some(sequence) = model_id_directory_sequence(point.id.as_str(), "iges:model:point#D")
-        {
+        if let Some(sequence) = sequences.point(&point.id) {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
