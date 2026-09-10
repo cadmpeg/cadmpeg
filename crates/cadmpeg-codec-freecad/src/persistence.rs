@@ -34,7 +34,7 @@ pub struct Graph {
 /// Recover the persistence graph, charging retained property XML against the session.
 pub fn parse_with_context(
     bytes: &[u8],
-    document: &crate::native::DocumentFacts,
+    schema_version: &str,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
@@ -44,7 +44,7 @@ pub fn parse_with_context(
     parse_document(
         text,
         &xml,
-        FcstdDialect::from_schema_version(&document.schema_version),
+        FcstdDialect::from_schema_version(schema_version),
         ctx,
     )
 }
