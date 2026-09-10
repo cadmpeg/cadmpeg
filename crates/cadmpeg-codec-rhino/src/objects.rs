@@ -110,6 +110,39 @@ impl AttributeUserdataDescriptor {
 }
 
 /// Raw object attributes decoded from an object-attributes chunk.
+/// Which source an object's display color is taken from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ColorSource {
+    Layer,
+    Object,
+    Material,
+    Parent,
+    /// A selector outside the documented set, retained as written.
+    Invalid(u8),
+}
+
+impl ColorSource {
+    pub(crate) fn parse(raw: u8) -> Self {
+        match raw {
+            0 => Self::Layer,
+            1 => Self::Object,
+            2 => Self::Material,
+            3 => Self::Parent,
+            other => Self::Invalid(other),
+        }
+    }
+
+    pub(crate) fn as_byte(self) -> u8 {
+        match self {
+            Self::Layer => 0,
+            Self::Object => 1,
+            Self::Material => 2,
+            Self::Parent => 3,
+            Self::Invalid(raw) => raw,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ObjectAttributes {
@@ -135,8 +168,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) obsolete_scale: f64,
     /// Raw visibility.
     pub(crate) visible: bool,
-    /// Raw color source selector.
-    pub(crate) color_source: u8,
+    /// Color source selector.
+    pub(crate) color_source: ColorSource,
     /// Raw linetype source selector.
     pub(crate) linetype_source: u8,
     /// Raw material source selector.
@@ -912,7 +945,7 @@ pub(crate) fn parse_attributes(
         let obsolete_scale = reader.f64()?;
         let wire_density = reader.i32()?;
         let object_mode = reader.u8()?;
-        let color_source = reader.u8()?;
+        let color_source = ColorSource::parse(reader.u8()?);
         let linetype_source = reader.u8()?;
         let material_source = reader.u8()?;
         let name = settings::utf16(&mut reader)?;
@@ -1068,7 +1101,7 @@ pub(crate) fn parse_attributes(
         obsolete_thickness: 0.0,
         obsolete_scale: 1.0,
         visible: true,
-        color_source: 0,
+        color_source: ColorSource::Layer,
         linetype_source: 0,
         material_source: 0,
         plot_color_source: 0,
@@ -1165,7 +1198,9 @@ pub(crate) fn parse_attributes(
                 attributes.visible = reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
-            AttributeItem::ColorSource => attributes.color_source = reader.u8()?,
+            AttributeItem::ColorSource => {
+                attributes.color_source = ColorSource::parse(reader.u8()?);
+            }
             AttributeItem::PlotColorSource => attributes.plot_color_source = reader.u8()?,
             AttributeItem::PlotWeightSource => attributes.plot_weight_source = reader.u8()?,
             AttributeItem::MaterialSource => attributes.material_source = reader.u8()?,
@@ -1518,27 +1553,25 @@ fn resolve_identity(
     let name = attributes.map_or_else(String::new, |value| value.name.clone());
     let object_mode = attributes.map_or(0, |value| value.object_mode);
     let definition_member = object_mode & 0x0f == IDEF_OBJECT_MODE;
-    let color_selector = attributes.map_or(0, |value| value.color_source);
+    let color_selector = attributes.map_or(ColorSource::Layer, |value| value.color_source);
     let color = match color_selector {
-        0 => layer.map(|value| value.color),
-        1 => object_color,
-        2 => {
+        ColorSource::Layer => layer.map(|value| value.color),
+        ColorSource::Object => object_color,
+        ColorSource::Material => {
             warnings.push(format!(
                 "object {object_id} material color remains unresolved"
             ));
             None
         }
-        3 if definition_member => {
+        ColorSource::Parent if definition_member => {
             warnings.push(format!(
                 "object {object_id} parent color remains unresolved"
             ));
             None
         }
-        3 => layer.map(|value| value.color),
-        _ => {
-            warnings.push(format!(
-                "object {object_id} has invalid color source {color_selector}"
-            ));
+        ColorSource::Parent => layer.map(|value| value.color),
+        ColorSource::Invalid(raw) => {
+            warnings.push(format!("object {object_id} has invalid color source {raw}"));
             None
         }
     };
