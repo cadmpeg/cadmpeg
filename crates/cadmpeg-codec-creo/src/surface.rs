@@ -441,24 +441,6 @@ pub enum SurfaceParameterCarrier {
     Resolved(InlineSurfaceCarrier),
 }
 
-/// Complete interpolation data replayed by a later positional spline row.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PositionalSplineReplay {
-    /// U-major interpolation points.
-    pub(crate) points: Vec<[f64; 3]>,
-    /// Ordered U parameters.
-    pub(crate) u_parameters: Vec<f64>,
-    /// Ordered V parameters.
-    pub(crate) v_parameters: Vec<f64>,
-    /// Lower-U and upper-U boundary derivatives.
-    pub(crate) u_derivatives: Vec<[f64; 3]>,
-    /// Lower-V and upper-V boundary derivatives.
-    pub(crate) v_derivatives: Vec<[f64; 3]>,
-    /// Mixed derivatives in lower-U/lower-V, upper-U/lower-V,
-    /// lower-U/upper-V, upper-U/upper-V order.
-    pub(crate) mixed_derivatives: Vec<[f64; 3]>,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct SplineReplayShape {
     tangent_conditions: [u32; 2],
@@ -623,7 +605,7 @@ fn parse_positional_spline_replay(
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<(PositionalSplineReplay, usize)> {
+) -> Option<(crate::interpolation_grid::InterpolationGrid, usize)> {
     let shape = spline_replay_shape(prototype)?;
     let envelope_close = surface_body_compound_close(SurfaceKind::Spline, body, cache)?;
     let mut cursor = envelope_close.checked_add(1)?;
@@ -667,15 +649,16 @@ fn parse_positional_spline_replay(
     )?)?;
     let u_parameters = take_spline_scalars(body, &mut cursor, shape.u_count, "u_params", cache)?;
     let v_parameters = take_spline_scalars(body, &mut cursor, shape.v_count, "v_params", cache)?;
+    let mixed_derivatives = <[[f64; 3]; 4]>::try_from(mixed_derivatives).ok()?;
     Some((
-        PositionalSplineReplay {
+        crate::interpolation_grid::InterpolationGrid::try_new(
             points,
             u_parameters,
             v_parameters,
             u_derivatives,
             v_derivatives,
             mixed_derivatives,
-        },
+        )?,
         cursor,
     ))
 }
@@ -702,7 +685,7 @@ pub(crate) fn decode_positional_spline_replay(
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<PositionalSplineReplay> {
+) -> Option<crate::interpolation_grid::InterpolationGrid> {
     let (replay, consumed) = parse_positional_spline_replay(body, prototype, cache)?;
     (consumed == body.len()).then_some(replay)
 }

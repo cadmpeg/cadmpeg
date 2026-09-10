@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
-pub(crate) mod spline;
-
 use std::collections::BTreeMap;
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
@@ -70,7 +68,7 @@ pub(crate) enum LegacySurfaceGeometry {
         radius: f64,
     },
     /// A complete bicubic interpolation surface carrier.
-    Spline(spline::LegacySpline),
+    Spline(crate::interpolation_grid::InterpolationGrid),
 }
 
 /// The legacy namespace that owns one analytic surface carrier.
@@ -483,7 +481,7 @@ fn surface_carrier(
             let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
             let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
             let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
-            let spline = spline::LegacySpline::from_grid(
+            let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
                 points,
                 u_parameters,
                 v_parameters,
@@ -1196,7 +1194,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| vector(f64::from(value)))
             .collect::<Vec<_>>();
 
-        let spline = super::spline::LegacySpline::from_grid(
+        let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
             points,
             u_parameters.to_vec(),
             v_parameters.to_vec(),

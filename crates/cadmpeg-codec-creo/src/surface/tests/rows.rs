@@ -90,12 +90,12 @@ fn positional_spline_replay_uses_the_named_array_extents() {
     let cache = scalar::ScalarCache::from_section(&payload);
     let replay =
         decode_positional_spline_replay(&later_parameter.body, &prototype, &cache).unwrap();
-    assert_eq!(replay.points.len(), 4);
-    assert_eq!(replay.u_derivatives.len(), 4);
-    assert_eq!(replay.v_derivatives.len(), 4);
-    assert_eq!(replay.mixed_derivatives.len(), 4);
-    assert_eq!(replay.u_parameters, [0.0, 1.0]);
-    assert_eq!(replay.v_parameters, [0.0, 1.0]);
+    assert_eq!(replay.points().len(), 4);
+    assert_eq!(replay.u_derivatives().len(), 4);
+    assert_eq!(replay.v_derivatives().len(), 4);
+    assert_eq!(replay.mixed_derivatives().len(), 4);
+    assert_eq!(replay.u_parameters(), [0.0, 1.0]);
+    assert_eq!(replay.v_parameters(), [0.0, 1.0]);
     let body_start = positional_body_start(&payload, later).unwrap();
     assert_eq!(
         positional_spline_replay_body_end(
