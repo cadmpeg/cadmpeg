@@ -625,8 +625,8 @@ fn refine_consolidated_analytic_surfaces(
                 let radius = cylinder_surface.radius();
                 exactly_one(cylinders.iter().filter_map(|cylinder| {
                     (same_point(*origin, cylinder.origin)
-                        && same_axis(*axis, cylinder.axis)
-                        && radius.to_bits() == quantized(cylinder.radius).to_bits())
+                        && same_axis(*axis, cylinder.axis.get())
+                        && radius.to_bits() == quantized(cylinder.radius.get()).to_bits())
                     .then_some((cylinder.surface_geometry()?, cylinder.pos))
                 }))
             }
@@ -642,16 +642,16 @@ fn refine_consolidated_analytic_surfaces(
                 let half_angle = cone_surface.half_angle();
                 exactly_one(cones.iter().filter(|cone| {
                     same_point(*origin, cone.apex)
-                        && same_axis(*axis, cone.axis)
+                        && same_axis(*axis, cone.axis.get())
                         && half_angle.to_bits() == quantized(cone.half_angle).to_bits()
                 }))
                 .and_then(|cone| {
                     Some((
                         SurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::ConeSurface::try_new(
-                                Point3::new(cone.apex[0], cone.apex[1], cone.apex[2]),
-                                Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
-                                Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
+                                Point3::from(cone.apex),
+                                Vector3::from(cone.axis.get()),
+                                Vector3::from(cone.t1.get()),
                                 0.0,
                                 1.0,
                                 cone.half_angle,
@@ -667,7 +667,7 @@ fn refine_consolidated_analytic_surfaces(
                 let radius = sphere_surface.radius();
                 exactly_one(spheres.iter().filter(|sphere| {
                     same_point(*center, sphere.center)
-                        && radius.to_bits() == quantized(sphere.radius).to_bits()
+                        && radius.to_bits() == quantized(sphere.radius.get()).to_bits()
                 }))
                 .and_then(|sphere| {
                     Some((
@@ -683,9 +683,9 @@ fn refine_consolidated_analytic_surfaces(
                 let minor_radius = torus_surface.minor_radius();
                 exactly_one(tori.iter().filter(|torus| {
                     same_point(*center, torus.center)
-                        && same_axis(*axis, torus.axis)
-                        && major_radius.to_bits() == quantized(torus.major_radius).to_bits()
-                        && minor_radius.to_bits() == quantized(torus.minor_radius).to_bits()
+                        && same_axis(*axis, torus.axis.get())
+                        && major_radius.to_bits() == quantized(torus.major_radius.get()).to_bits()
+                        && minor_radius.to_bits() == quantized(torus.minor_radius.get()).to_bits()
                 }))
                 .and_then(|torus| {
                     Some((
@@ -6834,29 +6834,30 @@ fn invariant_face_carrier_bindings(
 }
 
 fn owner_matches_a5_carrier(
-    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    tail: &crate::native::CatiaOwnerNumericTail,
     surface: &NurbsSurface,
 ) -> bool {
     let Some(domain) = nurbs_surface_parameter_domain(surface) else {
         return false;
     };
     if (0..2).any(|axis| {
-        tail.lower[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-            || tail.upper[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+        tail.lower()[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            || tail.upper()[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
     }) {
         return false;
     }
-    [tail.lower[0], tail.upper[0]].into_iter().all(|u| {
-        [tail.lower[1], tail.upper[1]].into_iter().all(|v| {
+    [tail.lower()[0], tail.upper()[0]].into_iter().all(|u| {
+        [tail.lower()[1], tail.upper()[1]].into_iter().all(|v| {
             cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_some_and(|point| {
                 [point.x, point.y, point.z]
                     .into_iter()
                     .enumerate()
                     .all(|(axis, value)| {
                         value
-                            >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                            >= f64::from(tail.bounds()[axis][0])
+                                - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
                             && value
-                                <= f64::from(tail.bounds[axis][1])
+                                <= f64::from(tail.bounds()[axis][1])
                                     + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
                     })
             })
@@ -6866,7 +6867,7 @@ fn owner_matches_a5_carrier(
 
 fn owner_contains_face_bounds(
     reference_encoding: crate::families::b2::records::B2OwnerReferenceEncoding,
-    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    tail: &crate::native::CatiaOwnerNumericTail,
     bounds: crate::families::standard::records::StandardFaceBounds,
 ) -> bool {
     if reference_encoding != crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact {
@@ -6875,8 +6876,8 @@ fn owner_contains_face_bounds(
     (0..3).all(|axis| {
         let lower = bounds.aabb_center[axis] - bounds.aabb_half_extents[axis];
         let upper = bounds.aabb_center[axis] + bounds.aabb_half_extents[axis];
-        lower >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-            && upper <= f64::from(tail.bounds[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+        lower >= f64::from(tail.bounds()[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            && upper <= f64::from(tail.bounds()[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
     })
 }
 

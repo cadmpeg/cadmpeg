@@ -353,8 +353,11 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);
     assert_eq!(circle.center_pair, [4.0, -2.0]);
-    assert_eq!(circle.radius, 3.0);
-    assert_eq!(circle.range, [0.0, std::f64::consts::TAU * circle.radius]);
+    assert_eq!(circle.radius.get(), 3.0);
+    assert_eq!(
+        circle.range.get(),
+        [0.0, std::f64::consts::TAU * circle.radius.get()]
+    );
     assert!(circle.full_circle());
     assert_eq!(circle.chart_shift, 0.0);
 
@@ -394,14 +397,14 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     };
     assert_eq!(explicit.payload.layout(), 0x5a);
     assert_eq!(explicit.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(explicit.radius, 2.0);
+    assert_eq!(explicit.radius.get(), 2.0);
     assert!(matches!(
         explicit.payload,
         crate::native::CatiaConsolidatedCylinderPayload::Layout5a {
             frame_token: 0x19,
-            axis: [1.0, 0.0, 0.0],
-            reference_direction: [0.0, 1.0, 0.0],
-        }
+            axis,
+            reference_direction,
+        } if axis.get() == [1.0, 0.0, 0.0] && reference_direction.get() == [0.0, 1.0, 0.0]
     ));
     assert_eq!(implicit.payload.layout(), 0x52);
     assert!(matches!(
@@ -409,16 +412,18 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         crate::native::CatiaConsolidatedCylinderPayload::Layout52 { .. }
     ));
     assert_eq!(range_origin.payload.layout(), 0x62);
-    assert_eq!(range_origin.radius, 4.0);
+    assert_eq!(range_origin.radius.get(), 4.0);
     assert!(matches!(
         range_origin.payload,
         crate::native::CatiaConsolidatedCylinderPayload::RangeOrigin {
             stored_vector: [0.0, 1.0],
-            axis: [0.0, 1.0, 0.0],
-            reference_direction: [0.0, 0.0, 1.0],
+            axis,
+            reference_direction,
             range_origin,
-        } if range_origin.to_bits()
-            == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
+        } if axis.get() == [0.0, 1.0, 0.0]
+            && reference_direction.get() == [0.0, 0.0, 1.0]
+            && range_origin.to_bits()
+                == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -449,14 +454,14 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
         panic!("one consolidated cone")
     };
     assert_eq!(cone.apex, [1.0, 2.0, 3.0]);
-    assert_eq!(cone.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(cone.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(cone.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(cone.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(cone.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(cone.axis.get(), [0.0, 0.0, 1.0]);
     assert_eq!(cone.half_angle, 0.25);
     assert_eq!(cone.reference_radius, 4.0);
     assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
-    assert_eq!(cone.slant_range, [2.0, 8.0]);
-    assert_eq!(cone.angular_scale, 3.0);
+    assert_eq!(cone.slant_range.get(), [2.0, 8.0]);
+    assert_eq!(cone.angular_scale.get(), 3.0);
     assert_eq!(
         cone.angular_domain,
         [
@@ -565,10 +570,10 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     );
     assert_eq!(revolution.profile_allocation_id, 0x1234);
     assert_eq!(revolution.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(revolution.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(revolution.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(revolution.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(revolution.profile_range, [-4.0, 9.0]);
+    assert_eq!(revolution.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(revolution.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(revolution.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(revolution.profile_range.get(), [-4.0, 9.0]);
     assert_eq!(
         revolution.profile_circle.as_deref(),
         Some("catia:consolidated:circle#0")
@@ -592,7 +597,11 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native;
-    invalid.consolidated_revolutions[0].axis = [0.0, 0.0, -1.0];
+    invalid.consolidated_revolutions[0].axis = crate::checked::UnitVector3::new(
+        [0.0, 0.0, -1.0],
+        crate::checked::UnitVector3::EXACT_TOLERANCE,
+    )
+    .expect("unit axis");
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
@@ -680,8 +689,8 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
         panic!("one consolidated line profile")
     };
     assert_eq!(line.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(line.direction, [0.0, 0.6, 0.8]);
-    assert_eq!(line.range, [-4.0, 9.0]);
+    assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
+    assert_eq!(line.range.get(), [-4.0, 9.0]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -691,14 +700,6 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA line profile"),
         native
     );
-
-    let mut invalid = native;
-    invalid.consolidated_line_profiles[0].direction = [0.0, 0.0, 2.0];
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA line profile for load validation");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]
@@ -708,11 +709,11 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
         panic!("one consolidated torus")
     };
     assert_eq!(torus.center, [1.0, 2.0, 3.0]);
-    assert_eq!(torus.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(torus.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(torus.major_radius, 7.0);
-    assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(torus.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(torus.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(torus.major_radius.get(), 7.0);
+    assert_eq!(torus.minor_radius.get(), 2.0);
     assert_eq!(
         torus.major_angular_range,
         [
@@ -729,8 +730,8 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
             3.0 * std::f64::consts::FRAC_PI_2
         ]
     );
-    assert_eq!(torus.major_scale, 14.0);
-    assert_eq!(torus.minor_scale, 4.0);
+    assert_eq!(torus.major_scale.get(), 14.0);
+    assert_eq!(torus.minor_scale.get(), 4.0);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA torus");
@@ -755,10 +756,10 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
         panic!("one consolidated sphere")
     };
     assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
-    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(sphere.radius, 5.0);
+    assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius.get(), 5.0);
     assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
     assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 
@@ -1792,7 +1793,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     assert_eq!(group.group_type, 3);
     assert_eq!(cylinder.group, group.id);
     assert_eq!(cylinder.object_id, 0x5678);
-    assert_eq!(cylinder.u_range, [0.0, 4.0 * std::f64::consts::PI]);
+    assert_eq!(cylinder.u_range.get(), [0.0, 4.0 * std::f64::consts::PI]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
