@@ -449,8 +449,8 @@
     "losses": [
       {
         "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
+          "code": "tessellation.item-undeclared",
+          "kind": "reference_graph_not_closed",
           "namespace": "step"
         },
         "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
@@ -458,8 +458,8 @@
       },
       {
         "code": {
-          "code": "tessellation.item-undeclared",
-          "kind": "reference_graph_not_closed",
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
           "namespace": "step"
         },
         "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",

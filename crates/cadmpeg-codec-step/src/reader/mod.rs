@@ -1004,7 +1004,7 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .collect::<Vec<_>>()
         .join("_");
     let derived = crate::ids::IdentityKind::parse(&kind);
-    UnknownId::from(ids::data(derived.unwrap_or(kind!("record")), id))
+    UnknownId::from(ids::data(derived.as_ref().unwrap_or(kind!("record")), id))
 }
 
 fn record_targets(

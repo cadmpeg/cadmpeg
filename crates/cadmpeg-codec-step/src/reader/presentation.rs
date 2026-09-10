@@ -812,7 +812,7 @@ fn presentation_item_one(
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> PresentationItem {
-    let candidate = |kind: crate::ids::IdentityKind| ids::data(kind, id);
+    let candidate = |kind: &crate::ids::IdentityKind| ids::data(kind, id);
     let body = candidate(kind!("body"));
     if body_indices.contains_key(body.as_str()) {
         return PresentationItem::Body {
