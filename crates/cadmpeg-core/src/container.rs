@@ -147,30 +147,51 @@ pub enum VerbatimSize {
     Framed(FramedSpan),
 }
 
+/// The byte length of a live allocation.
+///
+/// Rust guarantees no allocation exceeds `isize::MAX` bytes, so a value read
+/// off a slice or a `str` carries that bound with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AllocatedLen(usize);
+
+impl From<&[u8]> for AllocatedLen {
+    fn from(bytes: &[u8]) -> Self {
+        Self(bytes.len())
+    }
+}
+
+impl From<&str> for AllocatedLen {
+    fn from(text: &str) -> Self {
+        Self(text.len())
+    }
+}
+
+/// The widening in [`FramedSpan::from_parts`] is exact on this target.
+const _: () = assert!(usize::BITS <= 64);
+/// The stored span in [`FramedSpan::stored`] cannot overflow a `u64`.
+const _: () = assert!((isize::MAX as u128) + (u32::MAX as u128) < (u64::MAX as u128));
+
 /// A verbatim payload inside a strictly larger stored span.
 ///
-/// The stored span is the declared number; the framing is the difference, so a
-/// span smaller than its payload and a stored size that overflows are both
-/// unrepresentable.
+/// The framing is the declared number and it is non-zero, so a stored span
+/// that does not exceed its payload is unrepresentable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FramedSpan {
     payload: u64,
-    stored: NonZeroU64,
+    framing: NonZeroU64,
 }
 
 impl FramedSpan {
     /// A `payload`-byte payload wrapped in `framing` bytes of container framing.
     ///
-    /// `payload` is a slice or `String` length, so it is at most `isize::MAX`,
-    /// and `framing` is at most `u32::MAX`; their sum is therefore far inside
-    /// `u64` and the stored span is exactly `payload + framing`.
+    /// `payload` is the length of a live allocation and so at most `isize::MAX`
+    /// and `framing` at most `u32::MAX`, and the module assertion above proves
+    /// that sum inside `u64`, so the stored span is exactly `payload + framing`.
     #[must_use]
-    pub fn from_parts(payload: usize, framing: NonZeroU32) -> Self {
-        let framing = NonZeroU64::from(framing);
-        let payload = (payload as u64).min(u64::MAX - framing.get());
+    pub fn from_parts(payload: AllocatedLen, framing: NonZeroU32) -> Self {
         Self {
-            payload,
-            stored: framing.saturating_add(payload),
+            payload: payload.0 as u64,
+            framing: NonZeroU64::from(framing),
         }
     }
 
@@ -178,11 +199,11 @@ impl FramedSpan {
     /// span does not exceed the payload.
     #[must_use]
     pub const fn new(payload: u64, stored: u64) -> Option<Self> {
-        if stored <= payload {
-            return None;
-        }
-        match NonZeroU64::new(stored) {
-            Some(stored) => Some(Self { payload, stored }),
+        match stored.checked_sub(payload) {
+            Some(framing) => match NonZeroU64::new(framing) {
+                Some(framing) => Some(Self { payload, framing }),
+                None => None,
+            },
             None => None,
         }
     }
@@ -195,14 +216,14 @@ impl FramedSpan {
 
     /// Stored span in bytes, framing included.
     #[must_use]
-    pub const fn stored(self) -> NonZeroU64 {
-        self.stored
+    pub const fn stored(self) -> u64 {
+        self.payload + self.framing.get()
     }
 
     /// Container framing counted in the stored span but not in the payload.
     #[must_use]
     pub const fn framing(self) -> u64 {
-        self.stored.get() - self.payload
+        self.framing.get()
     }
 }
 
@@ -288,7 +309,7 @@ impl EntryStorage {
     /// Verbatim bytes whose stored span is the payload plus `framing` bytes of
     /// container framing the producer knows.
     #[must_use]
-    pub fn framed_by(label: VerbatimLabel, payload: usize, framing: NonZeroU32) -> Self {
+    pub fn framed_by(label: VerbatimLabel, payload: AllocatedLen, framing: NonZeroU32) -> Self {
         Self::Verbatim {
             label,
             size: VerbatimSize::Framed(FramedSpan::from_parts(payload, framing)),
@@ -342,7 +363,7 @@ impl EntryStorage {
             Self::Verbatim { size, .. } => match size {
                 VerbatimSize::Unreported | VerbatimSize::PayloadOnly(_) => None,
                 VerbatimSize::Exact(size) => Some(size.get()),
-                VerbatimSize::Framed(span) => Some(span.stored().get()),
+                VerbatimSize::Framed(span) => Some(span.stored()),
             },
             Self::Compressed { stored, .. } => match stored {
                 Some(stored) => Some(stored.get()),
@@ -645,7 +666,7 @@ mod tests {
             Ok(EntryStorage::verbatim(VerbatimLabel::Stored, 9))
         );
         let span = super::FramedSpan::new(u64::MAX - 1, u64::MAX).expect("a framed span");
-        assert_eq!(span.stored().get(), u64::MAX);
+        assert_eq!(span.stored(), u64::MAX);
         assert_eq!(span.framing(), 1);
         assert_eq!(
             EntryStorage::Verbatim {
@@ -663,13 +684,23 @@ mod tests {
 
     #[test]
     fn a_minted_framed_span_always_exceeds_its_payload() {
-        let span = super::FramedSpan::from_parts(usize::MAX, NonZeroU32::MAX);
+        let empty: &[u8] = &[];
+        let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MAX);
+        assert_eq!(span.payload(), 0);
         assert_eq!(span.framing(), u64::from(u32::MAX));
-        assert!(span.stored().get() > span.payload());
-        let span = super::FramedSpan::from_parts(12, NonZeroU32::MIN);
-        assert_eq!(span.payload(), 12);
-        assert_eq!(span.stored().get(), 13);
+        assert_eq!(span.stored(), u64::from(u32::MAX));
+        assert!(span.stored() > span.payload());
+        let body = vec![0u8; 12];
+        let span = super::FramedSpan::from_parts(body.as_slice().into(), NonZeroU32::MIN);
+        assert_eq!(span.payload(), body.len() as u64);
+        assert_eq!(span.stored(), 13);
         assert_eq!(span.framing(), 1);
+        let span = super::FramedSpan::from_parts("target.CATPart".into(), NonZeroU32::MAX);
+        assert_eq!(span.payload(), "target.CATPart".len() as u64);
+        assert_eq!(
+            span.stored(),
+            "target.CATPart".len() as u64 + u64::from(u32::MAX)
+        );
     }
 
     #[test]

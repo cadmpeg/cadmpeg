@@ -1454,7 +1454,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
         let storage = EntryStorage::framed_by(
             VerbatimLabel::None,
-            reference.target.len(),
+            reference.target.as_str().into(),
             LENGTH_PREFIXED_ASCII_HEADER,
         );
         entries.push(ContainerEntry {
