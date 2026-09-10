@@ -604,7 +604,6 @@
               "branch": {
                 "kind": "direct",
                 "flag": true,
-                "selector": 0,
                 "direction": {
                   "kind": "vector",
                   "value": {

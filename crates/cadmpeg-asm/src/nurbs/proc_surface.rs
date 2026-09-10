@@ -2165,9 +2165,13 @@ fn revision_compound_loft(
         cur.take_optional_range_value()?.value(),
     ];
     let tail = match interval {
-        [None, None] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::Unbounded,
-        [Some(value), None] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::LowerBound(value),
-        [None, Some(value)] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::UpperBound(value),
+        [None, None] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::Unbounded {},
+        [Some(value), None] => {
+            cadmpeg_ir::geometry::RevisionCompoundLoftTail::LowerBound { lower: value }
+        }
+        [None, Some(value)] => {
+            cadmpeg_ir::geometry::RevisionCompoundLoftTail::UpperBound { upper: value }
+        }
         [Some(lower), Some(upper)] => {
             let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);

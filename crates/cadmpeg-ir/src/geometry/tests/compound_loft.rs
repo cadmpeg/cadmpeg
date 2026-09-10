@@ -4,7 +4,7 @@
 use crate::geometry::{CompoundLoftDirection, CompoundLoftTail};
 
 #[test]
-fn direction_selector_round_trips_without_duplicate_state() {
+fn the_direction_selector_is_stored_once_on_the_curve_form() {
     for selector in [0, 1, 4, -3] {
         let direction = if selector == 0 {
             CompoundLoftDirection::Vector {
@@ -21,19 +21,27 @@ fn direction_selector_round_trips_without_duplicate_state() {
             direction,
             trailing_flags: [false, true],
         };
-        let mut wire = serde_json::to_value(&tail).unwrap();
-        assert_eq!(wire["selector"], selector);
+        let wire = serde_json::to_value(&tail).unwrap();
+        assert!(wire.get("selector").is_none());
+        if selector == 0 {
+            assert_eq!(wire["direction"]["kind"], "vector");
+            assert!(wire["direction"].get("selector").is_none());
+        } else {
+            assert_eq!(wire["direction"]["selector"], selector);
+        }
         assert_eq!(
             serde_json::from_value::<CompoundLoftTail>(wire.clone()).unwrap(),
             tail
         );
-        wire["selector"] = serde_json::json!(if selector == 0 { 4 } else { 0 });
-        assert!(serde_json::from_value::<CompoundLoftTail>(wire).is_err());
+
+        let mut zero = wire;
+        zero["direction"]["selector"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<CompoundLoftTail>(zero).is_err());
     }
 }
 
 #[test]
-fn scaled_direction_selector_preserves_exact_nonzero_value() {
+fn a_scaled_direction_keeps_its_exact_nonzero_selector() {
     use crate::geometry::ScaledCompoundLoftBranch;
     let branch = ScaledCompoundLoftBranch::Direct {
         flag: true,
@@ -43,11 +51,11 @@ fn scaled_direction_selector_preserves_exact_nonzero_value() {
         },
     };
     let mut wire = serde_json::to_value(&branch).unwrap();
-    assert_eq!(wire["selector"], -4);
+    assert_eq!(wire["direction"]["selector"], -4);
     assert_eq!(
         serde_json::from_value::<ScaledCompoundLoftBranch>(wire.clone()).unwrap(),
         branch
     );
-    wire["selector"] = serde_json::json!(0);
+    wire["direction"]["selector"] = serde_json::json!(0);
     assert!(serde_json::from_value::<ScaledCompoundLoftBranch>(wire).is_err());
 }
