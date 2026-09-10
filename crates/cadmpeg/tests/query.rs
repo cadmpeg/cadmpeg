@@ -29,7 +29,7 @@ const CHECK_REPORT: &str = r#"{
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
       {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "bounds", "severity": "warning", "message": "negative radius"}
+      {"check": "tolerances", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
