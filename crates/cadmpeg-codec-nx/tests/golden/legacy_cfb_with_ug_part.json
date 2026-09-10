@@ -162,7 +162,7 @@
           "region": "HEADER"
         },
         "compressed_size": 0,
-        "compression": "none",
+        "compression": "storage",
         "name": "/Root/UG_PART",
         "role": "directory",
         "uncompressed_size": 0

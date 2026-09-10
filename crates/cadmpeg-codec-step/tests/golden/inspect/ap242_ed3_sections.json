@@ -70,11 +70,11 @@
     },
     {
       "attributes": {},
-      "compressed_size": 0,
+      "compressed_size": 143,
       "compression": "none",
       "name": "SIGNATURE",
       "role": "signature",
-      "uncompressed_size": 0
+      "uncompressed_size": 143
     }
   ],
   "format": "step",

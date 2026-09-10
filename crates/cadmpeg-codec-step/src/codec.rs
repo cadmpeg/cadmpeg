@@ -128,7 +128,7 @@ fn inspect_exchange(
     let mut entries = vec![ContainerEntry {
         name: "HEADER".into(),
         role: ContainerRole::Metadata,
-        storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+        storage: EntryStorage::unreported(VerbatimLabel::None),
         attributes: BTreeMap::default(),
     }];
     if !exchange.anchors.is_empty() {
@@ -137,7 +137,7 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: "ANCHOR".into(),
             role: ContainerRole::InFileAnchors,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
         });
     }
@@ -159,7 +159,7 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: "REFERENCE".into(),
             role: ContainerRole::ExternalReferences,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
         });
     }
@@ -184,7 +184,7 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: format!("DATA[{index}]"),
             role: ContainerRole::EntityRecords,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
         });
     }
@@ -207,11 +207,11 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: "EXTERNAL_DEPENDENCIES".into(),
             role: ContainerRole::ExternalReferences,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
         });
     }
-    for (index, _) in exchange.signatures.iter().enumerate() {
+    for (index, signature) in exchange.signatures.iter().enumerate() {
         entries.push(ContainerEntry {
             name: if index == 0 {
                 "SIGNATURE".into()
@@ -219,7 +219,7 @@ fn inspect_exchange(
                 format!("SIGNATURE[{index}]")
             },
             role: ContainerRole::Signature,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
             attributes: BTreeMap::default(),
         });
     }

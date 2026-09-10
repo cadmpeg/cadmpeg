@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::container::{
-    ContainerEntry, ContainerRole, EntryStorage, VerbatimLabel, VerbatimSpan,
+    ContainerEntry, ContainerRole, EntryStorage, VerbatimLabel, VerbatimSize,
 };
 use serde::Deserialize;
 
@@ -29,14 +29,14 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .expect("native summary witness");
     let EntryStorage::Verbatim {
         label,
-        span: VerbatimSpan::Framed(overhead),
-        ..
+        size: VerbatimSize::Framed { payload, framing },
     } = table.storage
     else {
         panic!("a rhino table reports framing overhead beside its body");
     };
     assert_eq!(label, VerbatimLabel::None);
-    assert_eq!(overhead.get(), body_offset - offset);
+    assert_eq!(framing.get(), body_offset - offset);
+    assert_eq!(Some(payload), table.expanded_size());
     assert!(body_offset > offset);
 
     let inventor: Summary = serde_json::from_str(include_str!(
@@ -74,7 +74,9 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
     assert_eq!(references.role, ContainerRole::ExternalReferences);
     assert_eq!(
         references.storage,
-        EntryStorage::verbatim(VerbatimLabel::None, 0)
+        EntryStorage::unreported(VerbatimLabel::None)
     );
+    assert_eq!(references.stored_size(), None);
+    assert_eq!(references.expanded_size(), None);
     assert_eq!(references.attributes["external_count"], "1");
 }
