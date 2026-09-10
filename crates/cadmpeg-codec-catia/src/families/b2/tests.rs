@@ -1740,14 +1740,39 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 }
 
 #[test]
+fn b2_cylinder_parser_admits_the_full_stored_pair_tolerance_band() {
+    let deviation = 6.0e-10_f64;
+    let component = 1.0 + deviation;
+    let squared_deviation = (component * component - 1.0).abs();
+    assert!(
+        squared_deviation > 1.0e-9,
+        "the pair is inside the stored-length band and outside the squared-length one"
+    );
+
+    let mut stream = b2_cylinder_stream();
+    stream[30..38].copy_from_slice(&component.to_le_bytes());
+    stream[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    let cylinders = crate::families::b2::records::b2_cylinders(&stream);
+    let [cylinder] = cylinders.as_slice() else {
+        panic!("one B2 cylinder with a stored pair at the tolerance edge")
+    };
+    assert_eq!(cylinder.axis.get(), [component, 0.0, 0.0]);
+    assert_eq!(cylinder.reference_direction.get(), [-0.0, component, 0.0]);
+
+    let mut outside = b2_cylinder_stream();
+    outside[30..38].copy_from_slice(&(1.0 + 2.0e-9_f64).to_le_bytes());
+    outside[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cylinders(&outside).is_empty());
+}
+
+#[test]
 fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_range_origin_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert!(matches!(
         cylinders[0].layout,
-        crate::families::b2::records::B2CylinderLayout::RangeOrigin {
-            stored_vector: [0.0, 1.0],
-        }
+        crate::families::b2::records::B2CylinderLayout::RangeOrigin { stored_vector }
+            if stored_vector.get() == [0.0, 1.0]
     ));
     assert!(
         matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)

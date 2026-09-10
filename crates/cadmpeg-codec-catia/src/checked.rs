@@ -34,8 +34,9 @@ impl From<PositiveFinite> for f64 {
     }
 }
 
-/// Squared-length tolerance selected by a unit direction's exponent.
-const fn squared_tolerance(exponent: u32) -> f64 {
+/// Deviation-from-one tolerance selected by a unit direction's exponent. Each
+/// constructor states which measurement of the direction it is applied to.
+const fn deviation_tolerance(exponent: u32) -> f64 {
     match exponent {
         9 => 1.0e-9,
         12 => 1.0e-12,
@@ -43,22 +44,101 @@ const fn squared_tolerance(exponent: u32) -> f64 {
     }
 }
 
-/// A finite direction whose squared length is one within `10^-TOLERANCE_EXPONENT`.
+/// A finite direction whose length is one within `10^-TOLERANCE_EXPONENT`, by
+/// the measurement its constructor names.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
 pub struct UnitVector3<const TOLERANCE_EXPONENT: u32>([f64; 3]);
 
-/// A unit direction stored exactly, to a squared-length tolerance of `1e-12`.
+/// A unit direction stored exactly, to a deviation tolerance of `1e-12`.
 pub type ExactUnitVector3 = UnitVector3<12>;
 
-/// A unit direction stored loosely, to a squared-length tolerance of `1e-9`.
+/// A unit direction stored loosely, to a deviation tolerance of `1e-9`.
 pub type RelaxedUnitVector3 = UnitVector3<9>;
+
+/// A coordinate plane a planar direction is placed in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoordinatePlane {
+    /// First component on X, second on Y.
+    Xy,
+    /// First component on X, second on Z.
+    Xz,
+}
+
+/// A finite planar direction whose `hypot` length is one within
+/// `10^-TOLERANCE_EXPONENT`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
+pub struct UnitVector2<const TOLERANCE_EXPONENT: u32>([f64; 2]);
+
+/// A planar direction stored loosely, to a deviation tolerance of `1e-9`.
+pub type RelaxedUnitVector2 = UnitVector2<9>;
+
+impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
+    /// Tolerance on this direction's `hypot` length deviating from one.
+    pub const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
+
+    /// Constructs a planar direction whose `hypot` length is one within the
+    /// tolerance.
+    pub fn from_hypot(value: [f64; 2]) -> Option<Self> {
+        (value.iter().all(|component| component.is_finite())
+            && (value[0].hypot(value[1]) - 1.0).abs() <= Self::TOLERANCE)
+            .then_some(Self(value))
+    }
+
+    /// Returns the direction components.
+    pub fn get(self) -> [f64; 2] {
+        self.0
+    }
+
+    /// Turns the direction a quarter turn, to `[-second, first]`.
+    pub fn quarter_turn(self) -> Self {
+        Self([-self.0[1], self.0[0]])
+    }
+
+    /// Turns the direction a quarter turn the other way, to `[second, -first]`.
+    pub fn reverse_quarter_turn(self) -> Self {
+        Self([self.0[1], -self.0[0]])
+    }
+
+    /// Places the components in a coordinate plane, leaving the third axis
+    /// zero. Reordering and sign changes leave the length untouched, so the
+    /// spatial direction inherits this one's admission with no second test.
+    pub fn in_plane(self, plane: CoordinatePlane) -> UnitVector3<TOLERANCE_EXPONENT> {
+        let [first, second] = self.0;
+        UnitVector3(match plane {
+            CoordinatePlane::Xy => [first, second, 0.0],
+            CoordinatePlane::Xz => [first, 0.0, second],
+        })
+    }
+}
+
+impl<const TOLERANCE_EXPONENT: u32> TryFrom<[f64; 2]> for UnitVector2<TOLERANCE_EXPONENT> {
+    type Error = String;
+
+    fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
+        Self::from_hypot(value)
+            .ok_or_else(|| "planar direction is not a finite unit vector".to_owned())
+    }
+}
+
+impl<const TOLERANCE_EXPONENT: u32> From<UnitVector2<TOLERANCE_EXPONENT>> for [f64; 2] {
+    fn from(value: UnitVector2<TOLERANCE_EXPONENT>) -> Self {
+        value.0
+    }
+}
 
 impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
     /// Tolerance on this direction's deviation from unit length. [`Self::new`]
     /// applies it to the squared length; the length-measured constructors apply
     /// it to the length itself, each mirroring the record grammar it admits.
-    pub const TOLERANCE: f64 = squared_tolerance(TOLERANCE_EXPONENT);
+    pub const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
+
+    /// The +X direction.
+    pub const X: Self = Self([1.0, 0.0, 0.0]);
+
+    /// The +Y direction.
+    pub const Y: Self = Self([0.0, 1.0, 0.0]);
 
     /// Constructs a unit direction whose squared length is one within the tolerance.
     pub fn new(value: [f64; 3]) -> Option<Self> {
