@@ -1456,7 +1456,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             VerbatimLabel::None,
             reference.target.as_str().into(),
             LENGTH_PREFIXED_ASCII_HEADER,
-        );
+        )
+        .unwrap_or_else(|| {
+            EntryStorage::payload_only(VerbatimLabel::None, reference.target.len() as u64)
+        });
         entries.push(ContainerEntry {
             name: reference.target.clone(),
             role: ContainerRole::ExternalReference,

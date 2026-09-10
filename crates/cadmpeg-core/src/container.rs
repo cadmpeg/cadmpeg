@@ -179,29 +179,32 @@ const _: () = assert!((isize::MAX as u128) + (u32::MAX as u128) < (u64::MAX as u
 pub struct FramedSpan {
     payload: u64,
     framing: NonZeroU64,
+    stored: NonZeroU64,
 }
 
 impl FramedSpan {
     /// A `payload`-byte payload wrapped in `framing` bytes of container framing.
     ///
     /// `payload` is the length of a live allocation and so at most `isize::MAX`
-    /// and `framing` at most `u32::MAX`, and the module assertion above proves
-    /// that sum inside `u64`, so the stored span is exactly `payload + framing`.
+    /// and `framing` at most `u32::MAX`, and the module assertions above prove
+    /// that sum inside `u64`, so the absent arm never fires.
     #[must_use]
-    pub fn from_parts(payload: AllocatedLen, framing: NonZeroU32) -> Self {
-        Self {
-            payload: payload.0 as u64,
-            framing: NonZeroU64::from(framing),
-        }
+    pub fn from_parts(payload: AllocatedLen, framing: NonZeroU32) -> Option<Self> {
+        let payload = payload.0 as u64;
+        Self::new(payload, NonZeroU64::from(framing).checked_add(payload)?)
     }
 
     /// A payload of `payload` bytes inside a `stored`-byte span, absent when the
     /// span does not exceed the payload.
     #[must_use]
-    pub const fn new(payload: u64, stored: u64) -> Option<Self> {
-        match stored.checked_sub(payload) {
+    pub const fn new(payload: u64, stored: NonZeroU64) -> Option<Self> {
+        match stored.get().checked_sub(payload) {
             Some(framing) => match NonZeroU64::new(framing) {
-                Some(framing) => Some(Self { payload, framing }),
+                Some(framing) => Some(Self {
+                    payload,
+                    framing,
+                    stored,
+                }),
                 None => None,
             },
             None => None,
@@ -217,14 +220,14 @@ impl FramedSpan {
     /// Stored span in bytes, framing included: at least `payload + 1`, since
     /// the framing is non-zero.
     #[must_use]
-    pub const fn stored(self) -> u64 {
-        self.payload + self.framing.get()
+    pub const fn stored(self) -> NonZeroU64 {
+        self.stored
     }
 
     /// Container framing counted in the stored span but not in the payload.
     #[must_use]
-    pub const fn framing(self) -> u64 {
-        self.framing.get()
+    pub const fn framing(self) -> NonZeroU64 {
+        self.framing
     }
 }
 
@@ -236,11 +239,14 @@ impl VerbatimSize {
         if stored < payload {
             return None;
         }
-        match FramedSpan::new(payload, stored) {
-            Some(span) => Some(Self::Framed(span)),
-            None => match NonZeroU64::new(payload) {
-                Some(payload) => Some(Self::Exact(payload)),
-                None => Some(Self::Unreported),
+        match NonZeroU64::new(stored) {
+            None => Some(Self::Unreported),
+            Some(stored) => match FramedSpan::new(payload, stored) {
+                Some(span) => Some(Self::Framed(span)),
+                None => match NonZeroU64::new(payload) {
+                    Some(payload) => Some(Self::Exact(payload)),
+                    None => Some(Self::Unreported),
+                },
             },
         }
     }
@@ -314,12 +320,18 @@ impl EntryStorage {
 
     /// Verbatim bytes whose stored span is the payload plus `framing` bytes of
     /// container framing the producer knows.
+    ///
+    /// Absent when the stored span would not fit a `u64`.
     #[must_use]
-    pub fn framed_by(label: VerbatimLabel, payload: AllocatedLen, framing: NonZeroU32) -> Self {
-        Self::Verbatim {
+    pub fn framed_by(
+        label: VerbatimLabel,
+        payload: AllocatedLen,
+        framing: NonZeroU32,
+    ) -> Option<Self> {
+        Some(Self::Verbatim {
             label,
-            size: VerbatimSize::Framed(FramedSpan::from_parts(payload, framing)),
-        }
+            size: VerbatimSize::Framed(FramedSpan::from_parts(payload, framing)?),
+        })
     }
 
     /// Verbatim bytes whose size the container does not report.
@@ -369,7 +381,7 @@ impl EntryStorage {
             Self::Verbatim { size, .. } => match size {
                 VerbatimSize::Unreported | VerbatimSize::PayloadOnly(_) => None,
                 VerbatimSize::Exact(size) => Some(size.get()),
-                VerbatimSize::Framed(span) => Some(span.stored()),
+                VerbatimSize::Framed(span) => Some(span.stored().get()),
             },
             Self::Compressed { stored, .. } => match stored {
                 Some(stored) => Some(stored.get()),
@@ -671,9 +683,14 @@ mod tests {
             EntryStorage::framed(VerbatimLabel::Stored, 9, 9),
             Ok(EntryStorage::verbatim(VerbatimLabel::Stored, 9))
         );
-        let span = super::FramedSpan::new(u64::MAX - 1, u64::MAX).expect("a framed span");
-        assert_eq!(span.stored(), u64::MAX);
-        assert_eq!(span.framing(), 1);
+        assert_eq!(super::FramedSpan::new(5, nonzero(5)), None);
+        let span = super::FramedSpan::new(0, nonzero(1)).expect("a framed span");
+        assert_eq!(span.payload(), 0);
+        assert_eq!(span.framing(), nonzero(1));
+        assert_eq!(span.stored(), nonzero(1));
+        let span = super::FramedSpan::new(u64::MAX - 1, nonzero(u64::MAX)).expect("a framed span");
+        assert_eq!(span.stored(), nonzero(u64::MAX));
+        assert_eq!(span.framing(), nonzero(1));
         assert_eq!(
             EntryStorage::Verbatim {
                 label: VerbatimLabel::Stored,
@@ -691,21 +708,27 @@ mod tests {
     #[test]
     fn a_minted_framed_span_always_exceeds_its_payload() {
         let empty: &[u8] = &[];
-        let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MAX);
+        let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MAX)
+            .expect("the sum fits a u64");
         assert_eq!(span.payload(), 0);
-        assert_eq!(span.framing(), u64::from(u32::MAX));
-        assert_eq!(span.stored(), u64::from(u32::MAX));
-        assert!(span.stored() > span.payload());
+        assert_eq!(span.framing(), nonzero(u64::from(u32::MAX)));
+        assert_eq!(span.stored(), nonzero(u64::from(u32::MAX)));
+        assert!(span.stored().get() > span.payload());
+        let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MIN)
+            .expect("the sum fits a u64");
+        assert_eq!(span.stored(), nonzero(1));
         let body = vec![0u8; 12];
-        let span = super::FramedSpan::from_parts(body.as_slice().into(), NonZeroU32::MIN);
+        let span = super::FramedSpan::from_parts(body.as_slice().into(), NonZeroU32::MIN)
+            .expect("the sum fits a u64");
         assert_eq!(span.payload(), body.len() as u64);
-        assert_eq!(span.stored(), 13);
-        assert_eq!(span.framing(), 1);
-        let span = super::FramedSpan::from_parts("target.CATPart".into(), NonZeroU32::MAX);
+        assert_eq!(span.stored(), nonzero(13));
+        assert_eq!(span.framing(), nonzero(1));
+        let span = super::FramedSpan::from_parts("target.CATPart".into(), NonZeroU32::MAX)
+            .expect("the sum fits a u64");
         assert_eq!(span.payload(), "target.CATPart".len() as u64);
         assert_eq!(
             span.stored(),
-            "target.CATPart".len() as u64 + u64::from(u32::MAX)
+            nonzero("target.CATPart".len() as u64 + u64::from(u32::MAX))
         );
     }
 
