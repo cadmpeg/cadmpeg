@@ -347,11 +347,11 @@ fn recognizes_only_affine_cylindrical_helix_programs() {
     assert_eq!(
         expression_helix(&records[0]),
         Some(CurveExpressionHelix {
-            radius: 5.0,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
             height: 20.0,
             z_start: -2.0,
-            revolutions: 2.0,
-            start_angle: std::f64::consts::FRAC_PI_2,
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             clockwise: false,
         })
     );
@@ -361,11 +361,11 @@ fn recognizes_only_affine_cylindrical_helix_programs() {
     assert_eq!(
         expression_helix(&expression_records(constant_functions)[0]),
         Some(CurveExpressionHelix {
-            radius: 5.0,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
             height: 8.0,
             z_start: 0.0,
-            revolutions: 1.0,
-            start_angle: std::f64::consts::FRAC_PI_4,
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
             clockwise: false,
         })
     );
@@ -375,11 +375,11 @@ fn recognizes_only_affine_cylindrical_helix_programs() {
     assert_eq!(
         expression_helix(&expression_records(identity_powers)[0]),
         Some(CurveExpressionHelix {
-            radius: 5.0,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
             height: 8.0,
             z_start: 0.0,
-            revolutions: 1.0,
-            start_angle: 0.0,
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
             clockwise: false,
         })
     );

@@ -177,7 +177,7 @@ fn active_cylinder_frame(
             crate::surface::BoundaryType::Code00 | crate::surface::BoundaryType::Code01
         ))
     .then_some(())?;
-    let terminal = parameter.terminal_scalar_frame.as_ref()?;
+    let terminal = parameter.terminal_scalar_frame()?;
     let [length_slot, corner0, corner1, corner2, corner3, corner4, corner5] =
         terminal.slots.as_slice()
     else {

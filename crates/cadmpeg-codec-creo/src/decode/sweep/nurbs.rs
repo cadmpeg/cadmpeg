@@ -257,24 +257,16 @@ pub(in super::super) fn saved_spline_sketch_geometry(
 }
 
 pub(in super::super) fn interpolation_spline_surface(
-    points: &[[f64; 3]],
-    u_parameters: &[f64],
-    v_parameters: &[f64],
-    end_u_derivatives: &[[f64; 3]],
-    end_v_derivatives: &[[f64; 3]],
-    corner_mixed_derivatives: &[[f64; 3]],
+    grid: &crate::interpolation_grid::InterpolationGrid,
 ) -> Option<NurbsSurface> {
+    let points = grid.points();
+    let u_parameters = grid.u_parameters();
+    let v_parameters = grid.v_parameters();
+    let end_u_derivatives = grid.u_derivatives();
+    let end_v_derivatives = grid.v_derivatives();
+    let corner_mixed_derivatives = grid.mixed_derivatives();
     let u_sample_count = u_parameters.len();
     let v_sample_count = v_parameters.len();
-    let point_count = u_sample_count.checked_mul(v_sample_count)?;
-    let u_boundary_derivative_count = v_sample_count.checked_mul(2)?;
-    let v_boundary_derivative_count = u_sample_count.checked_mul(2)?;
-    (points.len() == point_count
-        && end_u_derivatives.len() == u_boundary_derivative_count
-        && end_v_derivatives.len() == v_boundary_derivative_count
-        && corner_mixed_derivatives.len() == 4)
-        .then_some(())?;
-
     let u_control_count = u_sample_count.checked_add(2)?;
     let v_control_count = v_sample_count.checked_add(2)?;
     let position_template = alloc_filled(
