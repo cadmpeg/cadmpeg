@@ -21,16 +21,28 @@ const EPS_CONIC_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
 
-fn add_bounded_curve(
-    ir: &mut CadIr,
-    entry: &DirectoryEntry,
-    geometry: CurveGeometry,
+/// The bounded span one conic carrier is projected over.
+#[derive(Clone, Copy)]
+struct BoundedSpan {
     start: Point3,
     end: Point3,
     parameter_range: [f64; 2],
     tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
+}
+
+fn add_bounded_curve(
+    ir: &mut CadIr,
+    entry: &DirectoryEntry,
+    geometry: CurveGeometry,
+    span: BoundedSpan,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
+    let BoundedSpan {
+        start,
+        end,
+        parameter_range,
+        tolerance,
+    } = span;
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
     let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
@@ -451,10 +463,12 @@ pub(super) fn project(
             ir,
             entry,
             geometry,
-            start,
-            end,
-            parameter_range,
-            tolerance,
+            BoundedSpan {
+                start,
+                end,
+                parameter_range,
+                tolerance,
+            },
             sequences,
         ) {
             Ok(edge) => edge,
