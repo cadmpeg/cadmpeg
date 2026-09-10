@@ -1451,8 +1451,9 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         saved_section_arc(&definition, &segment),
         Some(crate::decode::sketch::SavedSectionArc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length::new(2.0).expect("finite length fixture"),
+            center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0))
+                .expect("finite center fixture"),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive length fixture"),
             start_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
             end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).expect("finite angle fixture"),
         })
