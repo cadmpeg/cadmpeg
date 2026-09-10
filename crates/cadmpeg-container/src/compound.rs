@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lazy, budgeted Microsoft Compound File Binary (CFB) snapshots.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -458,9 +458,7 @@ impl<'a> CompoundSnapshot<'a> {
                     CompoundEntry::Storage(_) => ContainerEntry {
                         name: entry.path().into(),
                         role: classify(entry),
-                        compression: EntryCompression::Storage,
-                        compressed_size: 0,
-                        uncompressed_size: 0,
+                        storage: EntryStorage::Directory,
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
@@ -472,9 +470,11 @@ impl<'a> CompoundSnapshot<'a> {
                         ContainerEntry {
                             name: stream.path.clone(),
                             role: classify(entry),
-                            compression: EntryCompression::Stored,
-                            compressed_size: stream.logical_size(),
-                            uncompressed_size: stream.logical_size(),
+                            storage: EntryStorage::Bytes {
+                                compression: EntryCompression::Stored,
+                                compressed_size: stream.logical_size(),
+                                uncompressed_size: stream.logical_size(),
+                            },
                             attributes,
                         }
                     }

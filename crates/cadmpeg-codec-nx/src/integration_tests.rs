@@ -79,8 +79,8 @@ fn legacy_cfb_catalogues_logical_stream_spans() {
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .expect("legacy UG_PART stream entry");
     assert_eq!(part.role.as_str(), "part-payload");
-    assert!(part.compressed_size > 0);
-    assert_eq!(part.compressed_size, part.uncompressed_size);
+    assert!(part.compressed_size().is_some_and(|size| size > 0));
+    assert_eq!(part.compressed_size(), part.expanded_size());
 }
 
 #[test]
@@ -99,11 +99,11 @@ fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/Extra")
         .expect("legacy extra stream entry");
-    assert_eq!(part.compressed_size, 10 * 512);
-    assert_eq!(part.compressed_size, part.uncompressed_size);
+    assert_eq!(part.compressed_size(), Some(10 * 512));
+    assert_eq!(part.compressed_size(), part.expanded_size());
     assert_eq!(extra.role.as_str(), "named-opaque-stream");
-    assert_eq!(extra.compressed_size, 8 * 512);
-    assert_eq!(extra.compressed_size, extra.uncompressed_size);
+    assert_eq!(extra.compressed_size(), Some(8 * 512));
+    assert_eq!(extra.compressed_size(), extra.expanded_size());
 
     let result = decode(bytes);
     assert!(!result.source_fidelity().retained_records.is_empty());

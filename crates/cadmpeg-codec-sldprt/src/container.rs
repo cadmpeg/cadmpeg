@@ -7,7 +7,7 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -754,9 +754,11 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", b.offset)),
             role: ContainerRole::Block,
-            compression: EntryCompression::Deflate,
-            compressed_size: b.comp_sz as u64,
-            uncompressed_size: b.uncomp_sz() as u64,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::Deflate,
+                compressed_size: b.comp_sz as u64,
+                uncompressed_size: b.uncomp_sz() as u64,
+            },
             attributes,
         });
     }
@@ -768,9 +770,11 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: d.name.clone(),
             role: ContainerRole::DirectoryEntry,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: d.size as u64,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: d.size as u64,
+            },
             attributes,
         });
     }
@@ -782,9 +786,11 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: c.name.clone(),
             role: ContainerRole::CacheCell,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             attributes,
         });
     }
@@ -800,9 +806,11 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: stream.path.clone(),
             role: ContainerRole::CompoundStream,
-            compression: EntryCompression::Stored,
-            compressed_size: stream.payload.len() as u64,
-            uncompressed_size: stream.payload.len() as u64,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::Stored,
+                compressed_size: stream.payload.len() as u64,
+                uncompressed_size: stream.payload.len() as u64,
+            },
             attributes,
         });
     }

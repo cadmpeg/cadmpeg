@@ -312,9 +312,11 @@ impl<'a> ArchiveSnapshot<'a> {
                 ContainerEntry {
                     name: entry.name.clone(),
                     role: classify(&entry.name),
-                    compression: entry.compression.into(),
-                    compressed_size: entry.compressed_size,
-                    uncompressed_size: entry.uncompressed_size,
+                    storage: cadmpeg_core::container::EntryStorage::Bytes {
+                        compression: entry.compression.into(),
+                        compressed_size: entry.compressed_size,
+                        uncompressed_size: entry.uncompressed_size,
+                    },
                     attributes,
                 }
             })

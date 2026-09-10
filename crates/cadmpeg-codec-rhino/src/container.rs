@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino 3DM container scanning and summary construction.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use std::collections::BTreeMap;
 
@@ -1111,9 +1111,11 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
-            compression: EntryCompression::None,
-            compressed_size: table.range.len() as u64,
-            uncompressed_size: table.body.len() as u64,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: table.range.len() as u64,
+                uncompressed_size: table.body.len() as u64,
+            },
             attributes,
         });
     }
@@ -1134,9 +1136,11 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: format!("class-{class_uuid}"),
             role: ContainerRole::ObjectClass,
-            compression: EntryCompression::None,
-            compressed_size: bytes as u64,
-            uncompressed_size: bytes as u64,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: bytes as u64,
+                uncompressed_size: bytes as u64,
+            },
             attributes,
         });
     }

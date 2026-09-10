@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP codec backend and encoder.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use std::collections::BTreeMap;
 
@@ -128,9 +128,11 @@ fn inspect_exchange(
     let mut entries = vec![ContainerEntry {
         name: "HEADER".into(),
         role: ContainerRole::Metadata,
-        compression: EntryCompression::None,
-        compressed_size: 0,
-        uncompressed_size: 0,
+        storage: EntryStorage::Bytes {
+            compression: EntryCompression::None,
+            compressed_size: 0,
+            uncompressed_size: 0,
+        },
         attributes: BTreeMap::default(),
     }];
     if !exchange.anchors.is_empty() {
@@ -139,9 +141,11 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: "ANCHOR".into(),
             role: ContainerRole::InFileAnchors,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             attributes,
         });
     }
@@ -163,9 +167,11 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: "REFERENCE".into(),
             role: ContainerRole::ExternalReferences,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             attributes,
         });
     }
@@ -190,9 +196,11 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: format!("DATA[{index}]"),
             role: ContainerRole::EntityRecords,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             attributes,
         });
     }
@@ -215,9 +223,11 @@ fn inspect_exchange(
         entries.push(ContainerEntry {
             name: "EXTERNAL_DEPENDENCIES".into(),
             role: ContainerRole::ExternalReferences,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             attributes,
         });
     }
@@ -229,9 +239,11 @@ fn inspect_exchange(
                 format!("SIGNATURE[{index}]")
             },
             role: ContainerRole::Signature,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             attributes: BTreeMap::default(),
         });
     }

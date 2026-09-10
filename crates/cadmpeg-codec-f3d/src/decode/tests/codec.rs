@@ -514,7 +514,10 @@ fn inspect_enumerates_and_reads_headers() {
         .iter()
         .find(|e| e.role == ContainerRole::BrepSmbh)
         .expect("smbh entry present");
-    assert_eq!(smbh.compression.as_str(), "deflate");
+    assert_eq!(
+        smbh.compression(),
+        Some(cadmpeg_core::container::EntryCompression::Deflate)
+    );
     assert_eq!(
         smbh.attributes.get("product_family").map(String::as_str),
         Some("Autodesk Neutron")
