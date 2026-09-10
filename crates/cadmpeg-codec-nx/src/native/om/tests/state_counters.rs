@@ -171,14 +171,7 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
         .expect("operation-state journal use arena");
     assert_eq!(uses.len(), 1);
-    assert_eq!(
-        serde_json::to_value(&uses[0]).unwrap()["operation_local_ordinal"],
-        2
-    );
-    assert_eq!(
-        serde_json::to_value(&uses[0]).unwrap()["journal_state_ordinal"],
-        2
-    );
+    assert_eq!(serde_json::to_value(&uses[0]).unwrap()["state_ordinal"], 2);
     assert_eq!(uses[0].journal_row_ordinal, 0);
 }
 
