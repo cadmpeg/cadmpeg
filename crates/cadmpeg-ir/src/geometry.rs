@@ -6870,8 +6870,9 @@ pub struct CacheFirstCurveForm {
 }
 
 /// One support slot in a context-first spring construction.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SpringSupport {
     /// Resolved support surface.
     Surface(SurfaceId),
@@ -6880,8 +6881,9 @@ pub enum SpringSupport {
 }
 
 /// First pcurve slot in a context-first spring construction.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SpringPcurve {
     /// Resolved parameter-space curve.
     Pcurve(PcurveGeometry),
@@ -6890,8 +6892,9 @@ pub enum SpringPcurve {
 }
 
 /// Mutually exclusive spring construction layouts.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 // Variant payloads retain the native layout as one value without separate heap ownership.
 #[allow(clippy::large_enum_variant)]
 pub enum SpringLayout {
@@ -6976,125 +6979,6 @@ impl SpringLayout {
             Self::CacheFirst { form, .. } => Some(form),
             Self::ContextFirst { .. } => None,
         }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SpringLayoutWire {
-    context: IntcurveSupportContext,
-    surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    first_pcurve_parameter_range: Option<[f64; 2]>,
-    discontinuity_flag: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_first: Option<CacheFirstCurveForm>,
-}
-
-mod spring_layout_wire {
-    use super::{SpringLayout, SpringLayoutWire, SpringPcurve, SpringSupport};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(value: &SpringLayout, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            SpringLayout::ContextFirst {
-                supports,
-                first_pcurve,
-                discontinuity_flag,
-                ..
-            } => SpringLayoutWire {
-                context: value
-                    .support_context()
-                    .map_err(serde::ser::Error::custom)?
-                    .into_owned(),
-                surface_parameter_ranges: std::array::from_fn(|side| match &supports[side] {
-                    SpringSupport::Surface(_) => None,
-                    SpringSupport::Ranges(ranges) => Some(*ranges),
-                }),
-                first_pcurve_parameter_range: match first_pcurve {
-                    SpringPcurve::Pcurve(_) => None,
-                    SpringPcurve::Range(range) => Some(*range),
-                },
-                discontinuity_flag: *discontinuity_flag,
-                cache_first: None,
-            },
-            SpringLayout::CacheFirst { context, form } => SpringLayoutWire {
-                context: context.clone(),
-                surface_parameter_ranges: [None, None],
-                first_pcurve_parameter_range: None,
-                discontinuity_flag: false,
-                cache_first: Some(form.clone()),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SpringLayout, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = SpringLayoutWire::deserialize(deserializer)?;
-        if let Some(form) = wire.cache_first {
-            if wire.surface_parameter_ranges.iter().any(Option::is_some)
-                || wire.first_pcurve_parameter_range.is_some()
-                || wire.discontinuity_flag
-            {
-                return Err(serde::de::Error::custom(
-                    "cache_first spring cannot carry inline ranges or discontinuity_flag",
-                ));
-            }
-            return Ok(SpringLayout::CacheFirst {
-                context: wire.context,
-                form,
-            });
-        }
-        let [first_side, second_side] = wire.context.sides;
-        if first_side
-            .pcurve
-            .as_ref()
-            .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-            || second_side
-                .pcurve
-                .as_ref()
-                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-        {
-            return Err(serde::de::Error::custom(
-                "spring context sides cannot carry pcurve parameter ranges",
-            ));
-        }
-        let [first_ranges, second_ranges] = wire.surface_parameter_ranges;
-        let support = |surface, ranges, side| {
-            match (surface, ranges) {
-            (Some(surface), None) => Ok(SpringSupport::Surface(surface)),
-            (None, Some(ranges)) => Ok(SpringSupport::Ranges(ranges)),
-            _ => Err(serde::de::Error::custom(format_args!(
-                "spring support side {side} requires exactly one of surface or surface_parameter_ranges"
-            ))),
-        }
-        };
-        let first_pcurve = match (first_side.pcurve, wire.first_pcurve_parameter_range) {
-            (Some(pcurve), None) => SpringPcurve::Pcurve(pcurve.geometry),
-            (None, Some(range)) => SpringPcurve::Range(range),
-            _ => {
-                return Err(serde::de::Error::custom(
-                    "spring first pcurve requires exactly one of pcurve or first_pcurve_parameter_range",
-                ));
-            }
-        };
-        Ok(SpringLayout::ContextFirst {
-            supports: [
-                support(first_side.surface, first_ranges, 0)?,
-                support(second_side.surface, second_ranges, 1)?,
-            ],
-            first_pcurve,
-            second_pcurve: second_side.pcurve.map(|pcurve| pcurve.geometry),
-            parameter_range: wire.context.parameter_range,
-            discontinuities: wire.context.discontinuities,
-            discontinuity_flag: wire.discontinuity_flag,
-        })
     }
 }
 
@@ -7609,7 +7493,9 @@ impl<'de> Deserialize<'de> for OffsetSide {
 }
 
 /// Parameter interval and optional variable-distance law of a curve offset.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveOffsetRange {
     /// Constant-distance offset over a retained source interval.
     Uniform {
@@ -7623,66 +7509,6 @@ pub enum CurveOffsetRange {
         /// Variable signed-distance law.
         distance_law: CurveOffsetDistanceLaw,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CurveOffsetRangeWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameter_range: Option<[f64; 2]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    distance_law: Option<CurveOffsetDistanceLaw>,
-}
-
-mod curve_offset_range_wire {
-    use super::{CurveOffsetRange, CurveOffsetRangeWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(range: &Option<CurveOffsetRange>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match range {
-            None => CurveOffsetRangeWire {
-                parameter_range: None,
-                distance_law: None,
-            },
-            Some(CurveOffsetRange::Uniform { parameter_range }) => CurveOffsetRangeWire {
-                parameter_range: Some(*parameter_range),
-                distance_law: None,
-            },
-            Some(CurveOffsetRange::Variable {
-                parameter_range,
-                distance_law,
-            }) => CurveOffsetRangeWire {
-                parameter_range: Some(*parameter_range),
-                distance_law: Some(distance_law.clone()),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CurveOffsetRange>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CurveOffsetRangeWire::deserialize(deserializer)?;
-        match (wire.parameter_range, wire.distance_law) {
-            (None, None) => Ok(None),
-            (Some(parameter_range), None) => {
-                Ok(Some(CurveOffsetRange::Uniform { parameter_range }))
-            }
-            (Some(parameter_range), Some(distance_law)) => Ok(Some(CurveOffsetRange::Variable {
-                parameter_range,
-                distance_law,
-            })),
-            (None, Some(_)) => Err(serde::de::Error::custom(
-                "offset distance_law requires parameter_range",
-            )),
-        }
-    }
 }
 
 /// Neutral semantics for a procedural curve.

@@ -578,20 +578,22 @@ fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
 }
 
 #[test]
-fn spring_layout_keeps_the_flat_conditional_range_wire_shape() {
+fn the_spring_layout_is_one_nested_tagged_object() {
     let definition = ranged_spring_definition();
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(wire["kind"], "spring");
-    assert_eq!(wire["context"]["sides"][0], serde_json::json!({}));
+    assert!(wire.get("context").is_none());
+    assert!(wire.get("surface_parameter_ranges").is_none());
+    assert_eq!(wire["layout"]["kind"], "context_first");
     assert_eq!(
-        wire["surface_parameter_ranges"][0],
-        serde_json::json!([[0.0, 1.0], [2.0, 3.0]])
+        wire["layout"]["supports"][0],
+        serde_json::json!({"kind": "ranges", "value": [[0.0, 1.0], [2.0, 3.0]]})
     );
     assert_eq!(
-        wire["first_pcurve_parameter_range"],
-        serde_json::json!([8.0, 9.0])
+        wire["layout"]["first_pcurve"],
+        serde_json::json!({"kind": "range", "value": [8.0, 9.0]})
     );
-    assert!(wire.get("cache_first").is_none());
+    assert!(wire["layout"].get("form").is_none());
     assert_eq!(
         serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap(),
         definition
@@ -599,14 +601,24 @@ fn spring_layout_keeps_the_flat_conditional_range_wire_shape() {
 }
 
 #[test]
-fn spring_layout_rejects_split_support_state() {
-    let mut wire = serde_json::to_value(ranged_spring_definition()).unwrap();
-    wire["context"]["sides"][0]["surface"] = serde_json::json!("test:model:surface#conflict");
+fn a_spring_support_side_states_one_carrier_and_no_other_key() {
+    let mut split = serde_json::to_value(ranged_spring_definition()).unwrap();
+    split["layout"]["supports"][0]["kind"] = serde_json::json!("surface");
     let error =
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("spring support side 0 requires exactly one"));
+        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(split).unwrap_err();
+    assert!(error.to_string().contains("string"), "{error}");
+
+    let mut cache_keys = serde_json::to_value(ranged_spring_definition()).unwrap();
+    cache_keys["layout"]["form"] = serde_json::json!({});
+    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(cache_keys)
+        .unwrap_err();
+    assert!(error.to_string().contains("form"), "{error}");
+
+    let mut bogus = serde_json::to_value(ranged_spring_definition()).unwrap();
+    bogus["layout"]["zz_bogus"] = serde_json::json!(1);
+    let error =
+        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(bogus).unwrap_err();
+    assert!(error.to_string().contains("zz_bogus"), "{error}");
 }
 
 #[test]

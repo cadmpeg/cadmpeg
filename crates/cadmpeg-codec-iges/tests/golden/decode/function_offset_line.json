@@ -206,24 +206,27 @@
           "curve": "iges:model:curve#D5",
           "definition": {
             "distance": 1.0,
-            "distance_law": {
-              "basis": "parameter",
-              "coordinate": 2,
-              "function": "iges:model:curve#D3",
-              "function_parameter_offset": -0.0,
-              "function_parameter_scale": 0.1,
-              "kind": "coordinate"
-            },
             "kind": "offset",
             "normal": {
               "x": 0.0,
               "y": 0.0,
               "z": 1.0
             },
-            "parameter_range": [
-              0.0,
-              10.0
-            ],
+            "range": {
+              "distance_law": {
+                "basis": "parameter",
+                "coordinate": 2,
+                "function": "iges:model:curve#D3",
+                "function_parameter_offset": -0.0,
+                "function_parameter_scale": 0.1,
+                "kind": "coordinate"
+              },
+              "kind": "variable",
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
             "source": "iges:model:curve#D1"
           },
           "id": "iges:model:procedural-curve#D5"
