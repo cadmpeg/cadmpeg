@@ -1586,15 +1586,10 @@ fn bind_pattern_body_selections(
             let [group] = matching_groups.as_slice() else {
                 break 'feature_edit;
             };
-            let selection = if let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() {
-                selection
-            } else if seeds.is_empty() {
+            if seeds.is_empty() {
                 seeds.push(PatternSeed::Bodies(BodySelection::Native(group.id.clone())));
-                let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
-                    unreachable!("the inserted pattern seed is a body selection")
-                };
-                selection
-            } else {
+            }
+            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
                 break 'feature_edit;
             };
             if let Some(previous_state_id) = scope.previous_history_state_id() {

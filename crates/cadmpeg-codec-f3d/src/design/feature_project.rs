@@ -4097,19 +4097,17 @@ fn merge_edge_selections(
 ) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
 
-    if selections.iter().all(|selection| {
-        matches!(
-            selection,
-            EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
-        )
-    }) {
+    let direct = selections
+        .iter()
+        .map(|selection| match selection {
+            EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => Some(edges),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(groups) = direct {
         let mut resolved = Vec::new();
-        for selection in selections {
-            let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
-            else {
-                unreachable!("filtered resolved ruled-surface edge selection");
-            };
-            for edge in edges {
+        for edges in groups {
+            for edge in edges.iter().cloned() {
                 if resolved.contains(&edge) {
                     return EdgeSelection::Native(scope.id.clone());
                 }
@@ -4126,14 +4124,20 @@ fn merge_edge_selections(
         _ => None,
     });
     if let Some(state) = state {
-        if selections.iter().all(|selection| {
-            matches!(selection, EdgeSelection::Historical { state: candidate, .. } if candidate == &state)
-        }) {
+        let historical = selections
+            .iter()
+            .map(|selection| match selection {
+                EdgeSelection::Historical {
+                    state: candidate,
+                    edges,
+                    ..
+                } if candidate == &state => Some(edges),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        if let Some(groups) = historical {
             let mut resolved = Vec::new();
-            for selection in selections {
-                let EdgeSelection::Historical { edges, .. } = selection else {
-                    unreachable!("filtered historical ruled-surface edge selection");
-                };
+            for edges in groups {
                 for edge in edges.iter().cloned() {
                     if resolved.contains(&edge) {
                         return EdgeSelection::Native(scope.id.clone());
@@ -4141,7 +4145,8 @@ fn merge_edge_selections(
                     resolved.push(edge);
                 }
             }
-            return EdgeSelection::historical(state, resolved, scope.id.clone()).unwrap_or_else(|_| EdgeSelection::Native(scope.id.clone()));
+            return EdgeSelection::historical(state, resolved, scope.id.clone())
+                .unwrap_or_else(|_| EdgeSelection::Native(scope.id.clone()));
         }
     }
     EdgeSelection::Native(scope.id.clone())
@@ -6450,36 +6455,32 @@ fn resolved_surface_patch_path(
         };
         Some(state.clone())
     }) {
-        if paths.iter().all(|path| {
-            matches!(
-                path,
+        let historical = paths
+            .iter()
+            .map(|path| match path {
                 PathRef::HistoricalEdges {
                     state: candidate,
+                    edges,
                     ..
-                } if *candidate == state
-            )
-        }) {
-            let edges = paths
-                .into_iter()
-                .flat_map(|path| match path {
-                    PathRef::HistoricalEdges { edges, .. } => edges,
-                    _ => unreachable!("validated historical SurfacePatch paths"),
-                })
-                .collect();
+                } if *candidate == state => Some(edges),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        if let Some(groups) = historical {
+            let edges = groups.into_iter().flatten().cloned().collect();
             return PathRef::historical_edges(state, edges, scope.id.clone())
                 .unwrap_or_else(|_| PathRef::Native(scope.id.clone()));
         }
     }
-    if paths.iter().all(|path| matches!(path, PathRef::Edges(_))) {
-        return PathRef::Edges(
-            paths
-                .into_iter()
-                .flat_map(|path| match path {
-                    PathRef::Edges(edges) => edges,
-                    _ => unreachable!("validated direct SurfacePatch paths"),
-                })
-                .collect(),
-        );
+    let direct = paths
+        .iter()
+        .map(|path| match path {
+            PathRef::Edges(edges) => Some(edges),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(groups) = direct {
+        return PathRef::Edges(groups.into_iter().flatten().cloned().collect());
     }
     PathRef::Native(scope.id.clone())
 }
