@@ -2044,7 +2044,7 @@ fn finish_model_decode<'a>(
     undecoded_candidates: usize,
     session_state: DecodeSessionState,
 ) -> Result<Decoded, CodecError> {
-    F3dDecodeSession::from_geometry(
+    let (session, path) = F3dDecodeSession::from_geometry(
         ctx,
         scan,
         primary_model_brep,
@@ -2052,8 +2052,8 @@ fn finish_model_decode<'a>(
         body_visibilities,
         undecoded_candidates,
         session_state,
-    )?
-    .into_result()
+    )?;
+    session.into_result(path)
 }
 
 /// Optional geometry index after a successful B-rep transfer.
@@ -2084,16 +2084,19 @@ enum SessionPath {
         index: GeometryIndex,
         materials: materials::DecodedMaterials,
     },
-    Bodyless {
-        deferred: Option<DeferredBodylessInputs>,
-    },
+    Bodyless,
+}
+
+/// The inputs one decoded path hands to finalization.
+enum FinalizePath {
+    Geometry(GeometryIndex),
+    Bodyless(DeferredBodylessInputs),
 }
 
 /// Private decode accumulator for one `.f3d` document.
 struct F3dDecodeSession<'a> {
     ctx: &'a DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
-    path: SessionPath,
     native: F3dNative,
     ir: CadIr,
     source_attributes: std::collections::BTreeMap<String, String>,
@@ -2112,7 +2115,7 @@ impl<'a> F3dDecodeSession<'a> {
         body_visibilities: Vec<crate::records::BodyVisibility>,
         undecoded_candidates: usize,
         session_state: DecodeSessionState,
-    ) -> Result<Self, CodecError> {
+    ) -> Result<(Self, SessionPath), CodecError> {
         let DecodeSessionState {
             mut admitted_entities,
             report_scope,
@@ -2157,10 +2160,19 @@ impl<'a> F3dDecodeSession<'a> {
             &mut admitted_entities,
             "admit F3D geometry entities",
         )?;
-        Ok(Self {
-            ctx,
-            scan,
-            path: SessionPath::Geometry {
+        Ok((
+            Self {
+                ctx,
+                scan,
+                native,
+                ir,
+                source_attributes,
+                report,
+                report_scope,
+                unknowns,
+                admitted_entities,
+            },
+            SessionPath::Geometry {
                 index: GeometryIndex {
                     primary_model_brep_name: primary_model_brep.name.clone(),
                     annotation_records,
@@ -2168,21 +2180,14 @@ impl<'a> F3dDecodeSession<'a> {
                 },
                 materials: geometry_materials,
             },
-            native,
-            ir,
-            source_attributes,
-            report,
-            report_scope,
-            unknowns,
-            admitted_entities,
-        })
+        ))
     }
 
     fn from_metadata(
         ctx: &'a DecodeContext<'a>,
         scan: &'a ContainerScan<'a>,
         session_state: DecodeSessionState,
-    ) -> Result<Self, CodecError> {
+    ) -> Result<(Self, SessionPath), CodecError> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
@@ -2192,22 +2197,24 @@ impl<'a> F3dDecodeSession<'a> {
             source_attributes,
             unknowns,
         } = build_metadata_ir(scan)?;
-        Ok(Self {
-            ctx,
-            scan,
-            path: SessionPath::Bodyless { deferred: None },
-            native: F3dNative::default(),
-            ir,
-            source_attributes,
-            report: crate::report::build_decode_report(
+        Ok((
+            Self {
+                ctx,
                 scan,
-                cadmpeg_ir::report::DecodeTransfer::full(false),
-                container_losses(scan),
-            ),
-            report_scope,
-            unknowns,
-            admitted_entities,
-        })
+                native: F3dNative::default(),
+                ir,
+                source_attributes,
+                report: crate::report::build_decode_report(
+                    scan,
+                    cadmpeg_ir::report::DecodeTransfer::full(false),
+                    container_losses(scan),
+                ),
+                report_scope,
+                unknowns,
+                admitted_entities,
+            },
+            SessionPath::Bodyless,
+        ))
     }
 
     fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
@@ -2219,14 +2226,14 @@ impl<'a> F3dDecodeSession<'a> {
     }
 
     /// Decode design graph, products, annotations, and the report.
-    fn into_result(mut self) -> Result<Decoded, CodecError> {
+    fn into_result(mut self, path: SessionPath) -> Result<Decoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
-        self.decode_design_graph()?;
-        self.decode_products()?;
-        self.finalize()
+        self.decode_design_graph(&path)?;
+        let path = self.decode_products(path)?;
+        self.finalize(path)
     }
 
-    fn decode_design_graph(&mut self) -> Result<(), CodecError> {
+    fn decode_design_graph(&mut self, path: &SessionPath) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
         for history_brep in container::history_breps(scan) {
@@ -2338,7 +2345,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_curve_identities,
         )?;
         self.native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-        if matches!(self.path, SessionPath::Bodyless { .. }) {
+        if matches!(path, SessionPath::Bodyless) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
                     scan,
@@ -2391,7 +2398,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         if let SessionPath::Geometry {
             index: geometry, ..
-        } = &self.path
+        } = path
         {
             bind_mesh_feature_definitions(
                 &mut self.ir.model.features,
@@ -2618,7 +2625,7 @@ impl<'a> F3dDecodeSession<'a> {
                 arrangement_budget: &arrangement_budget,
             },
         )?;
-        if matches!(self.path, SessionPath::Geometry { .. }) {
+        if matches!(path, SessionPath::Geometry { .. }) {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
         let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
@@ -2707,7 +2714,7 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(())
     }
 
-    fn decode_products(&mut self) -> Result<(), CodecError> {
+    fn decode_products(&mut self, path: SessionPath) -> Result<FinalizePath, CodecError> {
         let scan = self.scan;
         let act = crate::act::decode(scan)?;
         let non_root_act_component_links = act.non_root_component_links;
@@ -2717,15 +2724,14 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.act_root_components = act.root_components;
         self.native.act_table_references = act.table_references;
 
-        match &mut self.path {
-            SessionPath::Geometry { materials, .. } => {
+        let finalize_path = match path {
+            SessionPath::Geometry { index, materials } => {
                 report_unretained_act_component_links(
                     &mut self.report,
                     non_root_act_component_links,
                 );
                 report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
                 report_unresolved_configuration_rules(&mut self.report, &self.native, &self.ir);
-                let materials = std::mem::take(materials);
                 report_untyped_material_distances(
                     &mut self.report,
                     materials.untyped_distance_properties,
@@ -2761,8 +2767,9 @@ impl<'a> F3dDecodeSession<'a> {
                     Ok(None) => {}
                     Err(error) => self.report.losses.push(xref_parse_loss(&error)),
                 }
+                FinalizePath::Geometry(index)
             }
-            SessionPath::Bodyless { deferred } => {
+            SessionPath::Bodyless => {
                 let decoded_materials = materials::decode(self.ctx, scan)?;
                 report_untyped_material_distances(
                     &mut self.report,
@@ -2786,13 +2793,13 @@ impl<'a> F3dDecodeSession<'a> {
                     self.native.xref_designs.clone_from(&table.designs);
                     self.native.xref_references.clone_from(&table.references);
                 }
-                *deferred = Some(DeferredBodylessInputs {
+                FinalizePath::Bodyless(DeferredBodylessInputs {
                     xref: xref_table,
                     non_root_act: non_root_act_component_links,
                     has_appearance: decoded_materials.has_topology_assignments,
-                });
+                })
             }
-        }
+        };
 
         let (components, occurrences) = crate::design::components::project_local_components(
             &self.native.design_parameter_scopes,
@@ -2819,19 +2826,17 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_component_occurrences,
             &self.ir.model.features,
         )?;
-        Ok(())
+        Ok(finalize_path)
     }
 
-    fn finalize(mut self) -> Result<Decoded, CodecError> {
+    fn finalize(mut self, path: FinalizePath) -> Result<Decoded, CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
-        let geometry = match self.path {
-            SessionPath::Geometry { index, .. } => index,
-            SessionPath::Bodyless { deferred } => {
-                if let Some(inputs) = &deferred {
-                    report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
-                    reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
-                }
+        let geometry = match path {
+            FinalizePath::Geometry(index) => index,
+            FinalizePath::Bodyless(inputs) => {
+                report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
+                reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
                 let mesh_projection =
                     project_mesh_bodies(scan, &mut self.ir, &mut self.native, &mut self.report)?;
                 bind_mesh_feature_definitions(
@@ -2864,14 +2869,12 @@ impl<'a> F3dDecodeSession<'a> {
                     );
                 }
                 report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
-                if let Some(inputs) = deferred {
-                    match inputs.xref {
-                        Ok(Some(table)) => {
-                            apply_assembly_classification(&mut self.report, scan, &table);
-                        }
-                        Ok(None) => {}
-                        Err(error) => self.report.losses.push(xref_parse_loss(&error)),
+                match inputs.xref {
+                    Ok(Some(table)) => {
+                        apply_assembly_classification(&mut self.report, scan, &table);
                     }
+                    Ok(None) => {}
+                    Err(error) => self.report.losses.push(xref_parse_loss(&error)),
                 }
                 let mut admitted_entities = self.admitted_entities;
                 return decode_result(
@@ -3116,15 +3119,15 @@ fn decode_scanned_document<'a>(
     }
 
     // No decodable SAB stream: use container metadata through the shared session.
-    F3dDecodeSession::from_metadata(
+    let (session, path) = F3dDecodeSession::from_metadata(
         ctx,
         scan,
         DecodeSessionState {
             admitted_entities,
             report_scope,
         },
-    )?
-    .into_result()
+    )?;
+    session.into_result(path)
 }
 
 /// Projected mesh geometry and the Design records that own it.
