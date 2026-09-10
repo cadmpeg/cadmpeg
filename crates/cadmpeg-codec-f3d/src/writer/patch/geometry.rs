@@ -428,10 +428,10 @@ fn patch_asm_geometry(
         }
         let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
         if let Some(edit) = procedural_curve_edits.get(&procedural_curve_id) {
-            if let Some(tolerance) = edit.fit_tolerance {
+            if let Some(tolerance) = edit.fit_tolerance() {
                 asm_edits.patch_procedural_curve_fit(bytes, record, tolerance)?;
             }
-            if let Some(definition) = &edit.definition {
+            if let Some(definition) = edit.definition() {
                 asm_edits.patch_procedural_curve_definition(bytes, record, definition)?;
             }
         }
