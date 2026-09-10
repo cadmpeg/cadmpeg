@@ -128,7 +128,7 @@ impl TryFrom<UnlabeledRecordWire> for FeatureUnlabeledOperationRecord {
 mod tests {
     use super::FeatureUnlabeledOperationRecord;
 
-    const WIRE: &str = r#"{"id":"record","ordinal":0,"object_indices":[null,0,0,0],"object_index_source_offsets":[115,116,117,119],"byte_len":25,"sha256":"record-hash","payload_byte_len":3,"payload_sha256":"payload-hash","payload_source_offset":122,"source_offset":100}"#;
+    const WIRE: &str = r#"{"id":"record","ordinal":0,"object_indices":[null,0,0,0],"object_index_source_offsets":[115,116,117,119],"byte_len":25,"sha256":"e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95","payload_byte_len":3,"payload_sha256":"47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75","payload_source_offset":122,"source_offset":100}"#;
 
     #[test]
     fn unlabeled_record_wire_retains_header_widths_and_payload_extent() {

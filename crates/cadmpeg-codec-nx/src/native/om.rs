@@ -1963,7 +1963,7 @@ mod printable_value_wire_tests {
         let wire = serde_json::json!({
             "id": "record", "object_id": 1, "object_id_source_offset": 10,
             "section_ordinal": 0, "record_ordinal": 0, "section_offset": 0,
-            "byte_len": 1, "sha256": "hash", "source_entry": "entry", "source_offset": 20
+            "byte_len": 1, "sha256": "d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa", "source_entry": "entry", "source_offset": 20
         });
         let record: super::ObjectRecord = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);

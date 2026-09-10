@@ -104,7 +104,7 @@ mod tests {
     fn operation_record_wire_preserves_optional_identity_and_exact_span() {
         for identity in ["", r#","stable_identity":"stable""#] {
             let wire = format!(
-                r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"record-hash","payload_byte_len":40,"payload_sha256":"payload-hash"{identity},"payload_source_offset":120,"source_offset":90}}"#
+                r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95","payload_byte_len":40,"payload_sha256":"47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75"{identity},"payload_source_offset":120,"source_offset":90}}"#
             );
             let record: FeatureOperationRecord = serde_json::from_str(&wire).unwrap();
             assert_eq!(serde_json::to_string(&record).unwrap(), wire);

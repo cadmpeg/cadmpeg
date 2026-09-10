@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn revision_wire_derives_total_and_rejects_inconsistent_lengths() {
-        let json = r#"{"id":"revision","stream_ordinal":0,"xmt":3,"node_id":9,"references":[2,3,4,5,6,7,8,9],"byte_len":36,"prefix_byte_len":32,"state_tail_byte_len":4,"state_tail_sha256":"hash","inflated_offset":10}"#;
+        let json = r#"{"id":"revision","stream_ordinal":0,"xmt":3,"node_id":9,"references":[2,3,4,5,6,7,8,9],"byte_len":36,"prefix_byte_len":32,"state_tail_byte_len":4,"state_tail_sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":10}"#;
         let value: ParasolidDeltasBodyRevision = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
         for xmt in [0, 1] {
