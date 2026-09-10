@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::loss::Diagnostics;
@@ -10,10 +10,7 @@ use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
 
-const TABLE_FRAMING: NonZeroU64 = match NonZeroU64::new(8) {
-    Some(framing) => framing,
-    None => unreachable!(),
-};
+const TABLE_FRAMING: NonZeroU32 = NonZeroU32::MIN.saturating_add(7);
 
 #[test]
 fn decodes_bounded_utf8_and_utf16_strings() {
