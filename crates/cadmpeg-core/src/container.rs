@@ -2,6 +2,7 @@
 //! Format-independent container entries.
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -108,10 +109,16 @@ label_enum! {
 }
 
 label_enum! {
-    /// Compression and storage labels reported by container summaries.
-    EntryCompression {
+    /// How a container spells "these bytes are stored verbatim".
+    VerbatimLabel {
         None => "none",
         Stored => "stored",
+    }
+}
+
+label_enum! {
+    /// Compression methods reported by container summaries.
+    CompressionMethod {
         Deflate => "deflate",
         Zstd => "zstd",
         Jpeg => "jpeg",
@@ -120,20 +127,137 @@ label_enum! {
     }
 }
 
+/// How the on-disk span of a verbatim payload relates to the payload itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerbatimSpan {
+    /// The stored span is exactly the payload.
+    Payload,
+    /// The stored span is the payload plus this much container framing.
+    Framed(NonZeroU64),
+    /// This codec does not report the stored span.
+    Unreported,
+}
+
 /// How one container summary entry stores its bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryStorage {
     /// A container directory node that holds no bytes of its own.
     Directory,
-    /// A byte payload with its stored and expanded sizes.
-    Bytes {
-        /// Compression method label (for example, `"stored"` or `"deflate"`).
-        compression: EntryCompression,
-        /// Stored size in bytes.
-        compressed_size: u64,
-        /// Expanded size in bytes.
-        uncompressed_size: u64,
+    /// Bytes stored verbatim: one payload size, plus how its stored span relates to it.
+    Verbatim {
+        /// How this container spells verbatim storage.
+        label: VerbatimLabel,
+        /// Payload size in bytes.
+        payload: u64,
+        /// Relation of the stored span to the payload.
+        span: VerbatimSpan,
     },
+    /// Bytes stored compressed; either size is absent when the codec does not report it.
+    Compressed {
+        /// Compression method.
+        method: CompressionMethod,
+        /// Stored size in bytes.
+        stored: Option<u64>,
+        /// Expanded size in bytes.
+        expanded: Option<u64>,
+    },
+}
+
+impl EntryStorage {
+    /// Verbatim bytes whose stored span is exactly the payload.
+    #[must_use]
+    pub const fn verbatim(label: VerbatimLabel, payload: u64) -> Self {
+        Self::Verbatim {
+            label,
+            payload,
+            span: VerbatimSpan::Payload,
+        }
+    }
+
+    /// Verbatim bytes whose stored span may include container framing.
+    #[must_use]
+    pub fn framed(label: VerbatimLabel, payload: u64, stored_span: u64) -> Self {
+        Self::Verbatim {
+            label,
+            payload,
+            span: match NonZeroU64::new(stored_span.saturating_sub(payload)) {
+                Some(overhead) => VerbatimSpan::Framed(overhead),
+                None => VerbatimSpan::Payload,
+            },
+        }
+    }
+
+    /// Verbatim bytes whose stored span this codec does not report.
+    #[must_use]
+    pub const fn unreported_span(label: VerbatimLabel, payload: u64) -> Self {
+        Self::Verbatim {
+            label,
+            payload,
+            span: VerbatimSpan::Unreported,
+        }
+    }
+
+    /// Admit storage from a declared method label and the two declared sizes.
+    ///
+    /// A zero declared size means the producer did not report it. A verbatim
+    /// entry whose stored span is smaller than its payload is rejected.
+    pub fn from_declared(
+        label: Result<VerbatimLabel, CompressionMethod>,
+        stored: u64,
+        expanded: u64,
+    ) -> Result<Self, &'static str> {
+        match label {
+            Ok(label) => {
+                let span =
+                    if stored == 0 && expanded != 0 {
+                        VerbatimSpan::Unreported
+                    } else if stored == expanded {
+                        VerbatimSpan::Payload
+                    } else {
+                        match NonZeroU64::new(stored.wrapping_sub(expanded)) {
+                            Some(overhead) if stored > expanded => VerbatimSpan::Framed(overhead),
+                            _ => return Err(
+                                "verbatim container entry stores fewer bytes than it expands to",
+                            ),
+                        }
+                    };
+                Ok(Self::Verbatim {
+                    label,
+                    payload: expanded,
+                    span,
+                })
+            }
+            Err(method) => Ok(Self::Compressed {
+                method,
+                stored: (stored != 0).then_some(stored),
+                expanded: (expanded != 0).then_some(expanded),
+            }),
+        }
+    }
+
+    /// Stored span in bytes, absent when the entry holds no bytes or does not report it.
+    #[must_use]
+    pub const fn stored_size(&self) -> Option<u64> {
+        match self {
+            Self::Directory => None,
+            Self::Verbatim { payload, span, .. } => match span {
+                VerbatimSpan::Payload => Some(*payload),
+                VerbatimSpan::Framed(overhead) => Some(*payload + overhead.get()),
+                VerbatimSpan::Unreported => None,
+            },
+            Self::Compressed { stored, .. } => *stored,
+        }
+    }
+
+    /// Expanded size in bytes, absent when the entry holds no bytes or does not report it.
+    #[must_use]
+    pub const fn expanded_size(&self) -> Option<u64> {
+        match self {
+            Self::Directory => None,
+            Self::Verbatim { payload, .. } => Some(*payload),
+            Self::Compressed { expanded, .. } => *expanded,
+        }
+    }
 }
 
 /// One stream or segment in a container summary.
@@ -156,35 +280,16 @@ pub struct ContainerEntry {
 }
 
 impl ContainerEntry {
-    /// Compression method of the stored bytes, absent for a directory node.
+    /// Stored span in bytes, absent when the entry reports none.
     #[must_use]
-    pub const fn compression(&self) -> Option<EntryCompression> {
-        match self.storage {
-            EntryStorage::Directory => None,
-            EntryStorage::Bytes { compression, .. } => Some(compression),
-        }
+    pub const fn stored_size(&self) -> Option<u64> {
+        self.storage.stored_size()
     }
 
-    /// Stored size in bytes, absent for a directory node.
-    #[must_use]
-    pub const fn compressed_size(&self) -> Option<u64> {
-        match self.storage {
-            EntryStorage::Directory => None,
-            EntryStorage::Bytes {
-                compressed_size, ..
-            } => Some(compressed_size),
-        }
-    }
-
-    /// Expanded size in bytes, absent for a directory node.
+    /// Expanded size in bytes, absent when the entry reports none.
     #[must_use]
     pub const fn expanded_size(&self) -> Option<u64> {
-        match self.storage {
-            EntryStorage::Directory => None,
-            EntryStorage::Bytes {
-                uncompressed_size, ..
-            } => Some(uncompressed_size),
-        }
+        self.storage.expanded_size()
     }
 }
 
@@ -210,28 +315,33 @@ enum EntryCompressionWire {
 }
 
 impl EntryCompressionWire {
-    fn method(self) -> Option<EntryCompression> {
+    fn label(self) -> Option<Result<VerbatimLabel, CompressionMethod>> {
         Some(match self {
-            Self::None => EntryCompression::None,
-            Self::Stored => EntryCompression::Stored,
-            Self::Deflate => EntryCompression::Deflate,
-            Self::Zstd => EntryCompression::Zstd,
-            Self::Jpeg => EntryCompression::Jpeg,
-            Self::UnixCompress => EntryCompression::UnixCompress,
-            Self::Zlib => EntryCompression::Zlib,
+            Self::None => Ok(VerbatimLabel::None),
+            Self::Stored => Ok(VerbatimLabel::Stored),
+            Self::Deflate => Err(CompressionMethod::Deflate),
+            Self::Zstd => Err(CompressionMethod::Zstd),
+            Self::Jpeg => Err(CompressionMethod::Jpeg),
+            Self::UnixCompress => Err(CompressionMethod::UnixCompress),
+            Self::Zlib => Err(CompressionMethod::Zlib),
             Self::Storage => return None,
         })
     }
 
-    fn from_method(compression: EntryCompression) -> Self {
-        match compression {
-            EntryCompression::None => Self::None,
-            EntryCompression::Stored => Self::Stored,
-            EntryCompression::Deflate => Self::Deflate,
-            EntryCompression::Zstd => Self::Zstd,
-            EntryCompression::Jpeg => Self::Jpeg,
-            EntryCompression::UnixCompress => Self::UnixCompress,
-            EntryCompression::Zlib => Self::Zlib,
+    fn from_verbatim(label: VerbatimLabel) -> Self {
+        match label {
+            VerbatimLabel::None => Self::None,
+            VerbatimLabel::Stored => Self::Stored,
+        }
+    }
+
+    fn from_method(method: CompressionMethod) -> Self {
+        match method {
+            CompressionMethod::Deflate => Self::Deflate,
+            CompressionMethod::Zstd => Self::Zstd,
+            CompressionMethod::Jpeg => Self::Jpeg,
+            CompressionMethod::UnixCompress => Self::UnixCompress,
+            CompressionMethod::Zlib => Self::Zlib,
         }
     }
 }
@@ -250,24 +360,19 @@ struct ContainerEntryWire {
 
 impl From<ContainerEntry> for ContainerEntryWire {
     fn from(entry: ContainerEntry) -> Self {
-        let (compression, compressed_size, uncompressed_size) = match entry.storage {
-            EntryStorage::Directory => (EntryCompressionWire::Storage, 0, 0),
-            EntryStorage::Bytes {
-                compression,
-                compressed_size,
-                uncompressed_size,
-            } => (
-                EntryCompressionWire::from_method(compression),
-                compressed_size,
-                uncompressed_size,
-            ),
+        let stored = entry.stored_size().unwrap_or(0);
+        let expanded = entry.expanded_size().unwrap_or(0);
+        let compression = match entry.storage {
+            EntryStorage::Directory => EntryCompressionWire::Storage,
+            EntryStorage::Verbatim { label, .. } => EntryCompressionWire::from_verbatim(label),
+            EntryStorage::Compressed { method, .. } => EntryCompressionWire::from_method(method),
         };
         Self {
             name: entry.name,
             role: entry.role,
             compression,
-            compressed_size,
-            uncompressed_size,
+            compressed_size: stored,
+            uncompressed_size: expanded,
             attributes: entry.attributes,
         }
     }
@@ -277,7 +382,7 @@ impl TryFrom<ContainerEntryWire> for ContainerEntry {
     type Error = String;
 
     fn try_from(wire: ContainerEntryWire) -> Result<Self, Self::Error> {
-        let storage = match wire.compression.method() {
+        let storage = match wire.compression.label() {
             None => {
                 if wire.compressed_size != 0 || wire.uncompressed_size != 0 {
                     return Err(
@@ -286,11 +391,10 @@ impl TryFrom<ContainerEntryWire> for ContainerEntry {
                 }
                 EntryStorage::Directory
             }
-            Some(compression) => EntryStorage::Bytes {
-                compression,
-                compressed_size: wire.compressed_size,
-                uncompressed_size: wire.uncompressed_size,
-            },
+            Some(label) => {
+                EntryStorage::from_declared(label, wire.compressed_size, wire.uncompressed_size)
+                    .map_err(str::to_string)?
+            }
         };
         Ok(Self {
             name: wire.name,

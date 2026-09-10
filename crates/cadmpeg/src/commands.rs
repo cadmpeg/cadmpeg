@@ -221,7 +221,7 @@ pub fn inspect(
         println!(
             "  {:<14} {:>10} → {:<10}  {}",
             entry.role,
-            size(entry.compressed_size()),
+            size(entry.stored_size()),
             size(entry.expanded_size()),
             entry.name
         );

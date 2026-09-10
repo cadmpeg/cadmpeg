@@ -31,24 +31,39 @@ impl ZipCompression {
         }
     }
 
-    const fn summary(self) -> cadmpeg_core::container::EntryCompression {
-        use cadmpeg_core::container::EntryCompression;
+    /// Returns the stable container-summary label.
+    pub const fn label(self) -> &'static str {
         match self {
-            Self::Stored => EntryCompression::Stored,
-            Self::Deflate => EntryCompression::Deflate,
-            Self::Zstd => EntryCompression::Zstd,
+            Self::Stored => "stored",
+            Self::Deflate => "deflate",
+            Self::Zstd => "zstd",
         }
     }
 
-    /// Returns the stable container-summary label.
-    pub const fn label(self) -> &'static str {
-        self.summary().as_str()
-    }
-}
-
-impl From<ZipCompression> for cadmpeg_core::container::EntryCompression {
-    fn from(value: ZipCompression) -> Self {
-        value.summary()
+    /// Storage of a member with these declared stored and expanded sizes.
+    #[must_use]
+    pub fn storage(
+        self,
+        compressed_size: u64,
+        uncompressed_size: u64,
+    ) -> cadmpeg_core::container::EntryStorage {
+        use cadmpeg_core::container::{CompressionMethod, EntryStorage, VerbatimLabel};
+        let method = match self {
+            Self::Stored => {
+                return EntryStorage::framed(
+                    VerbatimLabel::Stored,
+                    uncompressed_size,
+                    compressed_size,
+                )
+            }
+            Self::Deflate => CompressionMethod::Deflate,
+            Self::Zstd => CompressionMethod::Zstd,
+        };
+        EntryStorage::Compressed {
+            method,
+            stored: Some(compressed_size),
+            expanded: Some(uncompressed_size),
+        }
     }
 }
 
@@ -312,11 +327,9 @@ impl<'a> ArchiveSnapshot<'a> {
                 ContainerEntry {
                     name: entry.name.clone(),
                     role: classify(&entry.name),
-                    storage: cadmpeg_core::container::EntryStorage::Bytes {
-                        compression: entry.compression.into(),
-                        compressed_size: entry.compressed_size,
-                        uncompressed_size: entry.uncompressed_size,
-                    },
+                    storage: entry
+                        .compression
+                        .storage(entry.compressed_size, entry.uncompressed_size),
                     attributes,
                 }
             })

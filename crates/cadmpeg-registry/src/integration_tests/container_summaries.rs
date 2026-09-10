@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::container::{ContainerEntry, ContainerRole, EntryCompression, EntryStorage};
+use cadmpeg_core::container::{
+    ContainerEntry, ContainerRole, EntryStorage, VerbatimLabel, VerbatimSpan,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -19,18 +21,22 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .iter()
         .find(|entry| entry.role == ContainerRole::Table)
         .expect("native summary witness");
-    assert_eq!(table.compression(), Some(EntryCompression::None));
     let body_offset: u64 = table.attributes["body_offset"]
         .parse()
         .expect("native summary witness");
     let offset: u64 = table.attributes["offset"]
         .parse()
         .expect("native summary witness");
-    assert_eq!(
-        table.compressed_size().expect("native summary witness")
-            - table.expanded_size().expect("native summary witness"),
-        body_offset - offset
-    );
+    let EntryStorage::Verbatim {
+        label,
+        span: VerbatimSpan::Framed(overhead),
+        ..
+    } = table.storage
+    else {
+        panic!("a rhino table reports framing overhead beside its body");
+    };
+    assert_eq!(label, VerbatimLabel::None);
+    assert_eq!(overhead.get(), body_offset - offset);
     assert!(body_offset > offset);
 
     let inventor: Summary = serde_json::from_str(include_str!(
@@ -48,8 +54,13 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .iter()
         .find(|entry| entry.name == "RSeStorage/RSeSegInfo")
         .expect("native summary witness");
-    assert_eq!(stream.compression(), Some(EntryCompression::Stored));
-    assert_eq!(stream.compressed_size(), stream.expanded_size());
+    assert_eq!(
+        stream.storage,
+        EntryStorage::verbatim(
+            VerbatimLabel::Stored,
+            stream.expanded_size().expect("native summary witness")
+        )
+    );
 
     let step: Summary = serde_json::from_str(include_str!(
         "../../../cadmpeg-codec-step/tests/golden/inspect/ap242_ed3_sections.json"
@@ -61,6 +72,9 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .find(|entry| entry.name == "REFERENCE")
         .expect("native summary witness");
     assert_eq!(references.role, ContainerRole::ExternalReferences);
-    assert_eq!(references.compression(), Some(EntryCompression::None));
+    assert_eq!(
+        references.storage,
+        EntryStorage::verbatim(VerbatimLabel::None, 0)
+    );
     assert_eq!(references.attributes["external_count"], "1");
 }

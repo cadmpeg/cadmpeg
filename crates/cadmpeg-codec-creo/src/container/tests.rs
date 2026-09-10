@@ -295,10 +295,13 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     let summary = container::summarize(&scan, &classification);
     assert_eq!(
-        summary.entries[0].compression(),
-        Some(cadmpeg_core::container::EntryCompression::UnixCompress)
+        summary.entries[0].storage,
+        cadmpeg_core::container::EntryStorage::Compressed {
+            method: cadmpeg_core::container::CompressionMethod::UnixCompress,
+            stored: Some(15),
+            expanded: Some(18),
+        }
     );
-    assert_eq!(summary.entries[0].expanded_size(), Some(18));
 }
 
 #[test]

@@ -12,7 +12,7 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
+use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1423,11 +1423,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                     d.name.clone()
                 },
                 role: ContainerRole::Stream,
-                storage: EntryStorage::Bytes {
-                    compression: EntryCompression::None,
-                    compressed_size: phys,
-                    uncompressed_size: phys,
-                },
+                storage: EntryStorage::verbatim(VerbatimLabel::None, phys),
                 attributes,
             });
         }
@@ -1441,10 +1437,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: format!("CATPreview#{index}"),
             role: ContainerRole::Preview,
-            storage: EntryStorage::Bytes {
-                compression: EntryCompression::Jpeg,
-                compressed_size: (preview.range.end - preview.range.start) as u64,
-                uncompressed_size: 0,
+            storage: EntryStorage::Compressed {
+                method: CompressionMethod::Jpeg,
+                stored: Some((preview.range.end - preview.range.start) as u64),
+                expanded: None,
             },
             attributes,
         });
@@ -1455,11 +1451,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: reference.target.clone(),
             role: ContainerRole::ExternalReference,
-            storage: EntryStorage::Bytes {
-                compression: EntryCompression::None,
-                compressed_size: 0,
-                uncompressed_size: 0,
-            },
+            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
             attributes,
         });
     }
@@ -1485,11 +1477,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 .clone()
                 .unwrap_or_else(|| format!("FINJPL#{index}")),
             role: ContainerRole::FinjplSegment,
-            storage: EntryStorage::Bytes {
-                compression: EntryCompression::None,
-                compressed_size: (segment.range.end - segment.range.start) as u64,
-                uncompressed_size: (segment.range.end - segment.range.start) as u64,
-            },
+            storage: EntryStorage::verbatim(
+                VerbatimLabel::None,
+                (segment.range.end - segment.range.start) as u64,
+            ),
             attributes,
         });
     }
