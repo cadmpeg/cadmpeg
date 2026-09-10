@@ -717,6 +717,37 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
 }
 
 #[test]
+fn consolidated_cylinder_frames_round_trip_at_the_stored_pair_tolerance_edge() {
+    let component = 1.0_f64 + 6.0e-10;
+    let mut stream = b2_cylinder_stream();
+    stream[30..38].copy_from_slice(&component.to_le_bytes());
+    stream[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    let native = crate::native::CatiaNative::decode(&stream);
+    let [cylinder] = native.consolidated_cylinders.as_slice() else {
+        panic!("one consolidated cylinder at the tolerance edge")
+    };
+    let crate::native::CatiaConsolidatedCylinderPayload::Layout5a { axis, .. } = cylinder.payload
+    else {
+        panic!("layout 0x5a frame")
+    };
+    assert_eq!(axis.get(), [component, 0.0, 0.0]);
+
+    let wire = serde_json::to_value(cylinder).expect("serialize CATIA cylinder");
+    assert_eq!(
+        &serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(wire)
+            .expect("a decoded frame deserializes wherever its stored pair was admitted"),
+        cylinder
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA cylinder");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA cylinder"),
+        native
+    );
+}
+
+#[test]
 fn native_namespace_retains_exact_consolidated_torus_charts() {
     let native = crate::native::CatiaNative::decode(&b2_torus_stream());
     let [torus] = native.consolidated_tori.as_slice() else {

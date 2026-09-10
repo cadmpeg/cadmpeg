@@ -44,17 +44,39 @@ const fn deviation_tolerance(exponent: u32) -> f64 {
     }
 }
 
-/// A finite direction whose length is one within `10^-TOLERANCE_EXPONENT`, by
-/// the measurement its constructor names.
+/// Measures a direction's length as the sum of its squared components.
+pub const MEASURE_SQUARED: u8 = 0;
+
+/// Measures a direction's length as the square root of that sum, the way
+/// `Vector3::norm` does.
+pub const MEASURE_NORM: u8 = 1;
+
+/// Measures a direction's length as a chain of `hypot` calls, the way the
+/// records that store a planar pair do.
+pub const MEASURE_HYPOT: u8 = 2;
+
+/// A finite direction admitted by `MEASUREMENT` of its length deviating from
+/// one by at most `10^-TOLERANCE_EXPONENT`. Both the measurement and the
+/// tolerance are the record grammar's, so every route into the type — literal
+/// construction, derivation and serde — admits exactly the same directions.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub struct UnitVector3<const TOLERANCE_EXPONENT: u32>([f64; 3]);
+pub struct UnitVector3<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>([f64; 3]);
 
-/// A unit direction stored exactly, to a deviation tolerance of `1e-12`.
-pub type ExactUnitVector3 = UnitVector3<12>;
+/// A direction whose squared length is one to `1e-12`.
+pub type ExactUnitVector3 = UnitVector3<12, MEASURE_SQUARED>;
 
-/// A unit direction stored loosely, to a deviation tolerance of `1e-9`.
-pub type RelaxedUnitVector3 = UnitVector3<9>;
+/// A direction whose norm is one to `1e-12`.
+pub type ExactNormUnitVector3 = UnitVector3<12, MEASURE_NORM>;
+
+/// A direction whose `hypot` length is one to `1e-12`.
+pub type ExactHypotUnitVector3 = UnitVector3<12, MEASURE_HYPOT>;
+
+/// A direction whose squared length is one to `1e-9`.
+pub type RelaxedUnitVector3 = UnitVector3<9, MEASURE_SQUARED>;
+
+/// A direction whose `hypot` length is one to `1e-9`.
+pub type RelaxedHypotUnitVector3 = UnitVector3<9, MEASURE_HYPOT>;
 
 /// A coordinate plane a planar direction is placed in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,9 +124,13 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
     }
 
     /// Places the components in a coordinate plane, leaving the third axis
-    /// zero. Reordering and sign changes leave the length untouched, so the
-    /// spatial direction inherits this one's admission with no second test.
-    pub fn in_plane(self, plane: CoordinatePlane) -> UnitVector3<TOLERANCE_EXPONENT> {
+    /// zero. `hypot` of a component with zero is that component's magnitude, so
+    /// the spatial direction's `hypot` length is this one's, bit for bit: it
+    /// inherits this direction's admission and needs no second test.
+    pub fn in_plane(
+        self,
+        plane: CoordinatePlane,
+    ) -> UnitVector3<TOLERANCE_EXPONENT, MEASURE_HYPOT> {
         let [first, second] = self.0;
         UnitVector3(match plane {
             CoordinatePlane::Xy => [first, second, 0.0],
@@ -128,10 +154,10 @@ impl<const TOLERANCE_EXPONENT: u32> From<UnitVector2<TOLERANCE_EXPONENT>> for [f
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
-    /// Tolerance on this direction's deviation from unit length. [`Self::new`]
-    /// applies it to the squared length; the length-measured constructors apply
-    /// it to the length itself, each mirroring the record grammar it admits.
+impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
+    UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>
+{
+    /// Tolerance on this direction's measured length deviating from one.
     pub const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
 
     /// The +X direction.
@@ -140,22 +166,22 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
     /// The +Y direction.
     pub const Y: Self = Self([0.0, 1.0, 0.0]);
 
-    /// Constructs a unit direction whose squared length is one within the tolerance.
-    pub fn new(value: [f64; 3]) -> Option<Self> {
-        let squared_length = value
-            .iter()
-            .map(|component| component * component)
-            .sum::<f64>();
-        (value.iter().all(|component| component.is_finite())
-            && (squared_length - 1.0).abs() <= Self::TOLERANCE)
-            .then_some(Self(value))
+    /// This direction's measured length, by the measurement the type names.
+    fn measured_length(value: [f64; 3]) -> f64 {
+        let squared_length = value[0] * value[0] + value[1] * value[1] + value[2] * value[2];
+        match MEASUREMENT {
+            MEASURE_NORM => squared_length.sqrt(),
+            MEASURE_HYPOT => value[0].hypot(value[1]).hypot(value[2]),
+            _ => squared_length,
+        }
     }
 
-    /// Constructs a unit direction whose Euclidean norm, taken as the square
-    /// root of the sum of the squared components, is one within the tolerance.
-    pub fn from_norm(value: [f64; 3]) -> Option<Self> {
-        let norm = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
-        ((norm - 1.0).abs() <= Self::TOLERANCE).then_some(Self(value))
+    /// Constructs a unit direction whose measured length is one within the
+    /// tolerance.
+    pub fn new(value: [f64; 3]) -> Option<Self> {
+        (value.iter().all(|component| component.is_finite())
+            && (Self::measured_length(value) - 1.0).abs() <= Self::TOLERANCE)
+            .then_some(Self(value))
     }
 
     /// Normalizes a direction whose norm is above [`f64::EPSILON`], dividing
@@ -167,7 +193,7 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
     }
 
     /// Constructs a unit direction from a `scale`-scaled stored vector whose
-    /// length is `scale` within the tolerance.
+    /// `hypot` length is `scale` within the tolerance.
     pub fn from_scaled(stored: [f64; 3], scale: f64) -> Option<Self> {
         let length = stored[0].hypot(stored[1]).hypot(stored[2]);
         (length.is_finite() && ((length / scale) - 1.0).abs() <= Self::TOLERANCE)
@@ -180,7 +206,9 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32> TryFrom<[f64; 3]> for UnitVector3<TOLERANCE_EXPONENT> {
+impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8> TryFrom<[f64; 3]>
+    for UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>
+{
     type Error = String;
 
     fn try_from(value: [f64; 3]) -> Result<Self, Self::Error> {
@@ -188,8 +216,10 @@ impl<const TOLERANCE_EXPONENT: u32> TryFrom<[f64; 3]> for UnitVector3<TOLERANCE_
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32> From<UnitVector3<TOLERANCE_EXPONENT>> for [f64; 3] {
-    fn from(value: UnitVector3<TOLERANCE_EXPONENT>) -> Self {
+impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
+    From<UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>> for [f64; 3]
+{
+    fn from(value: UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>) -> Self {
         value.0
     }
 }
@@ -237,7 +267,10 @@ impl From<OrderedInterval> for [f64; 2] {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExactUnitVector3, RelaxedUnitVector3};
+    use super::{
+        CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
+        RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
+    };
 
     #[test]
     fn exact_directions_reject_the_relaxed_tolerance_band() {
@@ -259,8 +292,8 @@ mod tests {
         ] {
             let value = [0.0, component, 0.0];
             let norm = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
-            let admitted = (norm - 1.0).abs() <= ExactUnitVector3::TOLERANCE;
-            assert_eq!(ExactUnitVector3::from_norm(value).is_some(), admitted);
+            let admitted = (norm - 1.0).abs() <= ExactNormUnitVector3::TOLERANCE;
+            assert_eq!(ExactNormUnitVector3::new(value).is_some(), admitted);
         }
     }
 
@@ -268,10 +301,26 @@ mod tests {
     fn normalized_directions_divide_by_the_norm_and_reject_the_degenerate_one() {
         let value = [0.0, 3.0, 4.0];
         assert_eq!(
-            ExactUnitVector3::normalized(value).map(ExactUnitVector3::get),
+            ExactNormUnitVector3::normalized(value).map(ExactNormUnitVector3::get),
             Some([0.0, 3.0 / 5.0, 4.0 / 5.0])
         );
-        assert!(ExactUnitVector3::normalized([0.0, 0.0, 0.0]).is_none());
+        assert!(ExactNormUnitVector3::normalized([0.0, 0.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn planar_placements_deserialize_wherever_the_pair_was_admitted() {
+        let component = 1.0 + 6.0e-10;
+        let pair = RelaxedUnitVector2::from_hypot([component, 0.0]).expect("pair inside the band");
+        for plane in [CoordinatePlane::Xy, CoordinatePlane::Xz] {
+            let placed = pair.in_plane(plane);
+            let wire = serde_json::to_value(placed).expect("serialize placed direction");
+            assert_eq!(
+                serde_json::from_value::<RelaxedHypotUnitVector3>(wire)
+                    .expect("a placed direction deserializes wherever its pair was admitted"),
+                placed
+            );
+        }
+        assert!(RelaxedUnitVector3::new([component, 0.0, 0.0]).is_none());
     }
 
     #[test]
@@ -280,9 +329,9 @@ mod tests {
         for factor in [1.0, 1.0 + 9.0e-13, 1.0 - 9.0e-13, 1.0 + 2.0e-12] {
             let stored = [0.0, 0.0, radius * factor];
             let length = stored[0].hypot(stored[1]).hypot(stored[2]);
-            let admitted = ((length / radius) - 1.0).abs() <= ExactUnitVector3::TOLERANCE;
+            let admitted = ((length / radius) - 1.0).abs() <= ExactHypotUnitVector3::TOLERANCE;
             assert_eq!(
-                ExactUnitVector3::from_scaled(stored, radius).is_some(),
+                ExactHypotUnitVector3::from_scaled(stored, radius).is_some(),
                 admitted
             );
         }
