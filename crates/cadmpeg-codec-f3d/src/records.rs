@@ -372,11 +372,11 @@ impl NonEmptyByteSpan {
     }
 }
 
-/// A value with an optional source encoding location.
+/// A value with its source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordedValue<T> {
     pub value: T,
-    pub offset: Option<u64>,
+    pub offset: u64,
 }
 
 impl<T> RecordedValue<T> {
@@ -386,7 +386,48 @@ impl<T> RecordedValue<T> {
         field: &str,
     ) -> Result<Option<Self>, String> {
         match (value, offset) {
-            (Some(value), offset) => Ok(Some(Self { value, offset })),
+            (Some(value), Some(offset)) => Ok(Some(Self { value, offset })),
+            (Some(_), None) => Err(format!("{field} requires {field}_offset")),
+            (None, None) => Ok(None),
+            (None, Some(_)) => Err(format!("{field}_offset requires {field}")),
+        }
+    }
+}
+
+/// A value that its record form may leave without a source encoding location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaybeRecordedValue<T> {
+    /// The form stores the value at a known offset.
+    Located(RecordedValue<T>),
+    /// The form fixes the value in its envelope and stores no member for it.
+    Unlocated(T),
+}
+
+impl<T: Copy> MaybeRecordedValue<T> {
+    /// The value, located or not.
+    pub fn value(&self) -> T {
+        match self {
+            Self::Located(recorded) => recorded.value,
+            Self::Unlocated(value) => *value,
+        }
+    }
+
+    /// The source encoding location, when the form stores one.
+    pub fn offset(&self) -> Option<u64> {
+        match self {
+            Self::Located(recorded) => Some(recorded.offset),
+            Self::Unlocated(_) => None,
+        }
+    }
+
+    fn from_wire(
+        value: Option<T>,
+        offset: Option<u64>,
+        field: &str,
+    ) -> Result<Option<Self>, String> {
+        match (value, offset) {
+            (Some(value), Some(offset)) => Ok(Some(Self::Located(RecordedValue { value, offset }))),
+            (Some(value), None) => Ok(Some(Self::Unlocated(value))),
             (None, None) => Ok(None),
             (None, Some(_)) => Err(format!("{field}_offset requires {field}")),
         }
@@ -725,7 +766,11 @@ impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
 impl From<ConstructionRecipe> for ConstructionRecipeWire {
     fn from(value: ConstructionRecipe) -> Self {
         let (design_id, design_id_offset, design_selector) = match value.design {
-            Some(design) => (Some(design.id.value), design.id.offset, design.selector),
+            Some(design) => (
+                Some(design.id.value),
+                Some(design.id.offset),
+                design.selector,
+            ),
             None => (None, None, None),
         };
         Self {
@@ -931,7 +976,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             .map(|unit| {
                 Ok::<_, String>(Located {
                     value: NonEmptyString::new(unit.value).ok_or("unit must not be empty")?,
-                    offset: unit.offset.ok_or("unit_offset is required with unit")?,
+                    offset: unit.offset,
                 })
             })
             .transpose()?;
@@ -3317,9 +3362,9 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
             entity_id_offset: value.entity_id_offset,
             visual_guid: value.visual_guid,
             visual_guid_offset: value.visual_guid_offset,
-            physical_token_offset: value.physical_token.as_ref().and_then(|field| field.offset),
+            physical_token_offset: value.physical_token.as_ref().map(|field| field.offset),
             physical_token: value.physical_token.map(|field| field.value),
-            visual_preset_offset: value.visual_preset.as_ref().and_then(|field| field.offset),
+            visual_preset_offset: value.visual_preset.as_ref().map(|field| field.offset),
             visual_preset: value.visual_preset.map(|field| field.value),
         }
     }
@@ -3586,7 +3631,7 @@ impl From<SegmentType> for SegmentTypeWire {
             module: value.module,
             entity_ids,
             entity_id_offsets,
-            base_type_guid_offset: value.base_type_guid.as_ref().and_then(|field| field.offset),
+            base_type_guid_offset: value.base_type_guid.as_ref().map(|field| field.offset),
             base_type_guid: value
                 .base_type_guid
                 .map(|field| field.value.map(String::from).unwrap_or_default()),

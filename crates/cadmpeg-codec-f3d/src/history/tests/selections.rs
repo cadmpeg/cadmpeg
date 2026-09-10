@@ -467,7 +467,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: design_id.into(),
-                offset: None,
+                offset: 0,
             },
             selector: Some(ConstructionRecipeSelector {
                 value: selector,

@@ -1112,7 +1112,7 @@ mod tests {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: format!("d{record_index}"),
             name_offset: 80,

@@ -7,7 +7,7 @@ use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
     ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
     DesignEntityId, DesignRecipeReference, DesignRelaxedGuidText, DesignSecondaryIdentity, Located,
-    NonEmptyVec, RecordedValue, ReferenceRun, IDENTITY_MATRIX,
+    MaybeRecordedValue, NonEmptyVec, ReferenceRun, IDENTITY_MATRIX,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::Deserialize;
@@ -5623,11 +5623,11 @@ struct DesignPathFeatureWire {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 pub struct DesignCoilScope {
-    pub coil_operation: Option<RecordedValue<DesignExtrudeOperation>>,
-    pub coil_extent: Option<RecordedValue<DesignCoilExtent>>,
-    pub coil_section: Option<RecordedValue<DesignCoilSection>>,
-    pub coil_section_placement: Option<RecordedValue<DesignCoilSectionPlacement>>,
-    pub coil_clockwise: Option<RecordedValue<bool>>,
+    pub coil_operation: Option<MaybeRecordedValue<DesignExtrudeOperation>>,
+    pub coil_extent: Option<MaybeRecordedValue<DesignCoilExtent>>,
+    pub coil_section: Option<MaybeRecordedValue<DesignCoilSection>>,
+    pub coil_section_placement: Option<MaybeRecordedValue<DesignCoilSectionPlacement>>,
+    pub coil_clockwise: Option<MaybeRecordedValue<bool>>,
     pub coil_placement: Option<DesignCoilPlacement>,
     pub coil_transform: Option<DesignCoilTransform>,
 }
@@ -5679,27 +5679,27 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
     type Error = String;
     fn try_from(wire: DesignCoilScopeWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            coil_operation: RecordedValue::from_wire(
+            coil_operation: MaybeRecordedValue::from_wire(
                 wire.coil_operation,
                 wire.coil_operation_offset,
                 "coil_operation",
             )?,
-            coil_extent: RecordedValue::from_wire(
+            coil_extent: MaybeRecordedValue::from_wire(
                 wire.coil_extent,
                 wire.coil_extent_offset,
                 "coil_extent",
             )?,
-            coil_section: RecordedValue::from_wire(
+            coil_section: MaybeRecordedValue::from_wire(
                 wire.coil_section,
                 wire.coil_section_offset,
                 "coil_section",
             )?,
-            coil_section_placement: RecordedValue::from_wire(
+            coil_section_placement: MaybeRecordedValue::from_wire(
                 wire.coil_section_placement,
                 wire.coil_section_placement_offset,
                 "coil_section_placement",
             )?,
-            coil_clockwise: RecordedValue::from_wire(
+            coil_clockwise: MaybeRecordedValue::from_wire(
                 wire.coil_clockwise,
                 wire.coil_clockwise_offset,
                 "coil_clockwise",
@@ -5713,18 +5713,18 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
 impl From<DesignCoilScope> for DesignCoilScopeWire {
     fn from(value: DesignCoilScope) -> Self {
         Self {
-            coil_operation: value.coil_operation.map(|field| field.value),
-            coil_operation_offset: value.coil_operation.and_then(|field| field.offset),
-            coil_extent: value.coil_extent.map(|field| field.value),
-            coil_extent_offset: value.coil_extent.and_then(|field| field.offset),
-            coil_section: value.coil_section.map(|field| field.value),
-            coil_section_offset: value.coil_section.and_then(|field| field.offset),
-            coil_section_placement: value.coil_section_placement.map(|field| field.value),
+            coil_operation: value.coil_operation.map(|field| field.value()),
+            coil_operation_offset: value.coil_operation.and_then(|field| field.offset()),
+            coil_extent: value.coil_extent.map(|field| field.value()),
+            coil_extent_offset: value.coil_extent.and_then(|field| field.offset()),
+            coil_section: value.coil_section.map(|field| field.value()),
+            coil_section_offset: value.coil_section.and_then(|field| field.offset()),
+            coil_section_placement: value.coil_section_placement.map(|field| field.value()),
             coil_section_placement_offset: value
                 .coil_section_placement
-                .and_then(|field| field.offset),
-            coil_clockwise: value.coil_clockwise.map(|field| field.value),
-            coil_clockwise_offset: value.coil_clockwise.and_then(|field| field.offset),
+                .and_then(|field| field.offset()),
+            coil_clockwise: value.coil_clockwise.map(|field| field.value()),
+            coil_clockwise_offset: value.coil_clockwise.and_then(|field| field.offset()),
             coil_placement: value.coil_placement,
             coil_transform: value.coil_transform,
         }
@@ -7731,56 +7731,56 @@ impl DesignParameterScope {
 
     pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
         self.coil()
-            .and_then(|coil| coil.coil_operation.map(|field| field.value))
+            .and_then(|coil| coil.coil_operation.map(|field| field.value()))
     }
 
     pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_operation.and_then(|field| field.offset))
+            .and_then(|coil| coil.coil_operation.and_then(|field| field.offset()))
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
         self.coil()
-            .and_then(|coil| coil.coil_extent.map(|field| field.value))
+            .and_then(|coil| coil.coil_extent.map(|field| field.value()))
     }
 
     pub(crate) fn coil_section(&self) -> Option<DesignCoilSection> {
         self.coil()
-            .and_then(|coil| coil.coil_section.map(|field| field.value))
+            .and_then(|coil| coil.coil_section.map(|field| field.value()))
     }
 
     pub(crate) fn coil_section_placement(&self) -> Option<DesignCoilSectionPlacement> {
         self.coil()
-            .and_then(|coil| coil.coil_section_placement.map(|field| field.value))
+            .and_then(|coil| coil.coil_section_placement.map(|field| field.value()))
     }
 
     pub(crate) fn coil_clockwise(&self) -> Option<bool> {
         self.coil()
-            .and_then(|coil| coil.coil_clockwise.map(|field| field.value))
+            .and_then(|coil| coil.coil_clockwise.map(|field| field.value()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_extent.and_then(|field| field.offset))
+            .and_then(|coil| coil.coil_extent.and_then(|field| field.offset()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_section_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_section.and_then(|field| field.offset))
+            .and_then(|coil| coil.coil_section.and_then(|field| field.offset()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_section_placement.and_then(|field| field.offset))
+            .and_then(|coil| coil.coil_section_placement.and_then(|field| field.offset()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_clockwise.and_then(|field| field.offset))
+            .and_then(|coil| coil.coil_clockwise.and_then(|field| field.offset()))
     }
 
     pub(crate) fn coil_placement(&self) -> Option<&DesignCoilPlacement> {

@@ -277,7 +277,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 crate::records::ConstructionRecipeDesign {
                     id: crate::records::RecordedValue {
                         value,
-                        offset: Some(design_id_at as u64),
+                        offset: design_id_at as u64,
                     },
                     selector,
                 }
@@ -1280,7 +1280,7 @@ mod tests {
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
                 value: Some(value.to_owned().try_into().expect("base GUID")),
-                offset: Some(0),
+                offset: 0,
             }),
             version,
             version_offset: 0,
@@ -1353,7 +1353,7 @@ mod tests {
                                 .try_into()
                                 .expect("base GUID"),
                         ),
-                        offset: Some(0),
+                        offset: 0,
                     }),
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
@@ -1824,10 +1824,7 @@ mod tests {
             Some("2265")
         );
         assert_eq!(
-            recipes[0]
-                .design
-                .as_ref()
-                .and_then(|design| design.id.offset),
+            recipes[0].design.as_ref().map(|design| design.id.offset),
             Some(4)
         );
         assert_eq!(

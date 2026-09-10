@@ -557,7 +557,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "distance".into(),
             name_offset: 80,

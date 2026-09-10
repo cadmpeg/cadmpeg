@@ -92,7 +92,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: "2265".into(),
-                offset: None,
+                offset: 0,
             },
             selector: Some(crate::records::ConstructionRecipeSelector {
                 value: 9,
@@ -362,7 +362,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: "301".into(),
-                offset: None,
+                offset: 0,
             },
             selector: Some(crate::records::ConstructionRecipeSelector {
                 value: 6,

@@ -279,7 +279,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                         .try_into()
                         .expect("base GUID"),
                 ),
-                offset: Some(8),
+                offset: 8,
             }),
         version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
             crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
@@ -515,7 +515,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             design: Some(crate::records::ConstructionRecipeDesign {
                 id: crate::records::RecordedValue {
                     value: "301".into(),
-                    offset: Some(byte_offset + 197),
+                    offset: byte_offset + 197,
                 },
                 selector: Some(ConstructionRecipeSelector {
                     value: operand_record_index + 4,
@@ -1099,7 +1099,7 @@ fn validation_accepts_user_design_parameter_frame() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(210),
+                offset: 210,
             }),
             name: "Width".into(),
             name_offset: 220,
@@ -1136,7 +1136,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "cm".into(),
-                offset: Some(1_120),
+                offset: 1_120,
             }),
             name: "Length".into(),
             name_offset: 1_130,

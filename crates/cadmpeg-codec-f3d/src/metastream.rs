@@ -377,7 +377,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             type_guid_offset: type_guid_offset as u64,
             base_type_guid: base_type_guid.map(|guid| crate::records::RecordedValue {
                 value: Some(guid),
-                offset: Some(base_type_guid_offset as u64),
+                offset: base_type_guid_offset as u64,
             }),
             version,
             version_offset: version_offset as u64,
@@ -771,7 +771,7 @@ mod tests {
             assert_eq!(u32_at(design_type.version_offset), design_type.version);
             if let Some(base) = &design_type.base_type_guid {
                 assert_eq!(
-                    string_at(base.offset.expect("parsed base location"), 36),
+                    string_at(base.offset, 36),
                     base.value.as_ref().expect("base GUID").as_str()
                 );
             }

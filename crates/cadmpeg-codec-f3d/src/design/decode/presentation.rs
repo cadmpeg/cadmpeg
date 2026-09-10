@@ -639,7 +639,7 @@ mod tests {
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
                 value: Some(value.to_owned().try_into().expect("base GUID")),
-                offset: Some(0),
+                offset: 0,
             }),
             version,
             version_offset: 0,

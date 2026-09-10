@@ -778,7 +778,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d4".into(),
             name_offset: 80,

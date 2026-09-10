@@ -161,7 +161,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
             (
                 Some(crate::records::RecordedValue {
                     value: first,
-                    offset: Some((first_at + 4) as u64),
+                    offset: (first_at + 4) as u64,
                 }),
                 second,
                 first_end,
@@ -242,7 +242,7 @@ fn parse_legacy_287_design_parameter(
         (
             Some(crate::records::RecordedValue {
                 value: unit,
-                offset: Some(u64::try_from(unit_offset).ok()?),
+                offset: u64::try_from(unit_offset).ok()?,
             }),
             name,
             unit_end,
@@ -334,7 +334,7 @@ fn parse_legacy_design_parameter(
         source_kind_offset: (source_kind_at + 4) as u64,
         unit: Some(crate::records::RecordedValue {
             value: unit,
-            offset: Some((unit_at + 4) as u64),
+            offset: (unit_at + 4) as u64,
         }),
         name,
         name_offset: (name_at + 4) as u64,

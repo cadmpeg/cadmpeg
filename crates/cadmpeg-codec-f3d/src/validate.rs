@@ -5476,9 +5476,7 @@ fn validate_body_recipe_operands<'a>(
             && recipe.is_some_and(|recipe| {
                 let selector_is_valid = recipe.design.as_ref().is_some_and(|design| {
                     let design_id = &design.id;
-                    let Some(design_id_offset) = design_id.offset else {
-                        return false;
-                    };
+                    let design_id_offset = design_id.offset;
                     let Some(selector) = design.selector else {
                         return false;
                     };
