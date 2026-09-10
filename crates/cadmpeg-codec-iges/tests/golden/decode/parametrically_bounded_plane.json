@@ -185,7 +185,10 @@
         {
           "id": "iges:model:face#D9",
           "loops": [
-            "iges:model:loop#D9:0"
+            {
+              "id": "iges:model:loop#D9:0",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D9",
@@ -202,7 +205,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "iges:model:face#D9",
           "id": "iges:model:loop#D9:0"
         }

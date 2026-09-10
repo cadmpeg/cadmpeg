@@ -5535,7 +5535,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5545,7 +5548,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:19",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5555,7 +5561,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:24",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5565,7 +5574,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:29",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5575,8 +5587,14 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:37",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A2"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
+              "role": "unspecified"
+            },
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A2",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5586,7 +5604,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:40",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5596,7 +5617,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:42",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5606,7 +5630,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:47",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5616,7 +5643,10 @@
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611",
           "loops": [
-            "fcstd:model:loop#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1"
+            {
+              "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
@@ -5626,7 +5656,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:18",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5636,7 +5669,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:23",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5645,7 +5681,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:26",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5655,8 +5694,14 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:32",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A2"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
+              "role": "unspecified"
+            },
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A2",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5666,7 +5711,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:35",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5676,7 +5724,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:37",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5686,7 +5737,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:42",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5696,7 +5750,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5706,7 +5763,10 @@
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:9",
           "loops": [
-            "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1"
+            {
+              "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
@@ -5716,7 +5776,10 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:12",
           "loops": [
-            "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
@@ -5726,7 +5789,10 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:17",
           "loops": [
-            "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
@@ -5736,7 +5802,10 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:20",
           "loops": [
-            "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
@@ -5746,7 +5815,10 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22",
           "loops": [
-            "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
@@ -5756,7 +5828,10 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92",
           "loops": [
-            "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
@@ -5766,7 +5841,10 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7",
           "loops": [
-            "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
@@ -5776,7 +5854,10 @@
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:12",
           "loops": [
-            "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
@@ -5786,7 +5867,10 @@
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:17",
           "loops": [
-            "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
@@ -5796,7 +5880,10 @@
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:20",
           "loops": [
-            "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
@@ -5806,7 +5893,10 @@
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22",
           "loops": [
-            "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
@@ -5816,7 +5906,10 @@
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92",
           "loops": [
-            "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
@@ -5826,7 +5919,10 @@
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7",
           "loops": [
-            "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1"
+            {
+              "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
@@ -5836,7 +5932,10 @@
         {
           "id": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:5",
           "loops": [
-            "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:AddSubShape:Pocket.AddSubShape.brp:8",
@@ -5846,7 +5945,10 @@
         {
           "id": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:7",
           "loops": [
-            "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:AddSubShape:Pocket.AddSubShape.brp:8",
@@ -5856,7 +5958,10 @@
         {
           "id": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611",
           "loops": [
-            "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:AddSubShape:Pocket.AddSubShape.brp:8",
@@ -5866,7 +5971,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:12",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5876,7 +5984,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:17",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5886,7 +5997,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:20",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5896,8 +6010,14 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:25",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1",
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A2"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1",
+              "role": "unspecified"
+            },
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A2",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5907,7 +6027,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:27",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5917,7 +6040,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:32",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5927,7 +6053,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -5937,7 +6066,10 @@
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:7",
           "loops": [
-            "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1"
+            {
+              "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
@@ -6200,7 +6332,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:10",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1"
         },
@@ -6215,7 +6346,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:19",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1"
         },
@@ -6229,7 +6359,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:24",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1"
         },
@@ -6243,7 +6372,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:29",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1"
         },
@@ -6258,7 +6386,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:37",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1"
         },
@@ -6269,7 +6396,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:37",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A2"
         },
@@ -6283,7 +6409,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:40",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1"
         },
@@ -6297,7 +6422,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:42",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1"
         },
@@ -6311,7 +6435,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:47",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1"
         },
@@ -6322,7 +6445,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1"
         },
@@ -6337,7 +6459,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:18",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1"
         },
@@ -6351,7 +6472,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:23",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1"
         },
@@ -6365,7 +6485,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:26",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1"
         },
@@ -6380,7 +6499,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:32",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1"
         },
@@ -6391,7 +6509,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:32",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A2"
         },
@@ -6405,7 +6522,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:35",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1"
         },
@@ -6419,7 +6535,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:37",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1"
         },
@@ -6433,7 +6548,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:42",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1"
         },
@@ -6444,7 +6558,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1"
         },
@@ -6458,7 +6571,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:9",
           "id": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1"
         },
@@ -6472,7 +6584,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:12",
           "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1"
         },
@@ -6486,7 +6597,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:17",
           "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1"
         },
@@ -6500,7 +6610,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:20",
           "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1"
         },
@@ -6514,7 +6623,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22",
           "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1"
         },
@@ -6528,7 +6636,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92",
           "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1"
         },
@@ -6542,7 +6649,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7",
           "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1"
         },
@@ -6556,7 +6662,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:12",
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1"
         },
@@ -6570,7 +6675,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:17",
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1"
         },
@@ -6584,7 +6688,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:20",
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1"
         },
@@ -6598,7 +6701,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22",
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1"
         },
@@ -6612,7 +6714,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92",
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1"
         },
@@ -6626,7 +6727,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7",
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1"
         },
@@ -6640,7 +6740,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:5",
           "id": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1"
         },
@@ -6651,7 +6750,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:7",
           "id": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1"
         },
@@ -6662,7 +6760,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611",
           "id": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1"
         },
@@ -6676,7 +6773,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:12",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1"
         },
@@ -6690,7 +6786,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:17",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1"
         },
@@ -6704,7 +6799,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:20",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1"
         },
@@ -6718,7 +6812,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:25",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1"
         },
@@ -6729,7 +6822,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:25",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A2"
         },
@@ -6743,7 +6835,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:27",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1"
         },
@@ -6757,7 +6848,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:32",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1"
         },
@@ -6768,7 +6858,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1"
         },
@@ -6782,7 +6871,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:7",
           "id": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1"
         }

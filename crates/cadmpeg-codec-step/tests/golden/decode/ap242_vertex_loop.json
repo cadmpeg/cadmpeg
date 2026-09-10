@@ -24,8 +24,14 @@
         {
           "id": "step:data:face#16",
           "loops": [
-            "step:data:loop#12-face-16",
-            "step:data:loop#13-face-16"
+            {
+              "id": "step:data:loop#12-face-16",
+              "role": "outer"
+            },
+            {
+              "id": "step:data:loop#13-face-16",
+              "role": "inner"
+            }
           ],
           "sense": "forward",
           "shell": "step:data:shell#17",
@@ -39,7 +45,6 @@
             "kind": "vertex",
             "vertex": "step:data:vertex#10"
           },
-          "boundary_role": "outer",
           "face": "step:data:face#16",
           "id": "step:data:loop#12-face-16"
         },
@@ -48,7 +53,6 @@
             "kind": "vertex",
             "vertex": "step:data:vertex#11"
           },
-          "boundary_role": "inner",
           "face": "step:data:face#16",
           "id": "step:data:loop#13-face-16"
         }

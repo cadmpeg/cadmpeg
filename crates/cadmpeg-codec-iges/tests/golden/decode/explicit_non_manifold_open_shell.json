@@ -418,7 +418,10 @@
         {
           "id": "iges:model:face#D37:D31",
           "loops": [
-            "iges:model:loop#D37:D25"
+            {
+              "id": "iges:model:loop#D37:D25",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D37",
@@ -427,7 +430,10 @@
         {
           "id": "iges:model:face#D37:D33",
           "loops": [
-            "iges:model:loop#D37:D27"
+            {
+              "id": "iges:model:loop#D37:D27",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D37",
@@ -436,7 +442,10 @@
         {
           "id": "iges:model:face#D37:D35",
           "loops": [
-            "iges:model:loop#D37:D29"
+            {
+              "id": "iges:model:loop#D37:D29",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D37",
@@ -454,7 +463,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D37:D31",
           "id": "iges:model:loop#D37:D25"
         },
@@ -467,7 +475,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D37:D33",
           "id": "iges:model:loop#D37:D27"
         },
@@ -480,7 +487,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D37:D35",
           "id": "iges:model:loop#D37:D29"
         }

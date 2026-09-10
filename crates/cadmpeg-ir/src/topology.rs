@@ -14,7 +14,7 @@ use crate::math::Point3;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -345,8 +345,7 @@ pub struct Face {
     pub sense: Sense,
     /// Boundary loops. Classification lives here so a loop cannot disagree
     /// with face membership.
-    #[serde(with = "face_loops_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<LoopId>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<FaceLoopMember>"))]
     pub loops: FaceLoops,
     /// Optional display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -382,12 +381,70 @@ impl Face {
 /// Face loop ids with at most one outer loop.
 ///
 /// `Unspecified` keeps source order when the source did not classify outer
-/// versus inner. That state stays representable so CADIR JSON that emitted
-/// `boundary_role: unspecified` is unchanged.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// versus inner. Each loop travels on the wire with the role it holds on this
+/// face, so a face states its own classification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<FaceLoopMember>", into = "Vec<FaceLoopMember>")]
 pub struct FaceLoops {
     ids: Vec<LoopId>,
     classification: FaceLoopClassification,
+}
+
+/// One face-loop membership: the loop and its role on that face.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct FaceLoopMember {
+    /// Loop bounded by the owning face.
+    pub id: LoopId,
+    /// Role of the loop on the owning face.
+    pub role: LoopBoundaryRole,
+}
+
+impl TryFrom<Vec<FaceLoopMember>> for FaceLoops {
+    type Error = String;
+
+    fn try_from(members: Vec<FaceLoopMember>) -> Result<Self, Self::Error> {
+        let mut outer = None;
+        let mut classified = false;
+        for (index, member) in members.iter().enumerate() {
+            match member.role {
+                LoopBoundaryRole::Unspecified => {}
+                LoopBoundaryRole::Outer => {
+                    classified = true;
+                    if outer.is_some() {
+                        return Err("face has more than one explicit outer loop".into());
+                    }
+                    outer = Some(index);
+                }
+                LoopBoundaryRole::Inner => classified = true,
+            }
+        }
+        let ids = members.into_iter().map(|member| member.id).collect();
+        let classification = if classified {
+            FaceLoopClassification::Classified { outer }
+        } else {
+            FaceLoopClassification::Unspecified
+        };
+        Ok(Self {
+            ids,
+            classification,
+        })
+    }
+}
+
+impl From<FaceLoops> for Vec<FaceLoopMember> {
+    fn from(loops: FaceLoops) -> Self {
+        loops
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| FaceLoopMember {
+                id: id.clone(),
+                role: loops.role_of(index),
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -520,31 +577,6 @@ impl FaceLoops {
         }
     }
 
-    fn classify_from_roles(
-        &mut self,
-        roles: &HashMap<LoopId, LoopBoundaryRole>,
-    ) -> Result<(), String> {
-        let mut outer = None;
-        let mut classified = false;
-        for (index, id) in self.ids.iter().enumerate() {
-            match roles.get(id).copied().unwrap_or_default() {
-                LoopBoundaryRole::Unspecified => {}
-                LoopBoundaryRole::Outer => {
-                    classified = true;
-                    if outer.is_some() {
-                        return Err("face has more than one explicit outer loop".into());
-                    }
-                    outer = Some(index);
-                }
-                LoopBoundaryRole::Inner => classified = true,
-            }
-        }
-        if classified {
-            self.classification = FaceLoopClassification::Classified { outer };
-        }
-        Ok(())
-    }
-
     /// Role of `id` when it is a member of this face.
     #[must_use]
     pub fn role(&self, id: &LoopId) -> LoopBoundaryRole {
@@ -605,31 +637,10 @@ impl<'a> IntoIterator for &'a FaceLoops {
     }
 }
 
-mod face_loops_wire {
-    use super::{FaceLoops, LoopId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(value: &FaceLoops, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        value.ids.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<FaceLoops, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(FaceLoops::unspecified(Vec::<LoopId>::deserialize(
-            deserializer,
-        )?))
-    }
-}
-
 /// Classification of a loop within its owning face.
 ///
 /// Stored on [`FaceLoops`], not on [`Loop`], so a loop cannot disagree with
-/// face membership. Serialize still emits `boundary_role` on each loop.
+/// face membership, and carried on the wire beside the loop id it classifies.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -644,52 +655,11 @@ pub enum LoopBoundaryRole {
     Inner,
 }
 
-thread_local! {
-    static LOOP_BOUNDARY_ROLES: RefCell<HashMap<LoopId, LoopBoundaryRole>> =
-        RefCell::new(HashMap::new());
-}
-
-fn install_loop_boundary_roles(faces: &[Face]) {
-    let mut roles = HashMap::with_capacity(faces.iter().map(|face| face.loops.len()).sum());
-    for face in faces {
-        for (index, id) in face.loops.iter().enumerate() {
-            roles.insert(id.clone(), face.loops.role_of(index));
-        }
-    }
-    LOOP_BOUNDARY_ROLES.with(|slot| *slot.borrow_mut() = roles);
-}
-
-pub(crate) fn record_loop_boundary_role(id: LoopId, role: LoopBoundaryRole) {
-    LOOP_BOUNDARY_ROLES.with(|slot| {
-        slot.borrow_mut().insert(id, role);
-    });
-}
-
-pub(crate) fn rebind_face_loop_roles(faces: &mut [Face]) -> Result<(), String> {
-    let result = LOOP_BOUNDARY_ROLES.with(|slot| {
-        let roles = slot.borrow();
-        for face in faces.iter_mut() {
-            face.loops.classify_from_roles(&roles)?;
-        }
-        Ok(())
-    });
-    LOOP_BOUNDARY_ROLES.with(|slot| slot.borrow_mut().clear());
-    result
-}
-
-pub(crate) fn loop_boundary_role_for(id: &LoopId) -> LoopBoundaryRole {
-    LOOP_BOUNDARY_ROLES.with(|slot| {
-        slot.borrow()
-            .get(id)
-            .copied()
-            .unwrap_or(LoopBoundaryRole::Unspecified)
-    })
-}
-
 /// A closed boundary of a face, expressed as an ordered ring of coedges or one
 /// vertex use at a surface singularity.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Loop {
     /// Arena id.
     pub id: LoopId,
@@ -697,47 +667,6 @@ pub struct Loop {
     pub face: FaceId,
     /// Vertex-only or coedge-ring boundary.
     pub boundary: LoopBoundary,
-}
-
-#[derive(Deserialize)]
-struct LoopReadWire {
-    id: LoopId,
-    face: FaceId,
-    #[serde(default)]
-    boundary_role: LoopBoundaryRole,
-    boundary: LoopBoundary,
-}
-
-impl<'de> Deserialize<'de> for Loop {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = LoopReadWire::deserialize(deserializer)?;
-        record_loop_boundary_role(wire.id.clone(), wire.boundary_role);
-        Ok(Self {
-            id: wire.id,
-            face: wire.face,
-            boundary: wire.boundary,
-        })
-    }
-}
-
-#[derive(Serialize)]
-struct LoopWriteWire<'a> {
-    id: &'a LoopId,
-    face: &'a FaceId,
-    boundary_role: LoopBoundaryRole,
-    boundary: &'a LoopBoundary,
-}
-
-impl Serialize for Loop {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        LoopWriteWire {
-            id: &self.id,
-            face: &self.face,
-            boundary_role: loop_boundary_role_for(&self.id),
-            boundary: &self.boundary,
-        }
-        .serialize(serializer)
-    }
 }
 
 /// One ordered parameter-space representation of a coedge.
@@ -1057,36 +986,31 @@ pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> Option<(CoedgeI
         .find_map(|loop_| loop_.ring_neighbors_of(coedge))
 }
 
-/// Serialize an entity graph with loop roles and coedge neighbors derived from
-/// its owning topology. Nested calls restore the enclosing graph's context.
+/// Serialize an entity graph with coedge neighbors derived from its owning
+/// topology. Nested calls restore the enclosing graph's context.
 pub fn with_topology_serialization<T>(
-    faces: &[Face],
     loops: &[Loop],
     coedges: &[Coedge],
     serialize: impl FnOnce() -> T,
 ) -> T {
-    let _scope = TopologyWireScope::new(faces, loops, coedges);
+    let _scope = TopologyWireScope::new(loops, coedges);
     serialize()
 }
 
 pub(crate) struct TopologyWireScope {
     neighbors: HashMap<CoedgeId, (CoedgeId, CoedgeId)>,
-    roles: HashMap<LoopId, LoopBoundaryRole>,
     // A scope must restore the same thread-local state that it installed.
     _thread: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 
 impl TopologyWireScope {
-    pub(crate) fn new(faces: &[Face], loops: &[Loop], coedges: &[Coedge]) -> Self {
+    pub(crate) fn new(loops: &[Loop], coedges: &[Coedge]) -> Self {
         let neighbors = COEDGE_RING_NEIGHBORS.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
-        let roles = LOOP_BOUNDARY_ROLES.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
         let scope = Self {
             neighbors,
-            roles,
             _thread: std::marker::PhantomData,
         };
         install_coedge_ring_neighbors(loops, coedges);
-        install_loop_boundary_roles(faces);
         scope
     }
 }
@@ -1094,7 +1018,6 @@ impl TopologyWireScope {
 impl Drop for TopologyWireScope {
     fn drop(&mut self) {
         COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.neighbors));
-        LOOP_BOUNDARY_ROLES.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roles));
     }
 }
 
@@ -1464,8 +1387,8 @@ mod tests {
     }
 
     use super::{
-        with_topology_serialization, AnchoredVertexUse, Coedge, CoedgeUseCurve, Loop, LoopBoundary,
-        LoopRing,
+        with_topology_serialization, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, Loop,
+        LoopBoundary, LoopBoundaryRole, LoopRing,
     };
 
     #[test]
@@ -1557,7 +1480,6 @@ mod tests {
             ),
         };
         let encoded = with_topology_serialization(
-            &[],
             std::slice::from_ref(&loop_),
             std::slice::from_ref(&coedge),
             || serde_json::to_value(&coedge).unwrap(),
@@ -1580,10 +1502,10 @@ mod tests {
         let model = crate::examples::unit_cube().model;
         let coedge = &model.coedges[0];
         assert!(serde_json::to_value(coedge).is_err());
-        with_topology_serialization(&model.faces, &model.loops, &model.coedges, || {
+        with_topology_serialization(&model.loops, &model.coedges, || {
             let expected = serde_json::to_value(coedge).unwrap();
             let interrupted = std::panic::catch_unwind(|| {
-                with_topology_serialization(&[], &[], &[], || {
+                with_topology_serialization(&[], &[], || {
                     assert!(serde_json::to_value(coedge).is_err());
                     panic!("interrupt nested serialization");
                 });
@@ -1596,27 +1518,17 @@ mod tests {
 
     #[test]
     fn model_deserialization_restores_enclosing_topology_context() {
-        let mut model = crate::examples::unit_cube().model;
-        let loop_ = &model.loops[0];
-        model
-            .faces
-            .iter_mut()
-            .find(|face| face.id == loop_.face)
-            .unwrap()
-            .loops
-            .classify_outer(Some(&loop_.id));
+        let model = crate::examples::unit_cube().model;
+        let coedge = &model.coedges[0];
         let empty_model = serde_json::to_value(crate::document::Model::default()).unwrap();
-        with_topology_serialization(&model.faces, &model.loops, &model.coedges, || {
-            let expected = serde_json::to_value(loop_).unwrap();
+        with_topology_serialization(&model.loops, &model.coedges, || {
+            let expected = serde_json::to_value(coedge).unwrap();
             serde_json::from_value::<crate::document::Model>(empty_model.clone()).unwrap();
-            assert_eq!(serde_json::to_value(loop_).unwrap(), expected);
-            let mut conflicting_loop = expected.clone();
-            conflicting_loop["boundary_role"] = serde_json::json!("inner");
+            assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
             let mut invalid = empty_model.clone();
-            invalid["loops"] = serde_json::json!([conflicting_loop]);
             invalid["vertices"] = serde_json::json!("invalid");
             assert!(serde_json::from_value::<crate::document::Model>(invalid).is_err());
-            assert_eq!(serde_json::to_value(loop_).unwrap(), expected);
+            assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
         });
     }
 
@@ -1659,7 +1571,6 @@ mod tests {
         let json = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
-            "boundary_role": "outer",
             "boundary": {
                 "kind": "vertex",
                 "vertex": "test:model:vertex#0"
@@ -1679,7 +1590,6 @@ mod tests {
         let json = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
-            "boundary_role": "outer",
             "boundary": {
                 "kind": "ring",
                 "coedges": ["test:model:coedge#0"],
@@ -1699,7 +1609,6 @@ mod tests {
         let anchored_vertex = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
-            "boundary_role": "outer",
             "boundary": {
                 "kind": "vertex",
                 "vertex": "test:model:vertex#0",
@@ -1714,7 +1623,6 @@ mod tests {
         let ring_without_anchor = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
-            "boundary_role": "outer",
             "boundary": {
                 "kind": "ring",
                 "coedges": ["test:model:coedge#0"],
@@ -1726,7 +1634,6 @@ mod tests {
         let bogus = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
-            "boundary_role": "outer",
             "boundary": {
                 "kind": "ring",
                 "coedges": ["test:model:coedge#0"],
@@ -1737,5 +1644,85 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
+    }
+
+    #[test]
+    fn every_face_loop_carries_its_role_on_the_wire() {
+        let mut model = crate::examples::unit_cube().model;
+        let face = &mut model.faces[0];
+        let outer = face.loops.as_slice()[0].clone();
+        face.loops.classify_outer(Some(&outer));
+        let wire = serde_json::to_value(&*face).unwrap();
+        let members = wire["loops"].as_array().expect("a loops array");
+        assert_eq!(members[0]["id"], serde_json::json!(outer.as_str()));
+        assert_eq!(members[0]["role"], serde_json::json!("outer"));
+        for member in &members[1..] {
+            assert_eq!(member["role"], serde_json::json!("inner"));
+        }
+        let restored: Face = serde_json::from_value(wire).unwrap();
+        assert_eq!(restored.loop_role(&outer), LoopBoundaryRole::Outer);
+        assert_eq!(restored.outer(), Some(&outer));
+    }
+
+    #[test]
+    fn an_unclassified_face_states_unspecified_on_every_loop() {
+        let model = crate::examples::unit_cube().model;
+        let face = &model.faces[0];
+        assert!(face.loops.is_unspecified());
+        let wire = serde_json::to_value(face).unwrap();
+        for member in wire["loops"].as_array().expect("a loops array") {
+            assert_eq!(member["role"], serde_json::json!("unspecified"));
+        }
+        let restored: Face = serde_json::from_value(wire).unwrap();
+        assert!(restored.loops.is_unspecified());
+    }
+
+    #[test]
+    fn a_face_with_two_outer_loops_has_no_encoding() {
+        let wire = serde_json::json!({
+            "id": "test:model:face#0",
+            "shell": "test:model:shell#0",
+            "surface": "test:model:surface#0",
+            "sense": "forward",
+            "loops": [
+                {"id": "test:model:loop#0", "role": "outer"},
+                {"id": "test:model:loop#1", "role": "outer"},
+            ]
+        });
+        let error = serde_json::from_value::<Face>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("more than one explicit outer loop"), "{error}");
+    }
+
+    #[test]
+    fn a_face_loop_member_rejects_an_unknown_key_by_name() {
+        let wire = serde_json::json!({
+            "id": "test:model:face#0",
+            "shell": "test:model:shell#0",
+            "surface": "test:model:surface#0",
+            "sense": "forward",
+            "loops": [
+                {"id": "test:model:loop#0", "role": "outer", "zz_bogus": 1},
+            ]
+        });
+        let error = serde_json::from_value::<Face>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+    }
+
+    #[test]
+    fn a_loop_record_states_no_role_of_its_own() {
+        let wire = serde_json::json!({
+            "id": "test:model:loop#0",
+            "face": "test:model:face#0",
+            "boundary_role": "outer",
+            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0" }
+        });
+        let error = serde_json::from_value::<Loop>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("boundary_role"), "{error}");
     }
 }

@@ -1013,7 +1013,10 @@
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
@@ -1023,7 +1026,10 @@
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:20",
           "loops": [
-            "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
@@ -1033,7 +1039,10 @@
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:24",
           "loops": [
-            "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%3A1"
+            {
+              "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
@@ -1043,7 +1052,10 @@
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:28",
           "loops": [
-            "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%3A1"
+            {
+              "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
@@ -1053,7 +1065,10 @@
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:30",
           "loops": [
-            "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%3A1"
+            {
+              "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
@@ -1063,7 +1078,10 @@
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:32",
           "loops": [
-            "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%3A1"
+            {
+              "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
@@ -1109,7 +1127,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:10",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%3A1"
         },
@@ -1123,7 +1140,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:20",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%3A1"
         },
@@ -1137,7 +1153,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:24",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%3A1"
         },
@@ -1151,7 +1166,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:28",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%3A1"
         },
@@ -1165,7 +1179,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:30",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%3A1"
         },
@@ -1179,7 +1192,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:32",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%3A1"
         }

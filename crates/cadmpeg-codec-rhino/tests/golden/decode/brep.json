@@ -196,7 +196,10 @@
         {
           "id": "rhino:object:face#record-000000-offset-177.slot-0",
           "loops": [
-            "rhino:object:loop#record-000000-offset-177.slot-0"
+            {
+              "id": "rhino:object:loop#record-000000-offset-177.slot-0",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "rhino:object:shell#record-000000-offset-177.component-0",
@@ -214,7 +217,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "rhino:object:face#record-000000-offset-177.slot-0",
           "id": "rhino:object:loop#record-000000-offset-177.slot-0"
         }

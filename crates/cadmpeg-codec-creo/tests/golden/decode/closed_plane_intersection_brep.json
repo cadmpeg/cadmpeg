@@ -375,7 +375,10 @@
         {
           "id": "creo:visibgeom:face#1",
           "loops": [
-            "creo:visibgeom:loop#1"
+            {
+              "id": "creo:visibgeom:loop#1",
+              "role": "outer"
+            }
           ],
           "sense": "reversed",
           "shell": "creo:visibgeom:shell#1",
@@ -384,7 +387,10 @@
         {
           "id": "creo:visibgeom:face#2",
           "loops": [
-            "creo:visibgeom:loop#2"
+            {
+              "id": "creo:visibgeom:loop#2",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "creo:visibgeom:shell#1",
@@ -393,7 +399,10 @@
         {
           "id": "creo:visibgeom:face#3",
           "loops": [
-            "creo:visibgeom:loop#3"
+            {
+              "id": "creo:visibgeom:loop#3",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "creo:visibgeom:shell#1",
@@ -402,7 +411,10 @@
         {
           "id": "creo:visibgeom:face#4",
           "loops": [
-            "creo:visibgeom:loop#4"
+            {
+              "id": "creo:visibgeom:loop#4",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "creo:visibgeom:shell#1",
@@ -470,7 +482,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "creo:visibgeom:face#1",
           "id": "creo:visibgeom:loop#1"
         },
@@ -483,7 +494,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "creo:visibgeom:face#2",
           "id": "creo:visibgeom:loop#2"
         },
@@ -496,7 +506,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "creo:visibgeom:face#3",
           "id": "creo:visibgeom:loop#3"
         },
@@ -509,7 +518,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "creo:visibgeom:face#4",
           "id": "creo:visibgeom:loop#4"
         }

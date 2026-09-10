@@ -25,7 +25,10 @@
         {
           "id": "iges:model:face#D11:D9",
           "loops": [
-            "iges:model:loop#D11:D7"
+            {
+              "id": "iges:model:loop#D11:D7",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D11",
@@ -39,7 +42,6 @@
             "kind": "vertex",
             "vertex": "iges:model:vertex#D11:D5:1"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D11:D9",
           "id": "iges:model:loop#D11:D7"
         }

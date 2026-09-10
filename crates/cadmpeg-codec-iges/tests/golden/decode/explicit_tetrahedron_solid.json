@@ -402,7 +402,10 @@
         {
           "id": "iges:model:face#D55:D53:D45",
           "loops": [
-            "iges:model:loop#D55:D53:D37"
+            {
+              "id": "iges:model:loop#D55:D53:D37",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D55:D53",
@@ -411,7 +414,10 @@
         {
           "id": "iges:model:face#D55:D53:D47",
           "loops": [
-            "iges:model:loop#D55:D53:D39"
+            {
+              "id": "iges:model:loop#D55:D53:D39",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D55:D53",
@@ -420,7 +426,10 @@
         {
           "id": "iges:model:face#D55:D53:D49",
           "loops": [
-            "iges:model:loop#D55:D53:D41"
+            {
+              "id": "iges:model:loop#D55:D53:D41",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D55:D53",
@@ -429,7 +438,10 @@
         {
           "id": "iges:model:face#D55:D53:D51",
           "loops": [
-            "iges:model:loop#D55:D53:D43"
+            {
+              "id": "iges:model:loop#D55:D53:D43",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D55:D53",
@@ -447,7 +459,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D55:D53:D45",
           "id": "iges:model:loop#D55:D53:D37"
         },
@@ -460,7 +471,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D55:D53:D47",
           "id": "iges:model:loop#D55:D53:D39"
         },
@@ -473,7 +483,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D55:D53:D49",
           "id": "iges:model:loop#D55:D53:D41"
         },
@@ -486,7 +495,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D55:D53:D51",
           "id": "iges:model:loop#D55:D53:D43"
         }

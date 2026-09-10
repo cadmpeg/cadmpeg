@@ -321,8 +321,14 @@
         {
           "id": "rhino:object:face#record-000000-offset-177.cap-0",
           "loops": [
-            "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
-            "rhino:object:loop#record-000000-offset-177.cap-0.profile-1"
+            {
+              "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
+              "role": "unspecified"
+            },
+            {
+              "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "rhino:object:shell#record-000000-offset-177.cap-0",
@@ -331,8 +337,14 @@
         {
           "id": "rhino:object:face#record-000000-offset-177.cap-1",
           "loops": [
-            "rhino:object:loop#record-000000-offset-177.cap-1.profile-0",
-            "rhino:object:loop#record-000000-offset-177.cap-1.profile-1"
+            {
+              "id": "rhino:object:loop#record-000000-offset-177.cap-1.profile-0",
+              "role": "unspecified"
+            },
+            {
+              "id": "rhino:object:loop#record-000000-offset-177.cap-1.profile-1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "rhino:object:shell#record-000000-offset-177.cap-1",
@@ -348,7 +360,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "rhino:object:face#record-000000-offset-177.cap-0",
           "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0"
         },
@@ -359,7 +370,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "rhino:object:face#record-000000-offset-177.cap-0",
           "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-1"
         },
@@ -370,7 +380,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "rhino:object:face#record-000000-offset-177.cap-1",
           "id": "rhino:object:loop#record-000000-offset-177.cap-1.profile-0"
         },
@@ -381,7 +390,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "rhino:object:face#record-000000-offset-177.cap-1",
           "id": "rhino:object:loop#record-000000-offset-177.cap-1.profile-1"
         }

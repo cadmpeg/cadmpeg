@@ -334,8 +334,14 @@
         {
           "id": "iges:model:face#D15",
           "loops": [
-            "iges:model:loop#D15:0",
-            "iges:model:loop#D15:1"
+            {
+              "id": "iges:model:loop#D15:0",
+              "role": "outer"
+            },
+            {
+              "id": "iges:model:loop#D15:1",
+              "role": "inner"
+            }
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D15",
@@ -352,7 +358,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "iges:model:face#D15",
           "id": "iges:model:loop#D15:0"
         },
@@ -363,7 +368,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "inner",
           "face": "iges:model:face#D15",
           "id": "iges:model:loop#D15:1"
         }

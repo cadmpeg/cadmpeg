@@ -136,7 +136,10 @@
         {
           "id": "sldprt:brep:face#10@block@250",
           "loops": [
-            "sldprt:brep:loop#20@block@250"
+            {
+              "id": "sldprt:brep:loop#20@block@250",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "sldprt:brep:shell#0@block@250",
@@ -145,7 +148,10 @@
         {
           "id": "sldprt:brep:face#10@block@8",
           "loops": [
-            "sldprt:brep:loop#20@block@8"
+            {
+              "id": "sldprt:brep:loop#20@block@8",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "sldprt:brep:shell#0@block@8",
@@ -163,7 +169,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "sldprt:brep:face#10@block@250",
           "id": "sldprt:brep:loop#20@block@250"
         },
@@ -176,7 +181,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "sldprt:brep:face#10@block@8",
           "id": "sldprt:brep:loop#20@block@8"
         }
