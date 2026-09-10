@@ -378,7 +378,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.table_class_id = 29;
-    table.entries[3].payload = crate::feature::EntryPayload::Plain { class: 201 };
+    table.entries[3].payload = crate::feature::EntryPayload::Plain {
+        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),

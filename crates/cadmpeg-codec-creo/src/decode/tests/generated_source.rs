@@ -188,7 +188,9 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     let mut wrong_class = table.clone();
-    wrong_class.entries[2].payload = crate::feature::EntryPayload::Plain { class: 201 };
+    wrong_class.entries[2].payload = crate::feature::EntryPayload::Plain {
+        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert_eq!(
         generated_surface_id_for_feature(&[wrong_class], 17, 9),
         None
