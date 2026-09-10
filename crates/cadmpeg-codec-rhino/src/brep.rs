@@ -251,6 +251,45 @@ pub(crate) struct RawBrepRegion {
 }
 
 /// Parsed Brep data before semantic validation.
+/// The `ON_Brep` solid state a stored flag names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SolidState {
+    Open,
+    Closed,
+    ClosedManifold,
+}
+
+/// The `ON_Brep` solid flag as the archive carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RawSolidFlag {
+    /// The archive minor version predates the flag, so no flag was written.
+    Unstamped,
+    Known(SolidState),
+    /// A written flag outside the documented set, retained for native fidelity.
+    OutOfRange(i32),
+}
+
+impl RawSolidFlag {
+    fn parse(value: i32) -> Self {
+        match value {
+            0 => Self::Known(SolidState::Open),
+            1 => Self::Known(SolidState::Closed),
+            2 => Self::Known(SolidState::ClosedManifold),
+            other => Self::OutOfRange(other),
+        }
+    }
+
+    fn stored(self) -> Option<i32> {
+        match self {
+            Self::Unstamped => None,
+            Self::Known(SolidState::Open) => Some(0),
+            Self::Known(SolidState::Closed) => Some(1),
+            Self::Known(SolidState::ClosedManifold) => Some(2),
+            Self::OutOfRange(value) => Some(value),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RawBrep {
     /// Typed losses raised while selecting writer-version-dependent layouts.
@@ -280,7 +319,7 @@ pub(crate) struct RawBrep {
     /// Analysis mesh cache slots.
     pub(crate) analysis_meshes: Vec<Option<RawBrepMesh>>,
     /// Raw solid state, normalized only by validation.
-    pub(crate) is_solid: Option<i32>,
+    pub(crate) is_solid: RawSolidFlag,
     /// Region face sides.
     pub(crate) face_sides: Vec<RawBrepFaceSide>,
     /// Regions.
@@ -557,15 +596,17 @@ fn body_kind(
                 .count()
                 == 2
         });
-    let kind = serialized_body_kind(raw.minor, raw.is_solid, writer_version, closed);
-    let loss = body_kind_rests_on_missing_stamp(raw.minor, raw.is_solid, writer_version, closed)
-        .then(|| {
-            crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(format!(
-                "Brep body kind gauge substituted: stored solid flag {} was trusted over the \
-                 closed-shell gauge because the writer-version stamp is absent",
-                raw.is_solid.unwrap_or(-1)
-            ))
-        });
+    let kind = serialized_body_kind(raw.is_solid, writer_version, closed);
+    let loss = body_kind_rests_on_missing_stamp(raw.is_solid, writer_version, closed).then(|| {
+        let stored = match raw.is_solid.stored() {
+            Some(value) => value.to_string(),
+            None => "absent".to_owned(),
+        };
+        crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(format!(
+            "Brep body kind gauge substituted: stored solid flag {stored} was trusted over the \
+             closed-shell gauge because the writer-version stamp is absent"
+        ))
+    });
     (kind, loss)
 }
 
@@ -580,37 +621,34 @@ const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;
 /// compares the two readings of the same bytes and reports only a disagreement:
 /// where both readings pick the same body kind nothing was substituted.
 fn body_kind_rests_on_missing_stamp(
-    minor: u8,
-    is_solid: Option<i32>,
+    is_solid: RawSolidFlag,
     writer_version: Option<i64>,
     closed: bool,
 ) -> bool {
     writer_version.is_none()
-        && serialized_body_kind(minor, is_solid, None, closed)
-            != serialized_body_kind(minor, is_solid, Some(SOLID_FLAG_WRITER_VERSION - 1), closed)
+        && serialized_body_kind(is_solid, None, closed)
+            != serialized_body_kind(is_solid, Some(SOLID_FLAG_WRITER_VERSION - 1), closed)
 }
 
 fn serialized_body_kind(
-    minor: u8,
-    is_solid: Option<i32>,
+    is_solid: RawSolidFlag,
     writer_version: Option<i64>,
     closed: bool,
 ) -> BrepBodyKind {
-    let stored = (minor >= 2
-        && writer_version.is_none_or(|version| version >= SOLID_FLAG_WRITER_VERSION))
-    .then_some(is_solid)
-    .flatten();
-    match stored {
-        Some(1 | 2) => BrepBodyKind::Solid,
-        Some(0) => {
-            if closed {
-                BrepBodyKind::Solid
-            } else {
-                BrepBodyKind::Sheet
-            }
+    let trusted = writer_version.is_none_or(|version| version >= SOLID_FLAG_WRITER_VERSION);
+    let shell_gauge = if closed {
+        BrepBodyKind::Solid
+    } else {
+        BrepBodyKind::Sheet
+    };
+    match is_solid {
+        RawSolidFlag::Known(state) if trusted => match state {
+            SolidState::Closed | SolidState::ClosedManifold => BrepBodyKind::Solid,
+            SolidState::Open => shell_gauge,
+        },
+        RawSolidFlag::Known(_) | RawSolidFlag::Unstamped | RawSolidFlag::OutOfRange(_) => {
+            shell_gauge
         }
-        _ if closed => BrepBodyKind::Solid,
-        _ => BrepBodyKind::Sheet,
     }
 }
 
@@ -703,17 +741,15 @@ pub(crate) fn parse(
         (Vec::new(), Vec::new())
     };
     let is_solid = if minor >= 2 {
-        let value = reader.i32()?;
-        if (0..=2).contains(&value) {
-            Some(value)
-        } else {
+        let flag = RawSolidFlag::parse(reader.i32()?);
+        if let RawSolidFlag::OutOfRange(value) = flag {
             warnings.push(format!(
                 "invalid Brep is_solid value {value}; retained for native fidelity"
             ));
-            Some(value)
         }
+        flag
     } else {
-        None
+        RawSolidFlag::Unstamped
     };
     let (mut face_sides, mut regions, _, inline_region_loaded) = if minor >= 3 {
         read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
@@ -1226,7 +1262,7 @@ fn parse_legacy_major2(
         bounds,
         render_meshes,
         analysis_meshes,
-        is_solid: None,
+        is_solid: RawSolidFlag::Unstamped,
         face_sides: Vec::new(),
         regions: Vec::new(),
         source_range: range,
@@ -2871,7 +2907,7 @@ mod tests {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            is_solid: None,
+            is_solid: RawSolidFlag::Unstamped,
             face_sides: Vec::new(),
             regions: Vec::new(),
             source_range: 0..0,
@@ -2881,35 +2917,55 @@ mod tests {
     #[test]
     fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
         assert_eq!(
-            serialized_body_kind(2, Some(1), Some(200_210_020), false),
+            serialized_body_kind(
+                RawSolidFlag::Known(SolidState::Closed),
+                Some(200_210_020),
+                false
+            ),
             BrepBodyKind::Solid
         );
         assert_eq!(
-            serialized_body_kind(2, Some(2), Some(200_210_020), false),
+            serialized_body_kind(
+                RawSolidFlag::Known(SolidState::ClosedManifold),
+                Some(200_210_020),
+                false
+            ),
             BrepBodyKind::Solid
         );
         assert_eq!(
-            serialized_body_kind(2, Some(3), Some(200_210_020), false),
+            serialized_body_kind(RawSolidFlag::OutOfRange(3), Some(200_210_020), false),
             BrepBodyKind::Sheet
         );
         assert_eq!(
-            serialized_body_kind(2, Some(3), Some(200_210_020), true),
+            serialized_body_kind(RawSolidFlag::OutOfRange(3), Some(200_210_020), true),
             BrepBodyKind::Solid
         );
         assert_eq!(
-            serialized_body_kind(2, Some(0), Some(200_210_020), true),
+            serialized_body_kind(
+                RawSolidFlag::Known(SolidState::Open),
+                Some(200_210_020),
+                true
+            ),
             BrepBodyKind::Solid
         );
         assert_eq!(
-            serialized_body_kind(2, Some(0), Some(200_210_020), false),
+            serialized_body_kind(
+                RawSolidFlag::Known(SolidState::Open),
+                Some(200_210_020),
+                false
+            ),
             BrepBodyKind::Sheet
         );
         assert_eq!(
-            serialized_body_kind(1, Some(1), Some(200_210_020), true),
+            serialized_body_kind(RawSolidFlag::Unstamped, Some(200_210_020), true),
             BrepBodyKind::Solid
         );
         assert_eq!(
-            serialized_body_kind(2, Some(1), Some(200_210_019), false),
+            serialized_body_kind(
+                RawSolidFlag::Known(SolidState::Closed),
+                Some(200_210_019),
+                false
+            ),
             BrepBodyKind::Sheet
         );
     }
@@ -2922,29 +2978,47 @@ mod tests {
     #[test]
     fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
         assert_eq!(
-            serialized_body_kind(2, Some(1), None, false),
+            serialized_body_kind(RawSolidFlag::Known(SolidState::Closed), None, false),
             BrepBodyKind::Solid
         );
-        assert!(body_kind_rests_on_missing_stamp(2, Some(1), None, false));
-        assert!(body_kind_rests_on_missing_stamp(2, Some(2), None, false));
+        assert!(body_kind_rests_on_missing_stamp(
+            RawSolidFlag::Known(SolidState::Closed),
+            None,
+            false
+        ));
+        assert!(body_kind_rests_on_missing_stamp(
+            RawSolidFlag::Known(SolidState::ClosedManifold),
+            None,
+            false
+        ));
 
         // A modern stamp vouches for the same flag: the reading is verified.
         assert!(!body_kind_rests_on_missing_stamp(
-            2,
-            Some(1),
+            RawSolidFlag::Known(SolidState::Closed),
             Some(200_210_020),
             false
         ));
         // Both readings agree, so no kind was substituted.
-        assert!(!body_kind_rests_on_missing_stamp(2, Some(1), None, true));
-        assert!(!body_kind_rests_on_missing_stamp(2, Some(0), None, false));
-        assert!(!body_kind_rests_on_missing_stamp(2, None, None, false));
-        assert!(!body_kind_rests_on_missing_stamp(1, Some(1), None, false));
+        assert!(!body_kind_rests_on_missing_stamp(
+            RawSolidFlag::Known(SolidState::Closed),
+            None,
+            true
+        ));
+        assert!(!body_kind_rests_on_missing_stamp(
+            RawSolidFlag::Known(SolidState::Open),
+            None,
+            false
+        ));
+        assert!(!body_kind_rests_on_missing_stamp(
+            RawSolidFlag::Unstamped,
+            None,
+            false
+        ));
 
         // The whole-record path reports the substitution as a typed loss.
         let mut raw = one_face_raw();
         raw.minor = 2;
-        raw.is_solid = Some(1);
+        raw.is_solid = RawSolidFlag::Known(SolidState::Closed);
         let validated = ValidatedRawBrep::try_new(raw).expect("valid Brep");
         let (kind, substituted) = validated.body_kind(None);
         assert_eq!(kind, BrepBodyKind::Solid);
@@ -3023,7 +3097,7 @@ mod tests {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            is_solid: None,
+            is_solid: RawSolidFlag::Unstamped,
             face_sides: Vec::new(),
             regions: Vec::new(),
             source_range: 0..0,
