@@ -1509,21 +1509,21 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .find(|entity| entity.ordinal() == ordinal)
             .unwrap()
     };
-    assert_eq!(by_ordinal(0).kind, SketchInputKind::Point);
+    assert_eq!(by_ordinal(0).kind(), SketchInputKind::Point);
     assert_eq!(
-        by_ordinal(1).kind,
+        by_ordinal(1).kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Distance)
     );
     assert_eq!(
-        by_ordinal(2).kind,
+        by_ordinal(2).kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Angle)
     );
     assert_eq!(
-        by_ordinal(3).kind,
+        by_ordinal(3).kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Radius)
     );
     assert_eq!(
-        by_ordinal(4).kind,
+        by_ordinal(4).kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident)
     );
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
@@ -1532,7 +1532,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .iter_mut()
             .find(|entity| entity.ordinal() == 1)
             .unwrap();
-        entity.kind = SketchInputKind::from_native_code(5);
+        entity.reclassify(SketchInputKind::from_native_code(5));
         entity.state_value = Some(12.5);
     });
 
@@ -1556,7 +1556,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .unwrap();
     let entity = &sldprt_native(regenerated.ir()).feature_input_lanes[0].sketch_entities[1];
     assert_eq!(
-        entity.kind,
+        entity.kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
     );
     assert_eq!(entity.state_value, Some(12.5));
@@ -1566,7 +1566,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .iter()
             .find(|entity| entity.ordinal() == 1)
             .unwrap()
-            .kind,
+            .kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
     );
 }

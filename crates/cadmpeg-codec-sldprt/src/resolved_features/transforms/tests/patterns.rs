@@ -1009,14 +1009,14 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .map(|marker| {
             let [u, v] = marker.coordinates_m.unwrap();
             SketchEntity::new(
-                SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id)).unwrap(),
+                SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id())).unwrap(),
                 sketch.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
                 })
                 .unwrap(),
             )
-            .with_native_ref(Some(marker.id.clone()))
+            .with_native_ref(Some(marker.id().to_string()))
         })
         .collect::<Vec<_>>();
     let operand = |offset: u64, index: u16| FeatureInputOperand {
@@ -1655,7 +1655,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci = profile_loci_by_marker(
         std::slice::from_ref(&feature),

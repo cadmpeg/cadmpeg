@@ -1069,9 +1069,9 @@ pub(crate) enum FeatureInputClassRole {
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
+    id: String,
     /// Owning feature-input lane record id.
-    pub(crate) parent: String,
+    parent: String,
     /// Native history feature whose serialized object interval contains this marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) feature_ref: Option<String>,
@@ -1086,7 +1086,7 @@ pub(crate) struct SketchInputEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
-    pub(crate) kind: SketchInputKind,
+    kind: SketchInputKind,
     /// Finite little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<f64>,
@@ -1201,6 +1201,39 @@ mod sketch_input_links_wire {
 impl SketchInputEntity {
     pub(crate) fn links(&self) -> &[SketchInputLink] {
         self.links.as_ref().map_or(&[], SketchInputLinks::entries)
+    }
+
+    /// Globally unique deterministic identifier for this native record.
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Owning feature-input lane record id.
+    pub(crate) fn parent(&self) -> &str {
+        &self.parent
+    }
+
+    /// Sketch-entity kind this marker identifies.
+    pub(crate) fn kind(&self) -> SketchInputKind {
+        self.kind
+    }
+
+    /// Reclassifies this marker once its payload neighbourhood identifies a
+    /// narrower entity family than the marker prefix alone.
+    pub(crate) fn reclassify(&mut self, kind: SketchInputKind) {
+        self.kind = kind;
+    }
+
+    #[cfg(test)]
+    /// Sets the record identity on a cloned fixture.
+    pub(crate) fn set_test_id(&mut self, id: impl Into<String>) {
+        self.id = id.into();
+    }
+
+    #[cfg(test)]
+    /// Sets the owning lane on a cloned fixture.
+    pub(crate) fn set_test_parent(&mut self, parent: impl Into<String>) {
+        self.parent = parent.into();
     }
 
     pub(crate) fn ordinal(&self) -> u32 {
@@ -1996,6 +2029,21 @@ mod tests {
         assert!(error
             .to_string()
             .contains("is not a marker in native_payload"));
+        let mut absent = wire.clone();
+        let entity = absent["sketch_entities"][0]
+            .as_object_mut()
+            .expect("entity object");
+        entity.remove("links");
+        entity.remove("link_selector");
+        let restored: FeatureInputLane =
+            serde_json::from_value(absent.clone()).expect("linkless round trip");
+        assert!(restored.sketch_entities[0].links.is_none());
+        assert_eq!(
+            serde_json::to_value(&restored).expect("lane JSON"),
+            absent,
+            "an entity with no links round-trips with both keys absent"
+        );
+
         let mut renamed = wire;
         renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
         let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();

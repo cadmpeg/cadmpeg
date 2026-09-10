@@ -263,7 +263,7 @@ fn current_compact_spatial_points_decode_without_object_indices() {
         let [entity] = entities.as_slice() else {
             panic!("expected one compact spatial point marker");
         };
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
         assert_eq!(entity.object_index(), None);
     }
 
@@ -309,7 +309,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     assert_eq!(sketch_entities[3].object_index(), None);
     for entity in &mut sketch_entities {
         entity.feature_ref = Some(native_ref.into());
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
     }
 
     let lane = FeatureInputLane {
@@ -413,7 +413,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     );
     for entity in &mut sketch_entities {
         entity.feature_ref = Some(native_ref.into());
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
     }
 
     let lane = FeatureInputLane {
@@ -839,12 +839,12 @@ fn terminal_wide_geometry_locus_coordinate_record_is_a_point() {
         let [entity] = entities.as_slice() else {
             panic!("expected one marker entity");
         };
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
         assert_eq!(entity.coordinates_m, Some([0.025, -0.004]));
 
         payload[134..138].copy_from_slice(&6u32.to_le_bytes());
         assert_eq!(
-            sketch_input_entities(&payload, "lane")[0].kind,
+            sketch_input_entities(&payload, "lane")[0].kind(),
             SketchInputKind::Point
         );
         payload[133] = 1;
@@ -871,12 +871,12 @@ fn compact_legacy_profile_coordinate_pairings_carry_points() {
     assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].kind, SketchInputKind::Point);
+    assert_eq!(entities[0].kind(), SketchInputKind::Point);
 
     payload[19..23].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -903,7 +903,7 @@ fn packed_legacy_geometry_locus_carries_profile_coordinates() {
     assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].kind, SketchInputKind::Point);
+    assert_eq!(entities[0].kind(), SketchInputKind::Point);
     assert_eq!(entities[0].coordinates_m, Some([0.025, -0.004]));
     assert_eq!(entities[0].state_value, Some(1.0));
 }
@@ -924,7 +924,7 @@ fn compact_profile_curve_role_distinguishes_non_coordinate_lines() {
 
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].coordinates_m, None);
-    assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 }
 
 #[test]
@@ -974,7 +974,7 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
 
     assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
     let entities = sketch_input_entities(&payload, "lane");
-    assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[17..21].copy_from_slice(&0u32.to_le_bytes());
@@ -986,7 +986,7 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
     assert_eq!(marker_coordinates(&payload, 0), None);
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(
-        entities[0].kind,
+        entities[0].kind(),
         SketchInputKind::Relation(SketchRelationKind::Distance)
     );
 
@@ -994,7 +994,7 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
     payload[27..29].copy_from_slice(&1u16.to_le_bytes());
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(
-        entities[0].kind,
+        entities[0].kind(),
         SketchInputKind::Relation(SketchRelationKind::Horizontal)
     );
 
@@ -1028,7 +1028,7 @@ fn compact_legacy_coordinate_value_one_is_a_profile_vertex() {
     let [entity] = entities.as_slice() else {
         panic!("expected one compact marker");
     };
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
 }
 
 #[test]
@@ -1092,7 +1092,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
             .iter()
             .find(|entity| entity.offset() == offset as u64)
             .expect("linked profile point");
-        assert_eq!(point.kind, SketchInputKind::Point);
+        assert_eq!(point.kind(), SketchInputKind::Point);
         assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
     }
     payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -1104,7 +1104,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&payload, "lane")[0].kind,
+        super::sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -1119,7 +1119,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 4)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&payload, "lane")[0].kind,
+        super::sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[offset + 17..offset + 21].fill(0);
@@ -1162,7 +1162,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .iter()
         .find(|entity| entity.offset() == offset as u64)
         .expect("extended-tail linked profile point");
-    assert_eq!(point.kind, SketchInputKind::Point);
+    assert_eq!(point.kind(), SketchInputKind::Point);
     assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
 
     extended[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -1172,7 +1172,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&extended, "lane")[0].kind,
+        super::sketch_input_entities(&extended, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -1185,7 +1185,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&extended, "lane")[0].kind,
+        super::sketch_input_entities(&extended, "lane")[0].kind(),
         SketchInputKind::Point
     );
     extended[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -1249,7 +1249,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .into_iter()
         .find(|entity| entity.offset() == offset as u64)
         .expect("legacy geometry linked profile point");
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
 }
 

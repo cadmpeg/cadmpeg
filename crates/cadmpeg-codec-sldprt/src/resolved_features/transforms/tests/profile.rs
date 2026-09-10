@@ -32,17 +32,17 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     let mut center = marker("center", Some([0.0025, 0.0025]));
     center = center.with_test_identity(Some(1), center.local_id());
     let mut distance_handle = marker("distance-handle", None);
-    distance_handle.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    distance_handle.reclassify(SketchInputKind::Relation(SketchRelationKind::Distance));
     distance_handle.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 2,
-            entity_ref: center.id.clone(),
+            entity_ref: center.id().to_string(),
         }],
     );
     let markers = [&corner, &center, &distance_handle]
         .into_iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = FeatureInputRelationInstance {
         id: "dimension".into(),
@@ -94,7 +94,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         })
         .unwrap(),
     )
-    .with_native_ref(Some(corner.id.clone()))];
+    .with_native_ref(Some(corner.id().to_string()))];
 
     assert_eq!(
         doubled_profile_distance_loci(&relation, 0, 1, &sketch, &parameter, &entities, &markers,),
@@ -106,7 +106,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
 
     let markers_without_handle = [&corner, &center]
         .into_iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         doubled_profile_distance_loci(
@@ -258,20 +258,20 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
 fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     let mut first = marker("arc", Some([0.0, 0.0]));
     first = first.with_test_position(first.ordinal(), 10);
-    first.kind = SketchInputKind::Arc;
+    first.reclassify(SketchInputKind::Arc);
     let mut second = marker("point", Some([1.0, 0.0]));
     second = second.with_test_position(second.ordinal(), 20);
     let mut third = marker("line", Some([2.0, 0.0]));
     third = third.with_test_position(third.ordinal(), 30);
-    third.kind = SketchInputKind::LineOrCircle;
+    third.reclassify(SketchInputKind::LineOrCircle);
     let mut fourth = marker("constrained-point", Some([3.0, 0.0]));
     fourth = fourth.with_test_position(fourth.ordinal(), 40);
-    fourth.kind = SketchInputKind::ConstrainedPoint;
+    fourth.reclassify(SketchInputKind::ConstrainedPoint);
     let markers = HashMap::from([
-        (first.id.as_str(), &first),
-        (second.id.as_str(), &second),
-        (third.id.as_str(), &third),
-        (fourth.id.as_str(), &fourth),
+        (first.id(), &first),
+        (second.id(), &second),
+        (third.id(), &third),
+        (fourth.id(), &fourth),
     ]);
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
@@ -419,7 +419,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     curve.feature_ref = Some("sketch-native".into());
     curve = curve.with_test_position(1, curve.offset());
     curve = curve.with_test_position(curve.ordinal(), 200);
-    curve.kind = SketchInputKind::LineOrCircle;
+    curve.reclassify(SketchInputKind::LineOrCircle);
     let mut endpoint = marker("endpoint", Some([0.005, 0.006]));
     endpoint.feature_ref = Some("sketch-native".into());
     endpoint = endpoint.with_test_position(2, endpoint.offset());
@@ -429,7 +429,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     arc.feature_ref = Some("sketch-native".into());
     arc = arc.with_test_position(3, arc.offset());
     arc = arc.with_test_position(arc.ordinal(), 3);
-    arc.kind = SketchInputKind::Arc;
+    arc.reclassify(SketchInputKind::Arc);
     let mut arc_start = marker("arc-start", Some([0.001, 0.0]));
     arc_start.feature_ref = Some("sketch-native".into());
     arc_start = arc_start.with_test_position(4, arc_start.offset());
@@ -438,7 +438,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         0,
         vec![SketchInputLink {
             local_id: 4,
-            entity_ref: arc.id.clone(),
+            entity_ref: arc.id().to_string(),
         }],
     );
     let mut arc_end = marker("arc-end", Some([0.0, 0.001]));
@@ -467,7 +467,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         line.feature_ref = Some("sketch-native".into());
         line = line.with_test_position(ordinal, line.offset());
         line = line.with_test_position(line.ordinal(), offset);
-        line.kind = SketchInputKind::LineOrCircle;
+        line.reclassify(SketchInputKind::LineOrCircle);
         line.links = crate::records::SketchInputLinks::new(
             0,
             vec![
@@ -492,7 +492,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     display_handle.feature_ref = Some("sketch-native".into());
     display_handle = display_handle.with_test_position(13, display_handle.offset());
     display_handle = display_handle.with_test_position(display_handle.ordinal(), 300);
-    display_handle.kind = SketchInputKind::Arc;
+    display_handle.reclassify(SketchInputKind::Arc);
     payload.resize(400, 0);
     let axis = 200;
     payload[axis..axis + 5].copy_from_slice(LEGACY_SKETCH_MARKER);

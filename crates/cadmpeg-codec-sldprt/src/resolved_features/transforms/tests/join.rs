@@ -77,7 +77,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             },
         ],
     );
-    reference.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+    reference.reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     let mut native_payload = vec![0; 108];
     for offset in [0, 27, 54] {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -117,7 +117,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let mut markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_entities("reference", &markers, &joins),
@@ -132,10 +132,10 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         }],
     );
     let mut nested_reference = reference.clone();
-    nested_reference.id = "nested-reference".into();
-    nested_reference.links.as_mut().unwrap().entries_mut()[0].entity_ref = wrapper.id.clone();
-    markers.insert(wrapper.id.as_str(), &wrapper);
-    markers.insert(nested_reference.id.as_str(), &nested_reference);
+    nested_reference.set_test_id("nested-reference");
+    nested_reference.links.as_mut().unwrap().entries_mut()[0].entity_ref = wrapper.id().to_string();
+    markers.insert(wrapper.id(), &wrapper);
+    markers.insert(nested_reference.id(), &nested_reference);
     assert_eq!(
         marker_entities("nested-reference", &markers, &joins),
         vec![first.clone()]
@@ -145,10 +145,10 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         0,
         vec![SketchInputLink {
             local_id: 1,
-            entity_ref: cycle.id.clone(),
+            entity_ref: cycle.id().to_string(),
         }],
     );
-    markers.insert(cycle.id.as_str(), &cycle);
+    markers.insert(cycle.id(), &cycle);
     assert!(marker_entities("cycle", &markers, &joins).is_empty());
     assert_eq!(
         typed_marker_relation_definition(markers["reference"], &markers, &joins,),
@@ -157,14 +157,16 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut nested_horizontal = nested_reference.clone();
-    nested_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
+    nested_horizontal.reclassify(SketchInputKind::Relation(
+        SketchRelationKind::HorizontalPoints,
+    ));
     assert!(matches!(
         typed_marker_relation_definition(&nested_horizontal, &markers, &joins),
         Some(SketchConstraintDefinitionInput::Native { ref native_kind, .. })
             if native_kind == "sldprt:marker-relation:25"
     ));
     let mut nested_native = nested_reference.clone();
-    nested_native.kind = SketchInputKind::from_native_code(28);
+    nested_native.reclassify(SketchInputKind::from_native_code(28));
     assert_eq!(
         typed_marker_relation_definition(&nested_native, &markers, &joins),
         Some(SketchConstraintDefinitionInput::Native {
@@ -198,13 +200,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut coordinate_horizontal = marker("coordinate-horizontal", Some([0.0, 0.0]));
-    coordinate_horizontal.kind = SketchInputKind::from_native_code_and_layout(4, true);
+    coordinate_horizontal.reclassify(SketchInputKind::from_native_code_and_layout(4, true));
     let mut coordinate_loci = joins.clone();
     coordinate_loci.insert(
-        coordinate_horizontal.id.clone(),
+        coordinate_horizontal.id().to_string(),
         vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
     );
-    markers.insert(coordinate_horizontal.id.as_str(), &coordinate_horizontal);
+    markers.insert(coordinate_horizontal.id(), &coordinate_horizontal);
     assert_eq!(
         typed_marker_relation_definition(&coordinate_horizontal, &markers, &coordinate_loci,),
         None
@@ -213,21 +215,21 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         SketchEntityId::mint("sldprt:model:sketch-entity#relation-point:lane:1").unwrap();
     let point_handle = marker("point-handle", None);
     let mut point_horizontal = marker("point-horizontal", None);
-    point_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    point_horizontal.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     point_horizontal.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 1,
-            entity_ref: point_handle.id.clone(),
+            entity_ref: point_handle.id().to_string(),
         }],
     );
     let mut point_loci = joins.clone();
     point_loci.insert(
-        point_handle.id.clone(),
+        point_handle.id().to_string(),
         vec![SketchLocus::Entity(relation_point.clone())],
     );
-    markers.insert(point_handle.id.as_str(), &point_handle);
-    markers.insert(point_horizontal.id.as_str(), &point_horizontal);
+    markers.insert(point_handle.id(), &point_handle);
+    markers.insert(point_horizontal.id(), &point_horizontal);
     assert!(matches!(
         typed_marker_relation_definition(&point_horizontal, &markers, &point_loci),
         Some(SketchConstraintDefinitionInput::Native { entities, .. })
@@ -235,7 +237,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     ));
 
     let mut operandless_vertical = marker("operandless-vertical", None);
-    operandless_vertical.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+    operandless_vertical.reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     assert_eq!(
         typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
         None
@@ -246,7 +248,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         None
     );
     let mut parallel = marker("parallel", None);
-    parallel.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
+    parallel.reclassify(SketchInputKind::Relation(SketchRelationKind::Parallel));
     parallel.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -260,7 +262,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             },
         ],
     );
-    markers.insert(parallel.id.as_str(), &parallel);
+    markers.insert(parallel.id(), &parallel);
     assert_eq!(
         typed_marker_relation_definition(&parallel, &markers, &joins),
         Some(SketchConstraintDefinitionInput::Parallel {
@@ -269,9 +271,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut symmetric = marker("symmetric", None);
-    symmetric.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
+    symmetric.reclassify(SketchInputKind::Relation(SketchRelationKind::Symmetric));
     symmetric.links = parallel.links.clone();
-    markers.insert(symmetric.id.as_str(), &symmetric);
+    markers.insert(symmetric.id(), &symmetric);
     assert_eq!(
         typed_marker_relation_definition(&symmetric, &markers, &joins),
         Some(SketchConstraintDefinitionInput::Native {
@@ -308,9 +310,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut coincident = marker("coincident", None);
-    coincident.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
+    coincident.reclassify(SketchInputKind::Relation(SketchRelationKind::Coincident));
     coincident.links = parallel.links.clone();
-    markers.insert(coincident.id.as_str(), &coincident);
+    markers.insert(coincident.id(), &coincident);
     assert_eq!(
         typed_marker_relation_definition(&coincident, &markers, &joins),
         Some(SketchConstraintDefinitionInput::CoincidentLoci {
@@ -323,9 +325,11 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut horizontal_points = marker("horizontal-points", None);
-    horizontal_points.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
+    horizontal_points.reclassify(SketchInputKind::Relation(
+        SketchRelationKind::HorizontalPoints,
+    ));
     horizontal_points.links = parallel.links.clone();
-    markers.insert(horizontal_points.id.as_str(), &horizontal_points);
+    markers.insert(horizontal_points.id(), &horizontal_points);
     assert_eq!(
         typed_marker_relation_definition(&horizontal_points, &markers, &joins),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
@@ -340,12 +344,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut legacy_horizontal_points = marker("legacy-horizontal-points", None);
-    legacy_horizontal_points.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    legacy_horizontal_points.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     legacy_horizontal_points.links = parallel.links.clone();
-    markers.insert(
-        legacy_horizontal_points.id.as_str(),
-        &legacy_horizontal_points,
-    );
+    markers.insert(legacy_horizontal_points.id(), &legacy_horizontal_points);
     assert_eq!(
         typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
@@ -360,15 +361,15 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut entity_marker = marker("entity-marker", Some([0.01, 0.01]));
-    entity_marker.kind = SketchInputKind::LineOrCircle;
+    entity_marker.reclassify(SketchInputKind::LineOrCircle);
     let mut midpoint = marker("midpoint", None);
-    midpoint.kind = SketchInputKind::Relation(SketchRelationKind::Midpoint);
+    midpoint.reclassify(SketchInputKind::Relation(SketchRelationKind::Midpoint));
     midpoint.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 3,
-                entity_ref: entity_marker.id.clone(),
+                entity_ref: entity_marker.id().to_string(),
             },
             SketchInputLink {
                 local_id: 1,
@@ -378,13 +379,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     let mut midpoint_loci = joins.clone();
     midpoint_loci.insert(
-        entity_marker.id.clone(),
+        entity_marker.id().to_string(),
         vec![cadmpeg_ir::sketches::SketchLocus::End(
             SketchEntityId::mint("synthetic:test:id#second").unwrap(),
         )],
     );
-    markers.insert(entity_marker.id.as_str(), &entity_marker);
-    markers.insert(midpoint.id.as_str(), &midpoint);
+    markers.insert(entity_marker.id(), &entity_marker);
+    markers.insert(midpoint.id(), &midpoint);
     assert_eq!(
         typed_marker_relation_definition(&midpoint, &markers, &midpoint_loci),
         Some(SketchConstraintDefinitionInput::Midpoint {
@@ -393,15 +394,15 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         })
     );
     let mut arc_marker = marker("arc-marker", None);
-    arc_marker.kind = SketchInputKind::Arc;
+    arc_marker.reclassify(SketchInputKind::Arc);
     let mut arc_loci = midpoint_loci.clone();
     arc_loci.insert(
-        arc_marker.id.clone(),
+        arc_marker.id().to_string(),
         vec![cadmpeg_ir::sketches::SketchLocus::Entity(
             SketchEntityId::mint("synthetic:test:id#second").unwrap(),
         )],
     );
-    markers.insert(arc_marker.id.as_str(), &arc_marker);
+    markers.insert(arc_marker.id(), &arc_marker);
     for (kind, angle) in [
         (SketchRelationKind::ArcAngle90, std::f64::consts::FRAC_PI_2),
         (SketchRelationKind::ArcAngle180, std::f64::consts::PI),
@@ -411,12 +412,12 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ),
     ] {
         let mut arc_angle = marker("arc-angle", None);
-        arc_angle.kind = SketchInputKind::Relation(kind);
+        arc_angle.reclassify(SketchInputKind::Relation(kind));
         arc_angle.links = crate::records::SketchInputLinks::new(
             0,
             vec![SketchInputLink {
                 local_id: 1,
-                entity_ref: arc_marker.id.clone(),
+                entity_ref: arc_marker.id().to_string(),
             }],
         );
         assert_eq!(
@@ -426,9 +427,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                 angle: cadmpeg_ir::scalar::Angle::new(angle).unwrap(),
             })
         );
-        arc_angle.links.as_mut().unwrap().entries_mut()[0]
-            .entity_ref
-            .clone_from(&entity_marker.id);
+        arc_angle.links.as_mut().unwrap().entries_mut()[0].entity_ref =
+            entity_marker.id().to_string();
         assert!(matches!(
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinitionInput::Native {
@@ -692,7 +692,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         let mut handle = marker(id, Some(coordinates_m));
         handle = handle.with_test_position(ordinal as u32, handle.offset());
         handle = handle.with_test_position(handle.ordinal(), offset as u64);
-        handle.kind = SketchInputKind::LineOrCircle;
+        handle.reclassify(SketchInputKind::LineOrCircle);
         markers.push(handle);
     }
     let lane = FeatureInputLane {
@@ -749,35 +749,35 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
         .unwrap(),
     );
     let mut first_marker = marker("first-marker", Some([0.0, 0.0]));
-    first_marker.kind = SketchInputKind::LineOrCircle;
+    first_marker.reclassify(SketchInputKind::LineOrCircle);
     let mut second_marker = marker("second-marker", Some([0.0, 0.0]));
-    second_marker.kind = SketchInputKind::LineOrCircle;
+    second_marker.reclassify(SketchInputKind::LineOrCircle);
     let mut point = marker("point", None);
     point.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 1,
-                entity_ref: first_marker.id.clone(),
+                entity_ref: first_marker.id().to_string(),
             },
             SketchInputLink {
                 local_id: 2,
-                entity_ref: second_marker.id.clone(),
+                entity_ref: second_marker.id().to_string(),
             },
         ],
     );
     let markers = HashMap::from([
-        (first_marker.id.as_str(), &first_marker),
-        (second_marker.id.as_str(), &second_marker),
-        (point.id.as_str(), &point),
+        (first_marker.id(), &first_marker),
+        (second_marker.id(), &second_marker),
+        (point.id(), &point),
     ]);
     let loci = HashMap::from([
         (
-            first_marker.id.clone(),
+            first_marker.id().to_string(),
             vec![SketchLocus::Entity(first_id.clone())],
         ),
         (
-            second_marker.id.clone(),
+            second_marker.id().to_string(),
             vec![SketchLocus::Entity(second_id.clone())],
         ),
     ]);
@@ -879,7 +879,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     }
     let mut handle = marker("circle-marker", Some([0.0, 0.0]));
-    handle.kind = SketchInputKind::LineOrCircle;
+    handle.reclassify(SketchInputKind::LineOrCircle);
     let mut point = marker("point-marker", Some([0.01, 0.0]));
     point = point.with_test_position(1, point.offset());
     point = point.with_test_position(point.ordinal(), 27);

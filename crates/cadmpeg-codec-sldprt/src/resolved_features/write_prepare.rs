@@ -166,7 +166,7 @@ fn patch_spatial_sketches(
             let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
                 cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} requires a retained native marker",
-                    entity.id().as_str()
+                    entity.id()
                 ))
             })?;
             let candidates = native
@@ -177,7 +177,7 @@ fn patch_spatial_sketches(
                     let marker = lane
                         .sketch_entities
                         .iter()
-                        .find(|marker| marker.id == native_ref)?;
+                        .find(|marker| marker.id() == native_ref)?;
                     let offset = usize::try_from(marker.offset()).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
@@ -193,7 +193,7 @@ fn patch_spatial_sketches(
             let [(lane_index, offset, coordinate_offset)] = candidates.as_slice() else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} does not resolve to one native marker",
-                    entity.id().as_str()
+                    entity.id()
                 )));
             };
             if coordinate_offset.is_some() {

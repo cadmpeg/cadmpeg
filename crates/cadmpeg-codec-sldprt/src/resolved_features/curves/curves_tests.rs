@@ -264,7 +264,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         *marker = marker.with_test_identity(Some(index as u32 + 1), marker.local_id());
     }
     for marker in current_corners.iter_mut().skip(4) {
-        marker.kind = SketchInputKind::Arc;
+        marker.reclassify(SketchInputKind::Arc);
     }
     assert_eq!(
         indexed_rectangle_from_line_cycle(
@@ -343,15 +343,15 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     {
         *marker = marker.with_test_position(marker.ordinal(), u64::try_from(index + 1).unwrap());
         marker.coordinates_m = Some(coordinates);
-        marker.kind = SketchInputKind::Point;
+        marker.reclassify(SketchInputKind::Point);
     }
     for (index, marker) in wide_markers[5..].iter_mut().enumerate() {
         *marker = marker.with_test_position(marker.ordinal(), (CURVE_START + index * 92) as u64);
-        marker.kind = if index == 3 {
+        marker.reclassify(if index == 3 {
             SketchInputKind::Arc
         } else {
             SketchInputKind::LineOrCircle
-        };
+        });
     }
     assert_eq!(
         indexed_rectangle_from_line_cycle(&wide, &wide_markers.iter().collect::<Vec<_>>(),),
@@ -374,7 +374,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         .copy_from_slice(&2u32.to_le_bytes());
     let mut three_side_markers = wide_markers[..8].to_vec();
     three_side_markers[4].coordinates_m = Some([1.0e-17, 0.0]);
-    three_side_markers[7].kind = SketchInputKind::Arc;
+    three_side_markers[7].reclassify(SketchInputKind::Arc);
     assert_eq!(
         indexed_rectangle_from_line_cycle(
             &three_sides,
@@ -503,7 +503,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
             &markers[6],
             &markers.iter().collect::<Vec<_>>(),
         )
-        .map(|endpoints| [endpoints[0].id.as_str(), endpoints[1].id.as_str()]),
+        .map(|endpoints| [endpoints[0].id(), endpoints[1].id()]),
         Some(["top-right", "top-left"])
     );
     payload[terminal + 106] = 0;
@@ -540,7 +540,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
             .copy_from_slice(&u32::try_from((index + 1) % 4 + 1).unwrap().to_le_bytes());
     }
     let mut diagonal = markers;
-    diagonal[0].kind = SketchInputKind::Point;
+    diagonal[0].reclassify(SketchInputKind::Point);
     diagonal[0].coordinates_m = Some([0.0, 0.0]);
     diagonal[1].coordinates_m = Some([2.0, 1.0]);
     diagonal[2].coordinates_m = None;
@@ -709,7 +709,7 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
     let marker_refs = markers.iter().collect::<Vec<_>>();
     assert_eq!(
         unique_dimensioned_rectangle_markers(&marker_refs, &[8.5, 5.5])
-            .map(|markers| markers.map(|marker| marker.id.as_str())),
+            .map(|markers| markers.map(crate::records::SketchInputEntity::id)),
         Some(["lower-left", "lower-right", "upper-right", "upper-left"])
     );
     assert_eq!(
@@ -1382,5 +1382,5 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
     assert_eq!(entities.len(), 2);
     assert!(entities
         .iter()
-        .all(|entity| entity.kind == SketchInputKind::from_handle_code(0)));
+        .all(|entity| entity.kind() == SketchInputKind::from_handle_code(0)));
 }

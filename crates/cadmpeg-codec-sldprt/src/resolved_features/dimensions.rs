@@ -100,11 +100,9 @@ fn native_dimensioned_circle_construction_state(
     let [cu, cv] = center.coordinates_m?;
     let mut states = Vec::new();
     for lane in lanes {
-        if !lane
-            .sketch_entities
-            .iter()
-            .any(|marker| marker.id == center.id && marker.feature_ref.as_deref() == Some(feature))
-        {
+        if !lane.sketch_entities.iter().any(|marker| {
+            marker.id() == center.id() && marker.feature_ref.as_deref() == Some(feature)
+        }) {
             continue;
         }
         let mut roster = lane
@@ -141,7 +139,7 @@ fn native_radial_record_for_marker(
 ) -> Option<(usize, bool)> {
     lanes.iter().find_map(|lane| {
         let marker = lane.sketch_entities.iter().find(|marker| {
-            marker.id == marker_id && marker.feature_ref.as_deref() == Some(feature)
+            marker.id() == marker_id && marker.feature_ref.as_deref() == Some(feature)
         })?;
         radial_circle_records(&lane.native_payload)
             .into_iter()
@@ -185,7 +183,7 @@ fn unique_native_radial_witness(
             candidate.feature_ref == center.feature_ref
                 && candidate.offset() > center.offset()
                 && matches!(
-                    candidate.kind,
+                    candidate.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -205,18 +203,18 @@ fn dimensioned_arc_native_geometry(
     marker: &SketchInputEntity,
     expected_radius: f64,
 ) -> Option<DimensionedCurveNative> {
-    if marker.kind != SketchInputKind::Arc {
+    if marker.kind() != SketchInputKind::Arc {
         return None;
     }
     let lane = lanes.iter().find(|lane| {
         lane.sketch_entities
             .iter()
-            .any(|candidate| candidate.id == marker.id)
+            .any(|candidate| candidate.id() == marker.id())
     })?;
     let object_markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     let markers_by_id = object_markers
         .iter()
-        .map(|candidate| (candidate.id.as_str(), *candidate))
+        .map(|candidate| (candidate.id(), *candidate))
         .collect::<HashMap<_, _>>();
     let endpoints = marker_curve_endpoint_markers(
         &lane.native_payload,
@@ -229,7 +227,7 @@ fn dimensioned_arc_native_geometry(
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset));
     let ([center, start, end], endpoint_pair) = if let Some(coordinates) = inline {
         let endpoint_pair = match endpoints.as_slice() {
-            [first, second] => Some([first.id.clone(), second.id.clone()]),
+            [first, second] => Some([first.id().to_string(), second.id().to_string()]),
             _ => None,
         };
         (coordinates, endpoint_pair)
@@ -240,7 +238,7 @@ fn dimensioned_arc_native_geometry(
                 first.coordinates_m?,
                 second.coordinates_m?,
             ],
-            Some([first.id.clone(), second.id.clone()]),
+            Some([first.id().to_string(), second.id().to_string()]),
         )
     } else {
         return unique_native_radial_witness(lane, marker, expected_radius).then_some(
@@ -296,7 +294,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
             handle.feature_ref.as_deref() == Some(feature)
                 && handle.offset() < operand.offset
                 && handle.coordinates_m.is_none()
-                && handle.kind == SketchInputKind::LineOrCircle
+                && handle.kind() == SketchInputKind::LineOrCircle
         })
         .filter_map(|handle| {
             let [first, second] = handle.links() else {
@@ -306,12 +304,12 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
                 return None;
             }
             let arc = lane.sketch_entities.iter().find(|candidate| {
-                candidate.id == first.entity_ref
+                candidate.id() == first.entity_ref
                     && candidate.feature_ref.as_deref() == Some(feature)
                     && candidate.offset() < handle.offset()
                     && candidate.local_id() == Some(u32::from(first.local_id))
                     && candidate.coordinates_m.is_some()
-                    && candidate.kind == SketchInputKind::Arc
+                    && candidate.kind() == SketchInputKind::Arc
             })?;
             let curve = dimensioned_arc_native_geometry(lanes, arc, expected_radius)?;
             Some((arc, curve))
@@ -348,12 +346,12 @@ fn unique_declared_entity_handle_circular_carrier<'a>(
         .filter(|marker| marker.coordinates_m.is_some())
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
         })
         .filter_map(|marker| {
-            let curve = match marker.kind {
+            let curve = match marker.kind() {
                 SketchInputKind::Arc => {
                     dimensioned_arc_native_geometry(lanes, marker, expected_radius)?
                 }
@@ -386,7 +384,7 @@ fn dimensioned_relation_carrier<'a>(
         .and_then(|id| markers_by_id.get(id).copied());
     let explicit_point_marker = explicit.is_some_and(|marker| {
         matches!(
-            marker.kind,
+            marker.kind(),
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
     });
@@ -420,7 +418,7 @@ fn dimensioned_relation_carrier<'a>(
     }
     let explicit_circular_marker = explicit.is_some_and(|marker| {
         matches!(
-            marker.kind,
+            marker.kind(),
             SketchInputKind::LineOrCircle | SketchInputKind::Arc
         )
     });
@@ -431,7 +429,8 @@ fn dimensioned_relation_carrier<'a>(
             };
             lanes.iter().any(|lane| {
                 lane.sketch_entities.iter().any(|candidate| {
-                    candidate.id == marker.id && candidate.feature_ref.as_deref() == Some(feature)
+                    candidate.id() == marker.id()
+                        && candidate.feature_ref.as_deref() == Some(feature)
                 }) && current_geometry_locus_arc_handle_point(&lane.native_payload, offset)
             })
         });
@@ -467,7 +466,7 @@ fn dimensioned_relation_carrier<'a>(
         match explicit {
             Some(marker)
                 if matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -489,15 +488,15 @@ fn dimensioned_relation_carrier<'a>(
         }
     };
     let curve = fallback_curve.or_else(|| {
-        (marker.kind == SketchInputKind::Arc)
+        (marker.kind() == SketchInputKind::Arc)
             .then(|| dimensioned_arc_native_geometry(lanes, marker, radius))
             .flatten()
     });
-    if marker.kind == SketchInputKind::Arc && curve.is_none() {
+    if marker.kind() == SketchInputKind::Arc && curve.is_none() {
         return None;
     }
     if !matches!(
-        marker.kind,
+        marker.kind(),
         SketchInputKind::Point
             | SketchInputKind::ConstrainedPoint
             | SketchInputKind::LineOrCircle
@@ -525,7 +524,7 @@ fn dimensioned_relation_carrier<'a>(
         .or_else(|| {
             declared_entity_handle.then_some(false).or_else(|| {
                 matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
                 .then_some(false)
@@ -629,7 +628,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let marker_transforms =
         marker_transform_candidates_by_feature(features, sketches, entities, lanes);
@@ -826,7 +825,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     geometry,
                 )
                 .with_construction(construction)
-                .with_native_ref(Some(carrier.marker.id.clone()))
+                .with_native_ref(Some(carrier.marker.id().to_string()))
                 .with_geometry_ref(Some(relation.id.clone()))
                 .with_endpoint_refs(endpoint_refs),
             );
@@ -870,7 +869,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     for lane in lanes {
@@ -906,7 +905,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                     operand.entity_index,
                     radius,
                 )
-                .map(|(marker, _)| marker.id.as_str())
+                .map(|(marker, _)| marker.id())
             });
             let Some(marker_id) = marker_id else {
                 continue;
@@ -915,7 +914,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 continue;
             };
             if !matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) {
                 continue;
@@ -1002,7 +1001,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                     },
                 )
                 .with_construction(construction)
-                .with_native_ref(Some(marker.id.clone()))
+                .with_native_ref(Some(marker.id().to_string()))
                 .with_geometry_ref(Some(relation.id.clone())),
             );
         }
@@ -1113,11 +1112,9 @@ pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
     }
     let terminal = *roster.last()?;
     let mut pairs = roster
-        .windows(2)
-        .filter_map(|window| {
-            let [center, radial] = window else {
-                unreachable!("two-wide roster window");
-            };
+        .iter()
+        .zip(roster.iter().skip(1))
+        .filter_map(|(center, radial)| {
             let center_index = center.object_index()?;
             let radial_index = radial.object_index()?;
             if center_index != radial_index.checked_add(1)? {
@@ -1128,13 +1125,13 @@ pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
             same_dimension_length((ru - cu).hypot(rv - cv), radius).then_some((*center, *radial))
         })
         .collect::<Vec<_>>();
-    if pairs.len() < 2 || pairs.last().map(|(_, radial)| radial.id.as_str()) != Some(&terminal.id) {
+    if pairs.len() < 2 || pairs.last().map(|(_, radial)| radial.id()) != Some(terminal.id()) {
         return None;
     }
     let mut used = HashSet::new();
     if pairs
         .iter()
-        .any(|(center, radial)| !used.insert(&center.id) || !used.insert(&radial.id))
+        .any(|(center, radial)| !used.insert(center.id()) || !used.insert(radial.id()))
     {
         return None;
     }
@@ -1208,13 +1205,13 @@ fn reconcile_direct_circle_dimension_carriers(
                 .iter()
                 .flat_map(|lane| &lane.sketch_entities)
                 .filter(|marker| {
-                    marker.id == marker_id && marker.feature_ref.as_deref() == Some(feature)
+                    marker.id() == marker_id && marker.feature_ref.as_deref() == Some(feature)
                 })
                 .collect::<Vec<_>>();
             let [marker] = markers.as_slice() else {
                 return None;
             };
-            if !matches!(marker.kind, SketchInputKind::LineOrCircle)
+            if !matches!(marker.kind(), SketchInputKind::LineOrCircle)
                 || !marker
                     .coordinates_m
                     .is_some_and(|[u, v]| u.is_finite() && v.is_finite())
@@ -1225,7 +1222,7 @@ fn reconcile_direct_circle_dimension_carriers(
                 .iter()
                 .filter(|entity| {
                     entity.sketch == *sketch_id
-                        && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                        && entity.native_ref.as_deref() == Some(marker.id())
                         && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
                         && matches!(
                             *entity.geometry.definition(),
@@ -1236,7 +1233,7 @@ fn reconcile_direct_circle_dimension_carriers(
             let [typed_entity] = typed_entities.as_slice() else {
                 return None;
             };
-            Some((marker.id.clone(), typed_entity.id().clone()))
+            Some((marker.id(), typed_entity.id().clone()))
         })
         .collect::<HashMap<_, _>>();
     if replacements.is_empty() {
@@ -1408,7 +1405,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .copied()
                 .filter(|marker| {
                     matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
                 })
@@ -1695,7 +1692,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let mut candidates = markers
                     .iter()
                     .copied()
-                    .filter(|marker| marker.id != radial.id)
+                    .filter(|marker| marker.id() != radial.id())
                     .filter_map(|marker| {
                         let [cu, cv] = marker.coordinates_m?;
                         let radius = (ru - cu).hypot(rv - cv) * NATIVE_TO_IR;
@@ -1775,7 +1772,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         .collect::<HashSet<_>>();
                     let center_refs = resolved
                         .iter()
-                        .map(|record| record.4.id.as_str())
+                        .map(|record| record.4.id())
                         .collect::<HashSet<_>>();
                     let removed = entities
                         .iter()
@@ -1835,14 +1832,14 @@ pub(crate) fn project_marker_dimensioned_circles(
         let centers = markers
             .iter()
             .copied()
-            .filter(|marker| marker.kind == SketchInputKind::LineOrCircle)
+            .filter(|marker| marker.kind() == SketchInputKind::LineOrCircle)
             .collect::<Vec<_>>();
         let radial = markers
             .iter()
             .copied()
             .filter(|marker| {
                 matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             })

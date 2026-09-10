@@ -55,7 +55,7 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
     coordinates[8].coordinates_m = Some([-0.015, 0.02]);
     coordinates[10].coordinates_m = Some([0.015, 0.02]);
     let mut curve = entity("curve".into(), 0, Some(3), None);
-    curve.kind = SketchInputKind::Arc;
+    curve.reclassify(SketchInputKind::Arc);
     let markers = coordinates
         .iter()
         .chain(std::iter::once(&curve))

@@ -1813,7 +1813,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             let markers_by_id = lane
                 .sketch_entities
                 .iter()
-                .map(|marker| (marker.id.as_str(), marker))
+                .map(|marker| (marker.id(), marker))
                 .collect();
             let instances = lane
                 .relation_instances
@@ -1850,7 +1850,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                             marker,
                             &markers_by_id,
                         )
-                        && !projected.contains(&marker.id)
+                        && !projected.contains(marker.id())
                 })
                 .count();
             instances + bindings + markers
@@ -1869,7 +1869,7 @@ fn multiply_projected_sketch_relation_records(
             let markers_by_id = lane
                 .sketch_entities
                 .iter()
-                .map(|marker| (marker.id.as_str(), marker))
+                .map(|marker| (marker.id(), marker))
                 .collect();
             lane.relation_instances
                 .iter()
@@ -1879,7 +1879,7 @@ fn multiply_projected_sketch_relation_records(
                         marker,
                         &markers_by_id,
                     )
-                    .then_some(marker.id.as_str())
+                    .then_some(marker.id())
                 }))
         })
         .collect::<std::collections::HashSet<_>>();

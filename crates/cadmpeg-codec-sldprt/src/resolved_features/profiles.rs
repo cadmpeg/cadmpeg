@@ -434,7 +434,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     .split(|marker| {
                         marker.coordinates_m.is_none()
                             || !matches!(
-                                marker.kind,
+                                marker.kind(),
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                     })
@@ -554,10 +554,10 @@ pub(crate) fn project_compact_sketch_profiles(
                     });
                     sketch_entities.push(
                         SketchEntity::new(entity_id, sketch_id.clone(), geometry)
-                            .with_native_ref(Some(start_marker.id.clone()))
+                            .with_native_ref(Some(start_marker.id().to_string()))
                             .with_endpoint_refs(vec![
-                                start_marker.id.clone(),
-                                end_marker.id.clone(),
+                                start_marker.id().to_string(),
+                                end_marker.id().to_string(),
                             ]),
                     );
                 }
@@ -634,8 +634,11 @@ pub(crate) fn project_compact_sketch_profiles(
                                     })
                                     .ok()?,
                                 )
-                                .with_native_ref(Some(marker.id.clone()))
-                                .with_endpoint_refs(vec![marker.id.clone(), vertex.id.clone()]),
+                                .with_native_ref(Some(marker.id().to_string()))
+                                .with_endpoint_refs(vec![
+                                    marker.id().to_string(),
+                                    vertex.id().to_string(),
+                                ]),
                             )
                         })
                         .collect::<Option<Vec<_>>>()
@@ -692,10 +695,10 @@ pub(crate) fn project_compact_sketch_profiles(
                         });
                         sketch_entities.push(
                             SketchEntity::new(entity_id, sketch_id.clone(), geometry)
-                                .with_native_ref(Some(start_marker.id.clone()))
+                                .with_native_ref(Some(start_marker.id().to_string()))
                                 .with_endpoint_refs(vec![
-                                    start_marker.id.clone(),
-                                    end_marker.id.clone(),
+                                    start_marker.id().to_string(),
+                                    end_marker.id().to_string(),
                                 ]),
                         );
                     }
@@ -764,7 +767,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 });
                 sketch_entities.push(
                     SketchEntity::new(entity_id, sketch_id.clone(), geometry)
-                        .with_native_ref(Some(marker.id.clone())),
+                        .with_native_ref(Some(marker.id().to_string())),
                 );
             }
             let mut sketch = sketch;
@@ -792,7 +795,7 @@ pub(crate) fn project_compact_sketch_profiles(
 
 fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
     if !matches!(
-        marker.kind,
+        marker.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) || marker.coordinates_m.is_some()
     {
@@ -855,7 +858,7 @@ pub(crate) fn project_marker_backed_sketches(
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let mut objects = native_features
             .values()
@@ -949,7 +952,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .copied()
                 .filter(|marker| {
                     matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
@@ -1062,7 +1065,7 @@ pub(crate) fn project_marker_backed_sketches(
             for marker in markers.iter().copied() {
                 let native_kind = cadmpeg_ir::nonempty_literal!(
                     "sldprt:marker-geometry:{}",
-                    marker.kind.native_code()
+                    marker.kind().native_code()
                 );
                 let entity = (|| {
                     let project = |endpoint: &SketchInputEntity| {
@@ -1097,7 +1100,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 .is_some()
                             })
                     };
-                    let geometry = match marker.kind {
+                    let geometry = match marker.kind() {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                             let point = project(marker)?;
                             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1457,8 +1460,8 @@ pub(crate) fn project_marker_backed_sketches(
                                             .iter()
                                             .copied()
                                             .filter(|candidate| {
-                                                candidate.id != endpoints[0].id
-                                                    && candidate.id != endpoints[1].id
+                                                candidate.id() != endpoints[0].id()
+                                                    && candidate.id() != endpoints[1].id()
                                             })
                                             .filter_map(|candidate| {
                                                 let [u, v] = candidate.coordinates_m?;
@@ -1530,8 +1533,8 @@ pub(crate) fn project_marker_backed_sketches(
                                         .iter()
                                         .copied()
                                         .filter(|candidate| {
-                                            candidate.id != start_marker.id
-                                                && candidate.id != end_marker.id
+                                            candidate.id() != start_marker.id()
+                                                && candidate.id() != end_marker.id()
                                         })
                                         .filter_map(|candidate| {
                                             let [u, v] = candidate.coordinates_m?;
@@ -1586,7 +1589,7 @@ pub(crate) fn project_marker_backed_sketches(
                         | SketchInputKind::NativeHandle(_) => return None,
                     };
                     let endpoint_refs = if matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                     ) {
                         let endpoints = output_curve_endpoint_markers(
@@ -1597,7 +1600,7 @@ pub(crate) fn project_marker_backed_sketches(
                         );
                         endpoints
                             .iter()
-                            .map(|endpoint| endpoint.id.clone())
+                            .map(|endpoint| endpoint.id().to_string())
                             .collect::<Vec<_>>()
                     } else {
                         Vec::new()
@@ -1637,7 +1640,7 @@ pub(crate) fn project_marker_backed_sketches(
                             geometry,
                         )
                         .with_construction(construction)
-                        .with_native_ref(Some(marker.id.clone()))
+                        .with_native_ref(Some(marker.id().to_string()))
                         .with_endpoint_refs(endpoint_refs),
                     )
                 })();
@@ -1678,7 +1681,7 @@ pub(crate) fn project_marker_backed_sketches(
                             .or_else(|| {
                                 current_wide_rectangle_line_endpoints(&lane.native_payload, offset)
                             })?;
-                        Some(marker.id.as_str())
+                        Some(marker.id())
                     })
                     .collect::<HashSet<_>>();
                 projected.retain(|entity| {
@@ -2618,7 +2621,7 @@ fn legacy_config_hex_sketch(
         .iter()
         .copied()
         .filter(|marker| {
-            marker.coordinates_m.is_none() && marker.kind == SketchInputKind::LineOrCircle
+            marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
         })
         .collect::<Vec<_>>();
     curves.sort_unstable_by_key(|marker| marker.offset());
@@ -2683,8 +2686,13 @@ fn legacy_config_hex_sketch(
                 .ok()?,
             )
             .with_construction(true)
-            .with_native_ref(Some(curve.id.clone()))
-            .with_endpoint_refs(endpoints.iter().map(|marker| marker.id.clone()).collect()),
+            .with_native_ref(Some(curve.id().to_string()))
+            .with_endpoint_refs(
+                endpoints
+                    .iter()
+                    .map(|marker| marker.id().to_string())
+                    .collect(),
+            ),
         );
     }
     entities.push(
@@ -2697,8 +2705,11 @@ fn legacy_config_hex_sketch(
             })
             .ok()?,
         )
-        .with_native_ref(Some(circle.id.clone()))
-        .with_endpoint_refs(vec![circle.id.clone(), circle_radial.id.clone()]),
+        .with_native_ref(Some(circle.id().to_string()))
+        .with_endpoint_refs(vec![
+            circle.id().to_string(),
+            circle_radial.id().to_string(),
+        ]),
     );
     entities.push(
         SketchEntity::new(
@@ -2711,8 +2722,11 @@ fn legacy_config_hex_sketch(
             .ok()?,
         )
         .with_construction(true)
-        .with_native_ref(Some(construction_circle.id.clone()))
-        .with_endpoint_refs(vec![origin.id.clone(), construction_radial.id.clone()]),
+        .with_native_ref(Some(construction_circle.id().to_string()))
+        .with_endpoint_refs(vec![
+            origin.id().to_string(),
+            construction_radial.id().to_string(),
+        ]),
     );
     let line_curves = [line0, line1, line2, line3, line4, line5];
     let mut outer_profile = Vec::new();
@@ -2734,8 +2748,8 @@ fn legacy_config_hex_sketch(
                 })
                 .ok()?,
             )
-            .with_native_ref(Some(curve.id.clone()))
-            .with_endpoint_refs(vec![start.id.clone(), end.id.clone()]),
+            .with_native_ref(Some(curve.id().to_string()))
+            .with_endpoint_refs(vec![start.id().to_string(), end.id().to_string()]),
         );
     }
     let mut sketch = sketch.clone();
@@ -2761,7 +2775,7 @@ fn legacy_config_collinear_sketch(
         .iter()
         .copied()
         .filter(|marker| {
-            marker.coordinates_m.is_none() && marker.kind == SketchInputKind::LineOrCircle
+            marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
         })
         .collect::<Vec<_>>();
     curves.sort_unstable_by_key(|marker| marker.offset());
@@ -2843,7 +2857,7 @@ fn legacy_config_collinear_sketch(
                     })
                     .ok()?,
                 )
-                .with_native_ref(Some(curve.id.clone())),
+                .with_native_ref(Some(curve.id().to_string())),
             )
         })
         .collect::<Option<Vec<_>>>()?;
@@ -2871,7 +2885,7 @@ fn legacy_config_collinear_sketch(
                 })
                 .ok()?,
             )
-            .with_native_ref(marker.map(|marker| marker.id.clone())),
+            .with_native_ref(marker.map(|marker| marker.id().to_string())),
         );
     }
     Some((sketch.clone(), entities))

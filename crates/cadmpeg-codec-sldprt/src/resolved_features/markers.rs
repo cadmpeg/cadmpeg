@@ -125,7 +125,7 @@ pub(crate) fn spatial_sketches(
                                     })
                                     .flatten()
                             })
-                            .map(|point| (marker.id.clone(), point, offset))
+                            .map(|point| (marker.id(), point, offset))
                     })
                     .collect::<Vec<_>>();
             if !points.is_empty() {
@@ -152,7 +152,7 @@ pub(crate) fn spatial_sketches(
                 .map(|(native_ref, point, offset)| {
                     Some((
                         *offset,
-                        Some(native_ref.clone()),
+                        Some((*native_ref).to_string()),
                         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                             position: *point,
                         })

@@ -1953,7 +1953,7 @@ fn feature_entities<'a>(
 
 fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
     matches!(
-        entity.kind,
+        entity.kind(),
         crate::records::SketchInputKind::Point | crate::records::SketchInputKind::ConstrainedPoint
     ) && entity
         .coordinates_m
@@ -1968,7 +1968,7 @@ fn push_point_candidate<'a>(
     let Some(candidate) = candidate.filter(|candidate| is_finite_point(candidate)) else {
         return;
     };
-    if seen.insert(candidate.id.clone()) {
+    if seen.insert(candidate.id().to_string()) {
         candidates.push(candidate);
     }
 }
@@ -1982,7 +1982,7 @@ fn dynamic_point_candidates<'a>(
         return entities
             .iter()
             .copied()
-            .filter(|entity| entity.id == entity_ref && is_finite_point(entity))
+            .filter(|entity| entity.id() == entity_ref && is_finite_point(entity))
             .collect();
     }
     let coordinate_points = entities
@@ -2004,7 +2004,7 @@ fn dynamic_point_candidates<'a>(
     }) {
         push_point_candidate(&mut candidates, &mut seen, Some(entity));
     }
-    candidates.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    candidates.sort_unstable_by(|left, right| left.id().cmp(right.id()));
     candidates
 }
 
@@ -2110,9 +2110,9 @@ fn dynamic_curve_reference_is_valid(
 ) -> bool {
     entity_ref.is_some_and(|entity_ref| {
         entities.iter().any(|entity| {
-            entity.id == entity_ref
+            entity.id() == entity_ref
                 && matches!(
-                    entity.kind,
+                    entity.kind(),
                     crate::records::SketchInputKind::LineOrCircle
                         | crate::records::SketchInputKind::Arc
                         | crate::records::SketchInputKind::Relation(_)
@@ -2142,7 +2142,7 @@ fn bind_dynamic_point_relation(
                     continue;
                 };
                 for second in second_candidates {
-                    if first.id == second.id {
+                    if first.id() == second.id() {
                         continue;
                     }
                     let Some(second_coordinates) = second.coordinates_m else {
@@ -2155,7 +2155,7 @@ fn bind_dynamic_point_relation(
                         },
                     );
                     if same_relation_dimension(measured, target) {
-                        matches.push((first.id.clone(), second.id.clone()));
+                        matches.push((first.id().to_string(), second.id().to_string()));
                     }
                 }
             }
@@ -2258,13 +2258,13 @@ fn bind_dynamic_point_line_relation(
                 - (coordinates[1] - first[1]) * direction[0])
                 .abs()
                 / length;
-            same_relation_dimension(measured, target).then(|| point.id.clone())
+            same_relation_dimension(measured, target).then(|| point.id())
         })
         .collect::<Vec<_>>();
     matches.sort_unstable();
     matches.dedup();
     if let [point] = matches.as_slice() {
-        relation.operands[0].entity_ref = Some(point.clone());
+        relation.operands[0].entity_ref = Some((*point).to_string());
         relation.operands[1].entity_ref = None;
     } else {
         clear_relation_operands(relation);
