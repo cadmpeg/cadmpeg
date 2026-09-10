@@ -3533,7 +3533,10 @@ mod tests {
             inflated,
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
-                schema: Some(schema.to_string()),
+                schema: Some(
+                    cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+                        .expect("the fixture text is a schema token"),
+                ),
             },
         }
     }
@@ -3942,7 +3945,10 @@ mod tests {
             inflated: bytes.clone(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype: crate::parasolid::ParasolidSubtype::Deltas,
-                schema: Some("SCH_3501171_35102_13006".to_string()),
+                schema: Some(
+                    cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006")
+                        .expect("the fixture text is a schema token"),
+                ),
             },
         }];
 

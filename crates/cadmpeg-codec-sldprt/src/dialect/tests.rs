@@ -87,8 +87,9 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
-        "SCH_TEST_1_9999",
-        "block@7:body+3",
+        &cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+            .expect("the fixture text is a schema token"),
+        &cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
     );
