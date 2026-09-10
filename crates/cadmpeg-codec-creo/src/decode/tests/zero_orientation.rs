@@ -1019,15 +1019,16 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     let du = [1.0, 0.0, 1.0];
     let dv = [0.0, 1.0, 2.0];
     let zero = [0.0; 3];
-    let nurbs = interpolation_spline_surface(
-        &points,
-        &[0.0, 1.0],
-        &[0.0, 1.0],
-        &[du, du, du, du],
-        &[dv, dv, dv, dv],
-        &[zero, zero, zero, zero],
+    let grid = crate::interpolation_grid::InterpolationGrid::try_new(
+        points.to_vec(),
+        vec![0.0, 1.0],
+        vec![0.0, 1.0],
+        vec![du, du, du, du],
+        vec![dv, dv, dv, dv],
+        [zero, zero, zero, zero],
     )
-    .expect("bicubic tensor-product surface");
+    .expect("complete interpolation grid");
+    let nurbs = interpolation_spline_surface(&grid).expect("bicubic tensor-product surface");
 
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
