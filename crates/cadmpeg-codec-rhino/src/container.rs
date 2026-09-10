@@ -223,6 +223,11 @@ impl Table {
         &self.range
     }
 
+    /// Table body bytes inside `data`, absent when the body is out of view.
+    pub(crate) fn body_bytes<'a>(&self, data: &'a [u8]) -> Option<&'a [u8]> {
+        data.get(self.body.clone())
+    }
+
     /// Table body range, excluding the table header and checksum.
     pub(crate) fn body(&self) -> &std::ops::Range<usize> {
         &self.body
@@ -1161,8 +1166,10 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
-        let storage =
-            EntryStorage::framed_by(VerbatimLabel::None, table.body().len(), table.framing());
+        let storage = table.body_bytes(scan.data).map_or_else(
+            || EntryStorage::unreported(VerbatimLabel::None),
+            |body| EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing()),
+        );
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
