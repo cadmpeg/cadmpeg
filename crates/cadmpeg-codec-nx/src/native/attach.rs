@@ -8373,38 +8373,36 @@ pub(crate) fn boolean_feature_definition(
             .collect::<Vec<_>>()
             .join(",")
     );
-    let (target, tools) = match offset_store_resolution {
-        BooleanOffsetStoreResolution::Unresolved => (
+    let offset_store_body_blocks = match offset_store_resolution {
+        BooleanOffsetStoreResolution::Unresolved => None,
+        BooleanOffsetStoreResolution::None => Some(&empty_offset_store_body_blocks),
+        BooleanOffsetStoreResolution::Complete(blocks) => Some(blocks),
+    };
+    let (target, tools) = match offset_store_body_blocks {
+        None => (
             BodySelection::Native(native_target),
             BodySelection::Native(native_tools),
         ),
-        BooleanOffsetStoreResolution::None | BooleanOffsetStoreResolution::Complete(_) => {
-            let offset_store_body_blocks = match offset_store_resolution {
-                BooleanOffsetStoreResolution::Complete(blocks) => blocks,
-                BooleanOffsetStoreResolution::None => &empty_offset_store_body_blocks,
-                BooleanOffsetStoreResolution::Unresolved => unreachable!("matched above"),
-            };
-            atomic_disjoint_body_selections(
-                feature_body_selection_with_offset_blocks(
-                    &[operation.target.token.value()],
-                    body_alias_roots,
-                    offset_store_body_blocks,
-                    bodies_by_object_index,
-                    native_target.clone(),
-                ),
-                feature_body_selection_with_offset_blocks(
-                    &operation
-                        .tools
-                        .iter()
-                        .map(|token| token.token.value())
-                        .collect::<Vec<_>>(),
-                    body_alias_roots,
-                    offset_store_body_blocks,
-                    bodies_by_object_index,
-                    native_tools.clone(),
-                ),
-            )
-        }
+        Some(offset_store_body_blocks) => atomic_disjoint_body_selections(
+            feature_body_selection_with_offset_blocks(
+                &[operation.target.token.value()],
+                body_alias_roots,
+                offset_store_body_blocks,
+                bodies_by_object_index,
+                native_target.clone(),
+            ),
+            feature_body_selection_with_offset_blocks(
+                &operation
+                    .tools
+                    .iter()
+                    .map(|token| token.token.value())
+                    .collect::<Vec<_>>(),
+                body_alias_roots,
+                offset_store_body_blocks,
+                bodies_by_object_index,
+                native_tools.clone(),
+            ),
+        ),
     };
     Ok(FeatureDefinition::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(target, tools)

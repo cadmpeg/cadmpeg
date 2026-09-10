@@ -2800,19 +2800,14 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     let center = model_curve_point_with_index_and_budget(index, spine, parameter, geometry_budget)?;
     let tangent =
         model_curve_tangent_with_index_and_budget(index, spine, parameter, geometry_budget)?;
-    let procedural = index
+    let (procedural, context) = index
         .procedural_curves_for_curve(spine.as_str())?
         .iter()
         .copied()
-        .find(|candidate| {
-            matches!(
-                candidate.definition(),
-                ProceduralCurveDefinition::Intersection { .. }
-            )
+        .find_map(|candidate| match candidate.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => Some((candidate, context)),
+            _ => None,
         })?;
-    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
-        unreachable!("definition selected above");
-    };
     let contact_fit_tolerance = procedural
         .cache_fit_tolerance()
         .filter(|fit| fit.is_finite() && *fit > 0.0)
@@ -2945,19 +2940,14 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
     depth: usize,
 ) -> Option<&'a PcurveGeometry> {
     (depth < 32).then_some(())?;
-    let procedural = index
+    let context = index
         .procedural_curves_for_curve(spine.as_str())?
         .iter()
         .copied()
-        .find(|candidate| {
-            matches!(
-                candidate.definition(),
-                ProceduralCurveDefinition::Intersection { .. }
-            )
+        .find_map(|candidate| match candidate.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => Some(context),
+            _ => None,
         })?;
-    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
-        unreachable!("definition selected above");
-    };
     let candidates = context.sides().iter().filter_map(|side| {
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
@@ -3539,18 +3529,18 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let (center, axis, reference) = match geometry {
+    let (center, axis, reference, ellipse) = match geometry {
         CurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            (*center, *axis, *ref_direction)
+            (*center, *axis, *ref_direction, None)
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            (*center, *axis, *major_direction)
+            (*center, *axis, *major_direction, Some(ellipse_curve))
         }
         _ => return None,
     };
@@ -3561,13 +3551,10 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
     let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
     });
-    if matches!(geometry, CurveGeometry::Circle(_)) {
+    let Some(ellipse_curve) = ellipse else {
         return Some(circle_parameter);
-    }
-    let anchor = seed.unwrap_or(phase);
-    let CurveGeometry::Ellipse(ellipse_curve) = geometry else {
-        unreachable!("periodic analytic curve is a circle or ellipse");
     };
+    let anchor = seed.unwrap_or(phase);
     let major_radius = ellipse_curve.major_radius();
     let minor_radius = ellipse_curve.minor_radius();
     let x = dot_vector(delta, reference);
