@@ -12,7 +12,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 use serde_json::{json, Value};
 
-use super::document::{CadirDocument, RecordRef};
+use super::document::{CadirDocument, RecordRef, RecordSelection};
 use super::item::{emit_values, ArenaTarget};
 use super::output::OutputArgs;
 
@@ -28,13 +28,9 @@ pub struct GraphArgs {
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
     /// `query counts --json`.
     pub arena: String,
-    /// Record IDs (exact or unique suffix). Omit for the first record;
-    /// conflicts with `--head`.
-    pub ids: Vec<String>,
-    /// Print the first N records in arena order as starts. Conflicts with
-    /// explicit IDs.
-    #[arg(long, value_name = "N", conflicts_with = "ids")]
-    pub head: Option<usize>,
+    /// Which records of the arena to walk from.
+    #[command(flatten)]
+    pub records: RecordSelection,
     /// Maximum edge length from a start. `0` emits only the start records.
     /// Default is 1 (the start and its immediate references).
     #[arg(long, value_name = "N", default_value_t = 1)]
@@ -76,7 +72,7 @@ pub fn run(args: &GraphArgs) -> Result<()> {
     let output = args.output.mode();
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
-    let (start_nodes, errors) = doc.select_records(&target, &args.ids, args.head)?;
+    let (start_nodes, errors) = doc.select_records(&target, &args.records)?;
 
     let follow = args.follow.as_deref();
     let outcome = walk(
@@ -275,7 +271,9 @@ mod tests {
     fn start_nodes(document: &CadirDocument, arena: &str, ids: &[&str]) -> Vec<RecordRef> {
         let target = ArenaTarget::parse(arena).unwrap();
         let ids: Vec<String> = ids.iter().map(|s| (*s).to_owned()).collect();
-        let (recs, errors) = document.select_records(&target, &ids, None).unwrap();
+        let (recs, errors) = document
+            .select_records(&target, &RecordSelection::Ids(ids))
+            .unwrap();
         assert!(errors.is_empty(), "{errors:?}");
         recs
     }
