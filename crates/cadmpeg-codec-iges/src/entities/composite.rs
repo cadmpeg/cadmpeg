@@ -1369,6 +1369,7 @@ fn project_native_composite(
     Some(edge_id)
 }
 
+/// The degraded carrier, if one was built, and the loss it charges either way.
 fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
@@ -1376,19 +1377,18 @@ fn project_degraded_composite(
     child_curves: &[CurveId],
     join_tolerance: f64,
     reason: &str,
-    losses: &mut Vec<LossNote>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Option<EdgeId> {
+) -> (Option<EdgeId>, LossNote) {
     let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance, sequences);
-    if edge.is_some() {
-        losses.push(degraded_carrier_loss(entry, reason));
+    let loss = if edge.is_some() {
+        degraded_carrier_loss(entry, reason)
     } else {
-        losses.push(entity_loss(
+        entity_loss(
             entry,
             format!("{reason}, and no ordered native composite carrier can be constructed"),
-        ));
-    }
-    edge
+        )
+    };
+    (edge, loss)
 }
 
 pub(super) fn project(
@@ -1636,16 +1636,17 @@ fn project_with_type_130_policy(
             })
             .collect::<Option<Vec<_>>>()
         else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "a child has no bounded line or NURBS carrier",
-                &mut losses,
                 sequences,
-            ) {
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
@@ -1655,16 +1656,17 @@ fn project_with_type_130_policy(
         let Some(ConcatenatedNurbs { nurbs, segments }) =
             concatenate_nurbs(children, Some(join_tolerance))
         else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "child endpoints do not join within the Global minimum resolution",
-                &mut losses,
                 sequences,
-            ) {
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
@@ -1680,16 +1682,17 @@ fn project_with_type_130_policy(
             nurbs.weights(),
             0.0,
         ) else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "its start cannot be evaluated",
-                &mut losses,
                 sequences,
-            ) {
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
@@ -1703,16 +1706,17 @@ fn project_with_type_130_policy(
             nurbs.weights(),
             cursor,
         ) else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "its end cannot be evaluated",
-                &mut losses,
                 sequences,
-            ) {
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
