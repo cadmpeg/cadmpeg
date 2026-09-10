@@ -175,23 +175,66 @@ pub(crate) struct NativeInstall {
     pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
-/// A table descriptor with explicit source ranges.
+/// A table descriptor whose body is a strict sub-range of its chunk range.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Table {
     /// Table typecode.
     pub(crate) typecode: u32,
     /// Complete table chunk range.
-    pub(crate) range: std::ops::Range<usize>,
-    /// Table body range, excluding the table checksum.
-    pub(crate) body: std::ops::Range<usize>,
-    /// Table chunk bytes outside the body: the header and any checksum.
-    pub(crate) framing: NonZeroU32,
+    range: std::ops::Range<usize>,
+    /// Table body range, excluding the table header and checksum.
+    body: std::ops::Range<usize>,
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
     /// Number of direct records, including compactly summarized records.
     pub(crate) record_count: usize,
     /// Object record typecode counts discovered without class parsing.
     pub(crate) object_typecodes: BTreeMap<u32, usize>,
+}
+
+impl Table {
+    /// A table whose `body` lies strictly inside its chunk `range`.
+    ///
+    /// Absent when the body escapes the range, fills it exactly, or leaves
+    /// more framing bytes than a `u32` counts.
+    pub(crate) fn new(
+        typecode: u32,
+        range: std::ops::Range<usize>,
+        body: std::ops::Range<usize>,
+        records: Vec<Record>,
+        record_count: usize,
+        object_typecodes: BTreeMap<u32, usize>,
+    ) -> Option<Self> {
+        (body.start >= range.start && body.end <= range.end).then_some(())?;
+        let framing = range.len().checked_sub(body.len())?;
+        (1..=u32::MAX as usize).contains(&framing).then_some(())?;
+        Some(Self {
+            typecode,
+            range,
+            body,
+            records,
+            record_count,
+            object_typecodes,
+        })
+    }
+
+    /// Complete table chunk range.
+    pub(crate) fn range(&self) -> &std::ops::Range<usize> {
+        &self.range
+    }
+
+    /// Table body range, excluding the table header and checksum.
+    pub(crate) fn body(&self) -> &std::ops::Range<usize> {
+        &self.body
+    }
+
+    /// Table chunk bytes outside the body: the header and any checksum.
+    ///
+    /// The constructor admits only a body one to `u32::MAX` bytes shorter than
+    /// its range, so the difference is exactly this nonzero count.
+    pub(crate) fn framing(&self) -> NonZeroU32 {
+        NonZeroU32::MIN.saturating_add((self.range.len() - self.body.len() - 1) as u32)
+    }
 }
 
 /// The result of scanning a complete supported container.
@@ -1071,15 +1114,20 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             history = parsed.records;
             opaque_records.extend(parsed.opaque_records);
         }
-        tables.push(Table {
-            typecode: chunk.typecode,
-            range: offset..chunk.next_offset(),
-            body: chunk.body(),
-            framing: chunk.framing(),
+        let table = Table::new(
+            chunk.typecode,
+            offset..chunk.next_offset(),
+            chunk.body(),
             records,
-            record_count: table_record_count,
+            table_record_count,
             object_typecodes,
-        });
+        )
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "table chunk at {offset} declares a body that does not fit its framing"
+            ))
+        })?;
+        tables.push(table);
         offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
@@ -1106,14 +1154,15 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), table.range.start.to_string());
-        attributes.insert("size".to_string(), table.range.len().to_string());
-        attributes.insert("body_offset".to_string(), table.body.start.to_string());
+        attributes.insert("offset".to_string(), table.range().start.to_string());
+        attributes.insert("size".to_string(), table.range().len().to_string());
+        attributes.insert("body_offset".to_string(), table.body().start.to_string());
         attributes.insert("record_count".to_string(), table.record_count.to_string());
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
-        let storage = EntryStorage::framed_by(VerbatimLabel::None, table.body.len(), table.framing);
+        let storage =
+            EntryStorage::framed_by(VerbatimLabel::None, table.body().len(), table.framing());
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
