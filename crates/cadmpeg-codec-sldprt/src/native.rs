@@ -230,7 +230,7 @@ impl SldprtNative {
         let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
         let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
-        let entities: Vec<crate::records::SketchInputEntity> =
+        let entity_wires: Vec<crate::records::SketchInputEntityWire> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
         let body_selections: Vec<FeatureInputBodySelection> =
@@ -286,7 +286,7 @@ impl SldprtNative {
             .iter()
             .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice()))
             .collect::<std::collections::HashMap<_, _>>();
-        if let Some(record) = entities
+        if let Some(record) = entity_wires
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
@@ -295,6 +295,17 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        let entities = entity_wires
+            .into_iter()
+            .map(|wire| {
+                let payload = lane_payloads
+                    .get(wire.parent.as_str())
+                    .copied()
+                    .unwrap_or_default();
+                crate::records::SketchInputEntity::try_from_wire(wire, payload)
+                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         if let Some(record) = classes
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
