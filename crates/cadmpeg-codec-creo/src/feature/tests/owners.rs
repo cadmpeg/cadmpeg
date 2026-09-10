@@ -117,24 +117,23 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
 }
 
 fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
-    FeatureEntityTable {
-        feature_id: owner,
-        table_class_id: 80,
-        entries: source_ids
+    FeatureEntityTable::new(
+        owner,
+        80,
+        source_ids
             .iter()
             .enumerate()
             .map(|(index, source_id)| FeatureEntityTableEntry {
                 entity_id: index as u32 + 1,
-                class_id: 200,
                 payload: crate::feature::entry_payload(200, Some(*source_id), None, None),
                 prefixed: true,
                 offset: index,
                 end_offset: index + 1,
-                is_surface: false,
             })
             .collect(),
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([])
 }
 
@@ -274,12 +273,10 @@ fn saved_section_owner_uses_only_class_200_source_ids() {
     let mut table = generated_entity_table(667, &[9]);
     table.entries.push(FeatureEntityTableEntry {
         entity_id: 2,
-        class_id: 201,
         payload: crate::feature::entry_payload(201, Some(10), None, None),
         prefixed: true,
         offset: 1,
         end_offset: 2,
-        is_surface: false,
     });
     let definitions = [pending_trimmed_definition(&[9, 10])];
 
@@ -698,8 +695,14 @@ fn segment_tables_retain_extents_without_decoded_rows() {
     assert!(!segments.is_complete());
 
     let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
-    let segments = segment_table_body(positional, 0, 0, positional.len(), false)
-        .expect("positional segtab header");
+    let segments = segment_table_body(
+        positional,
+        0,
+        0,
+        positional.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("positional segtab header");
     assert_eq!(segments.declared_count, 2);
     assert_eq!(segments.entity_ref, Some(1));
     assert!(segments.rows.ordinary().next().is_none());
@@ -710,7 +713,14 @@ fn segment_tables_retain_extents_without_decoded_rows() {
 fn segment_table_prototype_close_requires_the_header_class() {
     let payload = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x02\xe2";
 
-    assert!(segment_table_body(payload, 0, 0, payload.len(), true).is_none());
+    assert!(segment_table_body(
+        payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Elided
+    )
+    .is_none());
 }
 
 #[test]
@@ -750,8 +760,14 @@ fn segment_tables_type_section_reference_lines() {
         0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 2, 0, 1, 0, 10, 0xf6, 0xf6, 0, 0, 0xf6,
         0xf6, 1, 0xe2,
     ];
-    let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len(), false)
-        .expect("malformed known segment table");
+    let segments = segment_table_body(
+        &malformed_known,
+        0,
+        0,
+        malformed_known.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("malformed known segment table");
     assert!(!segments.is_complete());
     assert!(segments.rows.ordinary().next().is_none());
     assert!(segments.rows.opaque().next().is_none());
@@ -764,8 +780,14 @@ fn segment_tables_type_bounded_section_curves() {
         22, 0xe2,
     ];
 
-    let segments = segment_table_body(&payload, 0, 0, payload.len(), false)
-        .expect("bounded curve segment table");
+    let segments = segment_table_body(
+        &payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("bounded curve segment table");
 
     assert!(segments.is_complete());
     assert!(segments.rows.opaque().next().is_none());
@@ -786,8 +808,14 @@ fn segment_tables_type_bounded_section_curves() {
 
     let mut missing_endpoint = payload;
     missing_endpoint[14] = 0xf6;
-    let segments = segment_table_body(&missing_endpoint, 0, 0, missing_endpoint.len(), false)
-        .expect("incomplete bounded curve segment table");
+    let segments = segment_table_body(
+        &missing_endpoint,
+        0,
+        0,
+        missing_endpoint.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("incomplete bounded curve segment table");
     assert!(segments.is_complete());
     assert!(segments.rows.bounded_curves().next().is_none());
     assert_eq!(segments.rows.opaque().count(), 1);
@@ -804,8 +832,14 @@ fn segment_tables_type_complete_circle_rows() {
         22, 0xe2,
     ];
 
-    let segments =
-        segment_table_body(&payload, 0, 0, payload.len(), false).expect("circle segment table");
+    let segments = segment_table_body(
+        &payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("circle segment table");
 
     assert!(segments.is_complete());
     assert!(segments.rows.ordinary().next().is_none());
@@ -822,8 +856,14 @@ fn segment_tables_type_complete_circle_rows() {
 
     let mut malformed = payload;
     malformed[11] = 1;
-    let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
-        .expect("noncanonical circle segment table");
+    let segments = segment_table_body(
+        &malformed,
+        0,
+        0,
+        malformed.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("noncanonical circle segment table");
     assert!(segments.is_complete());
     assert!(segments.rows.circles().next().is_none());
     assert_eq!(segments.rows.opaque().count(), 1);
@@ -840,8 +880,14 @@ fn segment_tables_type_saved_conic_rows() {
         120, 0xe2,
     ];
 
-    let segments =
-        segment_table_body(&payload, 0, 0, payload.len(), false).expect("conic segment table");
+    let segments = segment_table_body(
+        &payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("conic segment table");
 
     assert!(segments.is_complete());
     assert!(segments.rows.opaque().next().is_none());
@@ -858,8 +904,14 @@ fn segment_tables_type_saved_conic_rows() {
 
     let mut malformed = payload;
     malformed[18] = 0;
-    let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
-        .expect("noncanonical conic segment table");
+    let segments = segment_table_body(
+        &malformed,
+        0,
+        0,
+        malformed.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("noncanonical conic segment table");
     assert!(segments.is_complete());
     assert!(segments.rows.conics().next().is_none());
     assert_eq!(segments.rows.opaque().count(), 1);
@@ -876,8 +928,14 @@ fn segment_tables_type_complete_point_rows() {
         0xf6, 22, 0xe2,
     ];
 
-    let segments =
-        segment_table_body(&payload, 0, 0, payload.len(), false).expect("point segment table");
+    let segments = segment_table_body(
+        &payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("point segment table");
 
     assert!(segments.is_complete());
     assert!(segments.rows.ordinary().next().is_none());
@@ -893,8 +951,14 @@ fn segment_tables_type_complete_point_rows() {
 
     let mut malformed = payload;
     malformed[19] = 1;
-    let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
-        .expect("noncanonical point segment table");
+    let segments = segment_table_body(
+        &malformed,
+        0,
+        0,
+        malformed.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("noncanonical point segment table");
     assert!(segments.is_complete());
     assert!(segments.rows.points().next().is_none());
     assert_eq!(segments.rows.opaque().count(), 1);
@@ -911,8 +975,14 @@ fn segment_tables_type_complete_centered_line_rows() {
         22, 0xe2,
     ];
 
-    let segments = segment_table_body(&payload, 0, 0, payload.len(), false)
-        .expect("centered line segment table");
+    let segments = segment_table_body(
+        &payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("centered line segment table");
 
     assert!(segments.is_complete());
     assert!(segments.rows.ordinary().next().is_none());
@@ -928,8 +998,14 @@ fn segment_tables_type_complete_centered_line_rows() {
 
     let mut other_type_47 = payload;
     other_type_47[16] = 0;
-    let segments = segment_table_body(&other_type_47, 0, 0, other_type_47.len(), false)
-        .expect("other type-47 segment table");
+    let segments = segment_table_body(
+        &other_type_47,
+        0,
+        0,
+        other_type_47.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("other type-47 segment table");
     assert!(segments.is_complete());
     assert_eq!(
         segments.rows.centered_lines().cloned().collect::<Vec<_>>(),
@@ -948,7 +1024,7 @@ fn segment_tables_type_complete_centered_line_rows() {
         0,
         0,
         missing_construction_ref.len(),
-        false,
+        crate::feature::definitions::PrototypeRow::Present,
     )
     .expect("incomplete centered-line segment table");
     assert!(segments.is_complete());
@@ -971,7 +1047,14 @@ fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
         3, 0, 0xe6, 0xe2,
     ];
 
-    let segments = segment_table_body(&payload, 0, 0, payload.len(), false).expect("segment table");
+    let segments = segment_table_body(
+        &payload,
+        0,
+        0,
+        payload.len(),
+        crate::feature::definitions::PrototypeRow::Present,
+    )
+    .expect("segment table");
 
     assert!(segments.is_complete());
     assert_eq!(segments.rows.ordinary().count(), 1);

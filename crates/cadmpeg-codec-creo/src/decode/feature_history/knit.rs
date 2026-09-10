@@ -106,7 +106,7 @@ pub(in super::super) fn class_100_operand_producers(
                         .filter_map(|(entry_index, entry)| {
                             let position = (table.offset, entry.offset, table_index, entry_index);
                             (position < consumer_position
-                                && entry.class_id == 200
+                                && entry.class_id() == 200
                                 && entry.entity_id == entity_id)
                                 .then_some(owner)
                         })
@@ -192,8 +192,9 @@ pub(in super::super) fn knit_operand_surface_ids(
             let [entry] = matching_entries.as_slice() else {
                 return None;
             };
-            let surface = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.class_id)?;
-            (surface.feature_id == *producer).then_some(entry.class_id)
+            let surface =
+                crate::surface::unique_surface_row(&scan.surfaces.rows, entry.class_id())?;
+            (surface.feature_id == *producer).then_some(entry.class_id())
         })
         .collect::<Option<Vec<_>>>()?;
     (surface_ids.iter().collect::<BTreeSet<_>>().len() == surface_ids.len()).then_some(surface_ids)
@@ -261,7 +262,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
                 table
                     .entries
                     .iter()
-                    .filter(|entry| entry.class_id == 209)
+                    .filter(|entry| entry.class_id() == 209)
                     .map(move |entry| (table, entry))
             }),
     ) else {
@@ -301,7 +302,7 @@ pub(in super::super) fn feature_surface_transitions(
             table
                 .entries
                 .iter()
-                .filter(|entry| entry.class_id == 210)
+                .filter(|entry| entry.class_id() == 210)
                 .map(move |entry| (*table, entry))
         })
         .collect::<Vec<_>>();
@@ -311,7 +312,7 @@ pub(in super::super) fn feature_surface_transitions(
     let predecessors = owned
         .iter()
         .flat_map(|table| table.entries.iter())
-        .filter(|entry| entry.class_id == 214 && entry.related_entity_id().is_some())
+        .filter(|entry| entry.class_id() == 214 && entry.related_entity_id().is_some())
         .count();
     if predecessors != outputs.len() {
         return None;
@@ -338,7 +339,7 @@ pub(in super::super) fn feature_surface_transitions(
             return None;
         }
         let mut matches = output_table.entries.iter().filter(|predecessor| {
-            predecessor.class_id == 214
+            predecessor.class_id() == 214
                 && predecessor.entity_id == intermediate_id
                 && predecessor.related_entity_state() == Some(0)
                 && output_table

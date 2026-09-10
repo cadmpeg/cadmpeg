@@ -54,8 +54,8 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert!(table.entries[1].prefixed);
     assert_eq!(table.entries[0].entity_id, 7);
     assert_eq!(table.entries[1].entity_id, 9);
-    assert_eq!(table.entries[0].class_id, 200);
-    assert_eq!(table.entries[1].class_id, 200);
+    assert_eq!(table.entries[0].class_id(), 200);
+    assert_eq!(table.entries[1].class_id(), 200);
     assert_eq!(table.entries[0].source_entity_id(), Some(1));
     assert_eq!(table.entries[1].source_entity_id(), Some(2));
     assert_eq!(table.entries[0].end_offset, table.entries[1].offset - 2);
@@ -130,7 +130,7 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
         panic!("expected one generated-entity table");
     };
     assert_eq!(table.entry_ids(), vec![7, 8]);
-    assert_eq!(table.entries[0].class_id, 200);
+    assert_eq!(table.entries[0].class_id(), 200);
     assert_eq!(table.entries[0].source_entity_id(), Some(227));
     assert_eq!(table.entries[1].source_entity_id(), Some(3));
 }

@@ -103,14 +103,17 @@ pub(in super::super) fn legacy_source_stream<'a>(
         .map_or("legacy_ascii", |section| section.name())
 }
 
-pub(in super::super) fn emit_legacy_value_arena<T: Serialize>(
+pub(in super::super) fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     key: &str,
-    records: &[crate::legacy::ValueRecord<T>],
+    records: &[crate::legacy::ValueRecord<K>],
     tag: &str,
-) -> Result<(), CodecError> {
+) -> Result<(), CodecError>
+where
+    K::Payload: Serialize,
+{
     emit_arena(ir, annotations, key, records, |annotations, record| {
         annotate(
             annotations,

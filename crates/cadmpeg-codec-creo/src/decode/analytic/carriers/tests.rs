@@ -141,7 +141,6 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame: crate::surface::PositionalCylinderFrame::new(
@@ -204,7 +203,6 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame: crate::surface::PositionalCylinderFrame::new(

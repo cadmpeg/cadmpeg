@@ -4,20 +4,19 @@
 fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 225,
-            table_class_id: 29,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        crate::feature::FeatureEntityTable::new(
+            225,
+            29,
+            vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 226,
-                class_id: 209,
                 payload: crate::feature::entry_payload(209, None, None, None),
                 prefixed: true,
                 offset: 0,
                 end_offset: 0,
-                is_surface: false,
             }],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([226]),
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -37,7 +36,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
 
     scan.features.entity_tables[0]
         .entries
-        .push(crate::feature::dummy_table_entry(226, true));
+        .push(crate::feature::dummy_table_entry(226));
     assert_eq!(
         super::draft_neutral_plane_selection(&scan, 225),
         cadmpeg_ir::features::FaceSelection::Unresolved
@@ -55,18 +54,17 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
         ),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
-        is_surface: false,
     };
-    let mut table = crate::feature::FeatureEntityTable {
-        feature_id: 17,
-        table_class_id: 80,
-        entries: vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
-        offset: 0,
-    }
+    let mut table = crate::feature::FeatureEntityTable::new(
+        17,
+        80,
+        vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([201]);
     let rows = vec![
         crate::surface::SurfaceRow {
@@ -95,11 +93,7 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     );
 
     table.entries.push(entry(201, 210, Some(101)));
-    table
-        .entries
-        .last_mut()
-        .expect("duplicate roster")
-        .is_surface = true;
+    table.mark_surface_id(201);
     assert_eq!(
         super::feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
         None

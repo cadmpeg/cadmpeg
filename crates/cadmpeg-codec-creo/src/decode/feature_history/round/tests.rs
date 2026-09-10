@@ -103,7 +103,6 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cone(
                     crate::surface::PositionalConeFrame::new(
@@ -254,7 +253,6 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::Cone,
             ),
@@ -617,7 +615,6 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
                 scalar_tokens: vec![token.clone()],
                 opaque_spans: Vec::new(),
                 scalar_frames: Vec::new(),
-                terminal_scalar_frame: None,
                 carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                     crate::surface::SurfaceKind::Cylinder,
                 ),
@@ -708,12 +705,8 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
             opaque_spans: Vec::new(),
             scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
                 offset: 0,
-                slots: vec![token.clone()],
-            }],
-            terminal_scalar_frame: Some(crate::surface::SurfaceParameterScalarFrame {
-                offset: 0,
                 slots: vec![token],
-            }),
+            }],
             carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::TorusOrSphere,
             ),
