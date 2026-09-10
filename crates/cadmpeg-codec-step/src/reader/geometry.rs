@@ -667,43 +667,18 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
     }
     let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
-    for (id, record) in exchange.entities_any(&[
-        "LINE",
-        "CIRCLE",
-        "ELLIPSE",
-        "PARABOLA",
-        "HYPERBOLA",
-        "POLYLINE",
-        "B_SPLINE_CURVE_WITH_KNOTS",
-        "UNIFORM_CURVE",
-        "QUASI_UNIFORM_CURVE",
-        "BEZIER_CURVE",
-    ]) {
-        let Some(curve_type) = entity_type(
-            record,
-            &[
-                "LINE",
-                "CIRCLE",
-                "ELLIPSE",
-                "PARABOLA",
-                "HYPERBOLA",
-                "POLYLINE",
-                "B_SPLINE_CURVE_WITH_KNOTS",
-                "UNIFORM_CURVE",
-                "QUASI_UNIFORM_CURVE",
-                "BEZIER_CURVE",
-            ],
-        ) else {
+    for (id, record) in exchange.entities_any(LeafCurveEntity::NAMES) {
+        let Some(curve_kind) = LeafCurveEntity::of(record) else {
             continue;
         };
         if pcurve_geometry_records.contains(&id) {
             continue;
         }
-        if curve_type == "B_SPLINE_CURVE_WITH_KNOTS" && record.simple_name().is_none() {
+        if curve_kind == LeafCurveEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
         let record_scale = unit_scales.length([id]);
-        let parameter_offset = if curve_type == "ELLIPSE" {
+        let parameter_offset = if curve_kind == LeafCurveEntity::Ellipse {
             let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number);
             let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number);
             first_radius
@@ -715,8 +690,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         } else {
             None
         };
-        let geometry = match curve_type {
-            "LINE" => named_parameter(record, "LINE", 1)
+        let geometry = match curve_kind {
+            LeafCurveEntity::Line => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
                 .and_then(|point| points.get(&point).copied())
                 .zip(
@@ -730,7 +705,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .ok()
                         .map(CurveGeometry::Line)
                 }),
-            "CIRCLE" => named_parameter(record, "CIRCLE", 1)
+            LeafCurveEntity::Circle => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
@@ -744,7 +719,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .ok()
                     .map(CurveGeometry::Circle)
                 }),
-            "ELLIPSE" => named_parameter(record, "ELLIPSE", 1)
+            LeafCurveEntity::Ellipse => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "ELLIPSE", 2).and_then(Value::number))
@@ -774,7 +749,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .map(CurveGeometry::Ellipse)
                     },
                 ),
-            "PARABOLA" => named_parameter(record, "PARABOLA", 1)
+            LeafCurveEntity::Parabola => named_parameter(record, "PARABOLA", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
@@ -788,7 +763,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .ok()
                     .map(CurveGeometry::Parabola)
                 }),
-            "HYPERBOLA" => named_parameter(record, "HYPERBOLA", 1)
+            LeafCurveEntity::Hyperbola => named_parameter(record, "HYPERBOLA", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "HYPERBOLA", 2).and_then(Value::number))
@@ -806,14 +781,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .map(CurveGeometry::Hyperbola)
                     },
                 ),
-            "POLYLINE" => polyline(record, &points).map(CurveGeometry::Nurbs),
-            "B_SPLINE_CURVE_WITH_KNOTS"
-            | "UNIFORM_CURVE"
-            | "QUASI_UNIFORM_CURVE"
-            | "BEZIER_CURVE" => {
+            LeafCurveEntity::Polyline => polyline(record, &points).map(CurveGeometry::Nurbs),
+            LeafCurveEntity::BSplineWithKnots
+            | LeafCurveEntity::UniformCurve
+            | LeafCurveEntity::QuasiUniformCurve
+            | LeafCurveEntity::BezierCurve => {
                 nurbs_curve(id, record, &points, &mut warnings).map(CurveGeometry::Nurbs)
             }
-            _ => unreachable!("curve type was selected from the dispatch list"),
         };
         if let Some(geometry) = geometry {
             if let Some(offset) = parameter_offset {
@@ -826,7 +800,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             typed.insert(id);
         } else {
-            warnings.push(format!("{curve_type} #{id} has invalid geometry"));
+            warnings.push(format!("{} #{id} has invalid geometry", curve_kind.name()));
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -1337,36 +1311,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         typed.insert(id);
     }
 
-    for (id, record) in exchange.entities_any(&[
-        "PLANE",
-        "CYLINDRICAL_SURFACE",
-        "CONICAL_SURFACE",
-        "SPHERICAL_SURFACE",
-        "DEGENERATE_TOROIDAL_SURFACE",
-        "TOROIDAL_SURFACE",
-        "B_SPLINE_SURFACE_WITH_KNOTS",
-        "UNIFORM_SURFACE",
-        "QUASI_UNIFORM_SURFACE",
-        "BEZIER_SURFACE",
-    ]) {
-        let Some(surface_type) = entity_type(
-            record,
-            &[
-                "PLANE",
-                "CYLINDRICAL_SURFACE",
-                "CONICAL_SURFACE",
-                "SPHERICAL_SURFACE",
-                "DEGENERATE_TOROIDAL_SURFACE",
-                "TOROIDAL_SURFACE",
-                "B_SPLINE_SURFACE_WITH_KNOTS",
-                "UNIFORM_SURFACE",
-                "QUASI_UNIFORM_SURFACE",
-                "BEZIER_SURFACE",
-            ],
-        ) else {
+    for (id, record) in exchange.entities_any(LeafSurfaceEntity::NAMES) {
+        let Some(surface_kind) = LeafSurfaceEntity::of(record) else {
             continue;
         };
-        if surface_type == "B_SPLINE_SURFACE_WITH_KNOTS" && record.simple_name().is_none() {
+        let surface_type = surface_kind.name();
+        if surface_kind == LeafSurfaceEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
         let record_scale = unit_scales.length([id]);
@@ -1374,13 +1324,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
-        let geometry = match surface_type {
-            "PLANE" => placement.and_then(|(origin, normal, u_axis)| {
+        let geometry = match surface_kind {
+            LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
                 cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
                     .ok()
                     .map(SurfaceGeometry::Plane)
             }),
-            "CYLINDRICAL_SURFACE" => placement
+            LeafSurfaceEntity::Cylindrical => placement
                 .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((origin, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::CylinderSurface::try_new(
@@ -1392,7 +1342,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .ok()
                     .map(SurfaceGeometry::Cylinder)
                 }),
-            "CONICAL_SURFACE" => placement
+            LeafSurfaceEntity::Conical => placement
                 .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
                 .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
@@ -1407,7 +1357,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .ok()
                     .map(SurfaceGeometry::Cone)
                 }),
-            "SPHERICAL_SURFACE" => placement
+            LeafSurfaceEntity::Spherical => placement
                 .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::SphereSurface::try_new(
@@ -1419,7 +1369,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .ok()
                     .map(SurfaceGeometry::Sphere)
                 }),
-            "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
+            LeafSurfaceEntity::Toroidal | LeafSurfaceEntity::DegenerateToroidal => placement
                 .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
                 .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
                 .and_then(
@@ -1435,13 +1385,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .map(SurfaceGeometry::Torus)
                     },
                 ),
-            "B_SPLINE_SURFACE_WITH_KNOTS"
-            | "UNIFORM_SURFACE"
-            | "QUASI_UNIFORM_SURFACE"
-            | "BEZIER_SURFACE" => {
+            LeafSurfaceEntity::BSplineWithKnots
+            | LeafSurfaceEntity::UniformSurface
+            | LeafSurfaceEntity::QuasiUniformSurface
+            | LeafSurfaceEntity::BezierSurface => {
                 nurbs_surface(id, record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
             }
-            _ => unreachable!("surface type was selected from the dispatch list"),
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
@@ -2490,6 +2439,128 @@ fn transformation_parameter<'a>(
         _ => return None,
     };
     (index < attribute_count).then(|| &parameters[offset + index])
+}
+
+/// One leaf curve carrier entity dispatched by the STEP reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeafCurveEntity {
+    Line,
+    Circle,
+    Ellipse,
+    Parabola,
+    Hyperbola,
+    Polyline,
+    BSplineWithKnots,
+    UniformCurve,
+    QuasiUniformCurve,
+    BezierCurve,
+}
+
+impl LeafCurveEntity {
+    const NAMES: &'static [&'static str] = &[
+        "LINE",
+        "CIRCLE",
+        "ELLIPSE",
+        "PARABOLA",
+        "HYPERBOLA",
+        "POLYLINE",
+        "B_SPLINE_CURVE_WITH_KNOTS",
+        "UNIFORM_CURVE",
+        "QUASI_UNIFORM_CURVE",
+        "BEZIER_CURVE",
+    ];
+
+    fn of(record: &RawRecord) -> Option<Self> {
+        entity_type(record, Self::NAMES).and_then(|name| match name {
+            "LINE" => Some(Self::Line),
+            "CIRCLE" => Some(Self::Circle),
+            "ELLIPSE" => Some(Self::Ellipse),
+            "PARABOLA" => Some(Self::Parabola),
+            "HYPERBOLA" => Some(Self::Hyperbola),
+            "POLYLINE" => Some(Self::Polyline),
+            "B_SPLINE_CURVE_WITH_KNOTS" => Some(Self::BSplineWithKnots),
+            "UNIFORM_CURVE" => Some(Self::UniformCurve),
+            "QUASI_UNIFORM_CURVE" => Some(Self::QuasiUniformCurve),
+            "BEZIER_CURVE" => Some(Self::BezierCurve),
+            _ => None,
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Line => "LINE",
+            Self::Circle => "CIRCLE",
+            Self::Ellipse => "ELLIPSE",
+            Self::Parabola => "PARABOLA",
+            Self::Hyperbola => "HYPERBOLA",
+            Self::Polyline => "POLYLINE",
+            Self::BSplineWithKnots => "B_SPLINE_CURVE_WITH_KNOTS",
+            Self::UniformCurve => "UNIFORM_CURVE",
+            Self::QuasiUniformCurve => "QUASI_UNIFORM_CURVE",
+            Self::BezierCurve => "BEZIER_CURVE",
+        }
+    }
+}
+
+/// One leaf surface carrier entity dispatched by the STEP reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeafSurfaceEntity {
+    Plane,
+    Cylindrical,
+    Conical,
+    Spherical,
+    DegenerateToroidal,
+    Toroidal,
+    BSplineWithKnots,
+    UniformSurface,
+    QuasiUniformSurface,
+    BezierSurface,
+}
+
+impl LeafSurfaceEntity {
+    const NAMES: &'static [&'static str] = &[
+        "PLANE",
+        "CYLINDRICAL_SURFACE",
+        "CONICAL_SURFACE",
+        "SPHERICAL_SURFACE",
+        "DEGENERATE_TOROIDAL_SURFACE",
+        "TOROIDAL_SURFACE",
+        "B_SPLINE_SURFACE_WITH_KNOTS",
+        "UNIFORM_SURFACE",
+        "QUASI_UNIFORM_SURFACE",
+        "BEZIER_SURFACE",
+    ];
+
+    fn of(record: &RawRecord) -> Option<Self> {
+        entity_type(record, Self::NAMES).and_then(|name| match name {
+            "PLANE" => Some(Self::Plane),
+            "CYLINDRICAL_SURFACE" => Some(Self::Cylindrical),
+            "CONICAL_SURFACE" => Some(Self::Conical),
+            "SPHERICAL_SURFACE" => Some(Self::Spherical),
+            "DEGENERATE_TOROIDAL_SURFACE" => Some(Self::DegenerateToroidal),
+            "TOROIDAL_SURFACE" => Some(Self::Toroidal),
+            "B_SPLINE_SURFACE_WITH_KNOTS" => Some(Self::BSplineWithKnots),
+            "UNIFORM_SURFACE" => Some(Self::UniformSurface),
+            "QUASI_UNIFORM_SURFACE" => Some(Self::QuasiUniformSurface),
+            "BEZIER_SURFACE" => Some(Self::BezierSurface),
+            _ => None,
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Plane => "PLANE",
+            Self::Cylindrical => "CYLINDRICAL_SURFACE",
+            Self::Conical => "CONICAL_SURFACE",
+            Self::Spherical => "SPHERICAL_SURFACE",
+            Self::DegenerateToroidal => "DEGENERATE_TOROIDAL_SURFACE",
+            Self::Toroidal => "TOROIDAL_SURFACE",
+            Self::BSplineWithKnots => "B_SPLINE_SURFACE_WITH_KNOTS",
+            Self::UniformSurface => "UNIFORM_SURFACE",
+            Self::QuasiUniformSurface => "QUASI_UNIFORM_SURFACE",
+            Self::BezierSurface => "BEZIER_SURFACE",
+        }
+    }
 }
 
 fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
