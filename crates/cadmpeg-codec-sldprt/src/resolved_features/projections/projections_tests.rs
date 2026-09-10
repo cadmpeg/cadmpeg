@@ -1631,3 +1631,132 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     collision.references[0][0].instance = Some(0x8083);
     assert!(variable_fillet_radius_groups("variable", &[history], &[], &[&collision]).is_none());
 }
+
+#[test]
+fn a_sole_unresolved_fillet_group_carries_its_edges() {
+    use cadmpeg_ir::features::{EdgeSelection, FilletGroup, RadiusSpec};
+
+    let group = |edges: EdgeSelection, radius: RadiusSpec| FilletGroup {
+        edges,
+        radius,
+        tangency_weight: None,
+    };
+    let native = EdgeSelection::Native("native:fillet-edges".into());
+    let fillet = |groups: Vec<FilletGroup>| FeatureDefinition::Fillet {
+        groups: groups.try_into().expect("a fillet keeps one or more groups"),
+    };
+
+    let carried = sole_unresolved_fillet_group(&fillet(vec![group(
+        native.clone(),
+        RadiusSpec::UnresolvedVariable,
+    )]))
+    .expect("a sole group without a radius is carried out of the check");
+    assert_eq!(carried.0, native);
+
+    assert_eq!(
+        sole_unresolved_fillet_group(&fillet(vec![group(
+            native.clone(),
+            RadiusSpec::Constant {
+                radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("a positive radius"),
+            },
+        )])),
+        None
+    );
+    assert_eq!(
+        sole_unresolved_fillet_group(&fillet(vec![
+            group(native.clone(), RadiusSpec::UnresolvedVariable),
+            group(EdgeSelection::Unresolved, RadiusSpec::UnresolvedVariable),
+        ])),
+        None
+    );
+    assert_eq!(
+        sole_unresolved_fillet_group(&FeatureDefinition::Chamfer {
+            groups: vec![cadmpeg_ir::features::ChamferGroup {
+                edges: native,
+                spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistance,
+            }]
+            .try_into()
+            .expect("a chamfer keeps one or more groups"),
+            flip_direction: false,
+        }),
+        None
+    );
+}
+
+#[test]
+fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
+    use cadmpeg_ir::features::{EdgeSelection, FilletGroup, RadiusSpec};
+
+    let weight = cadmpeg_ir::scalar::FiniteReal::new(0.75).expect("a finite tangency weight");
+    let fillet = |tangency_weight| FeatureDefinition::Fillet {
+        groups: vec![FilletGroup {
+            edges: EdgeSelection::Unresolved,
+            radius: RadiusSpec::UnresolvedConstant,
+            tangency_weight,
+        }]
+        .try_into()
+        .expect("a fillet keeps one or more groups"),
+    };
+
+    assert_eq!(
+        sole_unresolved_fillet_group(&fillet(Some(weight)))
+            .expect("a sole group without a radius is carried out of the check")
+            .1,
+        Some(weight)
+    );
+    assert_eq!(
+        sole_unresolved_fillet_group(&fillet(None))
+            .expect("a sole group without a radius is carried out of the check")
+            .1,
+        None
+    );
+}
+
+#[test]
+fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
+    let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
+        id: format!("{parent}-{offset}"),
+        parent: parent.into(),
+        ordinal: 0,
+        offset,
+        selector: 0,
+        kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
+        object_name_ref: "name".into(),
+        feature_ref: "fillet-native".into(),
+        producer_feature_refs: vec!["producer-native".into()],
+        terminal_feature_ref: Some("producer-native".into()),
+        components: vec![FeatureInputComponentPathEntry {
+            instance: Some(0x8020),
+            type_signature: [0; 12],
+            local_id: Some(local_id),
+        }],
+    };
+
+    let lane = [
+        selection("lane-one", 40, 3),
+        selection("lane-one", 20, 2),
+        selection("lane-one", 60, 1),
+    ];
+    let borrowed = lane.iter().collect::<Vec<_>>();
+    let [center, side_one, side_two] =
+        full_round_fillet_selection_triple(&borrowed).expect("one lane of three is a triple");
+    assert_eq!(
+        [center.offset, side_one.offset, side_two.offset],
+        [20, 40, 60]
+    );
+
+    let short = lane[..2].iter().collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&short).is_none());
+
+    let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
+    let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&with_short_lane).is_none());
+
+    let other_lane = [
+        selection("lane-two", 20, 9),
+        selection("lane-two", 40, 8),
+        selection("lane-two", 60, 7),
+    ];
+    let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&disagreeing).is_none());
+}
