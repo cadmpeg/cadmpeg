@@ -51,32 +51,6 @@
             "definition": "creo:model:product_definition#root",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
