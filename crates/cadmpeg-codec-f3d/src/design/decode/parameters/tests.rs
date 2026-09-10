@@ -11,8 +11,9 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter, parse_legacy_parameter_owner_68,
-    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    decode_parameters, parse_design_parameter_record as parse_design_parameter,
+    parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88, parse_parameter_companion,
+    parse_parameter_owner,
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -865,7 +866,10 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     assert_eq!(parsed.record_index, 46);
     assert_eq!(parsed.owner_record_index, 44);
     assert_eq!(parsed.timestamp_micros.get(), 1_678_000_000_000_000);
-    assert_eq!(parsed.timestamp_micros_offset, 42);
+    assert_eq!(
+        parsed.timestamp_micros_offset,
+        crate::design::decode::parameters::FrameRelative(42)
+    );
 
     prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
     assert_eq!(

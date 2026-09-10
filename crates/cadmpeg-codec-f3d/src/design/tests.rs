@@ -9,7 +9,7 @@
 
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
-use crate::design::decode::parameters::parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::project_parameter_design;

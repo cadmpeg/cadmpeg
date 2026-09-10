@@ -13,7 +13,7 @@ use super::{
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
     parse_dimension_presentation_frame, recipe_record_prefix,
 };
-use crate::design::decode::parameters::parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
 use crate::design::dimensions::{
     null_locus_dimension_definition, remove_dimension_frame_relations,
 };
