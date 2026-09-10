@@ -3451,7 +3451,11 @@ fn mesh_attribute_channels(
 
     let mut channels = Vec::new();
     for attribute in attributes {
-        match (attribute.domain, attribute.item_size(), attribute.count()) {
+        match (
+            attribute.addressing.domain(),
+            attribute.item_size(),
+            attribute.count(),
+        ) {
             (MeshAttributeDomain::Vertex, Some(item_size), Some(_)) => {
                 channels.push(
                     cadmpeg_ir::tessellation::TessellationChannel::new(
