@@ -888,7 +888,7 @@ fn same_coordinate_accepts_legacy_relation_tags() {
 }
 
 #[test]
-fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
+fn a_solver_scalar_slot_is_its_key_and_carries_no_class_key() {
     use crate::sketches::SketchConstraintDefinitionInput;
     let angle = SketchConstraintDefinitionInput::AngleDifference {
         first: 17,
@@ -897,18 +897,9 @@ fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
         value: crate::scalar::Angle::new(0.5).unwrap(),
     };
     let wire = serde_json::to_value(&angle).unwrap();
-    assert_eq!(
-        wire["first"],
-        serde_json::json!({"variable_type": 4, "key": 17})
-    );
-    assert_eq!(
-        wire["second"],
-        serde_json::json!({"variable_type": 4, "key": 18})
-    );
-    assert_eq!(
-        wire["difference"],
-        serde_json::json!({"variable_type": 0, "key": 19})
-    );
+    assert_eq!(wire["first"], serde_json::json!(17));
+    assert_eq!(wire["second"], serde_json::json!(18));
+    assert_eq!(wire["difference"], serde_json::json!(19));
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
         angle
@@ -919,14 +910,8 @@ fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
         second: 18,
     };
     let wire = serde_json::to_value(&equality).unwrap();
-    assert_eq!(
-        wire["first"],
-        serde_json::json!({"variable_type": 6, "key": 17})
-    );
-    assert_eq!(
-        wire["second"],
-        serde_json::json!({"variable_type": 6, "key": 18})
-    );
+    assert_eq!(wire["first"], serde_json::json!(17));
+    assert_eq!(wire["second"], serde_json::json!(18));
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
         equality
@@ -934,37 +919,18 @@ fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
 }
 
 #[test]
-fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
+fn a_solver_scalar_slot_rejects_the_deleted_variable_type_key() {
     use crate::sketches::SketchConstraintDefinitionInput;
-    for definition in [
-        SketchConstraintDefinitionInput::AngleDifference {
-            first: 17,
-            second: 18,
-            difference: 19,
-            value: crate::scalar::Angle::new(0.5).unwrap(),
-        },
-        SketchConstraintDefinitionInput::ScalarEquality {
-            first: 17,
-            second: 18,
-        },
-    ] {
-        let wire = serde_json::to_value(&definition).unwrap();
-        for slot in ["first", "second", "difference"] {
-            let Some(scalar) = wire.get(slot) else {
-                continue;
-            };
-            for wrong_class in [0, 4, 5, 6] {
-                if scalar["variable_type"] == wrong_class {
-                    continue;
-                }
-                let mut malformed = wire.clone();
-                malformed[slot]["variable_type"] = serde_json::json!(wrong_class);
-                let error = serde_json::from_value::<SketchConstraintDefinitionInput>(malformed)
-                    .unwrap_err();
-                assert!(error.to_string().contains("variable_type must be"));
-            }
-        }
-    }
+    let mut wire = serde_json::to_value(SketchConstraintDefinitionInput::ScalarEquality {
+        first: 17,
+        second: 18,
+    })
+    .unwrap();
+    wire["first"] = serde_json::json!({"variable_type": 6, "key": 17});
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
 }
 
 #[test]

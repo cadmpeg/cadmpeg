@@ -21390,10 +21390,7 @@
                 }
               }
             },
-            "face_maker": {
-              "class": "Part::FaceMakerBullseye",
-              "mode": 3
-            },
+            "face_maker": "Part::FaceMakerBullseye",
             "inner_wire_taper": "inverted",
             "op": "new_body",
             "profile": {

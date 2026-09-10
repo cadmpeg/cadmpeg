@@ -2,13 +2,13 @@
 //! Checked procedural curve payloads.
 
 use super::{
-    default_true, vector_offset_roles_wire, CacheFirstCurveForm, CurveOffsetRange,
+    default_true, CacheFirstCurveForm, CurveOffsetRange,
     DeformableCurveData, DeformableCurveSource, IntcurveSupportContext, OffsetSide,
     ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
 };
 use super::{IntcurveSupportSide, ProjectionTail, SpringLayout};
 #[cfg(feature = "schema")]
-use super::{OffsetSideWire, VectorOffsetRolesWire};
+use super::OffsetSideWire;
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -636,9 +636,7 @@ pub struct VectorOffsetCurveConstruction {
     parameter_range: ParameterInterval,
     /// Model-space offset vector.
     offset: FiniteVector3,
-    /// Integer codes attached to the fixed `source` and `offset` roles.
-    #[serde(flatten, with = "vector_offset_roles_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "VectorOffsetRolesWire"))]
+    /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
 }
 
@@ -651,9 +649,7 @@ struct VectorOffsetCurveConstructionWire {
     parameter_range: [f64; 2],
     /// Model-space offset vector.
     offset: Vector3,
-    /// Integer codes attached to the fixed `source` and `offset` roles.
-    #[serde(flatten, with = "vector_offset_roles_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "VectorOffsetRolesWire"))]
+    /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
 }
 

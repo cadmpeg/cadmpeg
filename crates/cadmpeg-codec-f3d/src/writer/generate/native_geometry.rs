@@ -5240,9 +5240,9 @@ pub(crate) fn native_procedural_curve(
             ],
         );
         native_string(bytes, "source")?;
-        native_i64(bytes, roles.source_code);
+        native_i64(bytes, roles.source);
         native_string(bytes, "offset")?;
-        native_i64(bytes, roles.offset_code);
+        native_i64(bytes, roles.offset);
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
         bytes.push(0x10);

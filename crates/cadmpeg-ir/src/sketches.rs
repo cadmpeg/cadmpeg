@@ -2093,44 +2093,6 @@ pub struct SketchDistancePair {
     pub second: SketchLocus,
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SolverScalarWire {
-    variable_type: u32,
-    key: u32,
-}
-
-mod solver_scalar_wire {
-    use super::SolverScalarWire;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes this scalar field by reference.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub fn serialize<const CLASS: u32, S: Serializer>(
-        key: &u32,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        SolverScalarWire {
-            variable_type: CLASS,
-            key: *key,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, const CLASS: u32, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<u32, D::Error> {
-        let wire = SolverScalarWire::deserialize(deserializer)?;
-        if wire.variable_type != CLASS {
-            return Err(serde::de::Error::custom(format_args!(
-                "variable_type must be {CLASS} for this scalar slot, got {}",
-                wire.variable_type
-            )));
-        }
-        Ok(wire.key)
-    }
-}
-
 /// Meaning of an internal sketch alignment helper relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2798,25 +2760,10 @@ pub enum SketchConstraintDefinitionInput {
     /// Direct difference between two angle-valued solver scalars.
     AngleDifference {
         /// Solver-local key of the first angle scalar.
-        #[serde(
-            serialize_with = "solver_scalar_wire::serialize::<4, _>",
-            deserialize_with = "solver_scalar_wire::deserialize::<4, _>"
-        )]
-        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
         first: u32,
         /// Solver-local key of the second angle scalar.
-        #[serde(
-            serialize_with = "solver_scalar_wire::serialize::<4, _>",
-            deserialize_with = "solver_scalar_wire::deserialize::<4, _>"
-        )]
-        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
         second: u32,
         /// Solver-local key of the difference scalar receiving `first - second`.
-        #[serde(
-            serialize_with = "solver_scalar_wire::serialize::<0, _>",
-            deserialize_with = "solver_scalar_wire::deserialize::<0, _>"
-        )]
-        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
         difference: u32,
         /// Source-evaluated non-negative angle difference in radians.
         value: Angle,
@@ -2824,18 +2771,8 @@ pub enum SketchConstraintDefinitionInput {
     /// Equality between two equality-class solver scalars.
     ScalarEquality {
         /// Solver-local key of the first equality-class scalar.
-        #[serde(
-            serialize_with = "solver_scalar_wire::serialize::<6, _>",
-            deserialize_with = "solver_scalar_wire::deserialize::<6, _>"
-        )]
-        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
         first: u32,
         /// Solver-local key of the second equality-class scalar.
-        #[serde(
-            serialize_with = "solver_scalar_wire::serialize::<6, _>",
-            deserialize_with = "solver_scalar_wire::deserialize::<6, _>"
-        )]
-        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
         second: u32,
     },
     /// Two explicit Euclidean locus pairs have equal separation.
