@@ -78,9 +78,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 }
             }
         }
-        let Some(shortest) = shortest else {
-            return None;
-        };
+        let shortest = shortest?;
         let mut cursor = alloc_filled(domains.len(), 0usize, "catia_match_cursor").ok()?;
         let mut incoming = alloc_filled(domains.len(), None, "catia_match_incoming").ok()?;
         let mut augmented = 0usize;

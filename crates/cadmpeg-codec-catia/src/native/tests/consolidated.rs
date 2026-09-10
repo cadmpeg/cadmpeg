@@ -1050,7 +1050,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     assert_eq!(
         support_surfaces[0]
             .alias()
-            .and_then(|binding| binding.canonical_tag()),
+            .and_then(super::super::owner_chart::CatiaOwnerChartAliasBinding::canonical_tag),
         Some(200)
     );
     assert_eq!(
@@ -1062,7 +1062,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     assert_eq!(
         support_pcurves[0]
             .alias()
-            .and_then(|binding| binding.canonical_tag()),
+            .and_then(super::super::owner_chart::CatiaOwnerChartAliasBinding::canonical_tag),
         Some(101)
     );
     assert_ne!(
