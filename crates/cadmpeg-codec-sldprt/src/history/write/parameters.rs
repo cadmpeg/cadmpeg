@@ -377,25 +377,25 @@ pub(crate) fn rewrite_parameter_expression(
     expression: &str,
     aliases: &HashMap<String, String>,
 ) -> Option<String> {
-    let tokens = expression_identifier_tokens(expression).identifiers;
+    let tokens = expression_identifier_tokens(expression).ok()?;
     let mut rewritten = String::with_capacity(expression.len());
     let mut copied = 0;
     for token in tokens {
         if expression_identifier_is_syntax(expression, &token) {
             continue;
         }
-        let Some(replacement) = aliases.get(token.value(expression).as_ref()) else {
+        let Some(replacement) = aliases.get(token.value()) else {
             continue;
         };
-        rewritten.push_str(&expression[copied..token.start]);
-        if token.quoted || !unquoted_expression_identifier(replacement) {
+        rewritten.push_str(&expression[copied..token.start()]);
+        if token.is_quoted() || !unquoted_expression_identifier(replacement) {
             rewritten.push('"');
             rewritten.push_str(&replacement.replace('"', "\"\""));
             rewritten.push('"');
         } else {
             rewritten.push_str(replacement);
         }
-        copied = token.end;
+        copied = token.end();
     }
     if copied == 0 {
         return None;
