@@ -271,16 +271,17 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         byte_offset: 0,
         type_guid: type_guid.to_owned().try_into().expect("type GUID"),
         type_guid_offset: 4,
-        base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
-            .then(|| crate::records::RecordedValue {
-                value: Some(
-                    crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
+        base_type_guid: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
+            crate::records::BaseTypeGuid::Guid {
+                value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
                 offset: 8,
-            }),
+            }
+        } else {
+            crate::records::BaseTypeGuid::Absent
+        },
         version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
             crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
         } else {

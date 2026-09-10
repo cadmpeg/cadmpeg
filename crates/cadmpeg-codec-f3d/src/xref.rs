@@ -474,7 +474,7 @@ fn bind_occurrences(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
             );
-            occurrence.occurrence_ordinal = occurrence_ordinal as u32;
+            occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
                 .map(crate::records::DesignAffineTransform::try_from)
                 .transpose()

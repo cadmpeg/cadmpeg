@@ -132,3 +132,17 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
         Some(41)
     );
 }
+
+#[test]
+fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
+    let document = serde_json::json!({
+        "id": "history",
+        "byte_offset": 0,
+        "states": []
+    });
+    let history: AsmHistory = serde_json::from_value(document).unwrap();
+    assert!(!history.projection_finalized());
+    assert!(!crate::history::projection_was_finalized(
+        std::slice::from_ref(&history)
+    ));
+}

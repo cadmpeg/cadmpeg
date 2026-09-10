@@ -27,11 +27,14 @@ pub(crate) struct AsmHistory {
 
 impl AsmHistory {
     /// Historical projection consumers finished and every temporary complete
-    /// topology snapshot was released.
+    /// topology snapshot this history holds was released. A history with no
+    /// states has released nothing and is not finalized.
     pub(crate) fn projection_finalized(&self) -> bool {
-        self.states
-            .iter()
-            .all(super::history_records::AsmDeltaState::projection_released)
+        !self.states.is_empty()
+            && self
+                .states
+                .iter()
+                .all(super::history_records::AsmDeltaState::projection_released)
     }
 
     pub(crate) fn stream_size(&self) -> Option<i64> {

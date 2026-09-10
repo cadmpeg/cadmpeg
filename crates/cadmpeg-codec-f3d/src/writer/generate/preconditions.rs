@@ -550,12 +550,11 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     // A base type need not be registered by the same segment, so an unresolved
     // base GUID is legal; a resolved chain must still terminate.
     for design_type in &native.design_types {
-        if design_type.base_type_guid.as_ref().and_then(|field| {
-            field
-                .value
-                .as_ref()
-                .map(crate::records::DesignRelaxedGuidText::as_str)
-        }) == Some(design_type.type_guid.as_str())
+        if design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str)
+            == Some(design_type.type_guid.as_str())
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design type {} is its own base type",
@@ -566,13 +565,8 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         let mut cursor = design_type;
         while let Some(base) = cursor
             .base_type_guid
-            .as_ref()
-            .and_then(|field| {
-                field
-                    .value
-                    .as_ref()
-                    .map(crate::records::DesignRelaxedGuidText::as_str)
-            })
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str)
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {

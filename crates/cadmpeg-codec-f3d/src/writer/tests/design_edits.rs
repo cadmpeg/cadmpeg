@@ -81,12 +81,14 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .to_owned()
         .try_into()
         .expect("type GUID");
-    object.base_type_guid.as_mut().expect("base GUID").value = Some(
-        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef"
+    let base_offset = object.base_type_guid.offset().expect("located base GUID");
+    object.base_type_guid = crate::records::BaseTypeGuid::Guid {
+        value: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef"
             .to_owned()
             .try_into()
             .expect("base GUID"),
-    );
+        offset: base_offset,
+    };
     object.version = 9;
     let act_guid = native
         .act_guids
@@ -220,10 +222,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "91111111-2222-3333-4444-555555555555"
     );
     assert_eq!(
-        object.base_type_guid.as_ref().and_then(|field| field
-            .value
-            .as_ref()
-            .map(crate::records::DesignRelaxedGuidText::as_str)),
+        object
+            .base_type_guid
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str),
         Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef")
     );
     assert_eq!(object.version, 9);
