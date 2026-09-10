@@ -17,8 +17,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "creo:model:sketch#40",
-            "space": "planar"
+            "sketch": {
+              "sketch": "creo:model:sketch#40",
+              "space": "planar"
+            }
           },
           "id": "creo:model:sketch_feature#40",
           "native_ref": "creo:featdefs:sketch#40",

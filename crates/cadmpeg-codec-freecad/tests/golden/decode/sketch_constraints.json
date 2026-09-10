@@ -1176,8 +1176,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#DimensionalRelations",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#DimensionalRelations",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#DimensionalRelations",
           "name": "DimensionalRelations",
@@ -1196,8 +1198,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#GeometricRelations",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#GeometricRelations",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#GeometricRelations",
           "name": "GeometricRelations",
@@ -1216,8 +1220,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#InactiveRelation",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#InactiveRelation",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#InactiveRelation",
           "name": "InactiveRelation",
@@ -1236,8 +1242,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#InternalAlignmentRelations",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#InternalAlignmentRelations",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#InternalAlignmentRelations",
           "name": "InternalAlignmentRelations",
@@ -1256,8 +1264,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#OpticalRelation",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#OpticalRelation",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#OpticalRelation",
           "name": "OpticalRelation",
@@ -1276,8 +1286,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#SplineWeightRelation",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#SplineWeightRelation",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#SplineWeightRelation",
           "name": "SplineWeightRelation",
@@ -1296,8 +1308,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#SymmetryRelation",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#SymmetryRelation",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#SymmetryRelation",
           "name": "SymmetryRelation",

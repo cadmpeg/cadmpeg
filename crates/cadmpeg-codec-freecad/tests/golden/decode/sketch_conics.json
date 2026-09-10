@@ -281,8 +281,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#ConicWitness",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#ConicWitness",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#ConicWitness",
           "name": "ConicWitness",

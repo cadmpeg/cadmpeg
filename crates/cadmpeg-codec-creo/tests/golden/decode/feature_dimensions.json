@@ -40,6 +40,9 @@
         {
           "definition": {
             "definition": "extrude",
+            "direction": {
+              "kind": "profile_normal"
+            },
             "extent": {
               "kind": "one_sided",
               "side": {
@@ -70,8 +73,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "creo:model:sketch#917",
-            "space": "planar"
+            "sketch": {
+              "sketch": "creo:model:sketch#917",
+              "space": "planar"
+            }
           },
           "id": "creo:model:sketch_feature#917",
           "native_ref": "creo:featdefs:sketch#917",

@@ -64,16 +64,18 @@
         },
         {
           "definition": {
+            "anchor": {
+              "kind": "neutral_plane",
+              "plane": {
+                "kind": "unresolved"
+              }
+            },
             "angle": null,
             "definition": "draft",
             "faces": {
               "kind": "unresolved"
             },
-            "neutral_plane": {
-              "kind": "unresolved"
-            },
-            "outward": null,
-            "pull_direction": null
+            "outward": null
           },
           "id": "creo:model:feature#44",
           "name": "Draft id 44",

@@ -20651,22 +20651,27 @@
               "kind": "kernel_default"
             },
             "operation": {
+              "anchor": {
+                "kind": "neutral_plane",
+                "plane": {
+                  "kind": "native",
+                  "value": "fcstd:native:property#Draft:NeutralPlane"
+                },
+                "pull": {
+                  "direction": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 1.0
+                  }
+                }
+              },
               "angle": -0.08726646259971647,
               "definition": "draft",
               "faces": {
                 "kind": "native",
                 "value": "fcstd:native:property#Draft:Base"
               },
-              "neutral_plane": {
-                "kind": "native",
-                "value": "fcstd:native:property#Draft:NeutralPlane"
-              },
-              "outward": true,
-              "pull_direction": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              }
+              "outward": true
             },
             "refine": true
           },
@@ -20889,8 +20894,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#HoleProfile",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#HoleProfile",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#HoleProfile",
           "name": "HoleProfile",
@@ -21261,8 +21268,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#RevolutionProfile",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#RevolutionProfile",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#RevolutionProfile",
           "name": "RevolutionProfile",
@@ -21362,14 +21371,14 @@
             "definition": "extrude",
             "direction": {
               "kind": "explicit",
-              "value": {
+              "source": {
+                "kind": "custom"
+              },
+              "vector": {
                 "x": 0.0,
                 "y": 0.0,
                 "z": 1.0
               }
-            },
-            "direction_source": {
-              "kind": "custom"
             },
             "extent": {
               "kind": "symmetric",

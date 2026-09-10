@@ -891,8 +891,10 @@ fn draft_completeness_requires_material_side() {
         serde_json::from_value(serde_json::json!({
             "definition": "draft",
             "faces": {"kind": "faces", "value": ["test:model:face#drafted"]},
-            "neutral_plane": {"kind": "faces", "value": ["test:model:face#neutral"]},
-            "pull_direction": null,
+            "anchor": {
+                "kind": "neutral_plane",
+                "plane": {"kind": "faces", "value": ["test:model:face#neutral"]}
+            },
             "angle": 0.1,
             "outward": true
         }))

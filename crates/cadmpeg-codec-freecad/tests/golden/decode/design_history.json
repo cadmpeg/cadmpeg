@@ -6028,14 +6028,14 @@
               "definition": "extrude",
               "direction": {
                 "kind": "explicit",
-                "value": {
+                "source": {
+                  "kind": "profile_normal"
+                },
+                "vector": {
                   "x": 0.0,
                   "y": 0.0,
                   "z": 1.0
                 }
-              },
-              "direction_source": {
-                "kind": "profile_normal"
               },
               "extent": {
                 "kind": "one_sided",
@@ -6082,8 +6082,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#PadSketch",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#PadSketch",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#PadSketch",
           "name": "PadSketch",
@@ -6111,14 +6113,14 @@
               "definition": "extrude",
               "direction": {
                 "kind": "explicit",
-                "value": {
+                "source": {
+                  "kind": "profile_normal"
+                },
+                "vector": {
                   "x": 0.0,
                   "y": 0.0,
                   "z": 1.0
                 }
-              },
-              "direction_source": {
-                "kind": "profile_normal"
               },
               "extent": {
                 "kind": "one_sided",
@@ -6166,8 +6168,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#PocketSketch",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#PocketSketch",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#PocketSketch",
           "name": "PocketSketch",
