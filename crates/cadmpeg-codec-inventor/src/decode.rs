@@ -1460,14 +1460,12 @@ fn decode_container<'a>(
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
-            if *count != 0 {
-                losses.push(
-                    InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
-                        "Could not resolve {count} PmGraphics face appearance override(s): {}.",
-                        cause.description()
-                    )),
-                );
-            }
+            losses.push(
+                InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
+                    "Could not resolve {count} PmGraphics face appearance override(s): {}.",
+                    cause.description()
+                )),
+            );
         }
         if ufrx_issue_count != 0 {
             losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
@@ -1497,14 +1495,12 @@ fn decode_container<'a>(
                     )));
                 }
                 for (cause, count) in &assembly_projection.unresolved_placements {
-                    if *count != 0 {
-                        losses.push(InventorLossCode::AssemblyPlacementNotTransferred.note(
-                            format!(
-                                "Could not transfer {count} assembly occurrence placement(s): {}.",
-                                cause.description()
-                            ),
-                        ));
-                    }
+                    losses.push(
+                        InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
+                            "Could not transfer {count} assembly occurrence placement(s): {}.",
+                            cause.description()
+                        )),
+                    );
                 }
             }
             UfrxState::Absent | UfrxState::Parsed(_) => {}
