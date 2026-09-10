@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn header_wire_emits_zero_offset_and_rejects_displaced_header() {
-        let json = r#"{"id":"header","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3],"byte_len":42,"sha256":"hash","inflated_offset":0}"#;
+        let json = r#"{"id":"header","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3],"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
         let header: ParasolidDeltasTransmitHeader = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&header).unwrap(), json);
         let displaced = json.replace("\"inflated_offset\":0", "\"inflated_offset\":1");
