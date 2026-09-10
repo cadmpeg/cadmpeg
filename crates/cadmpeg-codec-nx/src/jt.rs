@@ -102,28 +102,100 @@ fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option
     Some(values)
 }
 
-pub(crate) fn deering_normal(
-    sextant: i32,
-    octant: i32,
-    theta: i32,
-    psi: i32,
-    bits: u8,
-) -> Option<[f32; 3]> {
-    if bits == 0 || bits > 13 {
-        return None;
+/// One of the six sextants of the Deering normal encoding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Sextant {
+    Zero,
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+}
+
+impl Sextant {
+    pub(crate) fn from_index(index: i32) -> Option<Self> {
+        match index {
+            0 => Some(Self::Zero),
+            1 => Some(Self::One),
+            2 => Some(Self::Two),
+            3 => Some(Self::Three),
+            4 => Some(Self::Four),
+            5 => Some(Self::Five),
+            _ => None,
+        }
     }
-    let sextant = u32::try_from(sextant).ok().filter(|value| *value < 6)?;
-    let octant = u32::try_from(octant).ok().filter(|value| *value < 8)?;
-    let code_limit = 1_u32 << bits;
-    let theta = u32::try_from(theta)
-        .ok()
-        .filter(|value| *value < code_limit)?;
-    let psi = u32::try_from(psi)
-        .ok()
-        .filter(|value| *value < code_limit)?;
-    let shift = 13 - bits;
-    let theta_index = (theta + (sextant & 1)) << shift;
-    let psi_index = psi << shift;
+
+    fn from_hue_sixth(hue: f32) -> Self {
+        match hue as u8 {
+            0 => Self::Zero,
+            1 => Self::One,
+            2 => Self::Two,
+            3 => Self::Three,
+            4 => Self::Four,
+            _ => Self::Five,
+        }
+    }
+
+    fn is_odd(self) -> bool {
+        matches!(self, Self::One | Self::Three | Self::Five)
+    }
+}
+
+/// One of the eight octants of the Deering normal encoding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Octant(u32);
+
+impl Octant {
+    pub(crate) fn new(octant: i32) -> Option<Self> {
+        u32::try_from(octant)
+            .ok()
+            .filter(|value| *value < 8)
+            .map(Self)
+    }
+}
+
+/// The bit width of a Deering angle code, between one and thirteen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct NormalBits(u8);
+
+impl NormalBits {
+    pub(crate) fn new(bits: u8) -> Option<Self> {
+        (1..=13).contains(&bits).then_some(Self(bits))
+    }
+}
+
+/// A Deering angle code with the shift that widens it to a thirteen-bit index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct NormalCode {
+    value: u32,
+    shift: u8,
+}
+
+impl NormalCode {
+    pub(crate) fn new(code: i32, bits: NormalBits) -> Option<Self> {
+        let value = u32::try_from(code)
+            .ok()
+            .filter(|value| *value < (1_u32 << bits.0))?;
+        Some(Self {
+            value,
+            shift: 13 - bits.0,
+        })
+    }
+
+    fn index(self, parity: u32) -> u32 {
+        (self.value + parity) << self.shift
+    }
+}
+
+pub(crate) fn deering_normal(
+    sextant: Sextant,
+    octant: Octant,
+    theta: NormalCode,
+    psi: NormalCode,
+) -> Option<[f32; 3]> {
+    let theta_index = theta.index(u32::from(sextant.is_odd()));
+    let psi_index = psi.index(0);
     let table_size = f64::from(1_u32 << 13);
     let maximum_psi = 0.615_479_709_f64;
     let theta_angle = (maximum_psi * (table_size - f64::from(theta_index)) / table_size)
@@ -134,16 +206,15 @@ pub(crate) fn deering_normal(
     let y = psi_angle.sin() as f32;
     let z = (psi_angle.cos() * theta_angle.sin()) as f32;
     let mut result = match sextant {
-        0 => [x, y, z],
-        1 => [z, y, x],
-        2 => [y, z, x],
-        3 => [y, x, z],
-        4 => [z, x, y],
-        5 => [x, z, y],
-        _ => unreachable!(),
+        Sextant::Zero => [x, y, z],
+        Sextant::One => [z, y, x],
+        Sextant::Two => [y, z, x],
+        Sextant::Three => [y, x, z],
+        Sextant::Four => [z, x, y],
+        Sextant::Five => [x, z, y],
     };
     for (component, bit) in [4, 2, 1].into_iter().enumerate() {
-        if octant & bit == 0 {
+        if octant.0 & bit == 0 {
             result[component] = -result[component];
         }
     }
@@ -191,16 +262,16 @@ pub(crate) fn decode_vertex_normals(
             }
             codes.push(values);
         }
+        let bits = NormalBits::new(expected_bits)?;
         let mut normals = try_vec(count)?;
         for (((sextant, octant), theta), psi) in
             codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
         {
             normals.push(deering_normal(
-                *sextant,
-                *octant,
-                *theta,
-                *psi,
-                expected_bits,
+                Sextant::from_index(*sextant)?,
+                Octant::new(*octant)?,
+                NormalCode::new(*theta, bits)?,
+                NormalCode::new(*psi, bits)?,
             )?);
         }
         normals
@@ -262,7 +333,11 @@ pub(crate) fn decode_vertex_texture_coordinates(
             }
             let mut component = try_vec(count)?;
             for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
-                component.push(dequantize_uniform(code, range, expected_bits)?);
+                component.push(dequantize_uniform(
+                    u32::try_from(code).ok()?,
+                    range,
+                    expected_bits,
+                )?);
             }
             components.push(component);
         }
@@ -371,7 +446,7 @@ pub(crate) fn decode_vertex_colors(
             let mut values = try_vec(count)?;
             for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
                 values.push(dequantize_uniform(
-                    code,
+                    u32::try_from(code).ok()?,
                     *ranges.get(component)?,
                     *component_bits.get(component)?,
                 )?);
@@ -406,14 +481,13 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Option<[f32; 3]> {
     let chroma = value * saturation;
     let intermediate = chroma * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
     let minimum = value - chroma;
-    let [red, green, blue] = match hue as u8 {
-        0 => [chroma, intermediate, 0.0],
-        1 => [intermediate, chroma, 0.0],
-        2 => [0.0, chroma, intermediate],
-        3 => [0.0, intermediate, chroma],
-        4 => [intermediate, 0.0, chroma],
-        5 => [chroma, 0.0, intermediate],
-        _ => unreachable!(),
+    let [red, green, blue] = match Sextant::from_hue_sixth(hue) {
+        Sextant::Zero => [chroma, intermediate, 0.0],
+        Sextant::One => [intermediate, chroma, 0.0],
+        Sextant::Two => [0.0, chroma, intermediate],
+        Sextant::Three => [0.0, intermediate, chroma],
+        Sextant::Four => [intermediate, 0.0, chroma],
+        Sextant::Five => [chroma, 0.0, intermediate],
     };
     let result = [red + minimum, green + minimum, blue + minimum];
     result
@@ -442,7 +516,7 @@ pub(crate) fn decode_vertex_flags(
     Some((flags, 4usize.checked_add(byte_len)?))
 }
 
-pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
+pub(crate) fn dequantize_uniform(code: u32, range: [f32; 2], bits: u8) -> Option<f32> {
     if bits == 0
         || bits > 32
         || !range[0].is_finite()
@@ -456,7 +530,6 @@ pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option
     } else {
         (1_u32 << bits) - 1
     };
-    let code = code as u32;
     if code > maximum_code {
         return None;
     }
@@ -497,7 +570,7 @@ pub(crate) fn decode_vertex_coordinates(
             let mut values = try_vec(vertex_count)?;
             for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
                 values.push(dequantize_uniform(
-                    code,
+                    u32::try_from(code).ok()?,
                     ranges[component],
                     quantization_bits[component],
                 )?);
