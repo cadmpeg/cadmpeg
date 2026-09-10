@@ -16,7 +16,7 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
@@ -280,10 +280,7 @@ fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReferen
 }
 
 /// Tag byte plus one-byte length that precede a length-prefixed ASCII string.
-const LENGTH_PREFIXED_ASCII_HEADER: NonZeroU64 = match NonZeroU64::new(2) {
-    Some(header) => header,
-    None => unreachable!(),
-};
+const LENGTH_PREFIXED_ASCII_HEADER: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
 
 fn length_prefixed_ascii(data: &[u8], at: &mut usize) -> Option<String> {
     (data.get(*at) == Some(&0x34)).then_some(())?;
@@ -1457,7 +1454,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
         let storage = EntryStorage::framed_by(
             VerbatimLabel::None,
-            reference.target.len() as u64,
+            reference.target.len(),
             LENGTH_PREFIXED_ASCII_HEADER,
         );
         entries.push(ContainerEntry {

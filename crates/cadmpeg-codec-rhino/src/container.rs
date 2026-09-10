@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
@@ -185,7 +185,7 @@ pub(crate) struct Table {
     /// Table body range, excluding the table checksum.
     pub(crate) body: std::ops::Range<usize>,
     /// Table chunk bytes outside the body: the header and any checksum.
-    pub(crate) framing: NonZeroU64,
+    pub(crate) framing: NonZeroU32,
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
     /// Number of direct records, including compactly summarized records.
@@ -1113,8 +1113,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
-        let storage =
-            EntryStorage::framed_by(VerbatimLabel::None, table.body.len() as u64, table.framing);
+        let storage = EntryStorage::framed_by(VerbatimLabel::None, table.body.len(), table.framing);
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,

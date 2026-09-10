@@ -2,7 +2,7 @@
 //! Rhino 3DM headers, chunks, checksums, and bounded readers.
 
 use std::fmt;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::View;
 
@@ -488,7 +488,7 @@ pub(crate) struct Chunk {
     /// Raw typecode.
     pub(crate) typecode: u32,
     /// Typecode and value bytes preceding the payload.
-    header: NonZeroU64,
+    header: NonZeroU32,
     /// Short value or long payload.
     form: ChunkBody,
 }
@@ -537,12 +537,12 @@ impl Chunk {
     }
 
     /// Returns the chunk bytes outside its payload: the header and any checksum.
-    pub(crate) fn framing(&self) -> NonZeroU64 {
+    pub(crate) fn framing(&self) -> NonZeroU32 {
         let trailing = match &self.form {
             ChunkBody::Short { .. } => 0,
             ChunkBody::Long { checksum, .. } => checksum.map_or(0, ChecksumKind::width),
         };
-        self.header.saturating_add(trailing as u64)
+        self.header.saturating_add(trailing as u32)
     }
 
     /// Returns the offset of the next chunk.
@@ -558,10 +558,7 @@ impl Chunk {
 
 /// Parses a chunk at `offset`, constrained by `parent_end`.
 /// Bytes of the chunk typecode that open every chunk header.
-const TYPECODE_BYTES: NonZeroU64 = match NonZeroU64::new(4) {
-    Some(bytes) => bytes,
-    None => unreachable!(),
-};
+const TYPECODE_BYTES: NonZeroU32 = NonZeroU32::MIN.saturating_add(3);
 
 pub(crate) fn chunk_at(
     bytes: &[u8],
@@ -592,7 +589,7 @@ pub(crate) fn chunk_at(
     };
     let body_start = reader.position();
     // Every chunk header is a four-byte typecode followed by its value.
-    let header = TYPECODE_BYTES.saturating_add(width as u64);
+    let header = TYPECODE_BYTES.saturating_add(width as u32);
     if short || value < 0 {
         return Ok(Chunk {
             header_start: offset,

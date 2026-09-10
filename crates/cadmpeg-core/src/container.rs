@@ -2,7 +2,7 @@
 //! Format-independent container entries.
 
 use std::collections::BTreeMap;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -160,8 +160,14 @@ pub struct FramedSpan {
 
 impl FramedSpan {
     /// A `payload`-byte payload wrapped in `framing` bytes of container framing.
+    ///
+    /// `payload` is a slice or `String` length, so it is at most `isize::MAX`,
+    /// and `framing` is at most `u32::MAX`; their sum is therefore far inside
+    /// `u64` and the stored span is exactly `payload + framing`.
     #[must_use]
-    pub const fn from_parts(payload: u64, framing: NonZeroU64) -> Self {
+    pub fn from_parts(payload: usize, framing: NonZeroU32) -> Self {
+        let framing = NonZeroU64::from(framing);
+        let payload = (payload as u64).min(u64::MAX - framing.get());
         Self {
             payload,
             stored: framing.saturating_add(payload),
@@ -282,7 +288,7 @@ impl EntryStorage {
     /// Verbatim bytes whose stored span is the payload plus `framing` bytes of
     /// container framing the producer knows.
     #[must_use]
-    pub const fn framed_by(label: VerbatimLabel, payload: u64, framing: NonZeroU64) -> Self {
+    pub fn framed_by(label: VerbatimLabel, payload: usize, framing: NonZeroU32) -> Self {
         Self::Verbatim {
             label,
             size: VerbatimSize::Framed(FramedSpan::from_parts(payload, framing)),
@@ -509,7 +515,7 @@ mod tests {
     use super::{
         CompressionMethod, ContainerEntry, ContainerRole, EntryStorage, VerbatimLabel, VerbatimSize,
     };
-    use std::num::NonZeroU64;
+    use std::num::{NonZeroU32, NonZeroU64};
 
     fn wire(compression: &str, compressed: u64, uncompressed: u64) -> serde_json::Value {
         serde_json::json!({
@@ -609,6 +615,17 @@ mod tests {
             assert!(reject(label, 5, 9)
                 .contains("verbatim container entry stores fewer bytes than it expands to"));
         }
+    }
+
+    #[test]
+    fn a_minted_framed_span_always_exceeds_its_payload() {
+        let span = super::FramedSpan::from_parts(usize::MAX, NonZeroU32::MAX);
+        assert_eq!(span.framing(), u64::from(u32::MAX));
+        assert!(span.stored().get() > span.payload());
+        let span = super::FramedSpan::from_parts(12, NonZeroU32::MIN);
+        assert_eq!(span.payload(), 12);
+        assert_eq!(span.stored().get(), 13);
+        assert_eq!(span.framing(), 1);
     }
 
     #[test]
