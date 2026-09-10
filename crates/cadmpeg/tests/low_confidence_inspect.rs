@@ -37,7 +37,8 @@ fn low_confidence_step_archive_inspects_and_loads_with_step() {
         String::from_utf8_lossy(&inspected.stderr)
     );
     let summary: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
-    assert_eq!(summary["confidence"], "low");
+    assert_eq!(summary["selection"]["kind"], "detected");
+    assert_eq!(summary["selection"]["confidence"], "low");
     assert_eq!(summary["summary"]["format"], "step");
 
     let loaded = Command::cargo_bin("cadmpeg")
