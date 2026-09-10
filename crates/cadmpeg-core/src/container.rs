@@ -127,6 +127,10 @@ label_enum! {
     }
 }
 
+/// Rejection for a verbatim entry whose stored span is smaller than its payload.
+const VERBATIM_SPAN_UNDER_PAYLOAD: &str =
+    "verbatim container entry stores fewer bytes than it expands to";
+
 /// What a container reports about the size of a verbatim payload.
 ///
 /// Every value maps to a distinct declared `(stored, expanded)` pair, so an
@@ -140,12 +144,69 @@ pub enum VerbatimSize {
     /// The payload occupies exactly this many stored bytes.
     Exact(NonZeroU64),
     /// The payload, plus the container framing counted in its stored span.
-    Framed {
-        /// Payload size in bytes.
-        payload: u64,
-        /// Container framing counted in the stored span but not in the payload.
-        framing: NonZeroU64,
-    },
+    Framed(FramedSpan),
+}
+
+/// A verbatim payload inside a strictly larger stored span.
+///
+/// The stored span is the declared number; the framing is the difference, so a
+/// span smaller than its payload and a stored size that overflows are both
+/// unrepresentable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FramedSpan {
+    payload: u64,
+    stored: NonZeroU64,
+}
+
+impl FramedSpan {
+    /// A payload of `payload` bytes inside a `stored`-byte span, absent when the
+    /// span does not exceed the payload.
+    #[must_use]
+    pub const fn new(payload: u64, stored: u64) -> Option<Self> {
+        if stored <= payload {
+            return None;
+        }
+        match NonZeroU64::new(stored) {
+            Some(stored) => Some(Self { payload, stored }),
+            None => None,
+        }
+    }
+
+    /// Payload size in bytes.
+    #[must_use]
+    pub const fn payload(self) -> u64 {
+        self.payload
+    }
+
+    /// Stored span in bytes, framing included.
+    #[must_use]
+    pub const fn stored(self) -> NonZeroU64 {
+        self.stored
+    }
+
+    /// Container framing counted in the stored span but not in the payload.
+    #[must_use]
+    pub const fn framing(self) -> u64 {
+        self.stored.get() - self.payload
+    }
+}
+
+impl VerbatimSize {
+    /// The shape declared by a `payload`-byte payload in a `stored`-byte span,
+    /// absent when the span is smaller than the payload.
+    #[must_use]
+    pub const fn declared(payload: u64, stored: u64) -> Option<Self> {
+        if stored < payload {
+            return None;
+        }
+        match FramedSpan::new(payload, stored) {
+            Some(span) => Some(Self::Framed(span)),
+            None => match NonZeroU64::new(payload) {
+                Some(payload) => Some(Self::Exact(payload)),
+                None => Some(Self::Unreported),
+            },
+        }
+    }
 }
 
 /// How one container summary entry stores its bytes.
@@ -196,15 +257,17 @@ impl EntryStorage {
     }
 
     /// Verbatim bytes whose stored span may include container framing.
-    #[must_use]
-    pub fn framed(label: VerbatimLabel, payload: u64, stored_span: u64) -> Self {
-        match NonZeroU64::new(stored_span.saturating_sub(payload)) {
-            Some(framing) => Self::Verbatim {
-                label,
-                size: VerbatimSize::Framed { payload, framing },
-            },
-            None => Self::verbatim(label, payload),
-        }
+    ///
+    /// A stored span smaller than the payload is rejected with the message
+    /// [`EntryStorage::from_declared`] uses.
+    pub fn framed(
+        label: VerbatimLabel,
+        payload: u64,
+        stored_span: u64,
+    ) -> Result<Self, &'static str> {
+        VerbatimSize::declared(payload, stored_span)
+            .map(|size| Self::Verbatim { label, size })
+            .ok_or(VERBATIM_SPAN_UNDER_PAYLOAD)
     }
 
     /// Verbatim bytes whose size the container does not report.
@@ -238,21 +301,9 @@ impl EntryStorage {
         let size = match (NonZeroU64::new(stored), NonZeroU64::new(expanded)) {
             (None, None) => VerbatimSize::Unreported,
             (None, Some(payload)) => VerbatimSize::PayloadOnly(payload),
-            (Some(stored), None) => VerbatimSize::Framed {
-                payload: 0,
-                framing: stored,
-            },
-            (Some(stored), Some(payload)) => {
-                let Some(framing) = stored.get().checked_sub(payload.get()) else {
-                    return Err("verbatim container entry stores fewer bytes than it expands to");
-                };
-                match NonZeroU64::new(framing) {
-                    None => VerbatimSize::Exact(payload),
-                    Some(framing) => VerbatimSize::Framed {
-                        payload: payload.get(),
-                        framing,
-                    },
-                }
+            (Some(stored), payload) => {
+                VerbatimSize::declared(payload.map_or(0, NonZeroU64::get), stored.get())
+                    .ok_or(VERBATIM_SPAN_UNDER_PAYLOAD)?
             }
         };
         Ok(Self::Verbatim { label, size })
@@ -266,7 +317,7 @@ impl EntryStorage {
             Self::Verbatim { size, .. } => match size {
                 VerbatimSize::Unreported | VerbatimSize::PayloadOnly(_) => None,
                 VerbatimSize::Exact(size) => Some(size.get()),
-                VerbatimSize::Framed { payload, framing } => Some(*payload + framing.get()),
+                VerbatimSize::Framed(span) => Some(span.stored().get()),
             },
             Self::Compressed { stored, .. } => *stored,
         }
@@ -282,7 +333,7 @@ impl EntryStorage {
                 VerbatimSize::PayloadOnly(payload) | VerbatimSize::Exact(payload) => {
                     Some(payload.get())
                 }
-                VerbatimSize::Framed { payload, .. } => Some(*payload),
+                VerbatimSize::Framed(span) => Some(span.payload()),
             },
             Self::Compressed { expanded, .. } => *expanded,
         }
@@ -475,19 +526,9 @@ mod tests {
             (
                 30,
                 10,
-                VerbatimSize::Framed {
-                    payload: 10,
-                    framing: nonzero(20),
-                },
+                VerbatimSize::declared(10, 30).expect("a framed span"),
             ),
-            (
-                5,
-                0,
-                VerbatimSize::Framed {
-                    payload: 0,
-                    framing: nonzero(5),
-                },
-            ),
+            (5, 0, VerbatimSize::declared(0, 5).expect("a framed span")),
         ] {
             assert_eq!(
                 EntryStorage::from_declared(Ok(VerbatimLabel::None), compressed, uncompressed),
@@ -524,6 +565,26 @@ mod tests {
         assert_eq!(
             EntryStorage::from_declared(Ok(VerbatimLabel::Stored), 5, 9),
             Err("verbatim container entry stores fewer bytes than it expands to")
+        );
+        assert_eq!(
+            EntryStorage::framed(VerbatimLabel::Stored, 9, 5),
+            Err("verbatim container entry stores fewer bytes than it expands to")
+        );
+        assert_eq!(VerbatimSize::declared(9, 5), None);
+        assert_eq!(
+            EntryStorage::framed(VerbatimLabel::Stored, 9, 9),
+            Ok(EntryStorage::verbatim(VerbatimLabel::Stored, 9))
+        );
+        let span = super::FramedSpan::new(u64::MAX - 1, u64::MAX).expect("a framed span");
+        assert_eq!(span.stored().get(), u64::MAX);
+        assert_eq!(span.framing(), 1);
+        assert_eq!(
+            EntryStorage::Verbatim {
+                label: VerbatimLabel::Stored,
+                size: VerbatimSize::Framed(span),
+            }
+            .stored_size(),
+            Some(u64::MAX)
         );
         for label in ["none", "stored"] {
             assert!(reject(label, 5, 9)

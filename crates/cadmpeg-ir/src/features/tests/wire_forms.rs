@@ -410,6 +410,27 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
 }
 
 #[test]
+fn an_unresolved_hole_wire_keeps_its_form_and_carries_no_dimensions() {
+    use crate::features::{HoleForm, HoleKind};
+
+    let unresolved = serde_json::json!({"kind": "unresolved", "form": "counterbore"});
+    let kind: HoleKind = serde_json::from_value(unresolved.clone()).unwrap();
+    assert_eq!(kind, HoleKind::Unresolved(Some(HoleForm::Counterbore)));
+    assert_eq!(serde_json::to_value(kind).unwrap(), unresolved);
+
+    let mut with_dimension = unresolved.clone();
+    with_dimension["countersink_angle"] = serde_json::json!(0.5);
+    let kind: HoleKind = serde_json::from_value(with_dimension).unwrap();
+    assert_eq!(kind, HoleKind::Unresolved(Some(HoleForm::Counterbore)));
+    assert_eq!(serde_json::to_value(kind).unwrap(), unresolved);
+
+    let formless = serde_json::json!({"kind": "unresolved"});
+    let kind: HoleKind = serde_json::from_value(formless.clone()).unwrap();
+    assert_eq!(kind, HoleKind::Unresolved(None));
+    assert_eq!(serde_json::to_value(kind).unwrap(), formless);
+}
+
+#[test]
 fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
     use crate::features::FlexMode;
 

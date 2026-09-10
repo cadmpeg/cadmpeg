@@ -1375,6 +1375,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
 /// streams and the identified variant.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
+    let mut storage_notes: Vec<String> = Vec::new();
 
     for (directory, dir) in [
         ("outer", scan.outer.as_ref()),
@@ -1451,14 +1452,21 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     for reference in &scan.external_references {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
+        let storage = match EntryStorage::framed(
+            VerbatimLabel::None,
+            reference.target.len() as u64,
+            (reference.target.len() + LENGTH_PREFIXED_ASCII_HEADER) as u64,
+        ) {
+            Ok(storage) => storage,
+            Err(message) => {
+                storage_notes.push(format!("{}: {message}", reference.target));
+                EntryStorage::payload_only(VerbatimLabel::None, reference.target.len() as u64)
+            }
+        };
         entries.push(ContainerEntry {
             name: reference.target.clone(),
             role: ContainerRole::ExternalReference,
-            storage: EntryStorage::framed(
-                VerbatimLabel::None,
-                reference.target.len() as u64,
-                (reference.target.len() + LENGTH_PREFIXED_ASCII_HEADER) as u64,
-            ),
+            storage,
             attributes,
         });
     }
@@ -1492,7 +1500,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         });
     }
 
-    let notes = notes(scan);
+    let mut notes = notes(scan);
+    notes.extend(storage_notes);
 
     let matched = crate::dialect::classify(scan);
     let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
