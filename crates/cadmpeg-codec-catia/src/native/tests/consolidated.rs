@@ -992,7 +992,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
     let controls: [u8; 6] =
         serde_json::from_value(wire["bridge"]["controls"].clone()).expect("six bridge controls");
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
-    assert_eq!(*construction_radius, 1.0);
+    assert_eq!(construction_radius.get(), 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
