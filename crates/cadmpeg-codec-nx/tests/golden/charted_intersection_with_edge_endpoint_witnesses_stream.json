@@ -120,11 +120,14 @@
         "features": [],
         "loops": [
           {
+            "boundary": {
+              "coedges": [
+                "nx:s0:fin#7",
+                "nx:s0:fin#13"
+              ],
+              "kind": "ring"
+            },
             "boundary_role": "unspecified",
-            "coedges": [
-              "nx:s0:fin#7",
-              "nx:s0:fin#13"
-            ],
             "face": "nx:s0:face#4",
             "id": "nx:s0:loop#5"
           }

@@ -209,13 +209,16 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32",
+              "sldprt:brep:coedge#sphere-seam-face:0"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#32",
-            "sldprt:brep:coedge#sphere-seam-face:0"
-          ],
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }

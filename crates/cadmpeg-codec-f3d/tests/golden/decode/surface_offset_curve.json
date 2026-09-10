@@ -89,11 +89,14 @@
           "id": "f3d:brep:entity#5",
           "face": "f3d:brep:entity#4",
           "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#7",
-            "f3d:brep:entity#8",
-            "f3d:brep:entity#9"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#7",
+              "f3d:brep:entity#8",
+              "f3d:brep:entity#9"
+            ]
+          }
         }
       ],
       "coedges": [

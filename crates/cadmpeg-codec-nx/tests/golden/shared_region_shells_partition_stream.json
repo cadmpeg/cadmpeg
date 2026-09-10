@@ -97,18 +97,24 @@
         "features": [],
         "loops": [
           {
+            "boundary": {
+              "coedges": [
+                "nx:s0:fin#16"
+              ],
+              "kind": "ring"
+            },
             "boundary_role": "unspecified",
-            "coedges": [
-              "nx:s0:fin#16"
-            ],
             "face": "nx:s0:face#14",
             "id": "nx:s0:loop#15"
           },
           {
+            "boundary": {
+              "coedges": [
+                "nx:s0:fin#7"
+              ],
+              "kind": "ring"
+            },
             "boundary_role": "unspecified",
-            "coedges": [
-              "nx:s0:fin#7"
-            ],
             "face": "nx:s0:face#4",
             "id": "nx:s0:loop#5"
           }

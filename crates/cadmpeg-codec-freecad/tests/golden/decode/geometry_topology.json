@@ -7281,515 +7281,659 @@
       ],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A1",
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A2",
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A3",
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A1",
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A2",
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A3",
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:14%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Compound:Shape:Compound.Shape.brp:14",
           "id": "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:14%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#Compound:Shape:Compound.Shape.brp:7%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Compound:Shape:Compound.Shape.brp:7",
           "id": "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:7%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:7%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:7",
           "id": "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:7%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:9%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Degenerate:Shape:Degenerate.Shape.brp:9%3A1%3A1"
-          ],
           "face": "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:9",
           "id": "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:9%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1%3A4"
-          ],
           "face": "fcstd:model:face#FreeformSurface:Shape:FreeformSurface.Shape.brp:10",
           "id": "fcstd:model:loop#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:10%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:10",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:10%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:20%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:20",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:20%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:24%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:24",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:24%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:28%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:28",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:28%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:30%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:30",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:30%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:32%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:32",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:32%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:43%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:43",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:43%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:53%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:53",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:53%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:57%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:57",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:57%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:61%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:61",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:61%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:63%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:63",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:63%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A1",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A2",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A3",
+              "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A1",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A2",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A3",
-            "fcstd:model:coedge#MultiShell:Shape:MultiShell.Shape.brp:65%3A1%3A4"
-          ],
           "face": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:65",
           "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:65%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A1",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A2",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A3",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A1",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A2",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A3",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:12%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:12",
           "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:12%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A1",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A2",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A3",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A1",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A2",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A3",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:17%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:17",
           "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:17%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A1",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A2",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A3",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A1",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A2",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A3",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:20%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:20",
           "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:20%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A1",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A2",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A3",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A1",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A2",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A3",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22",
           "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:22%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A1",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A2",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A3",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A1",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A2",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A3",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917",
           "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#Revolved:Shape:Revolved.Shape.brp:7%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:7",
           "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:7%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:11%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:11%3A1%3A1"
-          ],
           "face": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:11",
           "id": "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:11%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:7%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:7",
           "id": "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:7%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:9%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Seam:Shape:Seam.Shape.brp:9%3A1%3A1"
-          ],
           "face": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:9",
           "id": "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:9%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#Sheet:Shape:Sheet.Shape.brp:10%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Sheet:Shape:Sheet.Shape.brp:10",
           "id": "fcstd:model:loop#Sheet:Shape:Sheet.Shape.brp:10%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:10%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:10",
           "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:10%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A1",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A2",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A3",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A1",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A2",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A3",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:20%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:20",
           "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:20%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A1",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A2",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A3",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A1",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A2",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A3",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:24%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:24",
           "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:24%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A1",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A2",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A3",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A1",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A2",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A3",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:28%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:28",
           "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:28%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A1",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A2",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A3",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A1",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A2",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A3",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:30%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:30",
           "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:30%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A1",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A2",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A3",
+              "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A1",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A2",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A3",
-            "fcstd:model:coedge#Solid:Shape:Solid.Shape.brp:32%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:32",
           "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:32%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:11%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:11%3A1%3A1"
-          ],
           "face": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:11",
           "id": "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:11%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:7%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:7",
           "id": "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:7%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:9%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Swept:Shape:Swept.Shape.brp:9%3A1%3A1"
-          ],
           "face": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:9",
           "id": "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:9%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:10%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:10",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:10%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:17%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:17",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:17%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:22%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:22",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:22%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:27%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:27",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:27%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:30%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:30",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:30%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:32%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:32",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:32%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:43%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:43",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:43%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:50%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:50",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:50%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:55%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:55",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:55%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:60%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:60",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:60%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:63%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:63",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:63%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A1",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A2",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A3",
+              "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A1",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A2",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A3",
-            "fcstd:model:coedge#Void:Shape:Void.Shape.brp:65%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Void:Shape:Void.Shape.brp:65",
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:65%3A1"
         }

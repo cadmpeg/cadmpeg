@@ -1100,68 +1100,86 @@
       ],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:10",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A1",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A2",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A3",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A1",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A2",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A3",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:20",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A1",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A2",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A3",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A1",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A2",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A3",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:24",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A1",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A2",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A3",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A1",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A2",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A3",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:28",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A1",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A2",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A3",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A1",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A2",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A3",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:30",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A1",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A2",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A3",
+              "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A1",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A2",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A3",
-            "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%3A1%3A4"
-          ],
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:32",
           "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%3A1"
         }

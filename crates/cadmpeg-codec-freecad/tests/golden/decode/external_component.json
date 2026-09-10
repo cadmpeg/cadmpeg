@@ -289,29 +289,38 @@
       ],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1%3A1"
-          ],
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A4"
-          ],
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1%3A1"
-          ],
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1"
         }

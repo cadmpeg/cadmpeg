@@ -346,18 +346,24 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D15:0:0"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D15:0:0"
-          ],
           "face": "iges:model:face#D15",
           "id": "iges:model:loop#D15:0"
         },
         {
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D15:1:0"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "inner",
-          "coedges": [
-            "iges:model:coedge#D15:1:0"
-          ],
           "face": "iges:model:face#D15",
           "id": "iges:model:loop#D15:1"
         }

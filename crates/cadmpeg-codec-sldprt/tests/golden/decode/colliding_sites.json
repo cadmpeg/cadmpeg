@@ -155,22 +155,28 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30@block@250",
+              "sldprt:brep:coedge#31@block@250",
+              "sldprt:brep:coedge#32@block@250"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30@block@250",
-            "sldprt:brep:coedge#31@block@250",
-            "sldprt:brep:coedge#32@block@250"
-          ],
           "face": "sldprt:brep:face#10@block@250",
           "id": "sldprt:brep:loop#20@block@250"
         },
         {
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30@block@8",
+              "sldprt:brep:coedge#31@block@8",
+              "sldprt:brep:coedge#32@block@8"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30@block@8",
-            "sldprt:brep:coedge#31@block@8",
-            "sldprt:brep:coedge#32@block@8"
-          ],
           "face": "sldprt:brep:face#10@block@8",
           "id": "sldprt:brep:loop#20@block@8"
         }
