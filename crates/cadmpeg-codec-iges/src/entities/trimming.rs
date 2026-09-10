@@ -2314,6 +2314,7 @@ pub(super) fn project(
             let derived_surface_id = crate::ids::surface(
                 &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::ImplicitOuter),
             );
+            sequences.record_surface(&derived_surface_id, entry.sequence);
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.clone(),
                 geometry: support_geometry.clone(),

@@ -153,6 +153,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> ProjectionOutcome {
     let records = parameters
         .iter()
@@ -492,6 +493,10 @@ pub(super) fn project(
                 continue;
             }
         };
+        sequences.record_surface(
+            &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            entry.sequence,
+        );
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: result,

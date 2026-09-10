@@ -158,6 +158,7 @@ fn add_edge(
     entry: &DirectoryEntry,
     nurbs: NurbsCurve,
     parameter_range: [f64; 2],
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
     let start = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
@@ -204,6 +205,7 @@ fn add_edge(
             tolerance: None,
         },
     ]);
+    sequences.record_curve(&curve, entry.sequence);
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Nurbs(nurbs),
@@ -225,6 +227,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
@@ -565,6 +568,7 @@ pub(super) fn project(
             entry,
             nurbs,
             [breakpoints[0], breakpoints[segment_count]],
+            sequences,
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -865,6 +869,10 @@ pub(super) fn project(
             ));
             continue;
         };
+        sequences.record_surface(
+            &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            entry.sequence,
+        );
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Nurbs(nurbs),
