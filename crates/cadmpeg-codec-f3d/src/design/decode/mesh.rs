@@ -2825,12 +2825,11 @@ mod tests {
                 resource_guid: None,
                 authored_name: None,
                 groups: Vec::new(),
-                domain: crate::paramesh::MeshAttributeDomain::Corner,
                 elements: crate::paramesh::MeshElements::Float {
                     width: crate::paramesh::FloatWidth::Quad,
                     values: (0..80).collect(),
                 },
-                indices: Some(vec![0, 2]),
+                addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
             }],
         };
         let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
@@ -2846,7 +2845,10 @@ mod tests {
         );
         assert_eq!(body.triangles, [[2, 0, 1]]);
         assert_eq!(body.feature_edges, [[0, 2]]);
-        assert_eq!(body.attributes[0].indices, Some(vec![0, 2]));
+        assert!(matches!(
+            &body.attributes[0].addressing,
+            crate::paramesh::MeshAttributeAddressing::Corner(positions) if positions == &[0, 2]
+        ));
     }
 
     #[test]
