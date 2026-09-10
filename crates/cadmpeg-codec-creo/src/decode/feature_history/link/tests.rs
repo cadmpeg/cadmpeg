@@ -104,9 +104,9 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 7,
         table_class_id: 29,
         entries: vec![

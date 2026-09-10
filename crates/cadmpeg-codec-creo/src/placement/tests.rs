@@ -466,11 +466,11 @@ fn resolves_generated_section_from_declared_cap_pair() {
             prefixed: false,
             offset: usize::try_from(entity_id).expect("fixture id fits usize"),
             end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
-            is_surface: false,
         }
     });
     let entity_tables = [
         FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 40,
             table_class_id: 80,
             entries: vec![crate::feature::FeatureEntityTableEntry {
@@ -479,12 +479,12 @@ fn resolves_generated_section_from_declared_cap_pair() {
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
-                is_surface: false,
             }],
             offset: 50,
         }
         .with_surface_ids([]),
         FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 40,
             table_class_id: 80,
             entries: entries.to_vec(),
@@ -1008,9 +1008,9 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         prefixed: false,
         offset,
         end_offset: offset + 1,
-        is_surface: false,
     };
     let tables = [FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 40,
         table_class_id: 2,
         entries: vec![entry(819, 252, 300), entry(822, 255, 310)],
@@ -1087,13 +1087,14 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain { class: 201 };
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
-    if let Some(entry) = non_surface[0]
+    let last_surface_id = non_surface[0]
         .entries
-        .iter_mut()
+        .iter()
         .rev()
-        .find(|entry| entry.is_surface)
-    {
-        entry.is_surface = false;
+        .map(|entry| entry.entity_id)
+        .find(|id| non_surface[0].surface_ids.contains(id));
+    if let Some(id) = last_surface_id {
+        non_surface[0].surface_ids.remove(&id);
     }
     assert!(generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none());
 }
@@ -1200,9 +1201,9 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,
-        is_surface: false,
     };
     let tables = [FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 10,
         table_class_id: 79,
         entries: vec![

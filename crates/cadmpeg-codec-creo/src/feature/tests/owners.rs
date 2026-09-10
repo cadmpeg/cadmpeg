@@ -118,6 +118,7 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
 
 fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
     FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: owner,
         table_class_id: 80,
         entries: source_ids
@@ -129,7 +130,6 @@ fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable 
                 prefixed: true,
                 offset: index,
                 end_offset: index + 1,
-                is_surface: false,
             })
             .collect(),
         offset: 0,
@@ -277,7 +277,6 @@ fn saved_section_owner_uses_only_class_200_source_ids() {
         prefixed: true,
         offset: 1,
         end_offset: 2,
-        is_surface: false,
     });
     let definitions = [pending_trimmed_definition(&[9, 10])];
 
