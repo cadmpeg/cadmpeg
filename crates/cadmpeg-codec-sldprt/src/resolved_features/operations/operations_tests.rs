@@ -482,7 +482,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
 
     let extrude = |op| FeatureDefinition::Extrude {
         profile: ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()),
-        direction: ExtrudeDirection::ProfileNormal,
+        direction: ExtrudeDirection::ProfileNormal {},
         start: ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {

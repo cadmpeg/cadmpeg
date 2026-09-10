@@ -194,7 +194,7 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
 
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry {}
     ));
     assert_eq!(
         result

@@ -155,7 +155,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
     let definitions = [
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),
-            direction: ExtrudeDirection::ProfileNormal,
+            direction: ExtrudeDirection::ProfileNormal {},
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -265,7 +265,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                     "synthetic:test:face#profile-missing",
                 )
                 .expect("valid identity")]),
-                direction: ExtrudeDirection::ProfileNormal,
+                direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
@@ -616,7 +616,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("test:profile".into()),
-                direction: ExtrudeDirection::ProfileNormal,
+                direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
@@ -857,7 +857,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                     "synthetic:test:profile-selection".into(),
                 )
                 .unwrap(),
-                direction: ExtrudeDirection::ProfileNormal,
+                direction: ExtrudeDirection::ProfileNormal {},
                 start: ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {

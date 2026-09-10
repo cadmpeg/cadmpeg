@@ -164,7 +164,10 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         op
     };
     let (direction, extent) = linear_extrusion_extent_and_direction(scan, ir, feature_id).map_or(
-        (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
+        (
+            ExtrudeDirection::ProfileNormal {},
+            unresolved_extrude_extent(),
+        ),
         |(extent, direction)| {
             (
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -172,7 +175,7 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
                     direction[1],
                     direction[2],
                 ))
-                .map_or(ExtrudeDirection::Unresolved, |vector| {
+                .map_or(ExtrudeDirection::Unresolved {}, |vector| {
                     ExtrudeDirection::Explicit {
                         vector,
                         source: None,

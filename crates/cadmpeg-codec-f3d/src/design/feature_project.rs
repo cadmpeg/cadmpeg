@@ -8455,9 +8455,9 @@ pub(crate) fn project_extrude(
         _ => return None,
     };
     let direction = if reverse_direction {
-        ExtrudeDirection::ReversedProfileNormal
+        ExtrudeDirection::ReversedProfileNormal {}
     } else {
-        ExtrudeDirection::ProfileNormal
+        ExtrudeDirection::ProfileNormal {}
     };
     let parameter_draft = match unique("TaperAngle")? {
         Some(parameter) => {

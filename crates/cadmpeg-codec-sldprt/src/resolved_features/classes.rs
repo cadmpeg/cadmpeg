@@ -784,7 +784,7 @@ mod idless_history_binding_tests {
                         profile: cadmpeg_ir::features::ProfileRef::Unresolved(
                             "extrusion-native".into(),
                         ),
-                        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                         extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                             side: cadmpeg_ir::features::ExtrudeSide {

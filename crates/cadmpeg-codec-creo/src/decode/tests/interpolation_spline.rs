@@ -1598,7 +1598,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features[0] = feature(
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Native("creo:section#1".to_string()),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {

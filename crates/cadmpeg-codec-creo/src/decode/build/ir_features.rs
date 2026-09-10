@@ -166,7 +166,7 @@ pub(super) fn emit_model_features(
                         "Fillet",
                     )?
                 } else {
-                    IrFeatureDefinition::StoredGeometry
+                    IrFeatureDefinition::StoredGeometry {}
                 },
                 feature_output_bodies(scan, ir, feature_id),
             )
@@ -297,7 +297,7 @@ pub(super) fn emit_model_features(
                 && matches!(&definition, IrFeatureDefinition::Fillet { .. })
                 && matches!(
                     existing.evaluation.definition(),
-                    IrFeatureDefinition::StoredGeometry
+                    IrFeatureDefinition::StoredGeometry {}
                 );
             if upgrade_legacy_round {
                 existing

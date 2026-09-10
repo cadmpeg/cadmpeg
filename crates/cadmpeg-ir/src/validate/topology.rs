@@ -3108,7 +3108,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::SketchBlockDefinition { .. }
-            | FeatureDefinition::StoredGeometry
+            | FeatureDefinition::StoredGeometry {}
             | FeatureDefinition::Native { .. } => {}
             FeatureDefinition::SketchBlockInstance {
                 block,

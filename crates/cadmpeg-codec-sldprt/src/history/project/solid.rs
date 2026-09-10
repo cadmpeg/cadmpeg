@@ -193,7 +193,7 @@ pub(crate) fn project_extrude(
             vector: cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(value)?)?,
             source: None,
         },
-        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
     };
     if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
     {

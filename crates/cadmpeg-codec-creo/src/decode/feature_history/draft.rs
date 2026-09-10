@@ -595,10 +595,10 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(IrFeatureDefinition::Extrude {
             profile,
             direction: direction.map_or(
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                 |vector| {
                     cadmpeg_ir::features::FeatureDirection3::new(vector).map_or(
-                        cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+                        cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
                         |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
                             vector,
                             source: None,

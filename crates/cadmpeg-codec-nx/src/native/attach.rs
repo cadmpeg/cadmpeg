@@ -5124,7 +5124,7 @@ fn extrude_feature_definition(
     };
     FeatureDefinition::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+        direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
         start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
@@ -6493,7 +6493,7 @@ fn non_boolean_feature_definition_with_parameters(
 /// retaining the native definition preserves the unresolved history edge.
 fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
     (!outputs.is_empty() && outputs.iter().collect::<BTreeSet<_>>().len() == outputs.len())
-        .then_some(FeatureDefinition::StoredGeometry)
+        .then_some(FeatureDefinition::StoredGeometry {})
 }
 
 /// Preserve a SHELL operation as a typed neutral family while its construction roles remain

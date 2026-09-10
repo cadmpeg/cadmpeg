@@ -980,7 +980,7 @@ pub(crate) fn project_definition(
     history_features: &[Feature],
 ) -> FeatureDefinition {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
-        return FeatureDefinition::StoredGeometry;
+        return FeatureDefinition::StoredGeometry {};
     }
     if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
         return FeatureDefinition::Unresolved {

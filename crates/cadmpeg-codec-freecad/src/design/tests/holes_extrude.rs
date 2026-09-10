@@ -1210,7 +1210,7 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
         definition,
         FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Native(profile),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided { .. },
             ..
         } if profile.ends_with(":Sketch")

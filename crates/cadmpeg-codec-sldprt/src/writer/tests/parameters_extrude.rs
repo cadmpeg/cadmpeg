@@ -1001,7 +1001,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1121,7 +1121,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                 else {
                     panic!("typed extrusion");
                 };
-                *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal;
+                *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {};
                 *extent = ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::ThroughAll,

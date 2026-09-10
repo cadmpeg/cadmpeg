@@ -260,16 +260,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match direction {
-                cadmpeg_ir::features::ExtrudeDirection::Unresolved => {
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved extrusion direction",
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} => {
                     properties.remove("Direction");
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal => {
+                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
                         feature.id

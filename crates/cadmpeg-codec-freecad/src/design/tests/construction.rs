@@ -600,7 +600,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     ));
     assert!(matches!(
         feature("CachedCompound").evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry {}
     ));
     assert_eq!(feature("Compound").dependencies.len(), 2);
     assert_eq!(feature("Compound2").dependencies.len(), 2);
@@ -1283,7 +1283,7 @@ TShapes 0
         .expect("cached operations");
     assert!(result.ir().model.features.iter().all(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::StoredGeometry
+        FeatureDefinition::StoredGeometry {}
     )));
     assert!(result.report().losses.is_empty());
 }

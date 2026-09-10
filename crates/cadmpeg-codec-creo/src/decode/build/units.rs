@@ -1952,7 +1952,7 @@ mod tests {
             0,
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Unresolved("profile".into()),
-                direction: ExtrudeDirection::ProfileNormal,
+                direction: ExtrudeDirection::ProfileNormal {},
                 start: ExtrudeStart::OffsetProfilePlane {
                     offset: Length::new(2.0).expect("finite length fixture"),
                 },

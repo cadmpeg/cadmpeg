@@ -284,7 +284,7 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
             &HashMap::new(),
             std::slice::from_ref(&base_body),
         ),
-        FeatureDefinition::StoredGeometry
+        FeatureDefinition::StoredGeometry {}
     );
 }
 
@@ -1697,7 +1697,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
 fn profile_consumers_require_a_regeneration_profile() {
     let mut definition = FeatureDefinition::Extrude {
         profile: ProfileRef::Native("sketch-native".into()),
-        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {

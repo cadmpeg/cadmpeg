@@ -54,7 +54,7 @@ fn decode_extracts_parametric_history() {
         neutral.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {

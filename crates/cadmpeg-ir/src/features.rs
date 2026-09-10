@@ -2827,7 +2827,7 @@ pub enum FeatureDefinition {
     /// Directly stored geometry with no replayable parametric construction.
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
-    StoredGeometry,
+    StoredGeometry {},
     /// Body geometry copied from existing bodies.
     ExtractBody {
         /// Bodies supplying the copied geometry.
@@ -3573,17 +3573,16 @@ impl FeatureDefinition {
 }
 
 /// Direction in which an extrusion sweeps its profile.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrudeDirection {
     /// Native direction selection is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Sweep along the profile's positive normal.
-    #[default]
-    ProfileNormal,
+    ProfileNormal {},
     /// Sweep opposite the profile's positive normal.
-    ReversedProfileNormal,
+    ReversedProfileNormal {},
     /// Sweep along an explicit model-space vector.
     Explicit {
         /// Directed model-space sweep vector.
@@ -3592,6 +3591,12 @@ pub enum ExtrudeDirection {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<ExtrusionDirectionSource>,
     },
+}
+
+impl Default for ExtrudeDirection {
+    fn default() -> Self {
+        Self::ProfileNormal {}
+    }
 }
 
 /// One complete spatial placement in a hole operation.
@@ -4770,6 +4775,7 @@ impl TrimCellSelection {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TrimCellSelectionWire {
     removed: Vec<u64>,
     total: u64,

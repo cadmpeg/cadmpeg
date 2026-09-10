@@ -75,7 +75,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     ir.model.features.push(feature(
         "synthetic:test:id#unaudited-stored-geometry",
         3,
-        FeatureDefinition::StoredGeometry,
+        FeatureDefinition::StoredGeometry {},
     ));
     let mut report = super::empty_report(true);
 
@@ -123,7 +123,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         1,
         Vec::new(),
         vec![body.clone()],
-        FeatureDefinition::StoredGeometry,
+        FeatureDefinition::StoredGeometry {},
     );
     push(
         "synthetic:test:id#derived",
@@ -688,13 +688,13 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             bidirectional: Some(false),
         },
         extrude(
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             cadmpeg_ir::features::LinearTermination::Blind {
                 length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
             },
         ),
         extrude(
-            cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             cadmpeg_ir::features::LinearTermination::ToVertex {
                 vertex: cadmpeg_ir::features::VertexSelection::native("vertex".into()).unwrap(),
             },

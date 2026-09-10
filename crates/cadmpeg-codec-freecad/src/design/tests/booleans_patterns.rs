@@ -300,7 +300,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     };
     assert!(matches!(
         feature("Seed").evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry {}
     ));
     assert!(matches!(
         feature("Uniform").evaluation.definition(),
