@@ -1284,6 +1284,28 @@ pub(crate) fn project_relation_solved_line_geometry(
     }
 }
 
+/// The point-to-point distance relation families that project a missing endpoint.
+#[derive(Clone, Copy)]
+enum PointPointDistanceFamily {
+    /// Straight-line distance between the two points.
+    Direct,
+    /// Distance along the profile's horizontal axis.
+    Horizontal,
+    /// Distance along the profile's vertical axis.
+    Vertical,
+}
+
+impl PointPointDistanceFamily {
+    fn of(family: FeatureInputRelationFamily) -> Option<Self> {
+        match family {
+            FeatureInputRelationFamily::PointPointDistance => Some(Self::Direct),
+            FeatureInputRelationFamily::PointPointHorizontalDistance => Some(Self::Horizontal),
+            FeatureInputRelationFamily::PointPointVerticalDistance => Some(Self::Vertical),
+            _ => None,
+        }
+    }
+}
+
 fn unique_dynamic_line_pair(
     expected: f64,
     sketch: &cadmpeg_ir::sketches::SketchId,
@@ -1396,13 +1418,10 @@ pub(crate) fn project_relation_solved_point_geometry(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
-            if !matches!(
-                relation.family,
-                FeatureInputRelationFamily::PointPointDistance
-                    | FeatureInputRelationFamily::PointPointHorizontalDistance
-                    | FeatureInputRelationFamily::PointPointVerticalDistance
-            ) || relation.operands.len() != 2
-            {
+            let Some(family) = PointPointDistanceFamily::of(relation.family) else {
+                continue;
+            };
+            if relation.operands.len() != 2 {
                 continue;
             }
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
@@ -1541,23 +1560,15 @@ pub(crate) fn project_relation_solved_point_geometry(
                 .filter(|entity| entity.sketch == *sketch)
                 .flat_map(sketch_entity_loci)
                 .filter_map(|(point, _)| {
-                    let measured = match relation.family {
-                        FeatureInputRelationFamily::PointPointDistance => {
+                    let measured = match family {
+                        PointPointDistanceFamily::Direct => {
                             (point.u - known_point.u).hypot(point.v - known_point.v)
                         }
-                        FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                            match profile_axis? {
-                                ProfileAxis::U => (point.u - known_point.u).abs(),
-                                ProfileAxis::V => (point.v - known_point.v).abs(),
-                            }
-                        }
-                        FeatureInputRelationFamily::PointPointVerticalDistance => {
-                            match profile_axis? {
-                                ProfileAxis::U => (point.u - known_point.u).abs(),
-                                ProfileAxis::V => (point.v - known_point.v).abs(),
-                            }
-                        }
-                        _ => unreachable!("relation family was filtered above"),
+                        PointPointDistanceFamily::Horizontal
+                        | PointPointDistanceFamily::Vertical => match profile_axis? {
+                            ProfileAxis::U => (point.u - known_point.u).abs(),
+                            ProfileAxis::V => (point.v - known_point.v).abs(),
+                        },
                     };
                     same_dimension_length(measured, distance.get())
                         .then_some(quantize(point, QUANTUM))
@@ -3579,5 +3590,34 @@ mod relation_geometry_tests {
             spatial_point_line_distance(source_position, start, end).unwrap(),
             6.5
         ));
+    }
+}
+
+#[cfg(test)]
+mod point_point_distance_family_tests {
+    use super::{FeatureInputRelationFamily, PointPointDistanceFamily};
+
+    #[test]
+    fn only_the_three_point_point_distance_families_are_admitted() {
+        assert!(matches!(
+            PointPointDistanceFamily::of(FeatureInputRelationFamily::PointPointDistance),
+            Some(PointPointDistanceFamily::Direct)
+        ));
+        assert!(matches!(
+            PointPointDistanceFamily::of(FeatureInputRelationFamily::PointPointHorizontalDistance),
+            Some(PointPointDistanceFamily::Horizontal)
+        ));
+        assert!(matches!(
+            PointPointDistanceFamily::of(FeatureInputRelationFamily::PointPointVerticalDistance),
+            Some(PointPointDistanceFamily::Vertical)
+        ));
+        for family in [
+            FeatureInputRelationFamily::CircleDiameter,
+            FeatureInputRelationFamily::LineLineDistance,
+            FeatureInputRelationFamily::PointLineDistance,
+            FeatureInputRelationFamily::Angle,
+        ] {
+            assert!(PointPointDistanceFamily::of(family).is_none());
+        }
     }
 }

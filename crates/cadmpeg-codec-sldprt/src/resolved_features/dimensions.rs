@@ -540,12 +540,19 @@ fn dimensioned_relation_carrier<'a>(
     })
 }
 
+/// A dimensioned arc's sketch geometry beside the radius it was built from.
+struct DimensionedArcGeometry {
+    geometry: SketchGeometry,
+    radius: f64,
+    endpoint_refs: Vec<String>,
+}
+
 fn transformed_dimensioned_arc(
     transform: super::transforms::MarkerTransform,
     arc: &DimensionedArcNative,
     native_to_ir: f64,
     quantum: f64,
-) -> Option<(SketchGeometry, Vec<String>)> {
+) -> Option<DimensionedArcGeometry> {
     let transform_point = |[u, v]: [f64; 2]| {
         let point = transform.apply(quantize(
             Point2::new(u * native_to_ir, v * native_to_ir),
@@ -577,16 +584,17 @@ fn transformed_dimensioned_arc(
         && same_dimension_length(radius, end_radius)
         && sweep > SKETCH_ANGLE_TOLERANCE
         && sweep <= std::f64::consts::PI + SKETCH_ANGLE_TOLERANCE)
-        .then_some((
-            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        .then_some(DimensionedArcGeometry {
+            geometry: SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center,
                 radius: Length::new(radius)?,
                 start_angle: Angle::new(start_angle)?,
                 end_angle: Angle::new(end_angle)?,
             })
             .ok()?,
-            endpoints.map_or_else(Vec::new, Vec::from),
-        ))
+            radius,
+            endpoint_refs: endpoints.map_or_else(Vec::new, Vec::from),
+        })
 }
 
 /// Materialize dimensioned circular sketch geometry omitted by a selected-profile stream.
@@ -779,39 +787,33 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             {
                 continue;
             }
-            let (geometry, endpoint_refs) =
-                if let Some(arc) = carrier.curve().and_then(DimensionedCurveNative::arc) {
-                    let Some((geometry, endpoint_refs)) =
-                        transformed_dimensioned_arc(*transform, arc, NATIVE_TO_IR, QUANTUM)
-                    else {
-                        continue;
-                    };
-                    let SketchGeometryDefinition::Arc {
-                        radius: arc_radius, ..
-                    } = geometry.definition()
-                    else {
-                        unreachable!("dimensioned arc helper emits an arc");
-                    };
-                    if !same_dimension_length(arc_radius.get(), radius) {
-                        continue;
-                    }
-                    (geometry, endpoint_refs)
-                } else {
-                    (
-                        match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                            center,
-                            radius: cadmpeg_ir::scalar::Length::new(radius).ok_or_else(|| {
-                                cadmpeg_core::CodecError::Malformed(
-                                    "SolidWorks projected length must be finite".into(),
-                                )
-                            })?,
-                        }) {
-                            Ok(geometry) => geometry,
-                            Err(_) => continue,
-                        },
-                        Vec::new(),
-                    )
+            let (geometry, endpoint_refs) = if let Some(arc) =
+                carrier.curve().and_then(DimensionedCurveNative::arc)
+            {
+                let Some(arc) = transformed_dimensioned_arc(*transform, arc, NATIVE_TO_IR, QUANTUM)
+                else {
+                    continue;
                 };
+                if !same_dimension_length(arc.radius, radius) {
+                    continue;
+                }
+                (arc.geometry, arc.endpoint_refs)
+            } else {
+                (
+                    match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                        center,
+                        radius: cadmpeg_ir::scalar::Length::new(radius).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
+                    }) {
+                        Ok(geometry) => geometry,
+                        Err(_) => continue,
+                    },
+                    Vec::new(),
+                )
+            };
             entities.push(
                 SketchEntity::new(
                     match SketchEntityId::mint(format!(
