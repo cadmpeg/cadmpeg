@@ -194,13 +194,6 @@ impl ScalarType {
         .find(|candidate| candidate.base_name() == name)
     }
 
-    /// Returns a window over the leading [`ScalarType::width`] bytes of `bytes`.
-    pub fn window(self, bytes: &[u8]) -> Option<ScalarWindow<'_>> {
-        bytes
-            .get(..self.width().get())
-            .map(|bytes| ScalarWindow { ty: self, bytes })
-    }
-
     /// Returns a window over the leading [`ScalarType::width`] bytes of a maximum-width buffer.
     pub fn window_of(self, buffer: &[u8; ScalarType::MAX_WIDTH]) -> ScalarWindow<'_> {
         ScalarWindow {
@@ -323,9 +316,9 @@ mod tests {
 
     #[track_caller]
     fn read(ty: ScalarType, bytes: &[u8], endian: Endian) -> ScalarValue {
-        ty.window(bytes)
-            .expect("the test slice is the encoded width")
-            .read(endian)
+        let mut raw = [0u8; ScalarType::MAX_WIDTH];
+        raw[..bytes.len()].copy_from_slice(bytes);
+        ty.window_of(&raw).read(endian)
     }
 
     #[test]
