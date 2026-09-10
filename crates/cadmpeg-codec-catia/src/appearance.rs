@@ -1,6 +1,6 @@
 //! Transfer of byte-proven CATIA display colors to neutral appearance bindings.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -573,7 +573,7 @@ mod tests {
             .appearance_bindings
             .iter()
             .map(|binding| &binding.id)
-            .collect::<HashSet<_>>();
+            .collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), 6);
         assert!(ir.model.appearances[0]
             .base_color
