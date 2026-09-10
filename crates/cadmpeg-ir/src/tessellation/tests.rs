@@ -337,3 +337,27 @@ fn absent_normals_reject_edit_without_calling_the_editor() {
     assert!(!called);
     assert_eq!(value, original);
 }
+
+#[test]
+fn empty_wire_shading_is_the_absent_shading() {
+    let empty = Tessellation::new(
+        "test:mesh:tessellation#empty",
+        Vec::new(),
+        Vec::new(),
+        TessellationTopology::List,
+        TessellationNormals::None,
+        Vec::new(),
+    )
+    .unwrap();
+    for kind in ["per_vertex", "per_corner"] {
+        let mut wire = serde_json::to_value(&empty).unwrap();
+        wire["shading"] = serde_json::json!({"kind": kind, "values": []});
+        let admitted: Tessellation = serde_json::from_value(wire).unwrap();
+        assert_eq!(*admitted.shading(), TessellationNormals::None);
+        assert_eq!(admitted, empty);
+        assert_eq!(
+            serde_json::to_value(&admitted).unwrap()["shading"],
+            serde_json::Value::Null
+        );
+    }
+}

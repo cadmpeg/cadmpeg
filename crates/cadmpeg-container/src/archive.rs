@@ -41,12 +41,15 @@ impl ZipCompression {
     }
 
     /// Storage of a member with these declared stored and expanded sizes.
-    #[must_use]
+    ///
+    /// A stored member whose declared compressed size is smaller than its
+    /// uncompressed size is a malformed central-directory record, reported here
+    /// rather than normalized into a legal span.
     pub fn storage(
         self,
         compressed_size: u64,
         uncompressed_size: u64,
-    ) -> cadmpeg_core::container::EntryStorage {
+    ) -> Result<cadmpeg_core::container::EntryStorage, &'static str> {
         use cadmpeg_core::container::{CompressionMethod, EntryStorage, VerbatimLabel};
         let method = match self {
             Self::Stored => {
@@ -59,11 +62,11 @@ impl ZipCompression {
             Self::Deflate => CompressionMethod::Deflate,
             Self::Zstd => CompressionMethod::Zstd,
         };
-        EntryStorage::Compressed {
+        Ok(EntryStorage::Compressed {
             method,
             stored: Some(compressed_size),
             expanded: Some(uncompressed_size),
-        }
+        })
     }
 }
 
@@ -324,12 +327,16 @@ impl<'a> ArchiveSnapshot<'a> {
                     "central_header_offset".into(),
                     entry.central_start.to_string(),
                 );
+                let storage = declared_storage(
+                    entry.compression,
+                    entry.compressed_size,
+                    entry.uncompressed_size,
+                    &mut attributes,
+                );
                 ContainerEntry {
                     name: entry.name.clone(),
                     role: classify(&entry.name),
-                    storage: entry
-                        .compression
-                        .storage(entry.compressed_size, entry.uncompressed_size),
+                    storage,
                     attributes,
                 }
             })
@@ -891,6 +898,31 @@ fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, Co
     Ok(spans)
 }
 
+/// Storage for one member, recording a malformed declaration as an attribute.
+///
+/// A stored member declaring fewer compressed than uncompressed bytes has no
+/// usable stored span; the payload stands alone and the declaration is reported.
+fn declared_storage(
+    compression: ZipCompression,
+    compressed_size: u64,
+    uncompressed_size: u64,
+    attributes: &mut BTreeMap<String, String>,
+) -> cadmpeg_core::container::EntryStorage {
+    match compression.storage(compressed_size, uncompressed_size) {
+        Ok(storage) => storage,
+        Err(message) => {
+            attributes.insert(
+                "storage_declaration".into(),
+                format!("{message}: {compressed_size}/{uncompressed_size}"),
+            );
+            cadmpeg_core::container::EntryStorage::payload_only(
+                cadmpeg_core::container::VerbatimLabel::Stored,
+                uncompressed_size,
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Write as _};
@@ -928,6 +960,40 @@ mod tests {
             .write_all(b"Zstandard payload")
             .expect("Zstandard entry writes");
         archive.finish().expect("archive finishes").into_inner()
+    }
+
+    #[test]
+    fn a_stored_member_declaring_a_span_under_its_payload_is_reported() {
+        use cadmpeg_core::container::{EntryStorage, VerbatimLabel, VerbatimSize};
+
+        assert_eq!(
+            ZipCompression::Stored.storage(5, 9),
+            Err("verbatim container entry stores fewer bytes than it expands to")
+        );
+        let mut attributes = BTreeMap::new();
+        let storage = declared_storage(ZipCompression::Stored, 5, 9, &mut attributes);
+        assert_eq!(
+            storage,
+            EntryStorage::payload_only(VerbatimLabel::Stored, 9)
+        );
+        assert_eq!(storage.stored_size(), None);
+        assert_eq!(storage.expanded_size(), Some(9));
+        assert_eq!(
+            attributes["storage_declaration"],
+            "verbatim container entry stores fewer bytes than it expands to: 5/9"
+        );
+
+        let mut attributes = BTreeMap::new();
+        let storage = declared_storage(ZipCompression::Stored, 12, 9, &mut attributes);
+        assert!(matches!(
+            storage,
+            EntryStorage::Verbatim {
+                size: VerbatimSize::Framed(_),
+                ..
+            }
+        ));
+        assert_eq!(storage.stored_size(), Some(12));
+        assert!(attributes.is_empty());
     }
 
     #[test]

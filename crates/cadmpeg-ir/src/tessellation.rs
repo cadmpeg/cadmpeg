@@ -320,7 +320,7 @@ fn shading_from_wire(
                     "tessellation normals do not match vertex count",
                 ));
             }
-            Ok(TessellationNormals::PerVertex(values))
+            Ok(TessellationNormals::per_vertex(values))
         }
         Some(TessellationShadingWire::PerCorner { values }) => {
             if triangles.len().checked_mul(3) != Some(values.len()) {
@@ -328,7 +328,7 @@ fn shading_from_wire(
                     "tessellation corner normals do not match triangle corners",
                 ));
             }
-            Ok(TessellationNormals::PerCorner(values))
+            Ok(TessellationNormals::per_corner(values))
         }
     }
 }

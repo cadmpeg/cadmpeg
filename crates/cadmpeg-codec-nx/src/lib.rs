@@ -191,6 +191,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
+    let mut storage_notes: Vec<String> = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
@@ -304,7 +305,16 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 expanded: Some(inflated_len),
             },
             container::ContainerLayout::LegacyCfb { .. } => {
-                EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed)
+                match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
+                    Ok(storage) => storage,
+                    Err(message) => {
+                        storage_notes.push(format!(
+                            "parasolid#{si}: {message}: {}/{inflated_len}",
+                            stream.consumed
+                        ));
+                        EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
+                    }
+                }
             }
         };
         entries.push(ContainerEntry {
@@ -319,7 +329,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
-    let (classification, notes) = decode::summarize(scan);
+    let (classification, mut notes) = decode::summarize(scan);
+    notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
     ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)

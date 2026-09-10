@@ -1099,6 +1099,7 @@ pub(crate) fn scan_with_test_record_limit(
 /// Build the format-neutral container summary.
 pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
+    let mut storage_notes: Vec<String> = Vec::new();
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
         attributes.insert("offset".to_string(), table.range.start.to_string());
@@ -1108,14 +1109,21 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
+        let storage = match EntryStorage::framed(
+            VerbatimLabel::None,
+            table.body.len() as u64,
+            table.range.len() as u64,
+        ) {
+            Ok(storage) => storage,
+            Err(message) => {
+                storage_notes.push(format!("table-{:#x}: {message}", table.typecode));
+                EntryStorage::payload_only(VerbatimLabel::None, table.body.len() as u64)
+            }
+        };
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
-            storage: EntryStorage::framed(
-                VerbatimLabel::None,
-                table.body.len() as u64,
-                table.range.len() as u64,
-            ),
+            storage,
             attributes,
         });
     }
@@ -1141,6 +1149,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         });
     }
     let mut notes = vec![scan.version_note()];
+    notes.extend(storage_notes);
     notes.extend(scan.warnings.iter().cloned());
     notes.extend(
         scan.definitions
