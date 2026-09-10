@@ -42,7 +42,7 @@ fn parasolid_stream_header_is_parsed() {
     let f = synthetic_sldprt();
     let scan = container::scan_bytes(&f);
     let site = container::select_active_parasolid_site(&scan).expect("active parasolid");
-    assert_eq!(site.header.schema, "SCH_SW_33103_11000");
+    assert_eq!(site.header.schema.value(), "SCH_SW_33103_11000");
     assert!(site.header.description.contains("partition"));
     let container::Section::Block(block) = site.section else {
         panic!("synthetic native block selected as compound stream");

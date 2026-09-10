@@ -77,14 +77,99 @@ pub fn find_u8_length_prefixed_schema_token(prologue: &[u8]) -> Option<SchemaTok
 
 fn schema_token(prologue: &[u8], offset: usize, end: usize) -> Option<SchemaToken<'_>> {
     let bytes = prologue.get(offset..end)?;
-    (bytes.len() > 4
+    is_schema_token(bytes).then_some(())?;
+    let value = std::str::from_utf8(bytes).ok()?;
+    Some(SchemaToken { value, offset })
+}
+
+/// The shared token grammar: `SCH_` and at least one more token byte.
+fn is_schema_token(bytes: &[u8]) -> bool {
+    bytes.len() > 4
         && bytes.starts_with(b"SCH_")
         && bytes
             .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
-    .then_some(())?;
-    let value = std::str::from_utf8(bytes).ok()?;
-    Some(SchemaToken { value, offset })
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+}
+
+/// Text offered in the schema position that is not a Parasolid schema token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotSchemaToken;
+
+impl std::fmt::Display for NotSchemaToken {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("not a Parasolid schema token")
+    }
+}
+
+impl std::error::Error for NotSchemaToken {}
+
+/// One owned ASCII `SCH_` token, checked against the shared token grammar.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OwnedSchemaToken(String);
+
+impl OwnedSchemaToken {
+    /// Exact token text, including the `SCH_` prefix.
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for OwnedSchemaToken {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl From<SchemaToken<'_>> for OwnedSchemaToken {
+    fn from(token: SchemaToken<'_>) -> Self {
+        Self(token.value().to_owned())
+    }
+}
+
+impl TryFrom<&str> for OwnedSchemaToken {
+    type Error = NotSchemaToken;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        is_schema_token(value.as_bytes())
+            .then(|| Self(value.to_owned()))
+            .ok_or(NotSchemaToken)
+    }
+}
+
+impl TryFrom<String> for OwnedSchemaToken {
+    type Error = NotSchemaToken;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        is_schema_token(value.as_bytes())
+            .then_some(())
+            .ok_or(NotSchemaToken)?;
+        Ok(Self(value))
+    }
+}
+
+/// The host location a Parasolid stream was read from.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Carrier(String);
+
+impl Carrier {
+    /// Names the host location carrying one Parasolid stream.
+    #[must_use]
+    pub const fn new(location: String) -> Self {
+        Self(location)
+    }
+
+    /// The location text, as the report records it.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Carrier {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 /// Registry row named by one schema token, or the residual row.
@@ -115,15 +200,15 @@ fn schema_row(schema: &str) -> DialectId {
 /// other row, and the residual row, is admitted without verification.
 #[must_use]
 pub fn classify_layer(
-    schema: &str,
-    carrier: &str,
+    schema: &OwnedSchemaToken,
+    carrier: &Carrier,
     instance: LayerInstance,
     verified: &[DialectId],
 ) -> DialectMatch {
-    let id = schema_row(schema);
+    let id = schema_row(schema.value());
     let declared = BTreeMap::from([
-        (DECLARED_SCHEMA.to_owned(), schema.to_owned()),
-        (DECLARED_CARRIER.to_owned(), carrier.to_owned()),
+        (DECLARED_SCHEMA.to_owned(), schema.value().to_owned()),
+        (DECLARED_CARRIER.to_owned(), carrier.as_str().to_owned()),
     ]);
     let matched = if verified.contains(&id) {
         DialectMatch::admitted(id)
@@ -133,7 +218,7 @@ pub fn classify_layer(
     .with_declared(declared);
     match instance {
         LayerInstance::Sole => matched,
-        LayerInstance::Tagged => matched.with_instance(carrier),
+        LayerInstance::Tagged => matched.with_instance(carrier.as_str()),
     }
 }
 
@@ -143,7 +228,10 @@ pub fn classify_layer(
 /// stable instance keys, so hosts cannot disagree about when identity needs a
 /// disambiguator.
 #[must_use]
-pub fn extra_layers(streams: Vec<(String, String)>, verified: &[DialectId]) -> Vec<DialectMatch> {
+pub fn extra_layers(
+    streams: Vec<(OwnedSchemaToken, Carrier)>,
+    verified: &[DialectId],
+) -> Vec<DialectMatch> {
     let instance = if streams.len() > 1 {
         LayerInstance::Tagged
     } else {
@@ -231,6 +319,14 @@ mod tests {
         PARASOLID_FORMAT_13006,
     ];
 
+    fn token(text: &str) -> OwnedSchemaToken {
+        OwnedSchemaToken::try_from(text).expect("the fixture text is a schema token")
+    }
+
+    fn carrier(text: &str) -> Carrier {
+        Carrier::new(text.to_owned())
+    }
+
     #[test]
     fn schema_token_uses_one_exact_ascii_grammar() {
         let token =
@@ -266,11 +362,16 @@ mod tests {
     #[test]
     fn named_schemas_and_the_format_suffix_map_to_their_rows_case_insensitively() {
         for (schema, expected) in [
-            ("sch_sw_33103_11000", "parasolid:sch-sw-33103"),
-            ("Sch_Sw_32001_11000", "parasolid:sch-sw-32001"),
+            ("SCH_sw_33103_11000", "parasolid:sch-sw-33103"),
+            ("SCH_Sw_32001_11000", "parasolid:sch-sw-32001"),
             ("SCH_3201255_32001_13006", "parasolid:format-13006"),
         ] {
-            let matched = classify_layer(schema, "stream@12", LayerInstance::Sole, &ALL_ROWS);
+            let matched = classify_layer(
+                &token(schema),
+                &carrier("stream@12"),
+                LayerInstance::Sole,
+                &ALL_ROWS,
+            );
             assert_eq!(matched.dialect().as_str(), expected);
             assert_eq!(matched.admission(), &Admission::Admitted);
             assert_eq!(matched.declared()[DECLARED_SCHEMA], schema);
@@ -282,8 +383,8 @@ mod tests {
     #[test]
     fn residual_schemas_use_residual_admission_without_a_substitution() {
         let matched = classify_layer(
-            "SCH_TEST_1_9999",
-            "block@7:body+3",
+            &token("SCH_TEST_1_9999"),
+            &carrier("block@7:body+3"),
             LayerInstance::Tagged,
             &ALL_ROWS,
         );
@@ -302,8 +403,8 @@ mod tests {
     fn several_layers_receive_carrier_instances() {
         let layers = extra_layers(
             vec![
-                ("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned()),
-                ("SCH_TEST_1_9999".to_owned(), "stream@48".to_owned()),
+                (token("SCH_SW_33103_11000"), carrier("stream@12")),
+                (token("SCH_TEST_1_9999"), carrier("stream@48")),
             ],
             &ALL_ROWS,
         );
@@ -311,7 +412,7 @@ mod tests {
         assert_eq!(layers[1].instance(), Some("stream@48"));
 
         let one = extra_layers(
-            vec![("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned())],
+            vec![(token("SCH_SW_33103_11000"), carrier("stream@12"))],
             &ALL_ROWS,
         );
         assert_eq!(one[0].instance(), None);
@@ -323,14 +424,14 @@ mod tests {
             DialectId::parse("nx:splmsstr").expect("valid host dialect id"),
         ));
         let first = classify_layer(
-            "SCH_SW_33103_11000",
-            "stream@12",
+            &token("SCH_SW_33103_11000"),
+            &carrier("stream@12"),
             LayerInstance::Tagged,
             &[],
         );
         let later = classify_layer(
-            "SCH_SW_32001_11000",
-            "stream@12",
+            &token("SCH_SW_32001_11000"),
+            &carrier("stream@12"),
             LayerInstance::Tagged,
             &[],
         );
@@ -356,9 +457,14 @@ mod tests {
             "SCH_TEST_1_9999",
         ]
         .map(|schema| {
-            classify_layer(schema, "carrier", LayerInstance::Sole, &ALL_ROWS)
-                .dialect()
-                .to_string()
+            classify_layer(
+                &token(schema),
+                &carrier("carrier"),
+                LayerInstance::Sole,
+                &ALL_ROWS,
+            )
+            .dialect()
+            .to_string()
         })
         .into_iter()
         .collect();
@@ -368,8 +474,8 @@ mod tests {
     #[test]
     fn a_known_row_can_be_identified_without_claiming_host_verification() {
         let matched = classify_layer(
-            "SCH_3501171_35102_13006",
-            "stream@12",
+            &token("SCH_3501171_35102_13006"),
+            &carrier("stream@12"),
             LayerInstance::Sole,
             &[PARASOLID_SCH_SW_33103],
         );
