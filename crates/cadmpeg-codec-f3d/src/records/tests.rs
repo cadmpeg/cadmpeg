@@ -93,7 +93,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
 
 #[test]
 fn material_assignment_preserves_located_and_authored_token_wire() {
-    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
+    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
     for field in ["physical_token", "visual_preset"] {
         for value in ["\"\"", "\"Prism-002\""] {
             for offset in [None, Some(0), Some(50)] {
@@ -118,14 +118,6 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
     let parsed: crate::records::DesignMaterialAssignment =
         serde_json::from_str(&wire).expect("absent tokens");
     assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
-    let mut mismatch: serde_json::Value = serde_json::from_str(&wire).unwrap();
-    mismatch["entity_suffix"] = 986.into();
-    assert!(
-        serde_json::from_value::<crate::records::DesignMaterialAssignment>(mismatch)
-            .expect_err("mismatched material suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
     let padded = wire.replace("0_985", "0_+00985");
     let parsed: crate::records::DesignMaterialAssignment =
         serde_json::from_str(&padded).expect("preserved numeric spelling");
@@ -340,7 +332,7 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
 
 #[test]
 fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
-    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch""#;
+    let prefix = r#"{"id":"header","byte_offset":0,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch""#;
     for (fields, references, offsets, members) in [
         ("", "[]", "[]", ""),
         (
@@ -693,9 +685,9 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
 }
 
 #[test]
-fn sketch_placement_preserves_identity_wire_and_rejects_suffix_mismatch() {
+fn sketch_placement_preserves_identity_wire() {
     let wire = serde_json::json!({
-        "id": "placement", "entity_id": "Sketch_+0007", "entity_suffix": 7,
+        "id": "placement", "entity_id": "Sketch_+0007",
         "byte_offset": 10, "class_tag": "300", "record_index": 1,
         "frame_length": 201,
         "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
@@ -718,30 +710,15 @@ fn sketch_placement_preserves_identity_wire_and_rejects_suffix_mismatch() {
             );
         }
     }
-    let mut mismatch = wire;
-    mismatch["entity_suffix"] = 8.into();
-    assert!(
-        serde_json::from_value::<crate::records::DesignSketchPlacement>(mismatch)
-            .expect_err("mismatched suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
 }
 
 #[test]
-fn entity_header_identity_preserves_wire_spelling_and_rejects_a_conflicting_suffix() {
-    let wire = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_+001","class_tag":"256","optional_slot_present":false,"reference_indices":[],"reference_offsets":[]}"#;
+fn entity_header_identity_preserves_wire_spelling() {
+    let wire = r#"{"id":"header","byte_offset":0,"entity_id":"0_+001","class_tag":"256","optional_slot_present":false,"reference_indices":[],"reference_offsets":[]}"#;
     let header: crate::records::DesignEntityHeader =
         serde_json::from_str(wire).expect("matching identity");
     assert_eq!(header.entity_id.suffix(), 1);
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
-    let mismatched = wire.replace("\"entity_suffix\":1", "\"entity_suffix\":2");
-    assert!(
-        serde_json::from_str::<crate::records::DesignEntityHeader>(&mismatched)
-            .expect_err("mismatched suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
     for class_tag in ["", "25", "25x", "2560", "٢٥٦"] {
         let mut invalid = serde_json::to_value(&header).unwrap();
         invalid["class_tag"] = class_tag.into();
@@ -893,7 +870,7 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
         let paired = if member { 50 } else { 100 + length };
         let mut wire = serde_json::json!({
             "id": "placement", "scope_record_index": 1,
-            "entity_id": "Sketch_7", "entity_suffix": 7,
+            "entity_id": "Sketch_7",
             "byte_offset": 100, "class_tag": "300", "record_index": 1,
             "frame_length": length, "transform": transform,
             "paired_class_tag": "301", "paired_byte_offset": paired,
@@ -1403,7 +1380,7 @@ fn empty_reference_runs_have_one_representation() {
         )
         .unwrap(),
     };
-    let wire = r#"{"id":"header","byte_offset":10,"entity_suffix":7,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
+    let wire = r#"{"id":"header","byte_offset":10,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     assert_eq!(
         serde_json::from_str::<crate::records::DesignEntityHeader>(wire).unwrap(),
@@ -1493,7 +1470,7 @@ fn segment_base_guid_rejects_invalid_text() {
 fn material_assignment_sidecar_rejects_invalid_visual_guid() {
     let wire = serde_json::json!({
         "id": "material#0", "asm_body_key": 42, "asm_body_key_offset": 10,
-        "entity_suffix": 985, "entity_suffix_offset": 20, "entity_id": "0_985",
+        "entity_suffix_offset": 20, "entity_id": "0_985",
         "entity_id_offset": 30, "visual_guid": "not-a-guid", "visual_guid_offset": 40
     });
     assert!(serde_json::from_value::<super::DesignMaterialAssignment>(wire).is_err());

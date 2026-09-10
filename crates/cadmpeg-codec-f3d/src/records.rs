@@ -2880,8 +2880,6 @@ struct DesignSketchPlacementWire {
     scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     entity_id: String,
-    /// Numeric suffix of `entity_id`.
-    entity_suffix: u64,
     /// Typed sketch-container visibility for the placed sketch entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     visibility: Option<DesignSketchVisibility>,
@@ -2914,9 +2912,6 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
         use DesignSketchFrameForm as Form;
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
-            return Err("entity_suffix disagrees with entity_id".into());
-        }
 
         let form = match (wire.member_run_head, wire.frame_length) {
             (false, 201) => Form::ScopeCompact,
@@ -2966,7 +2961,6 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
 
 impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
     fn from(value: DesignSketchPlacement) -> Self {
-        let entity_suffix = value.entity_id.suffix();
         let byte_offset = value.byte_offset();
         let frame_length = value.frame_length();
         let transform = *value.transform();
@@ -2977,7 +2971,6 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
             id: value.id,
             scope_record_index: value.scope_record_index,
             entity_id: value.entity_id.0,
-            entity_suffix,
             visibility: value.visibility,
             byte_offset,
             class_tag: value.class_tag.into(),
@@ -3262,8 +3255,6 @@ struct DesignMaterialAssignmentWire {
     pub asm_body_key: u64,
     /// Byte offset of the body-map ASM key.
     pub asm_body_key_offset: u64,
-    /// Numeric suffix of `entity_id`.
-    pub entity_suffix: u64,
     /// Byte offset of the body-map entity suffix.
     pub entity_suffix_offset: u64,
     /// UTF-16 design-entity id.
@@ -3292,9 +3283,6 @@ impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
     type Error = String;
     fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, Self::Error> {
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
-            return Err("entity_suffix disagrees with entity_id".into());
-        }
         Ok(Self {
             id: wire.id,
             asm_body_key: wire.asm_body_key,
@@ -3324,7 +3312,6 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
             id: value.id,
             asm_body_key: value.asm_body_key,
             asm_body_key_offset: value.asm_body_key_offset,
-            entity_suffix: value.entity_id.suffix(),
             entity_suffix_offset: value.entity_suffix_offset,
             entity_id: value.entity_id.0,
             entity_id_offset: value.entity_id_offset,
@@ -3975,8 +3962,6 @@ struct DesignEntityHeaderWire {
     id: String,
     /// Byte offset of this entity header in its Design `BulkStream`.
     byte_offset: u64,
-    /// Numeric suffix of the owning design-entity id (e.g. the `N` in `Body:N`).
-    entity_suffix: u64,
     /// Full UTF-16LE-decoded design-entity id string for this header.
     entity_id: String,
     /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
@@ -4021,9 +4006,6 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
             return Err("declared_reference_count must match reference_indices".into());
         }
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
-            return Err("entity_suffix disagrees with entity_id".into());
-        }
         let references = match (wire.record_reference_offset, wire.declared_reference_count) {
             (Some(offset), Some(_)) => {
                 if wire.reference_indices.len() != wire.reference_offsets.len() {
@@ -4093,7 +4075,6 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             member_offsets,
             id: header.id,
             byte_offset: header.byte_offset,
-            entity_suffix: header.entity_id.suffix(),
             entity_id: header.entity_id.0,
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
