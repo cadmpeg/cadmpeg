@@ -2507,6 +2507,11 @@ impl TreeChildren {
         })
     }
 
+    /// Whether the node has no children.
+    pub fn is_empty(&self) -> bool {
+        self.children.is_empty()
+    }
+
     /// Return the active child identity.
     pub fn active_child(&self) -> &Option<FeatureId> {
         &self.active_child
@@ -2558,14 +2563,14 @@ impl<'de> Deserialize<'de> for TreeChildren {
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "definition", rename_all = "snake_case")]
+#[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FeatureDefinition {
     /// Non-modeling node retained in the ordered feature tree.
     TreeNode {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
         /// Ordered child membership and its optional active child.
-        #[serde(flatten)]
+        #[serde(default, skip_serializing_if = "TreeChildren::is_empty")]
         children: TreeChildren,
     },
     /// Direct-modeling session represented by its captured result bodies.
@@ -2624,7 +2629,6 @@ pub enum FeatureDefinition {
         #[serde(default)]
         mirror_v: bool,
         /// Finite image plane with perpendicular unit directions.
-        #[serde(flatten)]
         frame: FeatureUnitPlaneFrame,
         /// Opposite corners with nonzero extent in both coordinates.
         bounds: FeatureImageBounds,
@@ -2652,13 +2656,11 @@ pub enum FeatureDefinition {
     /// Constructed reference plane.
     DatumPlane {
         /// Finite plane with nonzero perpendicular directions.
-        #[serde(flatten)]
         frame: FeatureDatumPlaneFrame,
     },
     /// Reference plane constructed through three selected vertices.
     DatumThreePointPlane {
         /// Finite plane with nonzero perpendicular directions.
-        #[serde(flatten)]
         frame: FeatureDatumPlaneFrame,
         /// Construction vertices in source order.
         points: ThreePointSelection,
@@ -2694,25 +2696,21 @@ pub enum FeatureDefinition {
     /// Straight edge between two finite points.
     LineSegment {
         /// Finite distinct endpoints.
-        #[serde(flatten)]
         segment: FeatureLineSegment,
     },
     /// Circular edge over an angular interval.
     CircularArc {
         /// Finite arc geometry and directed angular span.
-        #[serde(flatten)]
         arc: FeatureCircularArc,
     },
     /// Elliptic edge over an angular interval.
     EllipticArc {
         /// Finite arc geometry and directed angular span.
-        #[serde(flatten)]
         arc: FeatureEllipticArc,
     },
     /// Ordered straight-edge chain.
     Polyline {
         /// Finite ordered chain and closure.
-        #[serde(flatten)]
         chain: FeaturePolyline,
     },
     /// Regular planar polygon centered at the local origin.
@@ -2741,7 +2739,6 @@ pub enum FeatureDefinition {
     /// Constructed model-space coordinate system.
     DatumCoordinateSystem {
         /// Finite right-handed coordinate frame.
-        #[serde(flatten)]
         frame: FeatureCoordinateFrame,
     },
     /// Rectangular solid primitive.
@@ -2756,7 +2753,6 @@ pub enum FeatureDefinition {
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
         /// Coordinate expressions and parameter domain.
-        #[serde(flatten)]
         curve: FeatureEquationCurve,
     },
     /// Curve produced by projecting a source path onto target faces.
@@ -2979,7 +2975,6 @@ pub enum FeatureDefinition {
     /// Sweep of a referenced or generated cross-section along a path.
     Sweep {
         /// Cross-sections and their compatible result mode.
-        #[serde(flatten)]
         shape: SweepShape,
         /// Trajectory followed by the profile, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3118,7 +3113,6 @@ pub enum FeatureDefinition {
     /// Blend constructed between two face sets.
     FaceBlend {
         /// Disjoint operand selections and their operation arity.
-        #[serde(flatten)]
         operands: FaceBlendOperands,
         /// Radius law along the face intersection.
         radius: RadiusSpec,
@@ -3205,7 +3199,6 @@ pub enum FeatureDefinition {
     /// Intersection curves produced where two source shapes meet.
     SectionShape {
         /// Disjoint operand selections and their operation arity.
-        #[serde(flatten)]
         operands: SectionOperands,
         /// Whether the resulting section edges are approximated, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3267,7 +3260,10 @@ pub enum FeatureDefinition {
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
-        #[serde(flatten)]
+        #[serde(
+            default = "FilledSurfaceContinuityState::unresolved",
+            skip_serializing_if = "FilledSurfaceContinuityState::is_unresolved"
+        )]
         #[cfg_attr(feature = "schema", schemars(with = "FilledSurfaceContinuityWire"))]
         continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
@@ -3329,7 +3325,6 @@ pub enum FeatureDefinition {
     /// Boolean operation between existing bodies.
     Combine {
         /// Disjoint operand selections and their operation arity.
-        #[serde(flatten)]
         operands: CombineOperands,
         /// Join, cut, or intersection operation.
         op: BooleanKind,
@@ -3359,7 +3354,6 @@ pub enum FeatureDefinition {
     /// Removes one side of target bodies using ordered tool bodies.
     TrimBodies {
         /// Disjoint operand selections and their operation arity.
-        #[serde(flatten)]
         operands: TrimBodyOperands,
         /// Side retained by the trim.
         keep: BodyTrimSide,
@@ -3397,7 +3391,6 @@ pub enum FeatureDefinition {
     /// Replaces selected faces with another face set.
     ReplaceFace {
         /// Disjoint operand selections and their operation arity.
-        #[serde(flatten)]
         operands: ReplaceFaceOperands,
     },
     /// Direct motion of selected faces.
@@ -3472,7 +3465,6 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         placements: Option<Vec<HolePlacement>>,
         /// Bore diameter and compatible entry, exit, and thread construction.
-        #[serde(flatten)]
         shape: HoleShape,
         /// How deep the hole extends, when resolved. Holes travel on one side
         /// only, so the termination law needs no sidedness wrapper.

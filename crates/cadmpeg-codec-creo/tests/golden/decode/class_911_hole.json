@@ -17,8 +17,10 @@
         {
           "definition": {
             "definition": "hole",
-            "kind": {
-              "kind": "unresolved"
+            "shape": {
+              "kind": {
+                "kind": "unresolved"
+              }
             }
           },
           "id": "creo:model:feature#4",

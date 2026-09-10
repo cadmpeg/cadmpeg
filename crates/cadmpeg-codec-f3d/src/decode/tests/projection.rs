@@ -318,8 +318,10 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
                 "position": {"x": 1.0, "y": 2.0, "z": 3.0},
                 "direction": {"x": 0.0, "y": 0.0, "z": -1.0}
             }],
-            "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0},
-            "diameter": 5.0,
+            "shape": {
+                "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0},
+                "diameter": 5.0
+            },
             "extent": {"kind": "blind", "length": 10.0}
         }))
         .expect("complete Hole definition");
@@ -594,23 +596,27 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
 
     let sweep = definition(serde_json::json!({
         "definition": "sweep",
-        "section": {
-            "kind": "profile",
-            "value": {"kind": "sketch", "value": "test:model:sketch#section"}
+        "shape": {
+            "section": {
+                "kind": "profile",
+                "value": {"kind": "sketch", "value": "test:model:sketch#section"}
+            },
+            "mode": {"mode": "solid", "op": "join"}
         },
-        "path": {"kind": "edges", "value": ["test:model:edge#path"]},
-        "mode": {"mode": "solid", "op": "join"}
+        "path": {"kind": "edges", "value": ["test:model:edge#path"]}
     }));
     assert!(!feature_definition_is_incomplete(&sweep));
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "sweep",
-            "section": {
-                "kind": "profile",
-                "value": {"kind": "native", "value": "native:section"}
+            "shape": {
+                "section": {
+                    "kind": "profile",
+                    "value": {"kind": "native", "value": "native:section"}
+                },
+                "mode": {"mode": "solid", "op": "join"}
             },
-            "path": {"kind": "edges", "value": ["test:model:edge#path"]},
-            "mode": {"mode": "solid", "op": "join"}
+            "path": {"kind": "edges", "value": ["test:model:edge#path"]}
         }),
     )));
 
@@ -634,16 +640,20 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
 
     let combine = definition(serde_json::json!({
         "definition": "combine",
-        "target": {"kind": "bodies", "value": ["test:model:body#target"]},
-        "tools": {"kind": "bodies", "value": ["test:model:body#tool"]},
+        "operands": {
+            "target": {"kind": "bodies", "value": ["test:model:body#target"]},
+            "tools": {"kind": "bodies", "value": ["test:model:body#tool"]}
+        },
         "op": "cut"
     }));
     assert!(!feature_definition_is_incomplete(&combine));
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "combine",
-            "target": {"kind": "native", "value": "native:target"},
-            "tools": {"kind": "bodies", "value": ["test:model:body#tool"]},
+            "operands": {
+                "target": {"kind": "native", "value": "native:target"},
+                "tools": {"kind": "bodies", "value": ["test:model:body#tool"]}
+            },
             "op": "cut"
         }),
     )));
@@ -726,17 +736,21 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_plane",
-            "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
-            "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-            "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+            "frame": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+            }
         }),
     )));
     let three_point = |points: [serde_json::Value; 3]| {
         serde_json::json!({
             "definition": "datum_three_point_plane",
-            "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-            "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-            "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "frame": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+            },
             "points": points
         })
     };
