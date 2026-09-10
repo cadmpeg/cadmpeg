@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole,
@@ -214,7 +215,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: 0,
-                object_id: Some(1738),
+                object_id: ObjectId::from_value(1738),
                 value: "Sketch".into(),
             },
             FeatureInputName {
@@ -222,7 +223,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 64,
-                object_id: Some(2000),
+                object_id: ObjectId::from_value(2000),
                 value: "Later".into(),
             },
             FeatureInputName {

@@ -6,6 +6,7 @@ use super::*;
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
@@ -46,7 +47,7 @@ fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInp
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(2080),
+            object_id: ObjectId::from_value(2080),
             value: name.into(),
         }],
         scalars: Vec::new(),
@@ -162,7 +163,7 @@ fn coordinate_system_record(
                 parent: lane_id.into(),
                 ordinal: 0,
                 offset: 0,
-                object_id: Some(500),
+                object_id: ObjectId::from_value(500),
                 value: name.into(),
             }],
             scalars: Vec::new(),
@@ -905,7 +906,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(2080),
+            object_id: ObjectId::from_value(2080),
             value: "Axis1".into(),
         }],
         scalars: Vec::new(),
@@ -1486,7 +1487,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(2080),
+            object_id: ObjectId::from_value(2080),
             value: "MidPlane".into(),
         }],
         scalars: Vec::new(),

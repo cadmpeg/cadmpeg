@@ -33,6 +33,7 @@ use crate::layout::coordinate_system_two_point_tail as two_pt_tail;
 use crate::layout::coordinate_system_xy_tail as xy_tail;
 use crate::layout::reference_point_long_solved_cache as pt_long;
 use crate::layout::reference_point_short_solved_cache as pt_short;
+use crate::records::ObjectId;
 
 const EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9: f64 = 1e-9;
 const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9: f64 = 1e-9;
@@ -579,7 +580,7 @@ fn resolved_reference_point(
     const HEADER_PREFIX: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0xc0];
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let object_id = name.object_id?;
+    let object_id = name.object_id.and_then(ObjectId::value)?;
     let name_start = usize::try_from(name.offset).ok()?;
     let name_end = name_start
         .checked_add(NAME_MARKER.len() + 1)?
@@ -1315,7 +1316,7 @@ pub(crate) fn enrich_history_sketch_block_references(
             let instance_names = names
                 .iter()
                 .filter_map(|name| {
-                    let source = name.object_id?;
+                    let source = name.object_id.and_then(ObjectId::value)?;
                     let (feature_index, kind) = by_source.get(&source).and_then(|entry| *entry)?;
                     (kind == NativeClassKind::SketchBlockInstance).then_some((*name, feature_index))
                 })
@@ -1325,12 +1326,14 @@ pub(crate) fn enrich_history_sketch_block_references(
                 let Some(next) = names.iter().find(|next| next.offset > name.offset) else {
                     continue;
                 };
-                let Some(definition_source) = next.object_id.filter(|source| {
-                    by_source
-                        .get(source)
-                        .and_then(|entry| *entry)
-                        .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
-                }) else {
+                let Some(definition_source) =
+                    next.object_id.and_then(ObjectId::value).filter(|source| {
+                        by_source
+                            .get(source)
+                            .and_then(|entry| *entry)
+                            .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
+                    })
+                else {
                     continue;
                 };
                 let end = instance_names
@@ -1369,9 +1372,10 @@ pub(crate) fn enrich_history_sketch_block_references(
                 }
             }
             for pair in names.windows(2) {
-                let (Some(instance_source), Some(definition_source)) =
-                    (pair[0].object_id, pair[1].object_id)
-                else {
+                let (Some(instance_source), Some(definition_source)) = (
+                    pair[0].object_id.and_then(ObjectId::value),
+                    pair[1].object_id.and_then(ObjectId::value),
+                ) else {
                     continue;
                 };
                 let Some((instance_index, NativeClassKind::SketchBlockInstance)) =

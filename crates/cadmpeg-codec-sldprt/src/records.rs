@@ -722,11 +722,63 @@ pub(crate) struct FeatureInputName {
     pub(crate) ordinal: u32,
     /// Byte offset of the name marker.
     pub(crate) offset: u64,
-    /// Native object identifier stored after the UTF-16 name.
+    /// Native object identifier stored after the UTF-16 name; `None` when the
+    /// record has no identifier trailer at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) object_id: Option<u32>,
+    pub(crate) object_id: Option<ObjectId>,
     /// Decoded object name.
     pub(crate) value: String,
+}
+
+/// The native object identifier trailing a serialized object name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub(crate) enum ObjectId {
+    /// The trailer holds the wire's absent-identifier marker.
+    Absent,
+    /// The trailer holds a native object identifier.
+    Id(FeatureSourceId),
+}
+
+impl ObjectId {
+    /// The identifier, when the trailer names a native object.
+    pub(crate) fn id(self) -> Option<FeatureSourceId> {
+        match self {
+            Self::Absent => None,
+            Self::Id(id) => Some(id),
+        }
+    }
+
+    /// The identifier value, when the trailer names a native object.
+    pub(crate) fn value(self) -> Option<u32> {
+        self.id().map(FeatureSourceId::value)
+    }
+
+    /// The trailer for a raw identifier value.
+    pub(crate) fn from_value(value: u32) -> Option<Self> {
+        FeatureSourceId::try_from(value).ok().map(Self::Id)
+    }
+}
+
+impl TryFrom<u32> for ObjectId {
+    type Error = &'static str;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value == u32::MAX {
+            return Ok(Self::Absent);
+        }
+        FeatureSourceId::try_from(value)
+            .map(Self::Id)
+            .map_err(|_| "object_id is not a native object identifier")
+    }
+}
+
+impl From<ObjectId> for u32 {
+    fn from(value: ObjectId) -> Self {
+        match value {
+            ObjectId::Absent => u32::MAX,
+            ObjectId::Id(id) => id.value(),
+        }
+    }
 }
 
 /// One named scalar serialized in native SI units.

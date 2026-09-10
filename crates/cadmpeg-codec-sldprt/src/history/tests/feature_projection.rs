@@ -4,6 +4,7 @@
 
 use super::super::*;
 use super::*;
+use crate::records::ObjectId;
 use cadmpeg_ir::features::UnresolvedFamily;
 
 const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
@@ -818,7 +819,7 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(25),
+            object_id: ObjectId::from_value(25),
             value: "instance".into(),
         },
         crate::records::FeatureInputName {
@@ -826,7 +827,7 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
             parent: "lane".into(),
             ordinal: 1,
             offset: 140,
-            object_id: Some(23),
+            object_id: ObjectId::from_value(23),
             value: "definition".into(),
         },
         crate::records::FeatureInputName {
@@ -834,7 +835,7 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
             parent: "lane".into(),
             ordinal: 2,
             offset: 340,
-            object_id: Some(34),
+            object_id: ObjectId::from_value(34),
             value: "compact".into(),
         },
     ];

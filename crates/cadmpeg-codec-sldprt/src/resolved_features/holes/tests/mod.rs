@@ -11,6 +11,7 @@ use cadmpeg_ir::sketches::{
 };
 
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
 };
@@ -149,7 +150,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
         ordinal: 0,
         offset: 0,
         value: "Hole".into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     });
     let trailer = 6 + "Hole".encode_utf16().count() * 2;
     lane.native_payload[trailer..trailer + 8].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);

@@ -70,6 +70,7 @@ use cadmpeg_ir::{
 use std::collections::{HashMap, HashSet};
 
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -3118,7 +3119,7 @@ mod detached_legacy_sketch_tests {
                 parent: lane_id.into(),
                 ordinal: 0,
                 offset: 8,
-                object_id: Some(30),
+                object_id: ObjectId::from_value(30),
                 value: "empty".into(),
             }],
             scalars: Vec::new(),
@@ -3200,7 +3201,7 @@ mod detached_legacy_sketch_tests {
                 parent: lane_id.into(),
                 ordinal: 0,
                 offset: 8,
-                object_id: Some(30),
+                object_id: ObjectId::from_value(30),
                 value: "empty".into(),
             }],
             scalars: Vec::new(),

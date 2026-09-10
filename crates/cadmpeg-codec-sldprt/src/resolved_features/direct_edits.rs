@@ -7,6 +7,7 @@ use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
@@ -429,7 +430,7 @@ mod tests {
                     ordinal: 0,
                     offset: 8,
                     value: "Move Face".into(),
-                    object_id: Some(7),
+                    object_id: ObjectId::from_value(7),
                 },
                 FeatureInputName {
                     id: "d1-name".into(),

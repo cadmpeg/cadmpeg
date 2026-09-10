@@ -42,6 +42,7 @@ use crate::layout::{
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
 };
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 
 pub(super) fn compact_body_selections(
     histories: &[crate::records::FeatureHistory],
@@ -607,9 +608,13 @@ pub(super) fn compact_surface_selections(
             NativeClassKind::PlanarSurface => {
                 planar_surface_selection_candidates(&lane.native_payload, start, end)
             }
-            NativeClassKind::Operation(operation) => {
-                operation_surface_selection_candidates(operation, lane, start, end, name.object_id)
-            }
+            NativeClassKind::Operation(operation) => operation_surface_selection_candidates(
+                operation,
+                lane,
+                start,
+                end,
+                name.object_id.and_then(ObjectId::value),
+            ),
             _ => continue,
         };
         let expected_count = match kind {
@@ -1016,7 +1021,7 @@ pub(crate) fn enrich_feature_object_sources(
     {
         let sources = lanes
             .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id)
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
             .collect::<HashSet<_>>();
         if sources.len() == 1 {
             let source = sources
@@ -1265,7 +1270,7 @@ pub(super) fn cosmetic_thread_diameter_child_tail(
         .chain(
             lane.names
                 .iter()
-                .filter(|name| name.object_id != Some(u32::MAX))
+                .filter(|name| name.object_id != Some(ObjectId::Absent))
                 .map(|name| name.offset),
         )
         .filter(|offset| *offset >= start as u64)

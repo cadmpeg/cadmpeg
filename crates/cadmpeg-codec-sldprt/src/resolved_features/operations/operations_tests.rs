@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
@@ -60,7 +61,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 ordinal: 0,
                 offset: 20,
                 value: "split".into(),
-                object_id: Some(40),
+                object_id: ObjectId::from_value(40),
             },
             FeatureInputName {
                 id: "next-name".into(),
@@ -68,7 +69,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 ordinal: 1,
                 offset: 150,
                 value: "next".into(),
-                object_id: Some(50),
+                object_id: ObjectId::from_value(50),
             },
         ],
         scalars: Vec::new(),
@@ -166,7 +167,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         ordinal: 0,
         offset: name_offset as u64,
         value: value.into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     };
     let mut lane = lane;
     lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
@@ -350,7 +351,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 ordinal: 0,
                 offset: name_offset as u64,
                 value: "Feature".into(),
-                object_id: Some(1),
+                object_id: ObjectId::from_value(1),
             },
         )
     };
@@ -411,7 +412,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         ordinal: 0,
         offset: name_offset as u64,
         value: "Feature".into(),
-        object_id: Some(1),
+        object_id: ObjectId::from_value(1),
     };
 
     assert_eq!(
@@ -638,7 +639,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ordinal: 0,
             offset: 52,
             value: "native-extrude".into(),
-            object_id: Some(1),
+            object_id: ObjectId::from_value(1),
         }],
         scalars: Vec::new(),
         relation_bindings: Vec::new(),

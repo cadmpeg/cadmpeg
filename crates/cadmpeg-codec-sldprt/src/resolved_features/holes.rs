@@ -38,6 +38,7 @@ const EPS_HOLE_EXACT_GEOMETRY: f64 = 1.0e-12;
 #[cfg(test)]
 use super::parameters::enrich_history_parameters;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 
 /// Resolve helix placement from the counted curve mesh stored in its feature
 /// object. Promotion requires one mesh stream and a circular-helix fit whose
@@ -170,7 +171,9 @@ fn hole_position_sketch_source(
     let name = feature_object_name(feature, lane)?;
     // Legacy keyword records may omit the XML source id while the serialized
     // object name still carries the stable object id used by the input lane.
-    let source = feature.source_value().or(name.object_id)?;
+    let source = feature
+        .source_value()
+        .or_else(|| name.object_id.and_then(ObjectId::value))?;
     let offset = usize::try_from(name.offset)
         .ok()?
         .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -200,7 +203,7 @@ fn hole_position_sketch_source(
         if !(body_start..body_end).contains(&child_offset) {
             return None;
         }
-        let child_source = child.object_id?;
+        let child_source = child.object_id.and_then(ObjectId::value)?;
         let trailer =
             child_offset.checked_add(6 + child.value.encode_utf16().count().checked_mul(2)?)?;
         if trailer.checked_add(12)? > body_end {
@@ -209,10 +212,8 @@ fn hole_position_sketch_source(
         (lane.native_payload.get(trailer..trailer + 8)
             == Some(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40])
             && lane.native_payload.get(trailer + 8..trailer + 12)
-                == Some(&child_source.to_le_bytes())
-            && child_source != 0
-            && child_source != u32::MAX)
-            .then_some(child_source)
+                == Some(&child_source.to_le_bytes()))
+        .then_some(child_source)
     }));
     let mut sources = sources.into_iter();
     let source = sources.next()?;
@@ -1673,7 +1674,8 @@ fn hole_position_feature<'a>(
             classify(candidate) == Some(FeatureClass::Sketch)
                 && lanes.iter().any(|lane| {
                     candidate.source_value().or_else(|| {
-                        feature_object_name(candidate, lane).and_then(|name| name.object_id)
+                        feature_object_name(candidate, lane)
+                            .and_then(|name| name.object_id.and_then(ObjectId::value))
                     }) == Some(*source)
                 })
         });

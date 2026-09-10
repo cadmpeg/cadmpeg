@@ -8,6 +8,7 @@ use super::super::{
 use super::*;
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputLane, FeatureInputName, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
@@ -1036,7 +1037,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: 100,
-                object_id: Some(23),
+                object_id: ObjectId::from_value(23),
                 value: "profile".into(),
             },
             FeatureInputName {
@@ -1044,7 +1045,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 200,
-                object_id: Some(28),
+                object_id: ObjectId::from_value(28),
                 value: "revolution".into(),
             },
             FeatureInputName {
@@ -1052,7 +1053,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 2,
                 offset: 220,
-                object_id: Some(29),
+                object_id: ObjectId::from_value(29),
                 value: "cut-profile".into(),
             },
             FeatureInputName {
@@ -1060,7 +1061,7 @@ fn revolution_consumes_the_preceding_profile_object() {
                 parent: "lane".into(),
                 ordinal: 3,
                 offset: 240,
-                object_id: Some(30),
+                object_id: ObjectId::from_value(30),
                 value: "cut".into(),
             },
         ],

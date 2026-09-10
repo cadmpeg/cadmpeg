@@ -4,6 +4,7 @@ use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -63,7 +64,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         ordinal: 0,
         offset,
         value: value.into(),
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
     };
     let line_ref_offset = 120usize;
     let mut native_payload = vec![0; 400];
@@ -126,7 +127,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(u32::MAX),
+            object_id: Some(ObjectId::Absent),
             value: "D3".into(),
         },
         FeatureInputName {
@@ -134,7 +135,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 1,
             offset: 300,
-            object_id: Some(u32::MAX),
+            object_id: Some(ObjectId::Absent),
             value: "D4".into(),
         },
     ];

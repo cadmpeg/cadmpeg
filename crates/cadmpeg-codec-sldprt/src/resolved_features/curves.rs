@@ -14,6 +14,7 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
+use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1349,7 +1350,9 @@ pub(super) fn lane_sketch_plane_frames(
     let mut frames = sketch_plane_frames(features, histories);
     let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     for native in histories.iter().flat_map(|history| &history.features) {
-        let Some(source) = feature_object_name(native, lane).and_then(|name| name.object_id) else {
+        let Some(source) = feature_object_name(native, lane)
+            .and_then(|name| name.object_id.and_then(ObjectId::value))
+        else {
             continue;
         };
         let Some(feature) = features

@@ -4,6 +4,7 @@ use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -520,7 +521,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
                 ordinal: 0,
                 offset: 0,
                 value: "Front Plane".into(),
-                object_id: Some(2),
+                object_id: ObjectId::from_value(2),
             },
             FeatureInputName {
                 id: "sketch-name".into(),
@@ -528,7 +529,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
                 ordinal: 1,
                 offset: 100,
                 value: "Sketch1".into(),
-                object_id: Some(7),
+                object_id: ObjectId::from_value(7),
             },
         ],
         scalars: Vec::new(),

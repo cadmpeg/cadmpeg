@@ -5,6 +5,7 @@ use super::super::selection_vector_tail;
 use super::super::*;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
@@ -527,7 +528,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: 120,
-                object_id: Some(u32::MAX),
+                object_id: Some(ObjectId::Absent),
                 value: "D2".into(),
             },
             FeatureInputName {
@@ -535,7 +536,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 400,
-                object_id: Some(54),
+                object_id: ObjectId::from_value(54),
                 value: "Next".into(),
             },
         ],
@@ -1400,7 +1401,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: 0,
-                object_id: Some(40),
+                object_id: ObjectId::from_value(40),
                 value: "Producer40".into(),
             },
             FeatureInputName {
@@ -1408,7 +1409,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 8,
-                object_id: Some(41),
+                object_id: ObjectId::from_value(41),
                 value: "Producer41".into(),
             },
             FeatureInputName {
@@ -1416,7 +1417,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 parent: "lane".into(),
                 ordinal: 2,
                 offset: 16,
-                object_id: Some(37),
+                object_id: ObjectId::from_value(37),
                 value: "Plane".into(),
             },
         ],
@@ -1735,7 +1736,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(233),
+            object_id: ObjectId::from_value(233),
             value: "Producer".into(),
         }],
         scalars: Vec::new(),
@@ -1759,7 +1760,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
         parent: "lane".into(),
         ordinal: 1,
         offset: 1,
-        object_id: Some(234),
+        object_id: ObjectId::from_value(234),
         value: "Producer".into(),
     });
     let ambiguous = history_features_with_object_sources(&[ambiguous_history], &lane);
