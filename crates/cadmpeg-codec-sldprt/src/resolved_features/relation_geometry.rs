@@ -2184,11 +2184,9 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset());
     markers
-        .windows(2)
-        .filter_map(|pair| {
-            let [center, radial] = pair else {
-                unreachable!("slice windows have the requested length")
-            };
+        .iter()
+        .zip(markers.iter().skip(1))
+        .filter_map(|(center, radial)| {
             let center_local_id = center.local_id()?;
             if center_local_id == 0
                 || radial.object_index() != Some(center_local_id)
@@ -2232,11 +2230,9 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset());
     markers
-        .windows(2)
-        .filter_map(|pair| {
-            let [center, radial] = pair else {
-                unreachable!("slice windows have the requested length")
-            };
+        .iter()
+        .zip(markers.iter().skip(1))
+        .filter_map(|(center, radial)| {
             let class_name = match center.kind {
                 SketchInputKind::Arc => "sgArcHandle",
                 SketchInputKind::LineOrCircle => "sgLineHandle",
@@ -2286,11 +2282,9 @@ fn declared_entity_handle_linked_pairs<'a>(
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset());
     markers
-        .windows(2)
-        .filter_map(|pair| {
-            let [center, radial] = pair else {
-                unreachable!("slice windows have the requested length")
-            };
+        .iter()
+        .zip(markers.iter().skip(1))
+        .filter_map(|(center, radial)| {
             if !matches!(
                 radial.kind,
                 SketchInputKind::Point

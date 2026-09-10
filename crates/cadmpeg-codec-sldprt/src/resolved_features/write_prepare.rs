@@ -156,18 +156,13 @@ fn patch_spatial_sketches(
         let point_entities = entities
             .iter()
             .copied()
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Point { .. }
-                )
+            .filter_map(|entity| match *entity.geometry.definition() {
+                SpatialSketchGeometryDefinition::Point { position } => Some((entity, position)),
+                _ => None,
             })
             .collect::<Vec<_>>();
-        for entity in &point_entities {
-            let SpatialSketchGeometryDefinition::Point { position } = *entity.geometry.definition()
-            else {
-                unreachable!("spatial point filter establishes the geometry family");
-            };
+        for (entity, position) in &point_entities {
+            let position = *position;
             let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
                 cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} requires a retained native marker",

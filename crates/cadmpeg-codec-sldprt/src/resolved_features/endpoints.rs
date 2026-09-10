@@ -1838,23 +1838,23 @@ pub(super) fn inferred_point_coordinates_by_index(
     });
 
     let mut constraints = Vec::new();
-    for scalar in lane.scalars.iter().filter(|scalar| {
-        scalar.feature_ref.as_deref() == Some(feature)
+    for (scalar, [first, second]) in lane.scalars.iter().filter_map(|scalar| {
+        let [first, second] = scalar.operands.as_slice() else {
+            return None;
+        };
+        (scalar.feature_ref.as_deref() == Some(feature)
             && scalar.role == FeatureInputScalarRole::Driving
             && scalar.value.is_finite()
             && scalar.value >= 0.0
-            && scalar.operands.len() == 2
-            && scalar.operands.iter().all(|operand| {
+            && [first, second].iter().all(|operand| {
                 matches!(
                     operand.kind,
                     FeatureInputOperandKind::Native(tag)
                         if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value())
                 )
-            })
+            }))
+        .then_some((scalar, [first, second]))
     }) {
-        let [first, second] = scalar.operands.as_slice() else {
-            unreachable!("scalar operand cardinality was filtered above");
-        };
         let endpoints = [
             u32::from(first.entity_index),
             u32::from(second.entity_index),
