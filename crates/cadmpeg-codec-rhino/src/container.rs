@@ -184,6 +184,8 @@ pub(crate) struct Table {
     range: std::ops::Range<usize>,
     /// Table body range, excluding the table header and checksum.
     body: std::ops::Range<usize>,
+    /// Chunk bytes outside the body: the header and any checksum.
+    framing: NonZeroU32,
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
     /// Number of direct records, including compactly summarized records.
@@ -208,11 +210,12 @@ impl Table {
         (body.start <= body.end && body.start >= range.start && body.end <= range.end)
             .then_some(())?;
         let framing = range.len().checked_sub(body.len())?;
-        (1..=u32::MAX as usize).contains(&framing).then_some(())?;
+        let framing = NonZeroU32::new(u32::try_from(framing).ok()?)?;
         Some(Self {
             typecode,
             range,
             body,
+            framing,
             records,
             record_count,
             object_typecodes,
@@ -235,11 +238,8 @@ impl Table {
     }
 
     /// Table chunk bytes outside the body: the header and any checksum.
-    ///
-    /// The constructor admits only a body one to `u32::MAX` bytes shorter than
-    /// its range, so the difference is exactly this nonzero count.
     pub(crate) fn framing(&self) -> NonZeroU32 {
-        NonZeroU32::MIN.saturating_add((self.range.len() - self.body.len() - 1) as u32)
+        self.framing
     }
 }
 
