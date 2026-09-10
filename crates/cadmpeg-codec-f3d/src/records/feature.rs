@@ -626,7 +626,7 @@ impl DesignExtrudePrologue {
     /// Starting support.
     pub fn start(self) -> DesignExtrudeStart {
         match self {
-            Self::LegacyDistance { .. } => DesignExtrudeStart::ProfilePlane {},
+            Self::LegacyDistance { .. } => DesignExtrudeStart::ProfilePlane,
             Self::ReferenceAware { start, .. }
             | Self::ShiftedReferenceAware { start, .. }
             | Self::LegacyShifted { start, .. } => start,

@@ -4749,7 +4749,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let extrude_start = prologue.start();
             let start_matches_operands = match extrude_start {
-                records::feature::DesignExtrudeStart::ProfilePlane {} => profile_offset_count == 0,
+                records::feature::DesignExtrudeStart::ProfilePlane => profile_offset_count == 0,
                 records::feature::DesignExtrudeStart::OffsetProfilePlane
                 | records::feature::DesignExtrudeStart::FromFace => profile_offset_count == 1,
             };

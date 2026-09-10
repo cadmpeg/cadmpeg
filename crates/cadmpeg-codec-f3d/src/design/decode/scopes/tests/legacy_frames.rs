@@ -550,7 +550,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
                 direction_reversed_offset: 40,
                 solid_operation: true,
                 solid_operation_offset: 41,
-                start: DesignExtrudeStart::ProfilePlane {},
+                start: DesignExtrudeStart::ProfilePlane,
                 start_offset: 42,
             });
     }

@@ -236,7 +236,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                         direction_reversed_offset: 140,
                         solid_operation: true,
                         solid_operation_offset: 141,
-                        start: DesignExtrudeStart::ProfilePlane {},
+                        start: DesignExtrudeStart::ProfilePlane,
                         start_offset: 142,
                     }),
                     ..crate::records::feature::DesignExtrudeScope::default()
