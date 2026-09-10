@@ -469,27 +469,27 @@ fn resolves_generated_section_from_declared_cap_pair() {
         }
     });
     let entity_tables = [
-        FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 40,
-            table_class_id: 80,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        FeatureEntityTable::new(
+            40,
+            80,
+            vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 700,
                 payload: crate::feature::entry_payload(7, None, None, None),
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
             }],
-            offset: 50,
-        }
+            &std::collections::BTreeSet::new(),
+            50,
+        )
         .with_surface_ids([]),
-        FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 40,
-            table_class_id: 80,
-            entries: entries.to_vec(),
-            offset: 70,
-        }
+        FeatureEntityTable::new(
+            40,
+            80,
+            entries.to_vec(),
+            &std::collections::BTreeSet::new(),
+            70,
+        )
         .with_surface_ids([43, 92]),
     ];
 
@@ -1009,13 +1009,13 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         offset,
         end_offset: offset + 1,
     };
-    let tables = [FeatureEntityTable {
-        surface_ids: std::collections::BTreeSet::new(),
-        feature_id: 40,
-        table_class_id: 2,
-        entries: vec![entry(819, 252, 300), entry(822, 255, 310)],
-        offset: 290,
-    }
+    let tables = [FeatureEntityTable::new(
+        40,
+        2,
+        vec![entry(819, 252, 300), entry(822, 255, 310)],
+        &std::collections::BTreeSet::new(),
+        290,
+    )
     .with_surface_ids([819, 822])];
     let sources = PlacementSources {
         datums: &[],
@@ -1094,9 +1094,9 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         .iter()
         .rev()
         .map(|entry| entry.entity_id)
-        .find(|id| non_surface[0].surface_ids.contains(id));
+        .find(|id| non_surface[0].surface_ids().contains(id));
     if let Some(id) = last_surface_id {
-        non_surface[0].surface_ids.remove(&id);
+        non_surface[0].unmark_surface_id(id);
     }
     assert!(generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none());
 }
@@ -1204,11 +1204,10 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,
     };
-    let tables = [FeatureEntityTable {
-        surface_ids: std::collections::BTreeSet::new(),
-        feature_id: 10,
-        table_class_id: 79,
-        entries: vec![
+    let tables = [FeatureEntityTable::new(
+        10,
+        79,
+        vec![
             entry(13, 204, None),
             entry(18, 203, None),
             entry(23, 200, Some(4)),
@@ -1216,8 +1215,9 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
             entry(27, 200, Some(6)),
             entry(29, 200, Some(7)),
         ],
-        offset: 200,
-    }
+        &std::collections::BTreeSet::new(),
+        200,
+    )
     .with_surface_ids([13, 18, 23, 25, 27, 29])];
     let sources = PlacementSources {
         datums: &[],

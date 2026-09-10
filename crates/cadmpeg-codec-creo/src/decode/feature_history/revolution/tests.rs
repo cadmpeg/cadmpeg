@@ -168,19 +168,19 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
         offset: 0,
     });
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 40,
-            table_class_id: 29,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        crate::feature::FeatureEntityTable::new(
+            40,
+            29,
+            vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 20,
                 payload: crate::feature::entry_payload(200, Some(7), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
             }],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([20]),
     );
 

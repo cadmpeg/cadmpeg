@@ -4,19 +4,19 @@
 fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 225,
-            table_class_id: 29,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        crate::feature::FeatureEntityTable::new(
+            225,
+            29,
+            vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 226,
                 payload: crate::feature::entry_payload(209, None, None, None),
                 prefixed: true,
                 offset: 0,
                 end_offset: 0,
             }],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([226]),
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -58,13 +58,13 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
         offset: entity_id as usize,
         end_offset: entity_id as usize,
     };
-    let mut table = crate::feature::FeatureEntityTable {
-        surface_ids: std::collections::BTreeSet::new(),
-        feature_id: 17,
-        table_class_id: 80,
-        entries: vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
-        offset: 0,
-    }
+    let mut table = crate::feature::FeatureEntityTable::new(
+        17,
+        80,
+        vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([201]);
     let rows = vec![
         crate::surface::SurfaceRow {
@@ -93,7 +93,7 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     );
 
     table.entries.push(entry(201, 210, Some(101)));
-    table.surface_ids.insert(201);
+    table.mark_surface_id(201);
     assert_eq!(
         super::feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
         None

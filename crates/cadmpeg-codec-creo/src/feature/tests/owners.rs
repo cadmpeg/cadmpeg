@@ -117,11 +117,10 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
 }
 
 fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
-    FeatureEntityTable {
-        surface_ids: std::collections::BTreeSet::new(),
-        feature_id: owner,
-        table_class_id: 80,
-        entries: source_ids
+    FeatureEntityTable::new(
+        owner,
+        80,
+        source_ids
             .iter()
             .enumerate()
             .map(|(index, source_id)| FeatureEntityTableEntry {
@@ -132,8 +131,9 @@ fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable 
                 end_offset: index + 1,
             })
             .collect(),
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([])
 }
 

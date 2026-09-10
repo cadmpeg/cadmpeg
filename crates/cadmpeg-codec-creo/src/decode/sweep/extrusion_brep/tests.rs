@@ -42,19 +42,19 @@ fn surface_row(
 }
 
 fn generated_side_table() -> crate::feature::FeatureEntityTable {
-    crate::feature::FeatureEntityTable {
-        surface_ids: std::collections::BTreeSet::new(),
-        feature_id: 7,
-        table_class_id: 29,
-        entries: vec![crate::feature::FeatureEntityTableEntry {
+    crate::feature::FeatureEntityTable::new(
+        7,
+        29,
+        vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 31,
             payload: crate::feature::entry_payload(200, Some(11), None, None),
             prefixed: false,
             offset: 0,
             end_offset: 0,
         }],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([31])
 }
 

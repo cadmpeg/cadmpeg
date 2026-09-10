@@ -17,12 +17,35 @@ pub struct FeatureEntityTable {
     /// Structurally bounded records in their declared generated-entity order.
     pub entries: Vec<FeatureEntityTableEntry>,
     /// Materialized `srf_array` identifiers among this table's entity ids.
-    pub surface_ids: BTreeSet<u32>,
+    surface_ids: BTreeSet<u32>,
     /// Byte offset of the `f8` table opener in the original stream.
     pub offset: usize,
 }
 
 impl FeatureEntityTable {
+    /// Admits a table whose materialized identifiers are exactly the entries
+    /// the model decoded as `srf_array` identifiers.
+    pub fn new(
+        feature_id: u32,
+        table_class_id: u32,
+        entries: Vec<FeatureEntityTableEntry>,
+        model_surface_ids: &BTreeSet<u32>,
+        offset: usize,
+    ) -> Self {
+        let surface_ids = entries
+            .iter()
+            .map(|entry| entry.entity_id)
+            .filter(|id| model_surface_ids.contains(id))
+            .collect();
+        Self {
+            feature_id,
+            table_class_id,
+            entries,
+            surface_ids,
+            offset,
+        }
+    }
+
     pub fn entry_ids(&self) -> Vec<u32> {
         self.entries.iter().map(|entry| entry.entity_id).collect()
     }
@@ -53,6 +76,14 @@ impl FeatureEntityTable {
     pub(crate) fn with_surface_ids(mut self, surface_ids: impl IntoIterator<Item = u32>) -> Self {
         self.mark_surface_ids(surface_ids);
         self
+    }
+
+    pub(crate) fn mark_surface_id(&mut self, entity_id: u32) {
+        self.surface_ids.insert(entity_id);
+    }
+
+    pub(crate) fn unmark_surface_id(&mut self, entity_id: u32) {
+        self.surface_ids.remove(&entity_id);
     }
 }
 
@@ -471,18 +502,13 @@ pub fn entity_tables(
         let Some(entries) = read_entries(&payload[..row_end], after_table_class + 2, count) else {
             continue;
         };
-        let table_surface_ids = entries
-            .iter()
-            .map(|entry| entry.entity_id)
-            .filter(|id| surface_ids.contains(id))
-            .collect();
-        tables.push(FeatureEntityTable {
+        tables.push(FeatureEntityTable::new(
             feature_id,
             table_class_id,
             entries,
-            surface_ids: table_surface_ids,
+            surface_ids,
             offset,
-        });
+        ));
     }
     tables
 }
