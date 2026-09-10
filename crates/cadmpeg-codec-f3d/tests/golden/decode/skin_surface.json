@@ -461,9 +461,9 @@
               "surface_direction": 3,
               "count": 4,
               "parameter": 0.25,
-              "inner_count": 1,
               "layout": {
                 "kind": "compact",
+                "inner_count": 1,
                 "curve": "f3d:brep:procedural_surface#9:skin:curve",
                 "subdata": {
                   "type_code": 211,

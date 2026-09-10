@@ -2871,8 +2871,6 @@ pub enum FeatureDefinition {
         solid: Option<bool>,
         /// Native face-building policy used to turn closed wires into faces.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[serde(with = "optional_extrusion_face_maker")]
-        #[cfg_attr(feature = "schema", schemars(with = "Option<ExtrusionFaceMakerWire>"))]
         face_maker: Option<FaceMaker>,
         /// Taper orientation used for inner wires, when selectable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -6516,49 +6514,6 @@ impl JsonSchema for FaceMaker {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ExtrusionFaceMakerWire {
-    class: FaceMaker,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    mode: Option<u32>,
-}
-
-mod optional_extrusion_face_maker {
-    use super::{ExtrusionFaceMakerWire, FaceMaker};
-    use serde::{Deserialize, Serialize};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub(super) fn serialize<S>(value: &Option<FaceMaker>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value
-            .as_ref()
-            .map(|maker| ExtrusionFaceMakerWire {
-                class: maker.clone(),
-                mode: Some(maker.mode()),
-            })
-            .serialize(serializer)
-    }
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<FaceMaker>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let Some(wire) = Option::<ExtrusionFaceMakerWire>::deserialize(deserializer)? else {
-            return Ok(None);
-        };
-        if wire.mode.is_some_and(|mode| mode != wire.class.mode()) {
-            return Err(serde::de::Error::custom(
-                "face_maker.mode does not match face_maker.class",
-            ));
-        }
-        Ok(Some(wire.class))
     }
 }
 

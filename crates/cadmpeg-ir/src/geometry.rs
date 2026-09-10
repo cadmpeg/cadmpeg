@@ -5772,7 +5772,7 @@ pub struct SkinSurfaceProfile {
 /// Structurally selected native skin payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SkinSurfaceLayout {
     /// Expanded sequence of profile curves and loft constraints.
     Profiles {
@@ -5810,115 +5810,6 @@ impl SkinSurfaceLayout {
     }
 }
 
-mod skin_surface_layout_wire {
-    use super::{CurveId, LoftSubdata, SkinSurfaceLayout, SkinSurfaceProfile};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(tag = "kind", rename_all = "snake_case")]
-    enum Layout<P, C, S> {
-        Profiles {
-            profiles: P,
-            path: C,
-            tail: [i64; 2],
-        },
-        Compact {
-            curve: C,
-            subdata: S,
-            first_tail: i64,
-            secondary_curve: C,
-            second_tail: i64,
-        },
-    }
-
-    #[derive(Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    pub(super) struct ReadWire {
-        inner_count: i64,
-        layout: Layout<Vec<SkinSurfaceProfile>, CurveId, LoftSubdata>,
-    }
-
-    pub fn serialize<S: Serializer>(
-        value: &SkinSurfaceLayout,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct WriteWire<'a> {
-            inner_count: i64,
-            layout: Layout<&'a [SkinSurfaceProfile], &'a CurveId, &'a LoftSubdata>,
-        }
-        let layout = match value {
-            SkinSurfaceLayout::Profiles {
-                profiles,
-                path,
-                tail,
-            } => Layout::Profiles {
-                profiles: profiles.as_slice(),
-                path,
-                tail: *tail,
-            },
-            SkinSurfaceLayout::Compact {
-                curve,
-                subdata,
-                first_tail,
-                secondary_curve,
-                second_tail,
-                ..
-            } => Layout::Compact {
-                curve,
-                subdata,
-                first_tail: *first_tail,
-                secondary_curve,
-                second_tail: *second_tail,
-            },
-        };
-        WriteWire {
-            inner_count: value.inner_count(),
-            layout,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<SkinSurfaceLayout, D::Error> {
-        let wire = ReadWire::deserialize(deserializer)?;
-        Ok(match wire.layout {
-            Layout::Profiles {
-                profiles,
-                path,
-                tail,
-            } => {
-                if usize::try_from(wire.inner_count).ok() != Some(profiles.len()) {
-                    return Err(serde::de::Error::custom(
-                        "skin inner_count must match profiles",
-                    ));
-                }
-                SkinSurfaceLayout::Profiles {
-                    profiles,
-                    path,
-                    tail,
-                }
-            }
-            Layout::Compact {
-                curve,
-                subdata,
-                first_tail,
-                secondary_curve,
-                second_tail,
-            } => SkinSurfaceLayout::Compact {
-                inner_count: wire.inner_count,
-                curve,
-                subdata,
-                first_tail,
-                secondary_curve,
-                second_tail,
-            },
-        })
-    }
-}
-
 /// Complete native `skin_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5934,11 +5825,6 @@ pub struct SkinSurfaceConstruction {
     /// Native leading scalar.
     pub parameter: f64,
     /// Structurally selected skin payload.
-    #[serde(flatten, with = "skin_surface_layout_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "skin_surface_layout_wire::ReadWire")
-    )]
     pub layout: SkinSurfaceLayout,
     /// Stored direction vector.
     pub direction: Vector3,
@@ -7432,52 +7318,15 @@ impl<'de> Deserialize<'de> for ProceduralCurveDefinition {
     }
 }
 
-/// Codes attached to the fixed native vector-offset role labels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VectorOffsetRoles {
-    /// Code following the `source` label.
-    pub source_code: i64,
-    /// Code following the `offset` label.
-    pub offset_code: i64,
-}
-
-#[derive(Serialize, Deserialize)]
+/// Codes attached to the two native vector-offset roles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct VectorOffsetRolesWire {
-    labels: [String; 2],
-    codes: [i64; 2],
-}
-
-mod vector_offset_roles_wire {
-    use super::{VectorOffsetRoles, VectorOffsetRolesWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(roles: &VectorOffsetRoles, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        VectorOffsetRolesWire {
-            labels: ["source".into(), "offset".into()],
-            codes: [roles.source_code, roles.offset_code],
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<VectorOffsetRoles, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = VectorOffsetRolesWire::deserialize(deserializer)?;
-        if wire.labels != ["source", "offset"] {
-            return Err(serde::de::Error::custom(
-                "vector-offset labels must be [\"source\", \"offset\"]",
-            ));
-        }
-        Ok(VectorOffsetRoles {
-            source_code: wire.codes[0],
-            offset_code: wire.codes[1],
-        })
-    }
+#[serde(deny_unknown_fields)]
+pub struct VectorOffsetRoles {
+    /// Code of the source role.
+    pub source: i64,
+    /// Code of the offset role.
+    pub offset: i64,
 }
 
 impl ProceduralCurveDefinition {

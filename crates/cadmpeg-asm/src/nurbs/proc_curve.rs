@@ -3236,8 +3236,8 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
             offset[2] * LEN_TO_MM,
         ),
         cadmpeg_ir::geometry::VectorOffsetRoles {
-            source_code: first_code,
-            offset_code: second_code,
+            source: first_code,
+            offset: second_code,
         },
     ))
 }

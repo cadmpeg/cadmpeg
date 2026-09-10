@@ -22,12 +22,12 @@ fn native_feature_kind_preserves_the_source_spelling() {
 }
 
 #[test]
-fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
+fn a_face_maker_is_its_class_and_carries_no_mode_key() {
     use crate::features::FaceMaker;
 
     #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
     struct ExtrusionCarrier {
-        #[serde(default, with = "super::optional_extrusion_face_maker")]
+        #[serde(default)]
         maker: Option<FaceMaker>,
     }
 
@@ -41,12 +41,7 @@ fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
     );
     assert!(serde_json::from_value::<FaceMaker>(serde_json::json!("")).is_err());
 
-    let wire = serde_json::json!({
-        "maker": {
-            "class": "Part::FaceMakerBullseye",
-            "mode": 3
-        }
-    });
+    let wire = serde_json::json!({ "maker": "Part::FaceMakerBullseye" });
     let carrier = serde_json::from_value::<ExtrusionCarrier>(wire.clone()).unwrap();
     assert_eq!(
         carrier,
@@ -56,14 +51,12 @@ fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
     );
     assert_eq!(serde_json::to_value(carrier).unwrap(), wire);
 
-    let mismatch = serde_json::from_value::<ExtrusionCarrier>(serde_json::json!({
-        "maker": {
-            "class": "Part::FaceMakerBullseye",
-            "mode": 4
-        }
+    let error = serde_json::from_value::<ExtrusionCarrier>(serde_json::json!({
+        "maker": { "class": "Part::FaceMakerBullseye", "mode": 3 }
     }))
-    .unwrap_err();
-    assert!(mismatch.to_string().contains("face_maker.mode"));
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
 }
 
 #[test]

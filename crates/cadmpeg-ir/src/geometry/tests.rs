@@ -668,8 +668,8 @@ fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
             [-1.0, 2.0],
             crate::math::Vector3::new(3.0, 4.0, 5.0),
             crate::geometry::VectorOffsetRoles {
-                source_code: 7,
-                offset_code: 9,
+                source: 7,
+                offset: 9,
             },
         )
         .unwrap(),

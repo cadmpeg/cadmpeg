@@ -385,8 +385,8 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     assert_eq!(
         *roles,
         VectorOffsetRoles {
-            source_code: 7,
-            offset_code: 9,
+            source: 7,
+            offset: 9,
         }
     );
     assert!(result
