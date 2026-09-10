@@ -2280,8 +2280,17 @@ fn validate_gui_center_line_record(
     parse_gui_techdraw_finite(fields[13], property_name)?;
     validate_gui_techdraw_color(fields[14], property_name)?;
     validate_gui_techdraw_boolean(fields[15], property_name)?;
-    let geometry_type =
-        parse_gui_techdraw_integer_value(fields[16], property_name, "GeometryType")?;
+    let geometry_type = TechDrawGeometryType::try_from(parse_gui_techdraw_integer_value(
+        fields[16],
+        property_name,
+        "GeometryType",
+    )?)
+    .map_err(|()| {
+        gui_techdraw_error(
+            property_name,
+            "TechDraw geometry has an unsupported GeometryType",
+        )
+    })?;
     validate_gui_techdraw_geometry_branch(
         &fields,
         prefix.len(),
@@ -2369,13 +2378,23 @@ fn validate_gui_cosmetic_edge_record(
     parse_gui_techdraw_finite(fields[1], property_name)?;
     validate_gui_techdraw_color(fields[2], property_name)?;
     validate_gui_techdraw_boolean(fields[3], property_name)?;
-    let geometry_type = fields[4]
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdge GeometryType has no value"))?
-        .parse::<i64>()
-        .map_err(|_| {
-            gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
-        })?;
+    let geometry_type = TechDrawGeometryType::try_from(
+        fields[4]
+            .attribute("value")
+            .ok_or_else(|| {
+                gui_techdraw_error(property_name, "CosmeticEdge GeometryType has no value")
+            })?
+            .parse::<i64>()
+            .map_err(|_| {
+                gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
+            })?,
+    )
+    .map_err(|()| {
+        gui_techdraw_error(
+            property_name,
+            "TechDraw geometry has an unsupported GeometryType",
+        )
+    })?;
 
     validate_gui_techdraw_geometry_branch(
         &fields,
@@ -2387,11 +2406,42 @@ fn validate_gui_cosmetic_edge_record(
     Ok(())
 }
 
+/// A TechDraw `GeomType` discriminant supported by the GUI validator.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TechDrawGeometryType {
+    Circle,
+    ArcOfCircle,
+    Generic,
+}
+
+impl TechDrawGeometryType {
+    fn as_i64(self) -> i64 {
+        match self {
+            Self::Circle => 1,
+            Self::ArcOfCircle => 2,
+            Self::Generic => 7,
+        }
+    }
+}
+
+impl TryFrom<i64> for TechDrawGeometryType {
+    type Error = ();
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Circle),
+            2 => Ok(Self::ArcOfCircle),
+            7 => Ok(Self::Generic),
+            _ => Err(()),
+        }
+    }
+}
+
 fn validate_gui_techdraw_geometry_branch(
     fields: &[roxmltree::Node<'_, '_>],
     base_start: usize,
     property_name: &str,
-    expected_geometry_type: i64,
+    expected_geometry_type: TechDrawGeometryType,
     allow_iso_line_number: bool,
 ) -> Result<(), CodecError> {
     if fields.len() < base_start + 10 {
@@ -2407,15 +2457,9 @@ fn validate_gui_techdraw_geometry_branch(
     )?;
     let mut cursor = base_start + 10;
     let branch_field_count = match expected_geometry_type {
-        1 => 2,
-        2 => 9,
-        7 => 1,
-        _ => {
-            return Err(gui_techdraw_error(
-                property_name,
-                "TechDraw geometry has an unsupported GeometryType",
-            ));
-        }
+        TechDrawGeometryType::Circle => 2,
+        TechDrawGeometryType::ArcOfCircle => 9,
+        TechDrawGeometryType::Generic => 1,
     };
     let required_fields = cursor + branch_field_count;
     if fields.len() != required_fields && fields.len() != required_fields + 1 {
@@ -2426,7 +2470,7 @@ fn validate_gui_techdraw_geometry_branch(
     }
 
     match expected_geometry_type {
-        1 => {
+        TechDrawGeometryType::Circle => {
             if !fields[cursor].has_tag_name("Center") {
                 return Err(gui_techdraw_error(
                     property_name,
@@ -2450,7 +2494,7 @@ fn validate_gui_techdraw_geometry_branch(
             }
             cursor += 1;
         }
-        2 => {
+        TechDrawGeometryType::ArcOfCircle => {
             if !fields[cursor].has_tag_name("Center") {
                 return Err(gui_techdraw_error(
                     property_name,
@@ -2510,7 +2554,7 @@ fn validate_gui_techdraw_geometry_branch(
                 cursor += 1;
             }
         }
-        7 => {
+        TechDrawGeometryType::Generic => {
             if !fields[cursor].has_tag_name("Points") {
                 return Err(gui_techdraw_error(
                     property_name,
@@ -2520,7 +2564,6 @@ fn validate_gui_techdraw_geometry_branch(
             validate_gui_techdraw_points(fields[cursor], property_name)?;
             cursor += 1;
         }
-        _ => unreachable!("unsupported GeometryType checked above"),
     }
 
     if cursor < fields.len() {
@@ -2546,7 +2589,7 @@ fn validate_gui_techdraw_geometry_branch(
 fn validate_gui_techdraw_base_geom(
     fields: &[roxmltree::Node<'_, '_>],
     property_name: &str,
-    expected_geometry_type: i64,
+    expected_geometry_type: TechDrawGeometryType,
 ) -> Result<(), CodecError> {
     let expected = [
         "GeomType",
@@ -2560,26 +2603,14 @@ fn validate_gui_techdraw_base_geom(
         "SourceIndex",
         "CosmeticTag",
     ];
-    for (field, expected_tag) in fields.iter().zip(expected) {
-        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "TechDraw BaseGeom has a nested or out-of-order field",
-            ));
-        }
-        if field.attribute("value").is_none() {
-            return Err(gui_techdraw_error(
-                property_name,
-                "TechDraw BaseGeom field has no value",
-            ));
-        }
+    let geometry_type_value = gui_techdraw_base_geom_value(fields[0], expected[0], property_name)?;
+    for (field, expected_tag) in fields.iter().zip(expected).skip(1) {
+        gui_techdraw_base_geom_value(*field, expected_tag, property_name)?;
     }
-    let geometry_type = fields[0]
-        .attribute("value")
-        .expect("validated GeomType value")
+    let geometry_type = geometry_type_value
         .parse::<i64>()
         .map_err(|_| gui_techdraw_error(property_name, "TechDraw GeomType is not an integer"))?;
-    if geometry_type != expected_geometry_type {
+    if geometry_type != expected_geometry_type.as_i64() {
         return Err(gui_techdraw_error(
             property_name,
             "TechDraw GeometryType and GeomType disagree",
@@ -2592,6 +2623,22 @@ fn validate_gui_techdraw_base_geom(
         validate_gui_techdraw_boolean(fields[index], property_name)?;
     }
     Ok(())
+}
+
+fn gui_techdraw_base_geom_value<'a>(
+    field: roxmltree::Node<'a, '_>,
+    expected_tag: &str,
+    property_name: &str,
+) -> Result<&'a str, CodecError> {
+    if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw BaseGeom has a nested or out-of-order field",
+        ));
+    }
+    field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw BaseGeom field has no value"))
 }
 
 fn validate_gui_techdraw_points(
