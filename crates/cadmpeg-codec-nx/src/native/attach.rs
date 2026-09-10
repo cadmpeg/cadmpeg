@@ -13,8 +13,8 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    AppearanceId, AttributeId, BodyId, CurveId, EdgeId, FaceId, FeatureResultTopologyId, LoopId,
-    SurfaceId, UnknownId,
+    AppearanceBindingId, AppearanceId, AttributeId, BodyId, CurveId, EdgeId,
+    FeatureResultTopologyId, LoopId, SurfaceId, UnknownId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
@@ -478,21 +478,23 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id = format!(
-            "nx:appearance-binding:rmfastload-color#{}",
-            native_entity_key(&binding.source_id)
-        );
+        let binding_id: AppearanceBindingId = IdScope::native("appearance-binding")
+            .id("rmfastload-color", native_entity_key(&binding.source_id));
         annotations
-            .note(&binding_id, &annotation_stream, binding.source_offset)
+            .note(
+                binding_id.as_str(),
+                &annotation_stream,
+                binding.source_offset,
+            )
             .tag("RMFASTLOAD_COLOR_ASSIGNMENT");
         annotations
-            .derived(&binding_id, "target")
+            .derived(binding_id.as_str(), "target")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
-            .derived(&binding_id, "appearance")
+            .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: binding_id.try_into().expect("valid identity"),
+            id: binding_id,
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
             },
@@ -507,12 +509,12 @@ fn attach_rm_appearances(
         let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
             continue;
         };
-        let Some(existing_color) = ir
+        let Some((face_id, existing_color)) = ir
             .model
             .faces
             .iter()
             .find(|face| face.id.as_str() == binding.face_id)
-            .map(|face| face.color)
+            .map(|face| (face.id.clone(), face.color))
         else {
             continue;
         };
@@ -533,24 +535,24 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id = format!(
-            "nx:appearance-binding:rmfastload-face-color#{}",
-            native_entity_key(&binding.face_id)
-        );
+        let binding_id: AppearanceBindingId = IdScope::native("appearance-binding")
+            .id("rmfastload-face-color", native_entity_key(&binding.face_id));
         annotations
-            .note(&binding_id, &annotation_stream, binding.source_offset)
+            .note(
+                binding_id.as_str(),
+                &annotation_stream,
+                binding.source_offset,
+            )
             .tag("RMFASTLOAD_FACE_COLOR_ASSIGNMENT");
         annotations
-            .derived(&binding_id, "target")
+            .derived(binding_id.as_str(), "target")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
-            .derived(&binding_id, "appearance")
+            .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: binding_id.try_into().expect("valid identity"),
-            target: AppearanceTarget::Face(
-                FaceId::mint(binding.face_id.clone()).expect("identity grammar"),
-            ),
+            id: binding_id,
+            target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: Some(binding.face_id),
             object_type: Some("Parasolid FACE".into()),
@@ -824,21 +826,21 @@ fn attach_jpeg_preview_assets(
         else {
             continue;
         };
-        let native_ref = format!("nx:container:jpeg-preview#{ordinal}");
+        let native_ref: UnknownId = IdScope::container().id("jpeg-preview", ordinal);
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations
-                .note(&native_ref, &stream, source_offset)
+                .note(native_ref.as_str(), &stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");
-            annotations.exactness(&native_ref, Exactness::ByteExact);
+            annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
             unknowns.push(UnknownRecord::retained(
-                UnknownId::mint(native_ref).expect("identity grammar"),
+                native_ref,
                 source_offset,
                 ctx.copy_retained(bytes, "retain NX invalid JPEG preview")?,
                 Vec::new(),
             ));
             continue;
         }
-        let id: AssetId = extended_id(&native_ref, "asset");
+        let id: AssetId = extended_id(native_ref.as_str(), "asset");
         annotations
             .note(id.as_str(), &stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
@@ -870,7 +872,7 @@ fn attach_jpeg_preview_assets(
                     )
                     .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
                 },
-                Some(native_ref),
+                Some(native_ref.into_string()),
             )
             .map_err(CodecError::Malformed)?,
         );
