@@ -45,7 +45,7 @@ pub(crate) use entity::{
 };
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
-    FeatureEntityTableEntry,
+    FeatureEntityTableEntry, PlainClass,
 };
 pub use operations::{
     operation_states, operations, reference_names, FeatureOperation, FeatureOperationState,

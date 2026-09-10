@@ -60,7 +60,9 @@ impl FeatureEntityTable {
 pub(crate) fn dummy_table_entry(entity_id: u32) -> FeatureEntityTableEntry {
     FeatureEntityTableEntry {
         entity_id,
-        payload: EntryPayload::Plain { class: 0 },
+        payload: EntryPayload::Plain {
+            class: PlainClass::new(0).expect("0 is not the source class"),
+        },
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -82,8 +84,28 @@ pub enum EntryPayload {
     /// Any other class, or a related class whose pair did not parse.
     Plain {
         /// The positional entry class.
-        class: u32,
+        class: PlainClass,
     },
+}
+
+/// A positional entry class that owns no payload of its own. Class `200`
+/// always carries a source identifier, so it is not one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlainClass(u32);
+
+impl PlainClass {
+    /// Admits every entry class but `200`.
+    pub const fn new(class: u32) -> Option<Self> {
+        match class {
+            200 => None,
+            class => Some(Self(class)),
+        }
+    }
+
+    /// The positional entry class.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
 }
 
 /// A generated-entity class that carries a related entity and its state.
@@ -144,6 +166,13 @@ impl RelatedState {
 }
 
 #[cfg(test)]
+fn plain_payload(class_id: u32) -> EntryPayload {
+    EntryPayload::Plain {
+        class: PlainClass::new(class_id).expect("a plain class is not the source class"),
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn entry_payload(
     class_id: u32,
     source_entity_id: Option<u32>,
@@ -163,9 +192,9 @@ pub(crate) fn entry_payload(
                 entity,
                 state,
             },
-            _ => EntryPayload::Plain { class: class_id },
+            _ => plain_payload(class_id),
         },
-        _ => EntryPayload::Plain { class: class_id },
+        _ => plain_payload(class_id),
     }
 }
 
@@ -192,7 +221,7 @@ impl FeatureEntityTableEntry {
         match self.payload {
             EntryPayload::Source { .. } => 200,
             EntryPayload::Related { class, .. } => class.class_id(),
-            EntryPayload::Plain { class } => class,
+            EntryPayload::Plain { class } => class.get(),
         }
     }
 
@@ -358,9 +387,19 @@ pub(crate) fn read_entries(
                         after_related,
                     ))
                 })
-                .unwrap_or((EntryPayload::Plain { class: class_id }, after_class))
+                .unwrap_or((
+                    EntryPayload::Plain {
+                        class: PlainClass::new(class_id)?,
+                    },
+                    after_class,
+                ))
         } else {
-            (EntryPayload::Plain { class: class_id }, after_class)
+            (
+                EntryPayload::Plain {
+                    class: PlainClass::new(class_id)?,
+                },
+                after_class,
+            )
         };
         let terminal_state = match entry_payload {
             EntryPayload::Source { .. } => payload
