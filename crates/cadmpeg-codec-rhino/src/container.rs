@@ -1129,8 +1129,9 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             object_typecodes,
         )
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "table chunk at {offset} declares a body that does not fit its framing"
+            framing_error(FramingError::structural(
+                offset,
+                "table chunk declares a body that does not fit its framing",
             ))
         })?;
         tables.push(table);

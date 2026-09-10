@@ -38,11 +38,16 @@ impl From<PositiveFinite> for f64 {
 /// constructor states which measurement of the direction it is applied to.
 const fn deviation_tolerance(exponent: u32) -> f64 {
     match exponent {
-        9 => 1.0e-9,
-        12 => 1.0e-12,
+        9 => EPS_UNIT_DEVIATION_E9,
+        12 => EPS_UNIT_DEVIATION_E12,
         _ => 0.0,
     }
 }
+
+/// Deviation from unit length tolerated by directions selecting exponent 9.
+const EPS_UNIT_DEVIATION_E9: f64 = 1.0e-9;
+/// Deviation from unit length tolerated by directions selecting exponent 12.
+const EPS_UNIT_DEVIATION_E12: f64 = 1.0e-12;
 
 /// Measures a direction's length as the sum of its squared components.
 pub const MEASURE_SQUARED: u8 = 0;
