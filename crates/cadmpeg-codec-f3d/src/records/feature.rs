@@ -7,7 +7,7 @@ use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
     ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
     DesignEntityId, DesignRecipeReference, DesignRelaxedGuidText, DesignSecondaryIdentity, Located,
-    RecordedValue, ReferenceRun, IDENTITY_MATRIX,
+    NonEmptyVec, RecordedValue, ReferenceRun, IDENTITY_MATRIX,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::Deserialize;
@@ -5982,7 +5982,7 @@ pub struct DesignSurfaceTrimOperation {
     /// Byte offset of the cell-table count.
     pub cell_count_offset: u64,
     /// Ordered cell-table entries.
-    cell_entries: Vec<DesignSurfaceTrimCellEntry>,
+    cell_entries: NonEmptyVec<DesignSurfaceTrimCellEntry>,
     /// Total number of cells in the operation's partition.
     pub trailing_value: u32,
     /// Byte offset of `trailing_value`.
@@ -6018,8 +6018,6 @@ pub(crate) struct DesignSurfaceTrimOperationWire {
     pub cell_table_paired_class_tag: DesignClassTag,
     /// Byte offset of the cell-table paired header.
     pub cell_table_paired_byte_offset: u64,
-    /// Count of entries in the cell table.
-    pub cell_count: usize,
     /// Byte offset of the cell-table count.
     pub cell_count_offset: u64,
     /// Ordered cell-table entries.
@@ -6034,12 +6032,8 @@ pub(crate) struct DesignSurfaceTrimOperationWire {
 impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
     type Error = &'static str;
     fn try_from(wire: DesignSurfaceTrimOperationWire) -> Result<Self, Self::Error> {
-        if wire.cell_entries.is_empty() {
-            return Err("cell_entries must not be empty");
-        }
-        if wire.cell_count != wire.cell_entries.len() {
-            return Err("cell_count disagrees with cell_entries");
-        }
+        let cell_entries =
+            NonEmptyVec::new(wire.cell_entries).ok_or("cell_entries must not be empty")?;
         Ok(Self {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
@@ -6055,7 +6049,7 @@ impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
             cell_table_paired_class_tag: wire.cell_table_paired_class_tag,
             cell_table_paired_byte_offset: wire.cell_table_paired_byte_offset,
             cell_count_offset: wire.cell_count_offset,
-            cell_entries: wire.cell_entries,
+            cell_entries,
             trailing_value: wire.trailing_value,
             trailing_value_offset: wire.trailing_value_offset,
             trailing_zero_offset: wire.trailing_zero_offset,
@@ -6065,7 +6059,6 @@ impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
 impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
     fn from(value: DesignSurfaceTrimOperation) -> Self {
         Self {
-            cell_count: value.cell_count(),
             id: value.id,
             scope_record_index: value.scope_record_index,
             selection_record_index: value.selection_record_index,
@@ -6080,7 +6073,7 @@ impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
             cell_table_paired_class_tag: value.cell_table_paired_class_tag,
             cell_table_paired_byte_offset: value.cell_table_paired_byte_offset,
             cell_count_offset: value.cell_count_offset,
-            cell_entries: value.cell_entries,
+            cell_entries: value.cell_entries.into_vec(),
             trailing_value: value.trailing_value,
             trailing_value_offset: value.trailing_value_offset,
             trailing_zero_offset: value.trailing_zero_offset,
@@ -6089,10 +6082,10 @@ impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
 }
 impl DesignSurfaceTrimOperation {
     pub(crate) fn cell_count(&self) -> usize {
-        self.cell_entries.len()
+        self.cell_entries.as_slice().len()
     }
     pub(crate) fn cell_entries(&self) -> &[DesignSurfaceTrimCellEntry] {
-        &self.cell_entries
+        self.cell_entries.as_slice()
     }
 }
 

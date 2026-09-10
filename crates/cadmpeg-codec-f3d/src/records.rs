@@ -323,6 +323,27 @@ impl<T, O> ReferenceRun<T, O> {
     }
 }
 
+/// A vector that always holds at least one element.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonEmptyVec<T>(Vec<T>);
+
+impl<T> NonEmptyVec<T> {
+    /// Wrap `items`, or return `None` when `items` is empty.
+    pub fn new(items: Vec<T>) -> Option<Self> {
+        (!items.is_empty()).then_some(Self(items))
+    }
+
+    /// Borrow the elements in order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    /// Take the elements in order.
+    pub fn into_vec(self) -> Vec<T> {
+        self.0
+    }
+}
+
 /// A non-empty half-open interval of source bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NonEmptyByteSpan {
