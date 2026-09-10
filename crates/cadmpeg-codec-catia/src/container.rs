@@ -16,7 +16,7 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
@@ -1443,7 +1443,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             role: ContainerRole::Preview,
             storage: EntryStorage::Compressed {
                 method: CompressionMethod::Jpeg,
-                stored: NonZeroU64::new((preview.range.end - preview.range.start) as u64),
+                stored: Some((preview.range.end - preview.range.start) as u64),
                 expanded: None,
             },
             attributes,

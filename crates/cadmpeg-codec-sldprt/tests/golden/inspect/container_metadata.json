@@ -52,7 +52,6 @@
         "offset": "199",
         "type_id": "0x00000030"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "[Content_Types].xml",
       "role": "directory-entry",
@@ -63,7 +62,6 @@
         "logical_len": "90",
         "offset": "152"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "Contents/DisplayLists",
       "role": "cache-cell",

@@ -15,7 +15,6 @@
 //! converts that scan into the codec-neutral container summary.
 
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
-use std::num::NonZeroU64;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2816,10 +2815,8 @@ pub fn summarize(
                     || EntryStorage::verbatim(VerbatimLabel::None, s.length as u64),
                     |expanded| EntryStorage::Compressed {
                         method: CompressionMethod::UnixCompress,
-                        stored: NonZeroU64::new(s.length as u64),
-                        expanded: NonZeroU64::new(
-                            (expanded.data.len() + s.raw_name.len() + 2) as u64,
-                        ),
+                        stored: Some(s.length as u64),
+                        expanded: Some((expanded.data.len() + s.raw_name.len() + 2) as u64),
                     },
                 ),
                 attributes,

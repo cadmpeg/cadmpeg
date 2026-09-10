@@ -16,22 +16,18 @@
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 0,
       "compression": "none",
       "name": "HEADER",
-      "role": "metadata",
-      "uncompressed_size": 0
+      "role": "metadata"
     },
     {
       "attributes": {
         "entity_count": "2",
         "unknown_entities": "EXAMPLE_RECORD:1,OPAQUE_TARGET:1"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity-records",
-      "uncompressed_size": 0
+      "role": "entity-records"
     }
   ],
   "format": "step",

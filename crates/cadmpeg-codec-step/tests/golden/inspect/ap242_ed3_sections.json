@@ -19,54 +19,44 @@
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 0,
       "compression": "none",
       "name": "HEADER",
-      "role": "metadata",
-      "uncompressed_size": 0
+      "role": "metadata"
     },
     {
       "attributes": {
         "anchor_count": "2"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "ANCHOR",
-      "role": "in-file-anchors",
-      "uncompressed_size": 0
+      "role": "in-file-anchors"
     },
     {
       "attributes": {
         "external_count": "1",
         "external_uris": "https://example.invalid/external-part"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "REFERENCE",
-      "role": "external-references",
-      "uncompressed_size": 0
+      "role": "external-references"
     },
     {
       "attributes": {
         "entity_count": "1",
         "unknown_entities": ""
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity-records",
-      "uncompressed_size": 0
+      "role": "entity-records"
     },
     {
       "attributes": {
         "entity_count": "1",
         "unknown_entities": "EXAMPLE_RECORD:1"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "DATA[1]",
-      "role": "entity-records",
-      "uncompressed_size": 0
+      "role": "entity-records"
     },
     {
       "attributes": {},

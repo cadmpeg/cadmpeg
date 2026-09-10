@@ -8,7 +8,6 @@
 //! section names, and extracts embedded Parasolid streams.
 
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
-use std::num::NonZeroU64;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -760,8 +759,8 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
             role: ContainerRole::Block,
             storage: EntryStorage::Compressed {
                 method: CompressionMethod::Deflate,
-                stored: NonZeroU64::new(b.comp_sz as u64),
-                expanded: NonZeroU64::new(b.uncomp_sz() as u64),
+                stored: Some(b.comp_sz as u64),
+                expanded: Some(b.uncomp_sz() as u64),
             },
             attributes,
         });
