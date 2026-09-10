@@ -6,17 +6,30 @@ use serde::{Deserialize, Serialize};
 /// A SHA-256 digest encoded as 64 lowercase hexadecimal digits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub(crate) struct Sha256Hex(String);
+pub struct Sha256Hex(String);
 
 impl Sha256Hex {
     /// SHA-256 of the supplied bytes.
-    pub(crate) fn digest(bytes: &[u8]) -> Self {
+    #[must_use]
+    pub fn digest(bytes: &[u8]) -> Self {
         Self(cadmpeg_ir::hash::sha256_hex(bytes))
     }
 
+    /// The digest of a completed SHA-256 computation.
+    #[must_use]
+    pub fn from_digest(digest: [u8; 32]) -> Self {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut encoded = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        Self(encoded)
+    }
+
     /// Borrow the digest text.
-    #[cfg(test)]
-    pub(crate) fn as_str(&self) -> &str {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }

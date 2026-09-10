@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::{
-    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec,
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec, Sha256Hex,
     UnsupportedBodyCensusReason,
 };
 use cadmpeg_ir::appearance::AppearanceTarget;
@@ -242,7 +242,7 @@ struct Assertion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecodedFixtureEvidence {
-    canonical_sha256: String,
+    canonical_sha256: Sha256Hex,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
@@ -701,9 +701,7 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
     }
 }
 
-fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-
+fn canonical_sha256(ir: &CadIr) -> Result<Sha256Hex, serde_json::Error> {
     struct Sha256Writer(Sha256);
 
     impl Write for Sha256Writer {
@@ -719,13 +717,7 @@ fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
 
     let mut writer = Sha256Writer(Sha256::new());
     serde_json::to_writer_pretty(&mut writer, ir)?;
-    let digest = writer.0.finalize();
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    Ok(encoded)
+    Ok(Sha256Hex::from_digest(writer.0.finalize().into()))
 }
 
 fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, WorkerFailure> {
@@ -956,7 +948,9 @@ mod tests {
     fn streaming_canonical_hash_matches_the_canonical_document() {
         let ir = CadIr::empty();
         assert_eq!(
-            canonical_sha256(&ir).expect("test IR must serialize through the profile writer"),
+            canonical_sha256(&ir)
+                .expect("test IR must serialize through the profile writer")
+                .as_str(),
             cadmpeg_ir::hash::sha256_hex(
                 ir.to_canonical_json()
                     .expect("test IR must serialize canonically")

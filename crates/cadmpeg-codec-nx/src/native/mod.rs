@@ -19,7 +19,7 @@ mod attach;
 pub(crate) mod catalogue;
 pub(crate) mod display_jt;
 mod features;
-mod hex;
+pub(crate) mod hex;
 pub(crate) mod history;
 mod model;
 mod om;
