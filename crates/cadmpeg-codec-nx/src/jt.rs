@@ -165,16 +165,26 @@ impl NormalBits {
     }
 }
 
-/// A Deering angle code already widened to the thirteen-bit table index.
+/// A Deering angle code with the shift that widens it to a thirteen-bit index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct NormalCode(u32);
+pub(crate) struct NormalCode {
+    value: u32,
+    shift: u8,
+}
 
 impl NormalCode {
     pub(crate) fn new(code: i32, bits: NormalBits) -> Option<Self> {
-        let code = u32::try_from(code)
+        let value = u32::try_from(code)
             .ok()
             .filter(|value| *value < (1_u32 << bits.0))?;
-        Some(Self(code << (13 - bits.0)))
+        Some(Self {
+            value,
+            shift: 13 - bits.0,
+        })
+    }
+
+    fn index(self, parity: u32) -> u32 {
+        (self.value + parity) << self.shift
     }
 }
 
@@ -184,8 +194,8 @@ pub(crate) fn deering_normal(
     theta: NormalCode,
     psi: NormalCode,
 ) -> Option<[f32; 3]> {
-    let theta_index = theta.0 + u32::from(sextant.is_odd());
-    let psi_index = psi.0;
+    let theta_index = theta.index(u32::from(sextant.is_odd()));
+    let psi_index = psi.index(0);
     let table_size = f64::from(1_u32 << 13);
     let maximum_psi = 0.615_479_709_f64;
     let theta_angle = (maximum_psi * (table_size - f64::from(theta_index)) / table_size)
