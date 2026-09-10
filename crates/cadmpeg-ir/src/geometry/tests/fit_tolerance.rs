@@ -105,9 +105,13 @@ fn law_tail_requires_exactly_its_cache_contract() {
 
 #[test]
 fn rejected_surface_tolerance_edits_preserve_the_owner() {
-    let mut surface =
-        ProceduralSurface::try_new(surface_id(), law(LawSurfaceTail::Full {}), Some(1.0e300), None)
-            .unwrap();
+    let mut surface = ProceduralSurface::try_new(
+        surface_id(),
+        law(LawSurfaceTail::Full {}),
+        Some(1.0e300),
+        None,
+    )
+    .unwrap();
     let before = surface.clone();
     for value in [f64::INFINITY, f64::NAN, -1.0] {
         assert!(surface.set_cache_fit_tolerance(Some(value)).is_err());

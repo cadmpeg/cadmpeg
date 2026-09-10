@@ -3909,7 +3909,10 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         }
         let incomplete = shape.diameter().is_none()
             || extent.as_ref().is_none_or(|extent| {
-                matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved {})
+                matches!(
+                    extent,
+                    cadmpeg_ir::features::LinearTermination::Unresolved {}
+                )
             })
             || matches!(
                 shape.construction(),
@@ -3918,7 +3921,10 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             );
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
-                !matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved {})
+                !matches!(
+                    extent,
+                    cadmpeg_ir::features::LinearTermination::Unresolved {}
+                )
             })
             && !matches!(
                 &resolved_construction,

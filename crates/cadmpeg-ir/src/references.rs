@@ -80,13 +80,8 @@ impl ReferenceSelection {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum ReferenceTargetWire {
     Null {},
-    Local {
-        target: String,
-    },
-    External {
-        document: String,
-        object: String,
-    },
+    Local { target: String },
+    External { document: String, object: String },
 }
 
 impl From<ReferenceTargetWire> for ReferenceTarget {

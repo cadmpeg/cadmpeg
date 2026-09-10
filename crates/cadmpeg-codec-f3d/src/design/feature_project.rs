@@ -8402,7 +8402,10 @@ pub(crate) fn project_extrude(
                 && termination_groups.is_empty()
                 && effective_side_one_offset.is_none() =>
         {
-            (ExtentShape::Symmetric(LinearTermination::ThroughAll {}), false)
+            (
+                ExtentShape::Symmetric(LinearTermination::ThroughAll {}),
+                false,
+            )
         }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
             match (

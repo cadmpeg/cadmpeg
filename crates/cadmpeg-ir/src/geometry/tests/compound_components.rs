@@ -42,7 +42,10 @@ fn a_compound_surface_carries_no_parallel_parameter_array() {
     let error = serde_json::from_value::<ProceduralSurfaceDefinition>(struct_of_arrays)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("expected struct CompoundComponent"), "{error}");
+    assert!(
+        error.contains("expected struct CompoundComponent"),
+        "{error}"
+    );
 
     let stray = serde_json::json!({
         "kind": "compound",

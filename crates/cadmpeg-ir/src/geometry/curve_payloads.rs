@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
-use super::{
-    default_true, CacheFirstCurveForm, CurveOffsetRange,
-    DeformableCurveData, DeformableCurveSource, IntcurveSupportContext, OffsetSide,
-    ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
-};
-use super::{IntcurveSupportSide, ProjectionTail, SpringLayout};
 #[cfg(feature = "schema")]
 use super::OffsetSideWire;
+use super::{
+    default_true, CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData,
+    DeformableCurveSource, IntcurveSupportContext, OffsetSide, ProceduralGeometryError,
+    SilhouetteKind, VectorOffsetRoles,
+};
+use super::{IntcurveSupportSide, ProjectionTail, SpringLayout};
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
