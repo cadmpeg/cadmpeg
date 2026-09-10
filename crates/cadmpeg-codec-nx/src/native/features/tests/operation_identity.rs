@@ -530,8 +530,8 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         ordinal: 0,
-        sha256: "record-sha256".to_string(),
-        payload_sha256: "payload-sha256".to_string(),
+        sha256: crate::native::hex::Sha256Hex::digest(b"record-sha256"),
+        payload_sha256: crate::native::hex::Sha256Hex::digest(b"payload-sha256"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
             .unwrap(),
@@ -589,15 +589,13 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     );
     assert_eq!(relation.operation_record, record.id);
     assert_eq!(relation.journal_row_ordinal, 1);
-    assert_eq!(relation.operation_local_ordinal, 7);
-    assert_eq!(relation.journal_state_ordinal, 7);
+    assert_eq!(relation.state_ordinal, 7);
     assert_eq!(relation.operation_source_offset, 420);
     assert_eq!(relation.journal_source_offset, 520);
-    let mut wire = serde_json::to_value(relation).unwrap();
-    let admitted: FeatureOperationStateJournalUse = serde_json::from_value(wire.clone()).unwrap();
+    let wire = serde_json::to_value(relation).unwrap();
+    assert_eq!(wire["state_ordinal"], 7);
+    let admitted: FeatureOperationStateJournalUse = serde_json::from_value(wire).unwrap();
     assert_eq!(&admitted, relation);
-    wire["journal_state_ordinal"] = serde_json::json!(8);
-    assert!(serde_json::from_value::<FeatureOperationStateJournalUse>(wire).is_err());
 }
 
 #[test]
