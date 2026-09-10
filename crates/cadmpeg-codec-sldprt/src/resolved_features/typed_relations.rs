@@ -693,11 +693,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             else {
                                 return false;
                             };
-                            binary_relation_matches_evaluated_geometry(
-                                kind,
-                                first_entity,
-                                second_entity,
-                            )
+                            binary.matches_evaluated_geometry(first_entity, second_entity)
                         })
                         .map(|(first, second)| (first.clone(), second.clone()))
                         .collect::<Vec<_>>();
@@ -1112,36 +1108,46 @@ pub(super) fn binary_relation_matches_evaluated_geometry(
     first: &SketchEntity,
     second: &SketchEntity,
 ) -> bool {
-    use crate::records::SketchRelationKind::{
-        Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
-    };
-    match kind {
-        Parallel => line_relation_value(first, second, |cross, _dot, lengths| {
-            cross.abs() <= SKETCH_POINT_TOLERANCE * lengths
-        }),
-        Perpendicular => line_relation_value(first, second, |_cross, dot, lengths| {
-            dot.abs() <= SKETCH_POINT_TOLERANCE * lengths
-        }),
-        Collinear => line_line_distance(first, second)
-            .is_some_and(|distance| same_dimension_length(distance, 0.0)),
-        Concentric => centered_geometry(first)
-            .zip(centered_geometry(second))
-            .is_some_and(|(first, second)| {
-                same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v)
-            }),
-        Coradial => centered_geometry(first)
-            .zip(circular_radius(first))
-            .zip(centered_geometry(second).zip(circular_radius(second)))
-            .is_some_and(
-                |((first_center, first_radius), (second_center, second_radius))| {
-                    same_dimension_length(first_center.u, second_center.u)
-                        && same_dimension_length(first_center.v, second_center.v)
-                        && same_dimension_length(first_radius, second_radius)
-                },
-            ),
-        Equal => equal_geometry_size(first, second),
-        Tangent => tangent_geometry(first, second),
+    match MarkerRelationGroup::of(kind) {
+        MarkerRelationGroup::Binary(binary) => binary.matches_evaluated_geometry(first, second),
         _ => false,
+    }
+}
+
+impl BinaryRelation {
+    /// Whether the evaluated geometry of the two entities satisfies this relation.
+    fn matches_evaluated_geometry(self, first: &SketchEntity, second: &SketchEntity) -> bool {
+        use BinaryRelation::{
+            Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
+        };
+        match self {
+            Parallel => line_relation_value(first, second, |cross, _dot, lengths| {
+                cross.abs() <= SKETCH_POINT_TOLERANCE * lengths
+            }),
+            Perpendicular => line_relation_value(first, second, |_cross, dot, lengths| {
+                dot.abs() <= SKETCH_POINT_TOLERANCE * lengths
+            }),
+            Collinear => line_line_distance(first, second)
+                .is_some_and(|distance| same_dimension_length(distance, 0.0)),
+            Concentric => centered_geometry(first)
+                .zip(centered_geometry(second))
+                .is_some_and(|(first, second)| {
+                    same_dimension_length(first.u, second.u)
+                        && same_dimension_length(first.v, second.v)
+                }),
+            Coradial => centered_geometry(first)
+                .zip(circular_radius(first))
+                .zip(centered_geometry(second).zip(circular_radius(second)))
+                .is_some_and(
+                    |((first_center, first_radius), (second_center, second_radius))| {
+                        same_dimension_length(first_center.u, second_center.u)
+                            && same_dimension_length(first_center.v, second_center.v)
+                            && same_dimension_length(first_radius, second_radius)
+                    },
+                ),
+            Equal => equal_geometry_size(first, second),
+            Tangent => tangent_geometry(first, second),
+        }
     }
 }
 

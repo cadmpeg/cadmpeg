@@ -13,8 +13,8 @@ use crate::history::literals::{
     parse_parameter_literal,
 };
 use crate::history::parameters::{
-    expression_identifier_is_syntax, expression_identifier_tokens, global_parameter_owners,
-    parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
+    expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
+    parse_native_parameter_literal, project_parameters,
 };
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -379,15 +379,19 @@ pub(crate) fn rewrite_parameter_expression(
 ) -> Option<String> {
     let tokens = expression_identifier_tokens(expression).ok()?;
     let mut rewritten = String::with_capacity(expression.len());
-    let mut copied = 0;
+    let mut tail = expression;
+    let mut replaced = false;
     for token in tokens {
-        if expression_identifier_is_syntax(expression, &token) {
+        if token.is_syntax() {
             continue;
         }
         let Some(replacement) = aliases.get(token.value()) else {
             continue;
         };
-        rewritten.push_str(&expression[copied..token.start()]);
+        let Some(preceding) = token.preceding(tail) else {
+            continue;
+        };
+        rewritten.push_str(preceding);
         if token.is_quoted() || !unquoted_expression_identifier(replacement) {
             rewritten.push('"');
             rewritten.push_str(&replacement.replace('"', "\"\""));
@@ -395,12 +399,13 @@ pub(crate) fn rewrite_parameter_expression(
         } else {
             rewritten.push_str(replacement);
         }
-        copied = token.end();
+        tail = token.following();
+        replaced = true;
     }
-    if copied == 0 {
+    if !replaced {
         return None;
     }
-    rewritten.push_str(&expression[copied..]);
+    rewritten.push_str(tail);
     Some(rewritten)
 }
 

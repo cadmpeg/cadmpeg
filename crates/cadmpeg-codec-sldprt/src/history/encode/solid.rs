@@ -112,12 +112,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
             }
-            let implicit_profile = existing.is_some_and(|record| {
+            let profile_source = if existing.is_some_and(|record| {
                 !record.properties.contains_key("Profile")
                     && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
                         || matches!(profile, ProfileRef::Native(native) if native == &record.id))
-            });
-            let profile_source = if implicit_profile {
+            }) {
                 None
             } else {
                 Some(
@@ -298,11 +297,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            if !implicit_profile {
-                properties.insert(
-                    "Profile".into(),
-                    profile_source.expect("non-implicit profile was resolved"),
-                );
+            if let Some(profile_source) = profile_source {
+                properties.insert("Profile".into(), profile_source);
             }
             let kind = existing.map_or_else(
                 || match op {
