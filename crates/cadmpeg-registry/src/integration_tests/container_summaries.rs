@@ -57,10 +57,10 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .expect("native summary witness");
     assert_eq!(
         stream.storage,
-        EntryStorage::unreported(VerbatimLabel::Stored)
+        EntryStorage::verbatim(VerbatimLabel::Stored, 0)
     );
-    assert_eq!(stream.stored_size(), None);
-    assert_eq!(stream.expanded_size(), None);
+    assert_eq!(stream.stored_size(), Some(0));
+    assert_eq!(stream.expanded_size(), Some(0));
 
     let step: Summary = serde_json::from_str(include_str!(
         "../../../cadmpeg-codec-step/tests/golden/inspect/ap242_ed3_sections.json"
