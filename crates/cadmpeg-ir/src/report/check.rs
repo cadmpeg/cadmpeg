@@ -26,8 +26,6 @@ pub enum Check {
     ArenaOrder,
     /// A referenced id does not resolve in its arena.
     ReferentialIntegrity,
-    /// A face loop's coedge ring does not close.
-    LoopClosure,
     /// An edge's two coedges do not pair consistently.
     CoedgePairing,
     /// Wire edges, free vertices, or wire bodies violate topology ownership rules.
@@ -48,8 +46,6 @@ pub enum Check {
     PayloadIntegrity,
     /// A tessellation payload is malformed.
     Tessellation,
-    /// A geometric quantity is out of sane range (e.g. negative radius).
-    Bounds,
     /// Evaluated carrier geometry disagrees with the topology it supports:
     /// an edge's curve endpoints or a pcurve's surface image miss the edge's
     /// vertex positions.
@@ -66,7 +62,6 @@ impl fmt::Display for Check {
             Self::Presentation => "presentation",
             Self::ArenaOrder => "arena_order",
             Self::ReferentialIntegrity => "referential_integrity",
-            Self::LoopClosure => "loop_closure",
             Self::CoedgePairing => "coedge_pairing",
             Self::WireTopology => "wire_topology",
             Self::ShellTopology => "shell_topology",
@@ -77,7 +72,6 @@ impl fmt::Display for Check {
             Self::Tolerances => "tolerances",
             Self::PayloadIntegrity => "payload_integrity",
             Self::Tessellation => "tessellation",
-            Self::Bounds => "bounds",
             Self::GeometricConsistency => "geometric_consistency",
             Self::Counts => "counts",
         })
