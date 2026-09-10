@@ -302,31 +302,35 @@ pub(crate) fn project_hole(
     let construction = if has_counterbore && has_countersink {
         hole_form(HoleKind::Unresolved(None))
     } else if has_counterbore {
-        match (counterbore_diameter, counterbore_depth) {
-            (Some(diameter), Some(depth)) => hole_form(drill_point_angle.map_or(
-                HoleKind::Counterbore { diameter, depth },
-                |drill_point_angle| HoleKind::CounterboreDrilled {
-                    diameter,
-                    depth,
-                    drill_point_angle,
-                },
-            )),
-            (diameter, depth) => hole_form(
-                cadmpeg_ir::features::PartialPair::new(diameter, depth).map_or(
-                    HoleKind::Unresolved(Some(cadmpeg_ir::features::HoleForm::Counterbore)),
-                    HoleKind::PartialCounterbore,
-                ),
-            ),
+        match cadmpeg_ir::features::split(counterbore_diameter, counterbore_depth) {
+            cadmpeg_ir::features::Split::Both(diameter, depth) => {
+                hole_form(drill_point_angle.map_or(
+                    HoleKind::Counterbore { diameter, depth },
+                    |drill_point_angle| HoleKind::CounterboreDrilled {
+                        diameter,
+                        depth,
+                        drill_point_angle,
+                    },
+                ))
+            }
+            cadmpeg_ir::features::Split::Partial(pair) => {
+                hole_form(HoleKind::PartialCounterbore(pair))
+            }
+            cadmpeg_ir::features::Split::Neither => hole_form(HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Counterbore,
+            ))),
         }
     } else if has_countersink {
-        match (countersink_diameter, countersink_angle) {
-            (Some(diameter), Some(angle)) => hole_form(HoleKind::Countersink { diameter, angle }),
-            (diameter, angle) => hole_form(
-                cadmpeg_ir::features::PartialPair::new(diameter, angle).map_or(
-                    HoleKind::Unresolved(Some(cadmpeg_ir::features::HoleForm::Countersink)),
-                    HoleKind::PartialCountersink,
-                ),
-            ),
+        match cadmpeg_ir::features::split(countersink_diameter, countersink_angle) {
+            cadmpeg_ir::features::Split::Both(diameter, angle) => {
+                hole_form(HoleKind::Countersink { diameter, angle })
+            }
+            cadmpeg_ir::features::Split::Partial(pair) => {
+                hole_form(HoleKind::PartialCountersink(pair))
+            }
+            cadmpeg_ir::features::Split::Neither => hole_form(HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Countersink,
+            ))),
         }
     } else if let Some(thread) = thread {
         thread

@@ -395,35 +395,25 @@ pub(in super::super) fn schema_feature_definition(
                                 })
                         }
                         (None, true, None, None) => HoleKind::Simple,
-                        (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
-                            match (
-                                cadmpeg_ir::scalar::PositiveLength::new(diameter),
-                                cadmpeg_ir::scalar::PositiveLength::new(depth),
-                            ) {
-                                (Some(diameter), Some(depth)) => {
-                                    HoleKind::Counterbore { diameter, depth }
-                                }
-                                (diameter, depth) => {
-                                    cadmpeg_ir::features::PartialPair::new(diameter, depth).map_or(
-                                        HoleKind::Unresolved(Some(HoleForm::Counterbore)),
-                                        HoleKind::PartialCounterbore,
-                                    )
-                                }
-                            }
-                        }
                         (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
-                            cadmpeg_ir::features::PartialPair::new(
+                            match cadmpeg_ir::features::split(
                                 dimensions.and_then(|(_, diameter, _)| {
                                     cadmpeg_ir::scalar::PositiveLength::new(diameter)
                                 }),
                                 dimensions.and_then(|(_, _, depth)| {
                                     cadmpeg_ir::scalar::PositiveLength::new(depth)
                                 }),
-                            )
-                            .map_or(
-                                HoleKind::Unresolved(Some(HoleForm::Counterbore)),
-                                HoleKind::PartialCounterbore,
-                            )
+                            ) {
+                                cadmpeg_ir::features::Split::Both(diameter, depth) => {
+                                    HoleKind::Counterbore { diameter, depth }
+                                }
+                                cadmpeg_ir::features::Split::Partial(pair) => {
+                                    HoleKind::PartialCounterbore(pair)
+                                }
+                                cadmpeg_ir::features::Split::Neither => {
+                                    HoleKind::Unresolved(Some(HoleForm::Counterbore))
+                                }
+                            }
                         }
                         (_, _, form, _) => HoleKind::Unresolved(form),
                     },
