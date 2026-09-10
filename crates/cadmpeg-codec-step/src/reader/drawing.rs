@@ -375,7 +375,7 @@ fn drawing_kind(name: &str) -> DrawingKind {
 
 fn drawing_identity(id: u64, name: &str) -> cadmpeg_ir::ids::Identity {
     let derived = crate::ids::IdentityKind::parse(&name.to_ascii_lowercase());
-    ids::drawing(derived.unwrap_or(kind!("drawing")), id)
+    ids::drawing(derived.as_ref().unwrap_or(kind!("drawing")), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {

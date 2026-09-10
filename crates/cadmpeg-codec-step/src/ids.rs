@@ -56,8 +56,8 @@ const fn literal_is_valid(bytes: &[u8]) -> bool {
 /// Builds an [`IdentityKind`] from a string literal, checked when the crate compiles.
 macro_rules! kind {
     ($literal:literal) => {{
-        const KIND: $crate::ids::IdentityKind = $crate::ids::IdentityKind::from_literal($literal);
-        KIND
+        static KIND: $crate::ids::IdentityKind = $crate::ids::IdentityKind::from_literal($literal);
+        &KIND
     }};
 }
 
@@ -74,41 +74,41 @@ pub fn signature(index: usize) -> UnknownId {
 
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
-pub fn data(kind: IdentityKind, key: impl Display) -> Identity {
+pub fn data(kind: &IdentityKind, key: impl Display) -> Identity {
     mint("data", kind, key)
 }
 
 /// Product structure identity: `step:product:{kind}#{key}`.
 #[must_use]
-pub fn product(kind: IdentityKind, key: impl Display) -> Identity {
+pub fn product(kind: &IdentityKind, key: impl Display) -> Identity {
     mint("product", kind, key)
 }
 
 /// Presentation / PMI identity: `step:presentation:{kind}#{key}`.
 #[must_use]
-pub fn presentation(kind: IdentityKind, key: impl Display) -> Identity {
+pub fn presentation(kind: &IdentityKind, key: impl Display) -> Identity {
     mint("presentation", kind, key)
 }
 
 /// Construction / procedural identity: `step:construction:{kind}#{key}`.
 #[must_use]
-pub fn construction(kind: IdentityKind, key: impl Display) -> Identity {
+pub fn construction(kind: &IdentityKind, key: impl Display) -> Identity {
     mint("construction", kind, key)
 }
 
 /// Tessellation identity: `step:tessellation:{kind}#{key}`.
 #[must_use]
-pub fn tessellation(kind: IdentityKind, key: impl Display) -> Identity {
+pub fn tessellation(kind: &IdentityKind, key: impl Display) -> Identity {
     mint("tessellation", kind, key)
 }
 
 /// Drawing graph identity: `step:drawing:{kind}#{key}`.
 #[must_use]
-pub fn drawing(kind: IdentityKind, key: impl Display) -> Identity {
+pub fn drawing(kind: &IdentityKind, key: impl Display) -> Identity {
     mint("drawing", kind, key)
 }
 
-fn mint(scope: &str, kind: IdentityKind, key: impl Display) -> Identity {
+fn mint(scope: &str, kind: &IdentityKind, key: impl Display) -> Identity {
     format_identity("step", scope, kind.as_str(), key)
         .unwrap_or_else(|error| panic!("step {scope} identity: {error}"))
 }

@@ -1352,7 +1352,7 @@ fn read_mapping_tag(
     finish_direct_chunk(parent, &chunk, reader, warnings)
 }
 
-/// One SubD symmetry construction, with the layout its transform chunk carries.
+/// One `SubD` symmetry construction, with the layout its transform chunk carries.
 #[derive(Debug, Clone, Copy)]
 enum SubdSymmetryType {
     Reflect,
@@ -1361,7 +1361,7 @@ enum SubdSymmetryType {
     Transform,
 }
 
-/// The symmetry byte of a SubD symmetry chunk, parsed once.
+/// The symmetry byte of a `SubD` symmetry chunk, parsed once.
 #[derive(Debug, Clone, Copy)]
 enum SubdSymmetry {
     Absent,

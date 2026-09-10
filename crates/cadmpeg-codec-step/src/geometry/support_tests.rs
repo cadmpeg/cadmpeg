@@ -28,7 +28,7 @@ fn rejects_transform_that_step_operator_cannot_represent() {
 fn a_transformed_composite_curve_is_an_omitted_carrier() {
     let composite = CurveGeometry::Composite {
         segments: vec![cadmpeg_ir::geometry::CompositeCurveSegment {
-            curve: cadmpeg_ir::ids::CurveId::mint("c1").expect("curve id"),
+            curve: cadmpeg_ir::ids::CurveId::mint("step:data:curve#1").expect("curve id"),
             same_sense: true,
             transition: cadmpeg_ir::geometry::CompositeCurveTransition::Continuous,
         }]

@@ -175,25 +175,25 @@ impl RawTrimKind {
 /// The `ON_Surface::ISO` value a trim carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RawTrimIso {
-    NotIso,
-    XIso,
-    YIso,
-    WestIso,
-    SouthIso,
-    EastIso,
-    NorthIso,
+    None,
+    X,
+    Y,
+    West,
+    South,
+    East,
+    North,
 }
 
 impl RawTrimIso {
     pub(crate) fn parse(value: i32) -> Option<Self> {
         Some(match value {
-            0 => Self::NotIso,
-            1 => Self::XIso,
-            2 => Self::YIso,
-            3 => Self::WestIso,
-            4 => Self::SouthIso,
-            5 => Self::EastIso,
-            6 => Self::NorthIso,
+            0 => Self::None,
+            1 => Self::X,
+            2 => Self::Y,
+            3 => Self::West,
+            4 => Self::South,
+            5 => Self::East,
+            6 => Self::North,
             _ => return None,
         })
     }
@@ -1089,7 +1089,7 @@ fn parse_legacy_major2(
                     } else {
                         RawTrimKind::Unknown
                     },
-                    iso: RawTrimIso::NotIso,
+                    iso: RawTrimIso::None,
                     loop_index: actual_loop_index,
                     tolerances: [tolerance_2d, tolerance_2d],
                     domain,
@@ -2995,7 +2995,7 @@ mod tests {
                 vertices,
                 reversed_3d: false,
                 trim_type: RawTrimKind::Boundary,
-                iso: RawTrimIso::NotIso,
+                iso: RawTrimIso::None,
                 loop_index: 0,
                 tolerances: [0.0, 0.0],
                 domain: interval,
@@ -3207,7 +3207,7 @@ mod tests {
                 vertices: [0, 0],
                 reversed_3d: false,
                 trim_type,
-                iso: RawTrimIso::NotIso,
+                iso: RawTrimIso::None,
                 loop_index: 0,
                 tolerances: [0.0, 0.0],
                 domain: interval,

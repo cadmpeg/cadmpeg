@@ -3193,11 +3193,11 @@ impl<'a> DecodeContext<'a> {
         };
         for warning in warnings {
             match warning.code {
-                Some(code) => self
+                Some(code @ RhinoLossCode::EnumerationValueDegraded) => self
                     .report
                     .typed_losses
                     .push(code.note(warning.message.clone())),
-                None => self.scan_diagnostic(source_order, warning),
+                _ => self.scan_diagnostic(source_order, warning),
             }
         }
         let identity = &object.identity;
@@ -3275,10 +3275,14 @@ impl<'a> DecodeContext<'a> {
                     self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
                         match warning.code {
-                            Some(code) => {
+                            Some(
+                                code @ (RhinoLossCode::TopologyBrepFallback
+                                | RhinoLossCode::PolycurveJoinGap
+                                | RhinoLossCode::TrimPcurveDropped),
+                            ) => {
                                 self.report.typed_losses.push(code.note(&warning.message));
                             }
-                            None => self.scan_diagnostic(source_order, &warning),
+                            _ => self.scan_diagnostic(source_order, &warning),
                         }
                     }
                     if cache_only {

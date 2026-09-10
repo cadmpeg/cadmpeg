@@ -282,7 +282,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             vertices,
             reversed_3d: false,
             trim_type: crate::brep::RawTrimKind::Boundary,
-            iso: crate::brep::RawTrimIso::NotIso,
+            iso: crate::brep::RawTrimIso::None,
             loop_index: 0,
             tolerances: [0.02, 0.03],
             domain: interval,
