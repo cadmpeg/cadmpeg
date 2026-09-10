@@ -159,6 +159,15 @@ pub struct FramedSpan {
 }
 
 impl FramedSpan {
+    /// A `payload`-byte payload wrapped in `framing` bytes of container framing.
+    #[must_use]
+    pub const fn from_parts(payload: u64, framing: NonZeroU64) -> Self {
+        Self {
+            payload,
+            stored: framing.saturating_add(payload),
+        }
+    }
+
     /// A payload of `payload` bytes inside a `stored`-byte span, absent when the
     /// span does not exceed the payload.
     #[must_use]
@@ -268,6 +277,16 @@ impl EntryStorage {
         VerbatimSize::declared(payload, stored_span)
             .map(|size| Self::Verbatim { label, size })
             .ok_or(VERBATIM_SPAN_UNDER_PAYLOAD)
+    }
+
+    /// Verbatim bytes whose stored span is the payload plus `framing` bytes of
+    /// container framing the producer knows.
+    #[must_use]
+    pub const fn framed_by(label: VerbatimLabel, payload: u64, framing: NonZeroU64) -> Self {
+        Self::Verbatim {
+            label,
+            size: VerbatimSize::Framed(FramedSpan::from_parts(payload, framing)),
+        }
     }
 
     /// Verbatim bytes whose size the container does not report.

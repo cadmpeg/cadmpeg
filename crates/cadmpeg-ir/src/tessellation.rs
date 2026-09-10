@@ -31,36 +31,63 @@ fn tessellation_error(message: impl Into<String>) -> TessellationError {
     TessellationError(message.into())
 }
 
+/// One or more shading normals.
+///
+/// The vector is private and never empty, so an empty sample run has no
+/// [`TessellationNormals`] variant to live in: "the source carried no normals"
+/// is spelled [`TessellationNormals::None`] and nothing else.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NormalSamples(Vec<Vector3>);
+
+impl NormalSamples {
+    /// The samples, absent when `normals` is empty.
+    #[must_use]
+    pub fn new(normals: Vec<Vector3>) -> Option<Self> {
+        (!normals.is_empty()).then_some(Self(normals))
+    }
+
+    /// The samples in storage order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Vector3] {
+        &self.0
+    }
+
+    /// The samples in storage order, for editing coordinates in place.
+    pub fn as_mut_slice(&mut self) -> &mut [Vector3] {
+        &mut self.0
+    }
+}
+
+impl std::ops::Deref for NormalSamples {
+    type Target = [Vector3];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// Shading samples stored with a tessellation mesh.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TessellationNormals {
     /// The source carried no normals.
     None,
     /// One normal per vertex, parallel to [`Tessellation::vertices`].
-    PerVertex(Vec<Vector3>),
+    PerVertex(NormalSamples),
     /// One normal per triangle corner, in flattened triangle order.
-    PerCorner(Vec<Vector3>),
+    PerCorner(NormalSamples),
 }
 
 impl TessellationNormals {
     /// Per-vertex normals, or [`Self::None`] when the source carried none.
     #[must_use]
     pub fn per_vertex(normals: Vec<Vector3>) -> Self {
-        if normals.is_empty() {
-            Self::None
-        } else {
-            Self::PerVertex(normals)
-        }
+        NormalSamples::new(normals).map_or(Self::None, Self::PerVertex)
     }
 
     /// Per-corner normals, or [`Self::None`] when the source carried none.
     #[must_use]
     pub fn per_corner(normals: Vec<Vector3>) -> Self {
-        if normals.is_empty() {
-            Self::None
-        } else {
-            Self::PerCorner(normals)
-        }
+        NormalSamples::new(normals).map_or(Self::None, Self::PerCorner)
     }
 }
 
@@ -855,10 +882,10 @@ impl From<Tessellation> for TessellationWire {
         let shading = match &mesh.shading {
             TessellationNormals::None => None,
             TessellationNormals::PerVertex(values) => Some(TessellationShadingWire::PerVertex {
-                values: values.clone(),
+                values: values.to_vec(),
             }),
             TessellationNormals::PerCorner(values) => Some(TessellationShadingWire::PerCorner {
-                values: values.clone(),
+                values: values.to_vec(),
             }),
         };
         Self {

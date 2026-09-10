@@ -16,6 +16,7 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::num::NonZeroU64;
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
@@ -279,7 +280,10 @@ fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReferen
 }
 
 /// Tag byte plus one-byte length that precede a length-prefixed ASCII string.
-const LENGTH_PREFIXED_ASCII_HEADER: usize = 2;
+const LENGTH_PREFIXED_ASCII_HEADER: NonZeroU64 = match NonZeroU64::new(2) {
+    Some(header) => header,
+    None => unreachable!(),
+};
 
 fn length_prefixed_ascii(data: &[u8], at: &mut usize) -> Option<String> {
     (data.get(*at) == Some(&0x34)).then_some(())?;
@@ -1375,7 +1379,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
 /// streams and the identified variant.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
-    let mut storage_notes: Vec<String> = Vec::new();
 
     for (directory, dir) in [
         ("outer", scan.outer.as_ref()),
@@ -1452,17 +1455,11 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     for reference in &scan.external_references {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
-        let storage = match EntryStorage::framed(
+        let storage = EntryStorage::framed_by(
             VerbatimLabel::None,
             reference.target.len() as u64,
-            (reference.target.len() + LENGTH_PREFIXED_ASCII_HEADER) as u64,
-        ) {
-            Ok(storage) => storage,
-            Err(message) => {
-                storage_notes.push(format!("{}: {message}", reference.target));
-                EntryStorage::payload_only(VerbatimLabel::None, reference.target.len() as u64)
-            }
-        };
+            LENGTH_PREFIXED_ASCII_HEADER,
+        );
         entries.push(ContainerEntry {
             name: reference.target.clone(),
             role: ContainerRole::ExternalReference,
@@ -1500,8 +1497,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         });
     }
 
-    let mut notes = notes(scan);
-    notes.extend(storage_notes);
+    let notes = notes(scan);
 
     let matched = crate::dialect::classify(scan);
     let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();

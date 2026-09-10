@@ -2,6 +2,7 @@
 //! Rhino 3DM headers, chunks, checksums, and bounded readers.
 
 use std::fmt;
+use std::num::NonZeroU64;
 
 use cadmpeg_core::decode::View;
 
@@ -486,6 +487,8 @@ pub(crate) struct Chunk {
     pub(crate) header_start: usize,
     /// Raw typecode.
     pub(crate) typecode: u32,
+    /// Typecode and value bytes preceding the payload.
+    header: NonZeroU64,
     /// Short value or long payload.
     form: ChunkBody,
 }
@@ -533,6 +536,15 @@ impl Chunk {
         self.next_offset()
     }
 
+    /// Returns the chunk bytes outside its payload: the header and any checksum.
+    pub(crate) fn framing(&self) -> NonZeroU64 {
+        let trailing = match &self.form {
+            ChunkBody::Short { .. } => 0,
+            ChunkBody::Long { checksum, .. } => checksum.map_or(0, ChecksumKind::width),
+        };
+        self.header.saturating_add(trailing as u64)
+    }
+
     /// Returns the offset of the next chunk.
     pub(crate) fn next_offset(&self) -> usize {
         match &self.form {
@@ -545,6 +557,12 @@ impl Chunk {
 }
 
 /// Parses a chunk at `offset`, constrained by `parent_end`.
+/// Bytes of the chunk typecode that open every chunk header.
+const TYPECODE_BYTES: NonZeroU64 = match NonZeroU64::new(4) {
+    Some(bytes) => bytes,
+    None => unreachable!(),
+};
+
 pub(crate) fn chunk_at(
     bytes: &[u8],
     offset: usize,
@@ -573,10 +591,13 @@ pub(crate) fn chunk_at(
         i64::from(reader.i32()?)
     };
     let body_start = reader.position();
+    // Every chunk header is a four-byte typecode followed by its value.
+    let header = TYPECODE_BYTES.saturating_add(width as u64);
     if short || value < 0 {
         return Ok(Chunk {
             header_start: offset,
             typecode,
+            header,
             form: ChunkBody::Short {
                 value,
                 end: body_start,
@@ -612,6 +633,7 @@ pub(crate) fn chunk_at(
     Ok(Chunk {
         header_start: offset,
         typecode,
+        header,
         form: ChunkBody::Long {
             body: body_start..body_end,
             checksum: kind,
