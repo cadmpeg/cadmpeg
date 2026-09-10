@@ -388,7 +388,7 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
 
     let counterbore = serde_json::json!({
         "kind": "partial_counterbore",
-        "diameter": 10.0
+        "dimension": {"kind": "diameter", "diameter": 10.0}
     });
     let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
     assert_eq!(
@@ -1042,69 +1042,80 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
 }
 
 #[test]
-fn a_partial_hole_wire_with_no_dimension_is_rejected() {
-    use crate::features::HoleKind;
-
-    for kind in ["partial_counterbore", "partial_countersink"] {
-        let wire = serde_json::json!({ "kind": kind });
-        let error = serde_json::from_value::<HoleKind>(wire)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains(&format!("{kind} carries no dimension")),
-            "{error}"
-        );
-    }
-}
-
-#[test]
-fn every_partial_hole_pair_round_trips_to_flat_fields() {
+fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
     use crate::features::{HoleKind, PartialPair};
 
     let diameter = crate::scalar::PositiveLength::new(10.0).unwrap();
     let depth = crate::scalar::PositiveLength::new(4.0).unwrap();
     let angle = crate::scalar::InteriorAngle::new(1.5).unwrap();
 
-    let bore_cases = [
+    let cases = [
         (
             HoleKind::PartialCounterbore(PartialPair::First(diameter)),
-            serde_json::json!({"kind": "partial_counterbore", "diameter": 10.0}),
+            serde_json::json!({
+                "kind": "partial_counterbore",
+                "dimension": {"kind": "diameter", "diameter": 10.0}
+            }),
         ),
         (
             HoleKind::PartialCounterbore(PartialPair::Second(depth)),
-            serde_json::json!({"kind": "partial_counterbore", "depth": 4.0}),
+            serde_json::json!({
+                "kind": "partial_counterbore",
+                "dimension": {"kind": "depth", "depth": 4.0}
+            }),
         ),
         (
             HoleKind::PartialCountersink(PartialPair::First(diameter)),
-            serde_json::json!({"kind": "partial_countersink", "diameter": 10.0}),
+            serde_json::json!({
+                "kind": "partial_countersink",
+                "dimension": {"kind": "diameter", "diameter": 10.0}
+            }),
         ),
         (
             HoleKind::PartialCountersink(PartialPair::Second(angle)),
-            serde_json::json!({"kind": "partial_countersink", "angle": 1.5}),
+            serde_json::json!({
+                "kind": "partial_countersink",
+                "dimension": {"kind": "angle", "angle": 1.5}
+            }),
         ),
     ];
-    for (kind, wire) in bore_cases {
+    for (kind, wire) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), wire);
         assert_eq!(serde_json::from_value::<HoleKind>(wire).unwrap(), kind);
     }
+}
 
-    for (kind, wire) in [
+#[test]
+fn a_partial_hole_dimension_carries_exactly_one_measurement() {
+    use crate::features::HoleKind;
+
+    for (wire, rejected) in [
         (
-            "partial_counterbore",
-            serde_json::json!({"kind": "partial_counterbore", "diameter": 10.0, "depth": 4.0}),
+            serde_json::json!({
+                "kind": "partial_counterbore",
+                "dimension": {"kind": "diameter", "diameter": 10.0, "depth": 4.0}
+            }),
+            "depth",
         ),
         (
-            "partial_countersink",
-            serde_json::json!({"kind": "partial_countersink", "diameter": 10.0, "angle": 1.5}),
+            serde_json::json!({
+                "kind": "partial_countersink",
+                "dimension": {"kind": "diameter", "diameter": 10.0, "angle": 1.5}
+            }),
+            "angle",
         ),
     ] {
         let error = serde_json::from_value::<HoleKind>(wire)
             .unwrap_err()
             .to_string();
-        assert!(
-            error.contains(&format!("{kind} carries both dimensions")),
-            "{error}"
-        );
+        assert!(error.contains(rejected), "{error}");
+    }
+
+    for wire in [
+        serde_json::json!({"kind": "partial_counterbore", "dimension": {}}),
+        serde_json::json!({"kind": "partial_countersink", "dimension": {}}),
+    ] {
+        assert!(serde_json::from_value::<HoleKind>(wire).is_err());
     }
 }
 
