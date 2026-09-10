@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::container::SectionRole;
+use std::num::NonZeroU64;
 
 use std::io::Cursor;
 
@@ -306,8 +307,8 @@ fn scan_expands_toc_sized_unix_compress_payload() {
         method,
         cadmpeg_core::container::CompressionMethod::UnixCompress
     );
-    assert_eq!(stored, Some(section_length as u64));
-    assert_eq!(expanded, Some(18));
+    assert_eq!(stored, NonZeroU64::new(section_length as u64));
+    assert_eq!(expanded, NonZeroU64::new(18));
 }
 
 #[test]

@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
+use std::num::NonZeroU64;
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -64,8 +65,8 @@ impl ZipCompression {
         };
         Ok(EntryStorage::Compressed {
             method,
-            stored: Some(compressed_size),
-            expanded: Some(uncompressed_size),
+            stored: NonZeroU64::new(compressed_size),
+            expanded: NonZeroU64::new(uncompressed_size),
         })
     }
 }
