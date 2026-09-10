@@ -26,18 +26,6 @@ fn default_true() -> bool {
     true
 }
 
-/// Parameter-space continuation used when an offset evaluates beyond its
-/// support's active NURBS rectangle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum OffsetSupportExtension {
-    /// Continue the support's terminal polynomial patch.
-    Natural,
-    /// Continue boundary tangents as ruled linear strips.
-    Linear,
-}
-
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyExtensionFlags {

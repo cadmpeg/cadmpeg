@@ -1276,7 +1276,7 @@ pub(crate) fn append_freeform_surface_pools(
                 offset.distance,
                 None,
                 None,
-                None,
+                false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy(
                     cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                 ),
@@ -1852,7 +1852,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         );
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, None, cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, false, cadmpeg_ir::geometry::OffsetExtension::Legacy(
                                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                                     )).and_then(|admitted_payload| ProceduralSurface::new(
                                 procedural_id,

@@ -524,7 +524,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let distance = definition_payload.distance();
         let u_sense = definition_payload.u_sense();
         let v_sense = definition_payload.v_sense();
-        let _ = definition_payload.support_extension();
+        let _ = definition_payload.linear_support_extension();
         let extension = definition_payload.extension();
         assert_eq!(*distance, -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));

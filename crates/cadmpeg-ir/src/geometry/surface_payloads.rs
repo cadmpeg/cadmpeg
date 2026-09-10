@@ -17,8 +17,8 @@ use super::{
     VertexBlendConstruction,
 };
 use super::{
-    DirectedParameterRange, OffsetExtension, OffsetSupportExtension, PcurveGeometry,
-    ProceduralGeometryError, RevisionSurfaceForm, TaperSurfaceKind,
+    DirectedParameterRange, OffsetExtension, PcurveGeometry, ProceduralGeometryError,
+    RevisionSurfaceForm, TaperSurfaceKind,
 };
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
@@ -523,9 +523,10 @@ pub struct OffsetSurfaceConstruction {
     /// Native V parameter-direction sense enum, when carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     v_sense: Option<i64>,
-    /// Support continuation law outside its active NURBS rectangle.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    support_extension: Option<OffsetSupportExtension>,
+    /// Whether the support continues as ruled linear strips outside its
+    /// active NURBS rectangle.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
     #[serde(flatten)]
     #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
@@ -545,9 +546,10 @@ struct OffsetSurfaceConstructionWire {
     /// Native V parameter-direction sense enum, when carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     v_sense: Option<i64>,
-    /// Support continuation law outside its active NURBS rectangle.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    support_extension: Option<OffsetSupportExtension>,
+    /// Whether the support continues as ruled linear strips outside its
+    /// active NURBS rectangle.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
     #[serde(flatten)]
     #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
@@ -559,9 +561,9 @@ impl OffsetSurfaceConstruction {
     pub fn set_support(&mut self, support: SurfaceId) {
         self.support = support;
     }
-    /// Replace the support extension law.
-    pub fn set_support_extension(&mut self, extension: Option<OffsetSupportExtension>) {
-        self.support_extension = extension;
+    /// Replace the linear support extension flag.
+    pub fn set_linear_support_extension(&mut self, linear_support_extension: bool) {
+        self.linear_support_extension = linear_support_extension;
     }
     /// Replace the finite offset distance.
     pub fn try_set_distance(&mut self, distance: f64) -> Result<(), ProceduralGeometryError> {
@@ -583,7 +585,7 @@ impl OffsetSurfaceConstruction {
         distance: f64,
         u_sense: Option<i64>,
         v_sense: Option<i64>,
-        support_extension: Option<OffsetSupportExtension>,
+        linear_support_extension: bool,
         extension: OffsetExtension,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
@@ -593,7 +595,7 @@ impl OffsetSurfaceConstruction {
             ))?,
             u_sense,
             v_sense,
-            support_extension,
+            linear_support_extension,
             extension,
         })
     }
@@ -613,9 +615,9 @@ impl OffsetSurfaceConstruction {
     pub fn v_sense(&self) -> &Option<i64> {
         &self.v_sense
     }
-    /// Return the support extension.
-    pub fn support_extension(&self) -> &Option<OffsetSupportExtension> {
-        &self.support_extension
+    /// Return whether the support extends as ruled linear strips.
+    pub fn linear_support_extension(&self) -> bool {
+        self.linear_support_extension
     }
     /// Return the extension.
     pub fn extension(&self) -> &OffsetExtension {
@@ -631,7 +633,7 @@ impl TryFrom<OffsetSurfaceConstructionWire> for OffsetSurfaceConstruction {
             wire.distance,
             wire.u_sense,
             wire.v_sense,
-            wire.support_extension,
+            wire.linear_support_extension,
             wire.extension,
         )
     }
