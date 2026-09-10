@@ -205,7 +205,8 @@ impl Table {
         record_count: usize,
         object_typecodes: BTreeMap<u32, usize>,
     ) -> Option<Self> {
-        (body.start >= range.start && body.end <= range.end).then_some(())?;
+        (body.start <= body.end && body.start >= range.start && body.end <= range.end)
+            .then_some(())?;
         let framing = range.len().checked_sub(body.len())?;
         (1..=u32::MAX as usize).contains(&framing).then_some(())?;
         Some(Self {
