@@ -10,6 +10,7 @@ use cadmpeg_ir::features::{BooleanOp, FeatureTreeNodeRole};
 use std::collections::HashMap;
 
 use crate::history::literals::parse_dimension_length_mm;
+use crate::records::FeatureSource;
 
 pub(crate) fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
@@ -25,7 +26,7 @@ pub(crate) fn is_semantic_note(feature: &Feature) -> bool {
 
 pub(crate) fn is_attribute_definition(feature: &Feature) -> bool {
     feature.input_class.is_none()
-        && feature.source_id.as_deref() == Some("-1")
+        && feature.source_id == Some(FeatureSource::Reserved)
         && feature.xml_tag.eq_ignore_ascii_case("Feature")
         && feature.kind.eq_ignore_ascii_case("Attribute-Definition")
         && !feature.name.is_empty()
@@ -43,7 +44,7 @@ pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]
         return true;
     }
     feature.input_class.is_none()
-        && feature.source_id.as_deref() == Some("-1")
+        && feature.source_id == Some(FeatureSource::Reserved)
         && !feature.name.is_empty()
         && features.iter().any(|candidate| {
             candidate.input_class.as_deref() == Some("moAttribute_c")
@@ -82,62 +83,72 @@ pub(crate) fn reserved_feature_tree_node_role(
     if !classless_builtin_node(feature) {
         return None;
     }
-    let source = feature.source_id.as_deref()?;
+    let source = feature.source_id?.value();
     match (layout, feature.xml_tag.as_str(), source) {
-        (FeatureManagerLayout::Current, tag, "1") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Current, tag, Some(1)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::Annotations)
         }
-        (FeatureManagerLayout::Current, tag, "5") if tag.eq_ignore_ascii_case("Sketch") => {
+        (FeatureManagerLayout::Current, tag, Some(5)) if tag.eq_ignore_ascii_case("Sketch") => {
             Some(FeatureTreeNodeRole::ModelOrigin)
         }
-        (FeatureManagerLayout::Current, tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Current, tag, Some(6)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::LightsAndCameras)
         }
-        (FeatureManagerLayout::Current, tag, "12") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Current, tag, Some(12)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (FeatureManagerLayout::Current, tag, "13" | "14" | "15")
+        (FeatureManagerLayout::Current, tag, Some(13) | Some(14) | Some(15))
             if tag.eq_ignore_ascii_case("Feature") =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (FeatureManagerLayout::Legacy, tag, "2") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Legacy, tag, Some(2)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::LightsAndCameras)
         }
-        (FeatureManagerLayout::Legacy, tag, "7") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Legacy, tag, Some(7)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (FeatureManagerLayout::Legacy, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Legacy, tag, Some(8)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (FeatureManagerLayout::LightsAtSix | FeatureManagerLayout::FoldersAtSeven, tag, "6")
-            if tag.eq_ignore_ascii_case("Feature") =>
-        {
-            Some(FeatureTreeNodeRole::LightsAndCameras)
-        }
-        (FeatureManagerLayout::LightsAtSix, tag, "7") if tag.eq_ignore_ascii_case("Feature") => {
-            Some(FeatureTreeNodeRole::AmbientLight)
-        }
-        (FeatureManagerLayout::LightsAtSix, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
-            Some(FeatureTreeNodeRole::DirectionalLight)
-        }
-        (FeatureManagerLayout::FoldersAtSeven, tag, "10")
+        (
+            FeatureManagerLayout::LightsAtSix | FeatureManagerLayout::FoldersAtSeven,
+            tag,
+            Some(6),
+        ) if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::LightsAndCameras),
+        (FeatureManagerLayout::LightsAtSix, tag, Some(7))
             if tag.eq_ignore_ascii_case("Feature") =>
         {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (FeatureManagerLayout::FoldersAtSeven, tag, "11" | "12")
+        (FeatureManagerLayout::LightsAtSix, tag, Some(8))
             if tag.eq_ignore_ascii_case("Feature") =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (FeatureManagerLayout::OriginAtSix, tag, "2") if tag.eq_ignore_ascii_case("Feature") => {
-            Some(FeatureTreeNodeRole::LightsAndCameras)
-        }
-        (FeatureManagerLayout::OriginAtSix, tag, "7") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::FoldersAtSeven, tag, Some(10))
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (FeatureManagerLayout::OriginAtSix, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::FoldersAtSeven, tag, Some(11) | Some(12))
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
+        (FeatureManagerLayout::OriginAtSix, tag, Some(2))
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        }
+        (FeatureManagerLayout::OriginAtSix, tag, Some(7))
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (FeatureManagerLayout::OriginAtSix, tag, Some(8))
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
         (_, tag, _)
@@ -162,7 +173,7 @@ pub(crate) fn reserved_feature_tree_node_role(
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (_, tag, "-1") if tag.eq_ignore_ascii_case("Feature") => {
+        (_, tag, None) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::SheetMetal)
         }
         (_, _, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
@@ -207,56 +218,55 @@ pub(crate) enum FeatureManagerLayout {
 }
 
 pub(crate) fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> {
-    let matches_roster = |roster: &[(&str, &str)]| {
+    let matches_roster = |roster: &[(u32, &str)]| {
         roster.iter().all(|(source, class)| {
             let mut matches = features.iter().filter(|feature| {
-                feature.source_id.as_deref() == Some(*source)
+                feature.source_value() == Some(*source)
                     && feature.input_class.as_deref() == Some(*class)
             });
             matches.next().is_some() && matches.next().is_none()
         })
     };
-    let matches_builtin_sources = |sources: &[&str]| {
+    let matches_builtin_sources = |sources: &[u32]| {
         sources.iter().all(|source| {
             let mut matches = features.iter().filter(|feature| {
-                feature.source_id.as_deref() == Some(*source)
-                    && classless_or_scene_builtin_node(feature)
+                feature.source_value() == Some(*source) && classless_or_scene_builtin_node(feature)
             });
             matches.next().is_some() && matches.next().is_none()
         })
     };
     let legacy = matches_roster(&[
-        ("6", "moOriginProfileFeature_c"),
-        ("9", "moSurfaceBodyFolder_c"),
-        ("10", "moSolidBodyFolder_c"),
-        ("12", "moDocsFolder_c"),
-        ("13", "moCommentsFolder_c"),
+        (6, "moOriginProfileFeature_c"),
+        (9, "moSurfaceBodyFolder_c"),
+        (10, "moSolidBodyFolder_c"),
+        (12, "moDocsFolder_c"),
+        (13, "moCommentsFolder_c"),
     ]);
     let current = matches_roster(&[
-        ("7", "moDocsFolder_c"),
-        ("8", "moCommentsFolder_c"),
-        ("9", "moSolidBodyFolder_c"),
-        ("10", "moSurfaceBodyFolder_c"),
+        (7, "moDocsFolder_c"),
+        (8, "moCommentsFolder_c"),
+        (9, "moSolidBodyFolder_c"),
+        (10, "moSurfaceBodyFolder_c"),
     ]);
     let default_frame = matches_roster(&[
-        ("1", "moDetailCabinet_c"),
-        ("2", "moRefPlane_c"),
-        ("3", "moRefPlane_c"),
-        ("4", "moRefPlane_c"),
-        ("5", "moOriginProfileFeature_c"),
+        (1, "moDetailCabinet_c"),
+        (2, "moRefPlane_c"),
+        (3, "moRefPlane_c"),
+        (4, "moRefPlane_c"),
+        (5, "moOriginProfileFeature_c"),
     ]);
     let origin_at_six = matches_roster(&[
-        ("1", "moDetailCabinet_c"),
-        ("3", "moRefPlane_c"),
-        ("4", "moRefPlane_c"),
-        ("5", "moRefPlane_c"),
-        ("6", "moOriginProfileFeature_c"),
-    ]) && matches_builtin_sources(&["2", "7", "8"])
+        (1, "moDetailCabinet_c"),
+        (3, "moRefPlane_c"),
+        (4, "moRefPlane_c"),
+        (5, "moRefPlane_c"),
+        (6, "moOriginProfileFeature_c"),
+    ]) && matches_builtin_sources(&[2, 7, 8])
         && !legacy;
-    let lights_at_six = default_frame && matches_builtin_sources(&["6", "7", "8"]);
+    let lights_at_six = default_frame && matches_builtin_sources(&[6, 7, 8]);
     let folders_at_seven = default_frame
-        && matches_roster(&[("7", "moSolidBodyFolder_c"), ("8", "moSurfaceBodyFolder_c")])
-        && matches_builtin_sources(&["6", "10", "11", "12"]);
+        && matches_roster(&[(7, "moSolidBodyFolder_c"), (8, "moSurfaceBodyFolder_c")])
+        && matches_builtin_sources(&[6, 10, 11, 12]);
     let mut layouts = [
         (origin_at_six, FeatureManagerLayout::OriginAtSix),
         (lights_at_six, FeatureManagerLayout::LightsAtSix),
@@ -280,21 +290,21 @@ pub(crate) fn repeated_builtin_node_kind(
         (
             FeatureManagerLayout::OriginAtSix | FeatureManagerLayout::LightsAtSix,
             FeatureTreeNodeRole::AmbientLight,
-        ) => "7",
+        ) => 7,
         (
             FeatureManagerLayout::OriginAtSix | FeatureManagerLayout::LightsAtSix,
             FeatureTreeNodeRole::DirectionalLight,
-        ) => "8",
-        (FeatureManagerLayout::FoldersAtSeven, FeatureTreeNodeRole::AmbientLight) => "10",
-        (FeatureManagerLayout::FoldersAtSeven, FeatureTreeNodeRole::DirectionalLight) => "11",
-        (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::AmbientLight) => "7",
-        (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::DirectionalLight) => "8",
-        (FeatureManagerLayout::Current, FeatureTreeNodeRole::AmbientLight) => "12",
-        (FeatureManagerLayout::Current, FeatureTreeNodeRole::DirectionalLight) => "13",
+        ) => 8,
+        (FeatureManagerLayout::FoldersAtSeven, FeatureTreeNodeRole::AmbientLight) => 10,
+        (FeatureManagerLayout::FoldersAtSeven, FeatureTreeNodeRole::DirectionalLight) => 11,
+        (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::AmbientLight) => 7,
+        (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::DirectionalLight) => 8,
+        (FeatureManagerLayout::Current, FeatureTreeNodeRole::AmbientLight) => 12,
+        (FeatureManagerLayout::Current, FeatureTreeNodeRole::DirectionalLight) => 13,
         _ => return false,
     };
     let mut anchors = features.iter().filter(|candidate| {
-        candidate.source_id.as_deref() == Some(reserved_source) && classless_builtin_node(candidate)
+        candidate.source_value() == Some(reserved_source) && classless_builtin_node(candidate)
     });
     let Some(anchor) = anchors.next() else {
         return false;
@@ -354,7 +364,7 @@ pub(crate) fn is_offset_plane(feature: &Feature) -> bool {
 
 pub(crate) fn principal_plane_in_history(
     feature: &Feature,
-    features_by_source: &HashMap<&str, &Feature>,
+    features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     use cadmpeg_ir::features::PrincipalPlane;
@@ -369,16 +379,19 @@ pub(crate) fn principal_plane_in_history(
             && record.properties.is_empty()
             && !record.kind.is_empty()
     };
-    let source_triplet = ["2", "3", "4"].map(|source| features_by_source.get(source).copied());
+    let source_triplet = [2, 3, 4].map(|source| {
+        FeatureSource::from_value(source)
+            .and_then(|source| features_by_source.get(&source).copied())
+    });
     if let [Some(front), Some(top), Some(right)] = source_triplet {
         if [front, top, right].into_iter().all(legacy_shape)
             && front.kind == top.kind
             && front.kind == right.kind
         {
-            return match feature.source_id.as_deref() {
-                Some("2") => Some(PrincipalPlane::Front),
-                Some("3") => Some(PrincipalPlane::Top),
-                Some("4") => Some(PrincipalPlane::Right),
+            return match feature.source_value() {
+                Some(2) => Some(PrincipalPlane::Front),
+                Some(3) => Some(PrincipalPlane::Top),
+                Some(4) => Some(PrincipalPlane::Right),
                 _ => None,
             };
         }

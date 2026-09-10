@@ -69,6 +69,7 @@ use cadmpeg_ir::{
 };
 use std::collections::{HashMap, HashSet};
 
+use crate::records::FeatureSource;
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -1943,9 +1944,7 @@ pub(crate) fn project_sketch_block_profiles(
                             native_object_class(feature.input_class.as_deref().unwrap_or_default())
                                 == NativeClassKind::SketchBlockDefinition
                         })
-                        .filter_map(|(_, feature)| {
-                            feature.source_id.as_deref()?.parse::<u32>().ok()
-                        })
+                        .filter_map(|(_, feature)| feature.source_value())
                         .collect::<HashSet<_>>();
                     (!children.is_empty()).then_some(children)
                 }) else {
@@ -1974,12 +1973,10 @@ pub(crate) fn project_sketch_block_profiles(
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockDefinition
                 }) {
-                    let Some(source) = native_definition.source_id.as_deref().filter(|source| {
-                        source
-                            .parse::<u32>()
-                            .ok()
-                            .is_some_and(|source| children.contains(&source))
-                    }) else {
+                    let Some(source) = native_definition
+                        .source_value()
+                        .filter(|source| children.contains(source))
+                    else {
                         definitions_complete = false;
                         break;
                     };
@@ -2892,7 +2889,7 @@ mod detached_legacy_sketch_tests {
             parent: "history".into(),
             xml_tag: "Sketch".into(),
             tree_parent: None,
-            source_id: Some("30".into()),
+            source_id: FeatureSource::from_value(30),
             ordinal: 30,
             name: "profile".into(),
             kind: "ProfileFeature".into(),

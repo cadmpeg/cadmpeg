@@ -258,7 +258,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .collect()
 }
 
-pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, String> {
+pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<u32, String> {
     let mut candidates = HashMap::<u32, Option<String>>::new();
     for section in scan.sections() {
         for (source, class) in scene_classes(section.payload()) {
@@ -274,7 +274,7 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, Str
     }
     candidates
         .into_iter()
-        .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
+        .filter_map(|(source, class)| class.map(|class| (source, class)))
         .collect()
 }
 

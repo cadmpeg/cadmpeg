@@ -1,6 +1,7 @@
 //! Tests for the `parameters` module.
 
 use super::*;
+use crate::records::FeatureSource;
 use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole,
@@ -177,7 +178,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("1738".into()),
+        source_id: FeatureSource::from_value(1738),
         ordinal: 0,
         name: "Sketch".into(),
         kind: "Sketch".into(),
@@ -191,7 +192,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     };
     let mut later_feature = feature.clone();
     later_feature.id = "later-feature".into();
-    later_feature.source_id = Some("2000".into());
+    later_feature.source_id = FeatureSource::from_value(2000);
     later_feature.name = "Later".into();
     later_feature.parameters.clear();
     let mut histories = vec![FeatureHistory {

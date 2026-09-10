@@ -1,6 +1,7 @@
 //! Tests for the `operations` module.
 
 use super::*;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
@@ -14,7 +15,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: source.parse().expect("required invariant"),
         name: id.into(),
         kind: "Split Line".into(),
@@ -114,7 +115,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
 
     let mut duplicate_sketch = history.features[1].clone();
     duplicate_sketch.id = "duplicate-sketch".into();
-    duplicate_sketch.source_id = Some("20".into());
+    duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
     enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
@@ -542,7 +543,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("1".into()),
+        source_id: FeatureSource::from_value(1),
         ordinal: 0,
         name: id.into(),
         kind: "operation".into(),

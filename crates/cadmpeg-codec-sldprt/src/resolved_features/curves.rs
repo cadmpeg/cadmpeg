@@ -1282,7 +1282,7 @@ pub(super) fn sketch_plane_frames(
                     .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?
                     .id
                     .clone(),
-                feature.source_id.as_deref()?.parse::<u32>().ok()?,
+                feature.source_value()?,
             ))
         })
         .collect::<HashMap<_, _>>();

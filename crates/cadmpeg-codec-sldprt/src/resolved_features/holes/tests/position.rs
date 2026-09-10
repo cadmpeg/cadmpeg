@@ -14,6 +14,7 @@ use cadmpeg_ir::sketches::{
 };
 
 use super::super::*;
+use crate::records::FeatureSource;
 use crate::records::{
     FeatureInputClass, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
@@ -556,7 +557,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -814,7 +815,7 @@ fn unique_unindexed_point_locus_is_projected() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -938,7 +939,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1091,7 +1092,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1202,7 +1203,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("6".into()),
+        source_id: FeatureSource::from_value(6),
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1348,7 +1349,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("9".into()),
+        source_id: FeatureSource::from_value(9),
         ordinal: 1,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1418,7 +1419,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     histories[0].features[1].ordinal = 5;
     let mut next_hole = histories[0].features[0].clone();
     next_hole.id = "next-hole".into();
-    next_hole.source_id = Some("20".into());
+    next_hole.source_id = FeatureSource::from_value(20);
     next_hole.ordinal = 1;
     histories[0].features.push(next_hole);
     enrich_history_hole_constructions(&mut histories, &[]);
@@ -1436,7 +1437,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
-    position.source_id = Some("12".into());
+    position.source_id = FeatureSource::from_value(12);
     position.ordinal = 5;
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();
@@ -1449,7 +1450,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("58".into()),
+        source_id: FeatureSource::from_value(58),
         ordinal: 9,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1503,7 +1504,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     history.features[0].properties.remove("DissectableChildren");
     let mut alternate_profile = profile;
     alternate_profile.id = "alternate-profile-sketch".into();
-    alternate_profile.source_id = Some("59".into());
+    alternate_profile.source_id = FeatureSource::from_value(59);
     alternate_profile.ordinal = 10;
     history.features.push(alternate_profile);
     let mut alternate_lane = lane_with_position_reference(12);
@@ -1545,7 +1546,7 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
-    position.source_id = Some("8".into());
+    position.source_id = FeatureSource::from_value(8);
     position.ordinal = 1;
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();

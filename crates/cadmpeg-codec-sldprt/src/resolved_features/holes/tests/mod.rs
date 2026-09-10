@@ -10,6 +10,7 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
+use crate::records::FeatureSource;
 use crate::records::{
     FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
 };
@@ -95,7 +96,7 @@ fn native_history() -> FeatureHistory {
             parent: "history".into(),
             xml_tag: "HoleWizard".into(),
             tree_parent: None,
-            source_id: Some("7".into()),
+            source_id: FeatureSource::from_value(7),
             ordinal: 0,
             name: "Hole".into(),
             kind: "HoleWizard".into(),

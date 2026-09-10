@@ -1208,7 +1208,10 @@ fn semantic_writer_preserves_parametric_history() {
     assert_eq!(history.features.len(), 2);
     assert_eq!(history.features[0].kind, "BossExtrude");
     assert_eq!(history.features[0].parameters["Depth"], "15mm");
-    assert_eq!(history.features[1].parent_source_id(), Some("7"));
+    assert_eq!(
+        history.features[1].parent_source_id(),
+        crate::records::FeatureSource::from_value(7)
+    );
 }
 
 #[test]

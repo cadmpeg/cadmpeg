@@ -96,7 +96,7 @@ pub(crate) fn enrich_history_reference_planes(
             history
                 .features
                 .iter()
-                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .filter_map(|feature| feature.source_value())
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
@@ -106,12 +106,7 @@ pub(crate) fn enrich_history_reference_planes(
             history
                 .features
                 .iter()
-                .filter_map(|feature| {
-                    Some((
-                        feature.source_id.as_deref()?.parse::<u32>().ok()?,
-                        feature.id.clone(),
-                    ))
-                })
+                .filter_map(|feature| Some((feature.source_value()?, feature.id.clone())))
                 .collect::<HashMap<_, _>>()
         })
         .collect::<Vec<_>>();
@@ -122,7 +117,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .features
                 .iter()
                 .filter(|feature| classify(feature) == Some(FeatureClass::ReferencePlane))
-                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .filter_map(|feature| feature.source_value())
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
@@ -161,10 +156,7 @@ pub(crate) fn enrich_history_reference_planes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let self_source = feature
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok());
+            let self_source = feature.source_value();
             if let Some(source) = offset_plane_reference_source(
                 bytes,
                 &known_sources[history_index],
@@ -345,7 +337,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .filter_map(move |(feature_index, feature)| {
                     let reference = feature
                         .source_id
-                        .clone()
+                        .map(String::from)
                         .unwrap_or_else(|| feature.id.clone());
                     Some((
                         reference,
@@ -363,7 +355,7 @@ pub(crate) fn enrich_history_reference_planes(
         (
             feature
                 .source_id
-                .clone()
+                .map(String::from)
                 .unwrap_or_else(|| feature.id.clone()),
             *index,
             *frame,
@@ -1303,11 +1295,7 @@ pub(crate) fn enrich_history_sketch_block_references(
     for history in histories {
         let mut by_source = HashMap::<u32, Option<(usize, NativeClassKind)>>::new();
         for (feature_index, feature) in history.features.iter().enumerate() {
-            let Some(source) = feature
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
-            else {
+            let Some(source) = feature.source_value() else {
                 continue;
             };
             let identity = (
@@ -1573,7 +1561,7 @@ pub(crate) fn enrich_history_reference_axes(
     let known_sources = histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .filter_map(|feature| feature.source_value())
         .collect::<HashSet<_>>();
     for lane in lanes {
         let mut starts =
@@ -1914,11 +1902,7 @@ pub(super) fn legacy_reference_axis_triads(
 ) -> Vec<([usize; 3], [[u32; 2]; 3])> {
     let mut by_source = HashMap::<u32, Option<usize>>::new();
     for (index, feature) in features.iter().enumerate() {
-        let Some(source) = feature
-            .source_id
-            .as_deref()
-            .and_then(|value| value.parse::<u32>().ok())
-        else {
+        let Some(source) = feature.source_value() else {
             continue;
         };
         by_source
@@ -1929,7 +1913,7 @@ pub(super) fn legacy_reference_axis_triads(
     features
         .iter()
         .filter_map(|first| {
-            let source = first.source_id.as_deref()?.parse::<u32>().ok()?;
+            let source = first.source_value()?;
             let indices = (0..6)
                 .map(|offset| {
                     by_source
@@ -1959,7 +1943,7 @@ pub(super) fn legacy_reference_axis_triads(
             }
             let sources = records
                 .iter()
-                .map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .map(|feature| feature.source_value())
                 .collect::<Option<Vec<_>>>()?;
             Some((
                 [indices[3], indices[4], indices[5]],

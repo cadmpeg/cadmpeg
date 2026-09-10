@@ -1779,7 +1779,7 @@ pub(crate) fn validate_feature_graph(
     }
     let by_id = features
         .iter()
-        .filter_map(|feature| feature.source_id.as_ref().map(|id| (id.as_str(), feature)))
+        .filter_map(|feature| Some((feature.source_id?, feature)))
         .collect::<HashMap<_, _>>();
     if by_id.len()
         != features
@@ -1804,7 +1804,7 @@ pub(crate) fn validate_feature_graph(
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
             let node = by_id
-                .get(id)
+                .get(&id)
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
             parent = node.parent_source_id();
         }
@@ -1839,8 +1839,8 @@ fn write_feature_xml(
 ) {
     out.push('<');
     out.push_str(&feature.xml_tag);
-    if let Some(id) = &feature.source_id {
-        xml_attribute(out, "id", id);
+    if let Some(id) = feature.source_id {
+        xml_attribute(out, "id", &String::from(id));
     }
     xml_attribute(out, "Name", &feature.name);
     xml_attribute(out, "Type", &feature.kind);
@@ -1868,7 +1868,7 @@ fn write_feature_xml(
         .filter(|child| {
             child.tree_parent_record_id() == Some(feature.id.as_str())
                 || (child.tree_parent_record_id().is_none()
-                    && child.parent_source_id() == feature.source_id.as_deref()
+                    && child.parent_source_id() == feature.source_id
                     && feature.source_id.is_some())
         })
         .collect::<Vec<_>>();

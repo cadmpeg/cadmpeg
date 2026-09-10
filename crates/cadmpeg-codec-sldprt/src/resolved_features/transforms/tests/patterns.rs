@@ -3,6 +3,7 @@
 use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -29,7 +30,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: name.into(),
         kind: String::new(),

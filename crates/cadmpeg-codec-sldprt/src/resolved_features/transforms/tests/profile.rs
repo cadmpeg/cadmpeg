@@ -3,6 +3,7 @@
 use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -336,7 +337,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: source_id.parse().expect("required invariant"),
         name: name.into(),
         kind: String::new(),
@@ -662,7 +663,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         parent: "history".into(),
         xml_tag: "Sketch".into(),
         tree_parent: None,
-        source_id: Some("1".into()),
+        source_id: FeatureSource::from_value(1),
         ordinal: 1,
         name: "generated-profile".into(),
         kind: String::new(),

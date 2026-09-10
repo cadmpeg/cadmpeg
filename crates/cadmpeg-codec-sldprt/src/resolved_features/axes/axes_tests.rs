@@ -7,6 +7,7 @@ use super::super::{
 };
 use super::*;
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputLane, FeatureInputName, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
@@ -999,7 +1000,7 @@ fn revolution_consumes_the_preceding_profile_object() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: 0,
         name: id.into(),
         kind: String::new(),

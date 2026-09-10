@@ -2,6 +2,7 @@
 //! `SolidWorks` parametric construction-history records.
 #![deny(clippy::disallowed_methods)]
 
+use crate::brep::feature_source::FeatureSourceId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -141,14 +142,77 @@ fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
 
+/// A native feature-object identifier, or the reserved marker the source writes on records
+/// that carry no object identity of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(crate) enum FeatureSource {
+    /// The reserved `-1` marker.
+    Reserved,
+    /// A native feature-object identifier.
+    Id(FeatureSourceId),
+}
+
+impl FeatureSource {
+    /// The native identifier, when this source is not the reserved marker.
+    pub(crate) fn id(self) -> Option<FeatureSourceId> {
+        match self {
+            Self::Reserved => None,
+            Self::Id(id) => Some(id),
+        }
+    }
+
+    /// The native identifier value, when this source is not the reserved marker.
+    pub(crate) fn value(self) -> Option<u32> {
+        self.id().map(FeatureSourceId::value)
+    }
+
+    /// The source for a native identifier value, when the value is a real identifier.
+    pub(crate) fn from_value(value: u32) -> Option<Self> {
+        FeatureSourceId::try_from(value).ok().map(Self::Id)
+    }
+}
+
+impl TryFrom<&str> for FeatureSource {
+    type Error = &'static str;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value == RESERVED_FEATURE_SOURCE {
+            return Ok(Self::Reserved);
+        }
+        value
+            .parse::<u32>()
+            .map_err(|_| "source_id is not a native feature-object identifier")
+            .and_then(|value| FeatureSourceId::try_from(value).map(Self::Id))
+    }
+}
+
+impl TryFrom<String> for FeatureSource {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_str())
+    }
+}
+
+impl From<FeatureSource> for String {
+    fn from(value: FeatureSource) -> Self {
+        match value {
+            FeatureSource::Reserved => RESERVED_FEATURE_SOURCE.to_string(),
+            FeatureSource::Id(id) => id.value().to_string(),
+        }
+    }
+}
+
+/// The wire spelling of the reserved feature-source marker.
+const RESERVED_FEATURE_SOURCE: &str = "-1";
+
 /// A construction-tree parent reference.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TreeParent {
     Record {
         record_id: String,
-        source_id: Option<String>,
+        source_id: Option<FeatureSource>,
     },
-    Source(String),
+    Source(FeatureSource),
 }
 
 impl TreeParent {
@@ -159,10 +223,10 @@ impl TreeParent {
         }
     }
 
-    pub(crate) fn source_id(&self) -> Option<&str> {
+    pub(crate) fn source_id(&self) -> Option<FeatureSource> {
         match self {
-            Self::Record { source_id, .. } => source_id.as_deref(),
-            Self::Source(source_id) => Some(source_id),
+            Self::Record { source_id, .. } => *source_id,
+            Self::Source(source_id) => Some(*source_id),
         }
     }
 }
@@ -176,7 +240,7 @@ mod tree_parent_wire {
         #[serde(default)]
         tree_parent: Option<String>,
         #[serde(default)]
-        parent_source_id: Option<String>,
+        parent_source_id: Option<super::FeatureSource>,
     }
 
     // Serde's field adapter borrows the complete optional parent field.
@@ -191,7 +255,7 @@ mod tree_parent_wire {
                 map.serialize_entry("tree_parent", record)?;
             }
             if let Some(source) = parent.source_id() {
-                map.serialize_entry("parent_source_id", source)?;
+                map.serialize_entry("parent_source_id", &source)?;
             }
         }
         map.end()
@@ -217,8 +281,13 @@ impl Feature {
         self.tree_parent.as_ref().and_then(TreeParent::record_id)
     }
 
-    pub(crate) fn parent_source_id(&self) -> Option<&str> {
+    pub(crate) fn parent_source_id(&self) -> Option<FeatureSource> {
         self.tree_parent.as_ref().and_then(TreeParent::source_id)
+    }
+
+    /// The native identifier of this feature, when it carries a real one.
+    pub(crate) fn source_value(&self) -> Option<u32> {
+        self.source_id.and_then(FeatureSource::value)
     }
 }
 
@@ -237,7 +306,7 @@ pub(crate) struct Feature {
     pub(crate) tree_parent: Option<TreeParent>,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source_id: Option<String>,
+    pub(crate) source_id: Option<FeatureSource>,
     /// Position of this feature in the construction-history timeline, in
     /// regeneration order.
     pub(crate) ordinal: u32,

@@ -6,6 +6,7 @@ use super::super::super::component_paths::{
 use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use super::super::*;
 use crate::classification::FeatureClass;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -541,7 +542,7 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: source_id.map(|source_id| source_id.to_string()),
+            source_id: source_id.and_then(FeatureSource::from_value),
             ordinal,
             name: name.into(),
             kind: "Feature".into(),
@@ -883,7 +884,7 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("37".into()),
+        source_id: FeatureSource::from_value(37),
         ordinal: 0,
         name: "VarFillet1".into(),
         kind: "VarFillet".into(),
