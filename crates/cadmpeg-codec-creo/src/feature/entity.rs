@@ -70,7 +70,14 @@ impl FeatureEntityTable {
 #[cfg(test)]
 impl FeatureEntityTable {
     pub(crate) fn mark_surface_ids(&mut self, surface_ids: impl IntoIterator<Item = u32>) {
-        self.surface_ids = surface_ids.into_iter().collect();
+        let model_surface_ids = surface_ids.into_iter().collect();
+        *self = Self::new(
+            self.feature_id,
+            self.table_class_id,
+            std::mem::take(&mut self.entries),
+            &model_surface_ids,
+            self.offset,
+        );
     }
 
     pub(crate) fn with_surface_ids(mut self, surface_ids: impl IntoIterator<Item = u32>) -> Self {
@@ -79,11 +86,15 @@ impl FeatureEntityTable {
     }
 
     pub(crate) fn mark_surface_id(&mut self, entity_id: u32) {
-        self.surface_ids.insert(entity_id);
+        let mut model_surface_ids = std::mem::take(&mut self.surface_ids);
+        model_surface_ids.insert(entity_id);
+        self.mark_surface_ids(model_surface_ids);
     }
 
     pub(crate) fn unmark_surface_id(&mut self, entity_id: u32) {
-        self.surface_ids.remove(&entity_id);
+        let mut model_surface_ids = std::mem::take(&mut self.surface_ids);
+        model_surface_ids.remove(&entity_id);
+        self.mark_surface_ids(model_surface_ids);
     }
 }
 
