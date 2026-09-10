@@ -172,8 +172,8 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
     );
     let chained_curve = {
         let mut constructed_marker = point.clone();
-        constructed_marker.id = "chained-curve".into();
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.set_test_id("chained-curve");
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker
     };
     assert_eq!(
@@ -186,14 +186,14 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
     payload[74..84].copy_from_slice(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     payload[126..130].copy_from_slice(&4u32.to_le_bytes());
     let direct_curve = {
         let mut constructed_marker = curve.clone();
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker
     };
     assert_eq!(
@@ -205,7 +205,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
     payload[126..130].fill(0);
@@ -220,7 +220,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
     payload[126..130].copy_from_slice(&4u32.to_le_bytes());
     let duplicate = {
         let mut constructed_marker = point.clone();
-        constructed_marker.id = "duplicate".into();
+        constructed_marker.set_test_id("duplicate");
         constructed_marker
     };
     assert_eq!(
@@ -342,7 +342,7 @@ fn compact_indexed_curve_stores_endpoints_in_both_generations() {
         Some([7, 11])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -456,7 +456,7 @@ fn extended_direct_object_line_uses_exact_point_identities() {
     };
     let curve = {
         let mut constructed_marker = entity("curve", Some(2), None);
-        constructed_marker.kind = SketchInputKind::LineOrCircle;
+        constructed_marker.reclassify(SketchInputKind::LineOrCircle);
         constructed_marker
     };
     let implicit = entity("implicit", None, Some([1.0, 2.0]));
@@ -464,12 +464,12 @@ fn extended_direct_object_line_uses_exact_point_identities() {
     let markers = [&curve, &implicit, &explicit];
     assert_eq!(
         extended_direct_object_line_endpoints(&payload, &curve, &markers)
-            .map(|endpoints| endpoints.map(|endpoint| endpoint.id.as_str())),
+            .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
         Some(["implicit", "explicit"])
     );
     let arc = {
         let mut constructed_marker = curve.clone();
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker
     };
     assert_eq!(
@@ -484,11 +484,11 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         vec![
             SketchInputLink {
                 local_id: 5,
-                entity_ref: wrong_first.id.clone(),
+                entity_ref: wrong_first.id().to_string(),
             },
             SketchInputLink {
                 local_id: 6,
-                entity_ref: wrong_second.id.clone(),
+                entity_ref: wrong_second.id().to_string(),
             },
         ],
     );
@@ -501,12 +501,12 @@ fn extended_direct_object_line_uses_exact_point_identities() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_curve_endpoint_markers(&payload, &linked_curve, &markers_by_id, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["implicit", "explicit"]
     );
@@ -672,7 +672,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
@@ -682,7 +682,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
@@ -709,7 +709,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
@@ -725,7 +725,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit-fourteen", "explicit"]
     );
@@ -733,7 +733,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit-fourteen", "explicit"]
     );
@@ -748,7 +748,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit", "explicit-fourteen"]
     );
@@ -762,7 +762,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
@@ -817,7 +817,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -825,7 +825,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -922,7 +922,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 84..curve_offset + 92].fill(0);
     let mut centered_entities = entities.clone();
     centered_entities[0].coordinates_m = Some([0.0, 0.0]);
-    centered_entities[0].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    centered_entities[0].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     centered_entities[1].coordinates_m = Some([1.0, 0.0]);
     centered_entities[2].coordinates_m = Some([0.0, 1.0]);
     let centered_markers = centered_entities.iter().collect::<Vec<_>>();
@@ -937,7 +937,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     );
     let mut hybrid_entities = centered_entities.clone();
     let mut additional_endpoint = hybrid_entities[2].clone();
-    additional_endpoint.id.push_str(":additional");
+    additional_endpoint.set_test_id(format!("{}:additional", additional_endpoint.id()));
     additional_endpoint = additional_endpoint.with_test_position(
         additional_endpoint.ordinal(),
         additional_endpoint.offset() + 1,
@@ -1030,7 +1030,8 @@ fn wide_profile_curves_index_the_coordinate_roster() {
 
     let mut complete_roster_entities = entities.clone();
     complete_roster_entities[0].coordinates_m = None;
-    complete_roster_entities[0].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    complete_roster_entities[0]
+        .reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let complete_roster_markers = complete_roster_entities.iter().collect::<Vec<_>>();
     assert_eq!(
         roster_curve_endpoint_markers(
@@ -1133,14 +1134,14 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[4], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &entities[4], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
@@ -1227,7 +1228,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[4], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
@@ -1317,7 +1318,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[8], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["point5", "point7"]
     );

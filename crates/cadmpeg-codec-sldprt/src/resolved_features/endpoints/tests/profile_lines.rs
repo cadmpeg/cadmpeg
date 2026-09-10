@@ -97,7 +97,7 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -210,7 +210,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&profile_payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["second", "third"]
     );
@@ -223,7 +223,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&code_one_payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["second", "coordinate-curve"]
     );
@@ -246,7 +246,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&construction_payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["coordinate-curve", "fourth"]
     );
@@ -263,7 +263,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&construction_zero_payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "fourth"]
     );
@@ -332,18 +332,18 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -388,7 +388,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
 
     let mut point_roster = relation_roster.clone();
     for marker in point_roster.iter_mut().skip(1) {
-        marker.kind = SketchInputKind::Point;
+        marker.reclassify(SketchInputKind::Point);
         marker.coordinates_m = Some([0.0, 0.0]);
     }
     let point_markers = point_roster.iter().collect::<Vec<_>>();
@@ -515,7 +515,7 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "first"]
     );
@@ -616,7 +616,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
         .collect::<Vec<_>>();
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     payload[58..60].copy_from_slice(&9u16.to_le_bytes());
     let record = payload[..84].to_vec();
@@ -625,7 +625,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
     assert_eq!(
         marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["marker-4", "marker-8"]
     );
@@ -671,12 +671,12 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
     let markers = [&curve, &first, &second];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -685,7 +685,7 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
     let ambiguous_markers = [&curve, &first, &second, &duplicate];
     let ambiguous_by_id = ambiguous_markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert!(
         marker_curve_endpoint_markers(&payload, &curve, &ambiguous_by_id, &ambiguous_markers,)
@@ -748,7 +748,7 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -815,7 +815,7 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["second", "first"]
     );
@@ -896,7 +896,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "third"]
     );
@@ -911,7 +911,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "third"]
     );
@@ -929,7 +929,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "fourth"]
     );
@@ -944,7 +944,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["fourth", "first"]
     );
@@ -955,7 +955,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "fourth"]
     );
@@ -971,7 +971,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "fourth"]
     );
@@ -1030,7 +1030,7 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "third"]
     );
@@ -1096,7 +1096,7 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "third"]
     );
@@ -1144,7 +1144,7 @@ fn legacy_referenced_wide_arc_indexes_center_and_endpoints() {
     );
     assert!(super::indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -1234,7 +1234,7 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1250,7 +1250,7 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1268,7 +1268,7 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1399,7 +1399,7 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "third"]
     );
@@ -1491,7 +1491,7 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "third"]
     );
@@ -1568,7 +1568,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&short, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["center", "second"]
     );
@@ -1581,7 +1581,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&long, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1660,7 +1660,7 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "third"]
     );
@@ -1746,7 +1746,7 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "third"]
     );

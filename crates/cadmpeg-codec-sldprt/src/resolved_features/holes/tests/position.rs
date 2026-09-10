@@ -122,7 +122,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     )));
 
     for marker in &mut lane.sketch_entities {
-        marker.kind = SketchInputKind::Arc;
+        marker.reclassify(SketchInputKind::Arc);
     }
     lane.sketch_entities.extend([
         {
@@ -348,7 +348,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
 
     let paired = paired_object_locus_markers(&lane, "position")
         .into_iter()
-        .map(|marker| marker.id.as_str())
+        .map(crate::records::SketchInputEntity::id)
         .collect::<Vec<_>>();
     assert_eq!(paired, ["first", "second", "paired-duplicate"]);
 
@@ -649,7 +649,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 1;
         let offset = 90;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "origin-marker".into();
+        constructed_marker.set_test_id("origin-marker");
         constructed_marker =
             constructed_marker.with_test_identity(None, constructed_marker.local_id());
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
@@ -660,7 +660,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 4;
         let offset = 120;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "point-identity".into();
+        constructed_marker.set_test_id("point-identity");
         constructed_marker =
             constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
         constructed_marker.coordinates_m = None;
@@ -671,10 +671,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 2;
         let offset = 100;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "authored-arc-locus".into();
+        constructed_marker.set_test_id("authored-arc-locus");
         constructed_marker =
             constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker.coordinates_m = Some([0.014, 0.025]);
         constructed_marker
     });
@@ -683,10 +683,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 3;
         let offset = 110;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "arc-origin-marker".into();
+        constructed_marker.set_test_id("arc-origin-marker");
         constructed_marker =
             constructed_marker.with_test_identity(None, constructed_marker.local_id());
-        constructed_marker.kind = SketchInputKind::Point;
+        constructed_marker.reclassify(SketchInputKind::Point);
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker
     });
@@ -718,7 +718,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let mut features = vec![hole, sketch_feature];
     let mut paired_lane = lane.clone();
     paired_lane.sketch_entities.truncate(4);
-    paired_lane.sketch_entities[0].kind = SketchInputKind::Arc;
+    paired_lane.sketch_entities[0].reclassify(SketchInputKind::Arc);
     paired_lane.sketch_entities[0].coordinates_m = Some([0.012, 0.023]);
     let mut alternate_configuration = lane.clone();
     alternate_configuration.id = "alternate-lane".into();
@@ -815,10 +815,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         let ordinal = 4;
         let offset = 120;
         constructed_marker = constructed_marker.with_test_position(ordinal, offset);
-        constructed_marker.id = "unpaired-object-locus".into();
+        constructed_marker.set_test_id("unpaired-object-locus");
         constructed_marker =
             constructed_marker.with_test_identity(Some(3), constructed_marker.local_id());
-        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.reclassify(SketchInputKind::Arc);
         constructed_marker.coordinates_m = Some([0.016, 0.027]);
         constructed_marker
     });

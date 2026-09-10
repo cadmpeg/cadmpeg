@@ -48,7 +48,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
         None,
         vec![SketchInputLink {
             local_id: 2,
-            entity_ref: second.id.clone(),
+            entity_ref: second.id().to_string(),
         }],
     );
     let relation = |id: &str, other: &SketchInputEntity| {
@@ -60,11 +60,11 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
             vec![
                 SketchInputLink {
                     local_id: 1,
-                    entity_ref: other.id.clone(),
+                    entity_ref: other.id().to_string(),
                 },
                 SketchInputLink {
                     local_id: 2,
-                    entity_ref: second.id.clone(),
+                    entity_ref: second.id().to_string(),
                 },
             ],
         )
@@ -72,14 +72,14 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
     let radius = relation("radius", &first);
     let markers_by_id = [&first, &second, &third, &line, &radius]
         .into_iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius];
 
     assert_eq!(
         output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -87,7 +87,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
     let competing = relation("competing", &third);
     let markers_by_id = [&first, &second, &third, &line, &radius, &competing]
         .into_iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius, &competing];
     assert_ne!(
@@ -138,7 +138,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
         None,
         vec![SketchInputLink {
             local_id: 2,
-            entity_ref: second.id.clone(),
+            entity_ref: second.id().to_string(),
         }],
     );
     let line_object_index = line.object_index();
@@ -151,11 +151,11 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
             vec![
                 SketchInputLink {
                     local_id: 1,
-                    entity_ref: other.id.clone(),
+                    entity_ref: other.id().to_string(),
                 },
                 SketchInputLink {
                     local_id: 2,
-                    entity_ref: second.id.clone(),
+                    entity_ref: second.id().to_string(),
                 },
             ],
         )
@@ -168,20 +168,20 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
             .cloned()
             .chain(std::iter::once(SketchInputLink {
                 local_id: 1,
-                entity_ref: radius.id.clone(),
+                entity_ref: radius.id().to_string(),
             }))
             .collect(),
     );
     let markers_by_id = [&first, &second, &third, &line, &radius]
         .into_iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius];
 
     assert_eq!(
         output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -189,7 +189,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
     let competing = relation("competing", &third);
     let markers_by_id = [&first, &second, &third, &line, &radius, &competing]
         .into_iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius, &competing];
     assert_ne!(
@@ -253,11 +253,11 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
             vec![
                 SketchInputLink {
                     local_id: 3,
-                    entity_ref: relation.id.clone(),
+                    entity_ref: relation.id().to_string(),
                 },
                 SketchInputLink {
                     local_id: 2,
-                    entity_ref: point.id.clone(),
+                    entity_ref: point.id().to_string(),
                 },
             ],
         );
@@ -266,7 +266,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
     let markers = [&curve, &point, &relation];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
 
     for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
@@ -280,7 +280,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         assert_eq!(
             marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
                 .into_iter()
-                .map(|marker| marker.id.as_str())
+                .map(crate::records::SketchInputEntity::id)
                 .collect::<Vec<_>>(),
             ["curve", "point"]
         );
@@ -348,7 +348,7 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         vec!["first", "second"]
     );
@@ -383,7 +383,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
         Some([1, 3])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
@@ -442,7 +442,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         vec!["first", "second"]
     );
@@ -523,7 +523,7 @@ fn compact_legacy_embedded_geometry_preserves_coordinate_roster_ordinals() {
     assert_eq!(
         entities
             .iter()
-            .map(|entity| entity.kind)
+            .map(crate::records::SketchInputEntity::kind)
             .collect::<Vec<_>>(),
         vec![
             SketchInputKind::Point,
@@ -611,7 +611,7 @@ fn compact_legacy_geometry_locus_carries_curve_endpoint_indices() {
     );
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 
     payload[68..].fill(0);
     payload.resize(90 + LEGACY_SKETCH_MARKER.len(), 0);
@@ -780,7 +780,7 @@ fn compact_curve_uses_one_based_endpoint_indices() {
 
         assert_eq!(compact_curve_endpoint_indices(&payload, 0), Some([7, 12]));
         assert_eq!(
-            sketch_input_entities(&payload, "lane")[0].kind,
+            sketch_input_entities(&payload, "lane")[0].kind(),
             SketchInputKind::LineOrCircle
         );
     }
@@ -997,7 +997,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     };
     let curve = {
         let mut constructed_marker = marker("curve", 0, Some(1), None);
-        constructed_marker.kind = SketchInputKind::LineOrCircle;
+        constructed_marker.reclassify(SketchInputKind::LineOrCircle);
         constructed_marker.coordinates_m = None;
         constructed_marker
     };
@@ -1010,24 +1010,18 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         payload[84..84 + prefix.len()].copy_from_slice(prefix);
         let pair = compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
             .expect("complete marker roster endpoints");
-        assert_eq!(
-            [pair[0].id.as_str(), pair[1].id.as_str()],
-            ["first", "second"]
-        );
+        assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     }
 
     let mut terminal = payload[..84].to_vec();
     terminal[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     let pair = compact_complete_marker_roster_pair(&terminal, &curve, &markers, true)
         .expect("terminal complete marker roster endpoints");
-    assert_eq!(
-        [pair[0].id.as_str(), pair[1].id.as_str()],
-        ["first", "second"]
-    );
+    assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     assert_eq!(
         roster_curve_endpoint_markers(&terminal, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1035,7 +1029,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1095,7 +1089,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
     };
     let curve = {
         let mut constructed_marker = marker("curve", 0, None);
-        constructed_marker.kind = SketchInputKind::LineOrCircle;
+        constructed_marker.reclassify(SketchInputKind::LineOrCircle);
         constructed_marker.coordinates_m = None;
         constructed_marker
     };
@@ -1106,12 +1100,12 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
 
     assert_eq!(
         compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
-            .map(|pair| [pair[0].id.as_str(), pair[1].id.as_str()]),
+            .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["first", "second"])
     );
     assert_eq!(
         compact_complete_marker_roster_pair(&payload, &curve, &markers, false)
-            .map(|pair| [pair[0].id.as_str(), pair[1].id.as_str()]),
+            .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["second", "third"])
     );
     assert!(super::compact_complete_marker_roster_endpoints(&payload, &curve, &markers).is_empty());
@@ -1167,7 +1161,7 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1221,7 +1215,7 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["second", "third"]
     );
@@ -1289,7 +1283,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1367,7 +1361,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1378,7 +1372,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     assert_eq!(
         selected
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -1387,7 +1381,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     assert_eq!(
         reversed
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );

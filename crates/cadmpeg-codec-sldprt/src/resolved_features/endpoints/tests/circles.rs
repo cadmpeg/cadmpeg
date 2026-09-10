@@ -299,7 +299,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[104..].copy_from_slice(SKETCH_MARKER);
     let mut current_circle = entities[3].clone();
-    current_circle.kind = SketchInputKind::Arc;
+    current_circle.reclassify(SketchInputKind::Arc);
     assert_eq!(
         super::compact_profile_full_circle(&payload, &current_circle, &markers),
         Some(([0.0, 0.0], 3.0))
@@ -880,7 +880,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[112..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     let mut extended_circle = entities[3].clone();
-    extended_circle.kind = SketchInputKind::LineOrCircle;
+    extended_circle.reclassify(SketchInputKind::LineOrCircle);
     assert_eq!(
         super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
         Some(([2.0, 3.0], 5.0))
@@ -899,7 +899,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     terminal[142..153].copy_from_slice(b"sgCircleDim");
     terminal[64..68].copy_from_slice(&[0x03, 0x00, 0x03, 0x00]);
     let mut terminal_entities = entities.clone();
-    terminal_entities[0].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    terminal_entities[0].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let terminal_markers = terminal_entities.iter().collect::<Vec<_>>();
     assert_eq!(
         super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),

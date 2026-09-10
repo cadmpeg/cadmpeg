@@ -88,7 +88,7 @@ fn feature_input_lane(
             });
         crate::annotations::note(
             annotations,
-            entity.id.clone(),
+            entity.id(),
             section,
             entity.offset(),
             signature,

@@ -86,7 +86,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
@@ -98,7 +98,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     )
     .expect("declared entity-handle carrier");
 
-    assert_eq!(carrier.marker.id, "center");
+    assert_eq!(carrier.marker.id(), "center");
     assert_eq!(carrier.center(), [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
@@ -108,7 +108,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     let terminal_markers = terminal_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let terminal_carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&terminal_lane),
@@ -118,14 +118,14 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         5.0,
     )
     .expect("terminal radial address carrier");
-    assert_eq!(terminal_carrier.marker.id, "center");
+    assert_eq!(terminal_carrier.marker.id(), "center");
     assert_eq!(terminal_carrier.center(), [0.010, 0.020]);
 
-    terminal_lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    terminal_lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     let circular_radial_markers = terminal_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let circular_radial_carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&terminal_lane),
@@ -135,7 +135,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         5.0,
     )
     .expect("terminal circular radial address carrier");
-    assert_eq!(circular_radial_carrier.marker.id, "center");
+    assert_eq!(circular_radial_carrier.marker.id(), "center");
     assert_eq!(circular_radial_carrier.center(), [0.010, 0.020]);
 
     let mut ambiguous_lane = lane.clone();
@@ -152,7 +152,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&ambiguous_lane),
@@ -164,11 +164,11 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     .is_none());
 
     let mut direct_lane = ambiguous_lane;
-    direct_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+    direct_lane.sketch_entities[0].reclassify(SketchInputKind::LineOrCircle);
     let direct_markers = direct_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let direct_carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&direct_lane),
@@ -178,7 +178,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         5.0,
     )
     .expect("explicit circular marker remains a carrier");
-    assert_eq!(direct_carrier.marker.id, "wrong");
+    assert_eq!(direct_carrier.marker.id(), "wrong");
     assert_eq!(direct_carrier.construction, Some(false));
 }
 
@@ -246,7 +246,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&lane),
@@ -256,7 +256,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         5.0,
     )
     .expect("indexed radial point carrier");
-    assert_eq!(carrier.marker.id, "center");
+    assert_eq!(carrier.marker.id(), "center");
     assert_eq!(carrier.center(), [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
@@ -268,7 +268,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&ambiguous_lane),
@@ -285,7 +285,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&mismatched_lane),
@@ -364,7 +364,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
@@ -375,7 +375,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         5.0,
     )
     .expect("indexed circle-dimension pair");
-    assert_eq!(carrier.marker.id, "center-1");
+    assert_eq!(carrier.marker.id(), "center-1");
     assert_eq!(carrier.center(), [0.010, 0.010]);
     assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(false));
@@ -390,7 +390,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         5.0,
     )
     .expect("first indexed circle-dimension pair");
-    assert_eq!(first_carrier.marker.id, "center-0");
+    assert_eq!(first_carrier.marker.id(), "center-0");
 
     let mut out_of_range = first_pair.clone();
     out_of_range.entity_index = 2;
@@ -409,7 +409,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&mismatched_lane),
@@ -425,7 +425,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let odd_markers = odd_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&odd_lane),
@@ -445,7 +445,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let missing_center_id_markers = missing_center_id_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&missing_center_id_lane),
@@ -540,7 +540,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let carrier = dimensioned_relation_carrier(
             std::slice::from_ref(&lane),
@@ -550,18 +550,18 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             5.0,
         )
         .expect("explicit point center identity");
-        assert_eq!(carrier.marker.id, "center");
+        assert_eq!(carrier.marker.id(), "center");
         assert_eq!(carrier.center(), [0.010, 0.020]);
         assert!(carrier.curve().is_none());
         assert_eq!(carrier.construction, Some(false));
 
         if strict_point_tag {
             let mut wrong_marker_kind_lane = lane.clone();
-            wrong_marker_kind_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+            wrong_marker_kind_lane.sketch_entities[0].reclassify(SketchInputKind::LineOrCircle);
             let wrong_marker_kind = wrong_marker_kind_lane
                 .sketch_entities
                 .iter()
-                .map(|marker| (marker.id.as_str(), marker))
+                .map(|marker| (marker.id(), marker))
                 .collect::<HashMap<_, _>>();
             assert!(dimensioned_relation_carrier(
                 std::slice::from_ref(&wrong_marker_kind_lane),
@@ -600,7 +600,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let wrong_feature_markers = wrong_feature_lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
             std::slice::from_ref(&wrong_feature_lane),
@@ -616,7 +616,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let nonfinite_markers = nonfinite_lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
             std::slice::from_ref(&nonfinite_lane),
@@ -632,13 +632,13 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         second_lane.classes[0].parent = "lane-2".into();
         second_lane.references[0].parent = "lane-2".into();
         for marker in &mut second_lane.sketch_entities {
-            marker.parent = "lane-2".into();
+            marker.set_test_parent("lane-2");
         }
         let lanes = [lane, second_lane];
         let duplicate_owner_markers = lanes
             .iter()
             .flat_map(|lane| lane.sketch_entities.iter())
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
             &lanes,
@@ -789,7 +789,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&lane),
@@ -799,7 +799,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         7.0,
     )
     .expect("slot handle dimension carrier");
-    assert_eq!(carrier.marker.id, "slot");
+    assert_eq!(carrier.marker.id(), "slot");
     assert_eq!(carrier.center(), [0.016, 0.020]);
     assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(true));
@@ -818,7 +818,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&ambiguous_lane),
@@ -834,7 +834,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let mismatched_center_markers = mismatched_center_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&mismatched_center_lane),
@@ -850,7 +850,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let mismatched_slot_markers = mismatched_slot_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&mismatched_slot_lane),
@@ -970,7 +970,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
@@ -981,7 +981,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         5.0,
     )
     .expect("explicit short arc-handle point carrier");
-    assert_eq!(carrier.marker.id, "carrier");
+    assert_eq!(carrier.marker.id(), "carrier");
     assert_eq!(carrier.center(), [0.01, 0.02]);
     assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(false));
@@ -1001,7 +1001,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     let unrelated_markers = unrelated_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let mut unrelated_operand = operand;
     unrelated_operand.entity_ref = Some("other".into());
@@ -1081,7 +1081,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let carrier = dimensioned_relation_carrier(
             std::slice::from_ref(&lane),
@@ -1092,7 +1092,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         )
         .expect("unlinked declared entity-handle carrier");
 
-        assert_eq!(carrier.marker.id, "circular");
+        assert_eq!(carrier.marker.id(), "circular");
         assert_eq!(carrier.center(), [0.010, 0.020]);
         assert!(matches!(
             carrier.curve(),
@@ -1108,7 +1108,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let missing_witness_markers = missing_witness_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&missing_witness_lane),
@@ -1127,7 +1127,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let point_markers = point_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let point_carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&point_lane),
@@ -1137,7 +1137,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         5.0,
     )
     .expect("point-resolved entity handle carrier");
-    assert_eq!(point_carrier.marker.id, "circular");
+    assert_eq!(point_carrier.marker.id(), "circular");
 
     let mut ambiguous_lane = lane(SketchInputKind::Arc);
     ambiguous_lane.sketch_entities.extend([
@@ -1147,7 +1147,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&ambiguous_lane),
@@ -1242,7 +1242,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
@@ -1254,7 +1254,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     )
     .expect("declared curve child pair");
 
-    assert_eq!(carrier.marker.id, "arc");
+    assert_eq!(carrier.marker.id(), "arc");
     assert_eq!(carrier.center(), [0.0, 0.0]);
     assert!(matches!(
         carrier.curve(),
@@ -1266,7 +1266,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let unbound_markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let unbound_carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&lane),
@@ -1276,7 +1276,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         5.0,
     )
     .expect("scoped child declaration remains authoritative without operand identity");
-    assert_eq!(unbound_carrier.marker.id, "arc");
+    assert_eq!(unbound_carrier.marker.id(), "arc");
 
     let mut multiple_declared = lane.clone();
     multiple_declared.classes.push(FeatureInputClass {
@@ -1289,7 +1289,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let multiple_markers = multiple_declared
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&multiple_declared),
@@ -1305,7 +1305,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let mismatched_markers = mismatched_declared
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&mismatched_declared),
@@ -1486,14 +1486,14 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let operand = FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
             entity_index: 0,
-            entity_ref: Some(center.id.clone()),
+            entity_ref: Some(center.id().to_string()),
         };
         let carrier = dimensioned_relation_carrier(
             std::slice::from_ref(&lane),

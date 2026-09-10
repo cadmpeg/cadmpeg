@@ -62,13 +62,13 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
 
     assert_eq!(
         direct_point_dimension_center(std::slice::from_ref(&lane), "feature", &operand, 5.0)
-            .map(|marker| marker.id.as_str()),
+            .map(crate::records::SketchInputEntity::id),
         Some("center")
     );
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&lane),
@@ -78,7 +78,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         5.0,
     )
     .expect("classless direct point carrier");
-    assert_eq!(carrier.marker.id, "center");
+    assert_eq!(carrier.marker.id(), "center");
     assert_eq!(carrier.construction, Some(false));
 
     let mismatched = FeatureInputOperand {
@@ -109,7 +109,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
             &nonmatching_pair,
             5.0,
         )
-        .map(|marker| marker.id.as_str()),
+        .map(crate::records::SketchInputEntity::id),
         Some("radial")
     );
 
@@ -188,7 +188,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let center = FeatureInputOperand {
         offset: 100,
@@ -205,7 +205,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         5.0,
     )
     .expect("center identity survives a mismatched pair radius");
-    assert_eq!(carrier.marker.id, "center");
+    assert_eq!(carrier.marker.id(), "center");
 
     let radial = FeatureInputOperand {
         entity_index: 0,
@@ -308,7 +308,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let operand = FeatureInputOperand {
         offset: 100,
@@ -326,6 +326,6 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         5.0,
     )
     .expect("the radial identity selects its declared center");
-    assert_eq!(carrier.marker.id, "center-one");
+    assert_eq!(carrier.marker.id(), "center-one");
     assert_eq!(carrier.center(), [0.010, 0.020]);
 }

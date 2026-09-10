@@ -144,7 +144,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                     severity: Severity::Error,
                     message: "SolidWorks sketch-input marker has inconsistent feature ownership"
                         .into(),
-                    entity: Some(entity.id.clone()),
+                    entity: Some(entity.id().to_string()),
                 });
             }
             if entity.links != expected_entity.links {
@@ -152,7 +152,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: "SolidWorks sketch-input marker has inconsistent local links".into(),
-                    entity: Some(entity.id.clone()),
+                    entity: Some(entity.id().to_string()),
                 });
             }
         }

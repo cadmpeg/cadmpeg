@@ -1388,7 +1388,7 @@ fn resolved_feature_payload(
         let field = payload.get_mut(field_start..field_end).ok_or_else(|| {
             CodecError::Malformed("feature-input type field exceeds retained payload".into())
         })?;
-        field.copy_from_slice(&entity.kind.native_code().to_le_bytes());
+        field.copy_from_slice(&entity.kind().native_code().to_le_bytes());
         if let Some(value) = entity.state_value {
             if !value.is_finite() {
                 return Err(CodecError::Malformed(

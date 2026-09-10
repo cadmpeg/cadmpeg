@@ -24,26 +24,26 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     if let ([first_operand, second_operand], [Some(first), Some(second)]) =
         (operands, resolved.as_slice())
     {
-        if first.id == second.id && first_operand.entity_index != second_operand.entity_index {
+        if first.id() == second.id() && first_operand.entity_index != second_operand.entity_index {
             let alternatives = [
                 resolve_operand_marker_excluding(
                     entities.iter().copied(),
                     first_operand.kind,
                     first_operand.entity_index,
-                    &HashSet::from([second.id.clone()]),
+                    &HashSet::from([second.id().to_string()]),
                 )
                 .map(|alternative| [alternative, *second]),
                 resolve_operand_marker_excluding(
                     entities.iter().copied(),
                     second_operand.kind,
                     second_operand.entity_index,
-                    &HashSet::from([first.id.clone()]),
+                    &HashSet::from([first.id().to_string()]),
                 )
                 .map(|alternative| [*first, alternative]),
             ]
             .into_iter()
             .flatten()
-            .filter(|[left, right]| left.id != right.id)
+            .filter(|[left, right]| left.id() != right.id())
             .collect::<Vec<_>>();
             if let [alternative] = alternatives.as_slice() {
                 resolved = alternative.iter().copied().map(Some).collect();
@@ -53,7 +53,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     let resolved_siblings = resolved
         .iter()
         .flatten()
-        .map(|entity| entity.id.clone())
+        .map(|entity| entity.id().to_string())
         .collect::<HashSet<_>>();
     for (operand, target) in operands.iter().zip(&mut resolved) {
         if target.is_none() {
@@ -89,7 +89,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| {
                 matches!(
-                    entity.kind,
+                    entity.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 ) && entity
                     .coordinates_m
@@ -100,7 +100,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         return points
             .get(usize::from(address))
             .copied()
-            .filter(|entity| !excluded.contains(&entity.id));
+            .filter(|entity| !excluded.contains(entity.id()));
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7) {
         // In scalar relations, 81e7 addresses the solver-line roster formed
@@ -116,10 +116,10 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         // proxies; reject every ambiguous candidate set.
         let accepts = |entity: &SketchInputEntity| {
             matches!(
-                entity.kind,
+                entity.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::Relation(_)
             ) || (matches!(
-                entity.kind,
+                entity.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) && entity.coordinates_m.is_none())
         };
@@ -127,7 +127,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .iter()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| accepts(entity))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if entities
             .iter()
@@ -142,7 +142,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .iter()
             .filter(|entity| entity.local_id() == Some(u32::from(address)))
             .filter(|entity| accepts(entity))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         return match local.as_slice() {
             [entity] => Some(*entity),
@@ -157,14 +157,14 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| {
                 matches!(
-                    entity.kind,
+                    entity.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
                         | SketchInputKind::Arc
                 )
             })
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if let [entity] = indexed.as_slice() {
             return Some(*entity);
@@ -178,11 +178,11 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| {
                 matches!(
-                    entity.kind,
+                    entity.kind(),
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
             })
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if let [entity] = indexed.as_slice() {
             return Some(*entity);
@@ -196,11 +196,11 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| {
                 matches!(
-                    entity.kind,
+                    entity.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             })
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         return match indexed.as_slice() {
             [entity] => Some(*entity),
@@ -223,8 +223,8 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| entity.coordinates_m.is_some())
-            .filter(|entity| operand_accepts_marker(kind, entity.kind))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if let [entity] = indexed.as_slice() {
             return Some(*entity);
@@ -244,12 +244,12 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .iter()
             .copied()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| operand_accepts_marker(kind, entity.kind))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if entities.iter().any(|entity| {
             entity.object_index() == Some(u32::from(address))
-                && operand_accepts_marker(kind, entity.kind)
+                && operand_accepts_marker(kind, entity.kind())
         }) {
             return match indexed.as_slice() {
                 [entity] => Some(*entity),
@@ -260,8 +260,8 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .iter()
             .copied()
             .filter(|entity| entity.local_id() == Some(u32::from(address)))
-            .filter(|entity| operand_accepts_marker(kind, entity.kind))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if let [entity] = local.as_slice() {
             return Some(*entity);
@@ -275,8 +275,8 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .iter()
             .copied()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| operand_accepts_marker(kind, entity.kind))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>();
         if let [entity] = indexed.as_slice() {
             return Some(*entity);
@@ -284,13 +284,13 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
             let entities_by_id = entities
                 .iter()
-                .map(|entity| (entity.id.as_str(), *entity))
+                .map(|entity| (entity.id(), *entity))
                 .collect::<HashMap<_, _>>();
             let indexed_line_handles = entities
                 .iter()
                 .copied()
                 .filter(|entity| entity.object_index() == Some(u32::from(address)))
-                .filter(|entity| !excluded.contains(&entity.id))
+                .filter(|entity| !excluded.contains(entity.id()))
                 .filter(|entity| {
                     linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
                 })
@@ -303,14 +303,14 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     let mut compatible = entities
         .iter()
         .copied()
-        .filter(|entity| operand_accepts_marker(kind, entity.kind))
+        .filter(|entity| operand_accepts_marker(kind, entity.kind()))
         .collect::<Vec<_>>();
     compatible.sort_unstable_by_key(|entity| entity.offset());
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
         if let Some(entity) = compatible
             .get(usize::from(address))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
         {
             return Some(*entity);
         }
@@ -326,7 +326,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .iter()
             .copied()
             .filter(|entity| entity.local_id() == Some(u32::from(address)))
-            .filter(|entity| !excluded.contains(&entity.id))
+            .filter(|entity| !excluded.contains(entity.id()))
             .collect::<Vec<_>>()
     };
     match exact.as_slice() {
@@ -335,13 +335,13 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
                 let entities_by_id = entities
                     .iter()
-                    .map(|entity| (entity.id.as_str(), *entity))
+                    .map(|entity| (entity.id(), *entity))
                     .collect::<HashMap<_, _>>();
                 let linked_line_handles = entities
                     .iter()
                     .copied()
                     .filter(|entity| entity.local_id() == Some(u32::from(address)))
-                    .filter(|entity| !excluded.contains(&entity.id))
+                    .filter(|entity| !excluded.contains(entity.id()))
                     .filter(|entity| {
                         linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
                     })
@@ -362,27 +362,27 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                         entities
                             .iter()
                             .copied()
-                            .find(|entity| entity.id == link.entity_ref)
+                            .find(|entity| entity.id() == link.entity_ref)
                     })
-                    .filter(|entity| operand_accepts_marker(kind, entity.kind))
-                    .filter(|entity| !excluded.contains(&entity.id))
+                    .filter(|entity| operand_accepts_marker(kind, entity.kind()))
+                    .filter(|entity| !excluded.contains(entity.id()))
                     .collect::<Vec<_>>()
             } else {
                 Vec::new()
             };
-            indirect.sort_unstable_by_key(|entity| entity.id.as_str());
-            indirect.dedup_by_key(|entity| entity.id.as_str());
+            indirect.sort_unstable_by_key(|entity| entity.id());
+            indirect.dedup_by_key(|entity| entity.id());
             match indirect.as_slice() {
                 [entity] => Some(*entity),
                 [] if point_operand_uses_link_graph(kind) && !excluded.is_empty() && {
                     let linked = linked_point_markers(&entities, address, kind, &HashSet::new());
-                    !linked.is_empty() && linked.iter().all(|entity| excluded.contains(&entity.id))
+                    !linked.is_empty() && linked.iter().all(|entity| excluded.contains(entity.id()))
                 } =>
                 {
                     let remaining = compatible
                         .iter()
                         .copied()
-                        .filter(|entity| !excluded.contains(&entity.id))
+                        .filter(|entity| !excluded.contains(entity.id()))
                         .collect::<Vec<_>>();
                     let [entity] = remaining.as_slice() else {
                         return None;
@@ -398,10 +398,10 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                                     .copied()
                                     .filter(|entity| {
                                         matches!(
-                                            entity.kind,
+                                            entity.kind(),
                                             SketchInputKind::LineOrCircle | SketchInputKind::Arc
                                         ) && entity.local_id() == Some(u32::from(address))
-                                            && !excluded.contains(&entity.id)
+                                            && !excluded.contains(entity.id())
                                     })
                                     .collect::<Vec<_>>()
                             })
@@ -419,10 +419,10 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         _ => unique_marker_candidate(
             &exact
                 .iter()
-                .map(|entity| (entity.id.clone(), entity.coordinates_m.is_some()))
+                .map(|entity| (entity.id().to_string(), entity.coordinates_m.is_some()))
                 .collect::<Vec<_>>(),
         )
-        .and_then(|id| exact.iter().copied().find(|entity| entity.id == id)),
+        .and_then(|id| exact.iter().copied().find(|entity| entity.id() == id)),
     }
 }
 
@@ -438,14 +438,14 @@ fn linked_point_markers<'a>(
 ) -> Vec<&'a SketchInputEntity> {
     let by_id = entities
         .iter()
-        .map(|entity| (entity.id.as_str(), *entity))
+        .map(|entity| (entity.id(), *entity))
         .collect::<HashMap<_, _>>();
     let mut pending = entities
         .iter()
         .copied()
         .filter(|entity| entity.local_id() == Some(u32::from(address)))
-        .filter(|entity| !operand_accepts_marker(kind, entity.kind))
-        .map(|entity| entity.id.as_str())
+        .filter(|entity| !operand_accepts_marker(kind, entity.kind()))
+        .map(super::super::records::SketchInputEntity::id)
         .collect::<Vec<_>>();
     let mut visited = HashSet::new();
     let mut compatible = Vec::new();
@@ -456,7 +456,7 @@ fn linked_point_markers<'a>(
         let Some(entity) = by_id.get(id).copied() else {
             continue;
         };
-        if operand_accepts_marker(kind, entity.kind) && !excluded.contains(&entity.id) {
+        if operand_accepts_marker(kind, entity.kind()) && !excluded.contains(entity.id()) {
             compatible.push(entity);
             continue;
         }
@@ -485,7 +485,7 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     let links = marker
         .links()
         .iter()
-        .filter(|link| link.entity_ref != marker.id)
+        .filter(|link| link.entity_ref != marker.id())
         .collect::<Vec<_>>();
     let [first, second] = links.as_slice() else {
         return None;
@@ -501,17 +501,17 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     let [Some(first), Some(second)] = endpoints else {
         return None;
     };
-    if matches!(marker.kind, SketchInputKind::Relation(_))
+    if matches!(marker.kind(), SketchInputKind::Relation(_))
         && ![first, second].into_iter().all(|endpoint| {
             matches!(
-                endpoint.kind,
+                endpoint.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         })
     {
         return None;
     }
-    (first.id != second.id).then_some([first, second])
+    (first.id() != second.id()).then_some([first, second])
 }
 
 pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
@@ -519,7 +519,7 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<[&'a SketchInputEntity; 2]> {
     if !matches!(
-        marker.kind,
+        marker.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) || marker.coordinates_m.is_none()
     {
@@ -528,19 +528,19 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
     let mut endpoints = marker
         .links()
         .iter()
-        .filter(|link| link.entity_ref != marker.id)
+        .filter(|link| link.entity_ref != marker.id())
         .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
         .filter(|endpoint| {
             endpoint.feature_ref == marker.feature_ref
                 && endpoint.coordinates_m.is_some()
                 && matches!(
-                    endpoint.kind,
+                    endpoint.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
         .collect::<Vec<_>>();
     endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
-    endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
+    endpoints.dedup_by_key(|endpoint| endpoint.id());
     let [endpoint] = endpoints.as_slice() else {
         return None;
     };

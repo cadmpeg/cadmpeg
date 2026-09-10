@@ -1041,7 +1041,7 @@ pub(crate) fn finalize_lane_bindings(
             marker_ids
                 .entry((feature.clone(), local_id))
                 .or_default()
-                .push((entity.id.clone(), entity.coordinates_m.is_some()));
+                .push((entity.id().to_string(), entity.coordinates_m.is_some()));
         }
     }
     for entity in &mut lane.sketch_entities {
@@ -1093,7 +1093,7 @@ pub(crate) fn finalize_lane_bindings(
         };
         let resolved = resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
         for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
-            operand.entity_ref = resolved.map(|entity| entity.id.clone());
+            operand.entity_ref = resolved.map(|entity| entity.id().to_string());
         }
     }
     let scalar_owners = lane
@@ -1424,12 +1424,12 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             .filter(|curve| {
                 legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers)
             })
-            .map(|curve| curve.id.clone())
+            .map(|curve| curve.id().to_string())
             .collect::<HashSet<_>>()
     };
     for marker in &mut lane.sketch_entities {
-        if terminal_lines.contains(&marker.id) {
-            marker.kind = SketchInputKind::LineOrCircle;
+        if terminal_lines.contains(marker.id()) {
+            marker.reclassify(SketchInputKind::LineOrCircle);
         }
     }
     let endpoints = lane
@@ -1476,7 +1476,7 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset()))
             && marker.coordinates_m.is_some()
         {
-            marker.kind = SketchInputKind::Point;
+            marker.reclassify(SketchInputKind::Point);
         }
     }
 }
@@ -1486,7 +1486,7 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
         markers
@@ -1501,26 +1501,26 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
                 marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)
             })
             .filter(|marker| marker.coordinates_m.is_some())
-            .map(|marker| marker.id.clone())
+            .map(|marker| marker.id().to_string())
             .collect::<HashSet<_>>()
     };
     for marker in &mut lane.sketch_entities {
-        if selected_axis_endpoints.contains(marker.id.as_str()) {
-            marker.kind = SketchInputKind::Point;
+        if selected_axis_endpoints.contains(marker.id()) {
+            marker.reclassify(SketchInputKind::Point);
         }
     }
     loop {
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
         let mut resolved_curves = HashSet::new();
         let mut resolved_endpoints = HashSet::new();
         for curve in markers.iter().copied().filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
         }) {
@@ -1531,22 +1531,22 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
                 &markers,
             );
             if endpoints.len() == 2 {
-                resolved_curves.insert(curve.id.clone());
+                resolved_curves.insert(curve.id().to_string());
             }
             resolved_endpoints.extend(
                 endpoints
                     .into_iter()
                     .filter(|marker| marker.coordinates_m.is_some())
-                    .map(|marker| marker.id.clone()),
+                    .map(|marker| marker.id().to_string()),
             );
         }
         let mut changed = false;
         for marker in &mut lane.sketch_entities {
-            if marker.kind != SketchInputKind::Point
-                && resolved_endpoints.contains(marker.id.as_str())
-                && !resolved_curves.contains(marker.id.as_str())
+            if marker.kind() != SketchInputKind::Point
+                && resolved_endpoints.contains(marker.id())
+                && !resolved_curves.contains(marker.id())
             {
-                marker.kind = SketchInputKind::Point;
+                marker.reclassify(SketchInputKind::Point);
                 changed = true;
             }
         }
