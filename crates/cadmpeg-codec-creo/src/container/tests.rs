@@ -376,7 +376,6 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
         integer_values: crate::legacy::TypedValues {
             rows: vec![
                 crate::legacy::IntegerRecord {
-                    kind: crate::legacy::ValueKind::INTEGER,
                     name: "first_quilt_ptr".to_string(),
                     attribute_id: 4,
                     scope_offset: 0,
@@ -386,7 +385,6 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
                     offset: 1,
                 },
                 crate::legacy::IntegerRecord {
-                    kind: crate::legacy::ValueKind::INTEGER,
                     name: "first_quilt_ptr".to_string(),
                     attribute_id: 4,
                     scope_offset: 0,

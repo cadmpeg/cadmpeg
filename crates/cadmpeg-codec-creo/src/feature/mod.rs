@@ -41,11 +41,11 @@ pub use definitions::{
 };
 #[cfg(test)]
 pub(crate) use entity::{
-    dummy_table_entry, entry_payload, EntryPayload, RelatedClass, RelatedState,
+    dummy_table_entry, entry_payload, EntryPayload, PlainClass, RelatedClass, RelatedState,
 };
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
-    FeatureEntityTableEntry, PlainClass,
+    FeatureEntityTableEntry,
 };
 pub use operations::{
     operation_states, operations, reference_names, FeatureOperation, FeatureOperationState,
