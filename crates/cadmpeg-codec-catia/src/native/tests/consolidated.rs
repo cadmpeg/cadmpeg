@@ -353,8 +353,11 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);
     assert_eq!(circle.center_pair, [4.0, -2.0]);
-    assert_eq!(circle.radius, 3.0);
-    assert_eq!(circle.range, [0.0, std::f64::consts::TAU * circle.radius]);
+    assert_eq!(circle.radius.get(), 3.0);
+    assert_eq!(
+        circle.range.get(),
+        [0.0, std::f64::consts::TAU * circle.radius.get()]
+    );
     assert!(circle.full_circle());
     assert_eq!(circle.chart_shift, 0.0);
 
@@ -394,14 +397,14 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     };
     assert_eq!(explicit.payload.layout(), 0x5a);
     assert_eq!(explicit.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(explicit.radius, 2.0);
+    assert_eq!(explicit.radius.get(), 2.0);
     assert!(matches!(
         explicit.payload,
         crate::native::CatiaConsolidatedCylinderPayload::Layout5a {
             frame_token: 0x19,
-            axis: [1.0, 0.0, 0.0],
-            reference_direction: [0.0, 1.0, 0.0],
-        }
+            axis,
+            reference_direction,
+        } if axis.get() == [1.0, 0.0, 0.0] && reference_direction.get() == [0.0, 1.0, 0.0]
     ));
     assert_eq!(implicit.payload.layout(), 0x52);
     assert!(matches!(
@@ -409,16 +412,19 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         crate::native::CatiaConsolidatedCylinderPayload::Layout52 { .. }
     ));
     assert_eq!(range_origin.payload.layout(), 0x62);
-    assert_eq!(range_origin.radius, 4.0);
+    assert_eq!(range_origin.radius.get(), 4.0);
     assert!(matches!(
         range_origin.payload,
         crate::native::CatiaConsolidatedCylinderPayload::RangeOrigin {
-            stored_vector: [0.0, 1.0],
-            axis: [0.0, 1.0, 0.0],
-            reference_direction: [0.0, 0.0, 1.0],
+            stored_vector,
+            axis,
+            reference_direction,
             range_origin,
-        } if range_origin.to_bits()
-            == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
+        } if stored_vector.get() == [0.0, 1.0]
+            && axis.get() == [0.0, 1.0, 0.0]
+            && reference_direction.get() == [0.0, 0.0, 1.0]
+            && range_origin.to_bits()
+                == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -449,14 +455,14 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
         panic!("one consolidated cone")
     };
     assert_eq!(cone.apex, [1.0, 2.0, 3.0]);
-    assert_eq!(cone.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(cone.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(cone.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(cone.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(cone.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(cone.axis.get(), [0.0, 0.0, 1.0]);
     assert_eq!(cone.half_angle, 0.25);
     assert_eq!(cone.reference_radius, 4.0);
     assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
-    assert_eq!(cone.slant_range, [2.0, 8.0]);
-    assert_eq!(cone.angular_scale, 3.0);
+    assert_eq!(cone.slant_range.get(), [2.0, 8.0]);
+    assert_eq!(cone.angular_scale.get(), 3.0);
     assert_eq!(
         cone.angular_domain,
         [
@@ -554,6 +560,22 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
 }
 
 #[test]
+fn consolidated_revolution_wire_rejects_directions_outside_the_exact_tolerance() {
+    let native = crate::native::CatiaNative::decode(&b2_resolved_revolution_stream());
+    let [revolution] = native.consolidated_revolutions.as_slice() else {
+        panic!("one consolidated revolution carrier")
+    };
+    let mut wire = serde_json::to_value(revolution).expect("serialize CATIA revolution");
+    let off_axis = (1.0_f64 + 5.0e-10).sqrt();
+    wire["axis"] = serde_json::json!([0.0, 0.0, off_axis]);
+    let error = serde_json::from_value::<crate::native::CatiaConsolidatedRevolution>(wire)
+        .expect_err(
+            "an axis outside the exact squared-length tolerance is not a revolution direction",
+        );
+    assert!(error.to_string().contains("unit vector"));
+}
+
+#[test]
 fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     let native = crate::native::CatiaNative::decode(&b2_resolved_revolution_stream());
     let [revolution] = native.consolidated_revolutions.as_slice() else {
@@ -565,10 +587,10 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     );
     assert_eq!(revolution.profile_allocation_id, 0x1234);
     assert_eq!(revolution.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(revolution.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(revolution.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(revolution.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(revolution.profile_range, [-4.0, 9.0]);
+    assert_eq!(revolution.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(revolution.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(revolution.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(revolution.profile_range.get(), [-4.0, 9.0]);
     assert_eq!(
         revolution.profile_circle.as_deref(),
         Some("catia:consolidated:circle#0")
@@ -592,7 +614,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native;
-    invalid.consolidated_revolutions[0].axis = [0.0, 0.0, -1.0];
+    invalid.consolidated_revolutions[0].axis =
+        crate::checked::ExactUnitVector3::new([0.0, 0.0, -1.0]).expect("unit axis");
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
@@ -680,8 +703,8 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
         panic!("one consolidated line profile")
     };
     assert_eq!(line.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(line.direction, [0.0, 0.6, 0.8]);
-    assert_eq!(line.range, [-4.0, 9.0]);
+    assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
+    assert_eq!(line.range.get(), [-4.0, 9.0]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -691,14 +714,37 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA line profile"),
         native
     );
+}
 
-    let mut invalid = native;
-    invalid.consolidated_line_profiles[0].direction = [0.0, 0.0, 2.0];
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA line profile for load validation");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+#[test]
+fn consolidated_cylinder_frames_round_trip_at_the_stored_pair_tolerance_edge() {
+    let component = 1.0_f64 + 6.0e-10;
+    let mut stream = b2_cylinder_stream();
+    stream[30..38].copy_from_slice(&component.to_le_bytes());
+    stream[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    let native = crate::native::CatiaNative::decode(&stream);
+    let [cylinder] = native.consolidated_cylinders.as_slice() else {
+        panic!("one consolidated cylinder at the tolerance edge")
+    };
+    let crate::native::CatiaConsolidatedCylinderPayload::Layout5a { axis, .. } = cylinder.payload
+    else {
+        panic!("layout 0x5a frame")
+    };
+    assert_eq!(axis.get(), [component, 0.0, 0.0]);
+
+    let wire = serde_json::to_value(cylinder).expect("serialize CATIA cylinder");
+    assert_eq!(
+        &serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(wire)
+            .expect("a decoded frame deserializes wherever its stored pair was admitted"),
+        cylinder
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA cylinder");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA cylinder"),
+        native
+    );
 }
 
 #[test]
@@ -708,11 +754,11 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
         panic!("one consolidated torus")
     };
     assert_eq!(torus.center, [1.0, 2.0, 3.0]);
-    assert_eq!(torus.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(torus.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(torus.major_radius, 7.0);
-    assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(torus.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(torus.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(torus.major_radius.get(), 7.0);
+    assert_eq!(torus.minor_radius.get(), 2.0);
     assert_eq!(
         torus.major_angular_range,
         [
@@ -729,8 +775,8 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
             3.0 * std::f64::consts::FRAC_PI_2
         ]
     );
-    assert_eq!(torus.major_scale, 14.0);
-    assert_eq!(torus.minor_scale, 4.0);
+    assert_eq!(torus.major_scale.get(), 14.0);
+    assert_eq!(torus.minor_scale.get(), 4.0);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA torus");
@@ -755,10 +801,10 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
         panic!("one consolidated sphere")
     };
     assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
-    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(sphere.radius, 5.0);
+    assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius.get(), 5.0);
     assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
     assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 
@@ -806,10 +852,13 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
             },)
         )
     );
-    assert_eq!(numeric_tail.header, [0x84, 0x41, 0xbb, 0x05, 0x0d]);
-    assert_eq!(numeric_tail.lower, [-0.0, 4.5]);
-    assert_eq!(numeric_tail.upper, [12.25, 7.0]);
-    assert_eq!(numeric_tail.bounds, [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]);
+    assert_eq!(numeric_tail.header(), [0x84, 0x41, 0xbb, 0x05, 0x0d]);
+    assert_eq!(numeric_tail.lower(), [-0.0, 4.5]);
+    assert_eq!(numeric_tail.upper(), [12.25, 7.0]);
+    assert_eq!(
+        numeric_tail.bounds(),
+        [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
+    );
     let face_node = packet.face_node.expect("face-node relation");
     assert_eq!(face_node.byte_len, 11);
     assert_eq!(
@@ -992,7 +1041,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
     let controls: [u8; 6] =
         serde_json::from_value(wire["bridge"]["controls"].clone()).expect("six bridge controls");
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
-    assert_eq!(*construction_radius, 1.0);
+    assert_eq!(construction_radius.get(), 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -1043,25 +1092,25 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     assert_eq!(
         support_surfaces[0]
             .alias()
-            .map(|binding| binding.row.as_str()),
-        Some(surface_alias.id.as_str())
+            .map(|binding| binding.row().to_owned()),
+        Some(surface_alias.id.clone())
     );
     assert_eq!(
         support_surfaces[0]
             .alias()
-            .and_then(|binding| binding.canonical_tag),
+            .and_then(super::super::owner_chart::CatiaOwnerChartAliasBinding::canonical_tag),
         Some(200)
     );
     assert_eq!(
         support_pcurves[0]
             .alias()
-            .map(|binding| binding.row.as_str()),
-        Some(pcurve_alias.id.as_str())
+            .map(|binding| binding.row().to_owned()),
+        Some(pcurve_alias.id.clone())
     );
     assert_eq!(
         support_pcurves[0]
             .alias()
-            .and_then(|binding| binding.canonical_tag),
+            .and_then(super::super::owner_chart::CatiaOwnerChartAliasBinding::canonical_tag),
         Some(101)
     );
     assert_ne!(
@@ -1084,7 +1133,11 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     if let CatiaOwnerChartAddress::WidthCoded { alias: Some(alias) } =
         &mut support_surfaces[0].address
     {
-        alias.canonical_tag = Some(100);
+        *alias = crate::native::CatiaOwnerChartAliasBinding::new(
+            cadmpeg_ir::products::NonEmptyString::new(alias.row().to_owned())
+                .expect("alias row is non-empty"),
+            Some(100),
+        );
     }
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
@@ -1788,7 +1841,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     assert_eq!(group.group_type, 3);
     assert_eq!(cylinder.group, group.id);
     assert_eq!(cylinder.object_id, 0x5678);
-    assert_eq!(cylinder.u_range, [0.0, 4.0 * std::f64::consts::PI]);
+    assert_eq!(cylinder.u_range.get(), [0.0, 4.0 * std::f64::consts::PI]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

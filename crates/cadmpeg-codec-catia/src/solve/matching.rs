@@ -42,17 +42,20 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         required_domain = Some(domain);
     }
     while matched_count < domains.len() {
-        let mut distance = alloc_filled(domains.len(), usize::MAX, "catia_match_distance").ok()?;
+        let mut distance = alloc_filled(domains.len(), None, "catia_match_distance").ok()?;
         let mut queue = VecDeque::new();
         for root in 0..domains.len() {
             if !matched[root] {
-                distance[root] = 0;
+                distance[root] = Some(0);
                 queue.push_back(root);
             }
         }
-        let mut shortest = usize::MAX;
+        let mut shortest = None;
         while let Some(root) = queue.pop_front() {
-            if distance[root] >= shortest {
+            let Some(root_distance) = distance[root] else {
+                continue;
+            };
+            if shortest.is_some_and(|bound| root_distance >= bound) {
                 continue;
             }
             for &point in domains[root] {
@@ -66,29 +69,28 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                     continue;
                 }
                 if let Some(next) = owner[point] {
-                    if Some(next) != required_domain && distance[next] == usize::MAX {
-                        distance[next] = distance[root] + 1;
+                    if Some(next) != required_domain && distance[next].is_none() {
+                        distance[next] = Some(root_distance + 1);
                         queue.push_back(next);
                     }
                 } else {
-                    shortest = distance[root];
+                    shortest = Some(root_distance);
                 }
             }
         }
-        if shortest == usize::MAX {
-            return None;
-        }
+        let shortest = shortest?;
         let mut cursor = alloc_filled(domains.len(), 0usize, "catia_match_cursor").ok()?;
         let mut incoming = alloc_filled(domains.len(), None, "catia_match_incoming").ok()?;
         let mut augmented = 0usize;
         for start in 0..domains.len() {
-            if matched[start] || distance[start] != 0 {
+            if matched[start] || distance[start] != Some(0) {
                 continue;
             }
             let mut roots = vec![start];
             let mut free_point = None;
             while let Some(&root) = roots.last() {
                 let mut advanced = false;
+                let root_distance = distance[root];
                 while cursor[root] < domains[root].len() {
                     let point = domains[root][cursor[root]];
                     cursor[root] += 1;
@@ -102,14 +104,15 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                         continue;
                     }
                     match owner[point] {
-                        None if distance[root] == shortest => {
+                        None if root_distance == Some(shortest) => {
                             free_point = Some(point);
                             advanced = true;
                             break;
                         }
                         Some(next)
                             if Some(next) != required_domain
-                                && distance[next] == distance[root] + 1 =>
+                                && root_distance
+                                    .is_some_and(|value| distance[next] == Some(value + 1)) =>
                         {
                             incoming[next] = Some(point);
                             roots.push(next);
@@ -123,7 +126,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                     break;
                 }
                 if !advanced {
-                    distance[root] = usize::MAX;
+                    distance[root] = None;
                     roots.pop();
                 }
             }
@@ -164,15 +167,15 @@ pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
     if domains.len() != matching.len() || domains.len() > point_count {
         return None;
     }
-    let mut matching = matching.to_vec();
     let mut owner = alloc_filled(point_count, None, "catia_match_repair_owners").ok()?;
     let mut unmatched = Vec::new();
-    for domain in 0..matching.len() {
-        let point = matching[domain];
+    let mut repaired = Vec::with_capacity(matching.len());
+    for (domain, &point) in matching.iter().enumerate() {
         if point < point_count && domains[domain].contains(&point) && owner[point].is_none() {
             owner[point] = Some(domain);
+            repaired.push(Some(point));
         } else {
-            matching[domain] = usize::MAX;
+            repaired.push(None);
             unmatched.push(domain);
         }
     }
@@ -215,14 +218,14 @@ pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
         loop {
             let domain = via_domain[point]?;
             owner[point] = Some(domain);
-            matching[domain] = point;
+            repaired[domain] = Some(point);
             if domain == start {
                 break;
             }
             point = incoming_point[domain]?;
         }
     }
-    Some(matching)
+    repaired.into_iter().collect()
 }
 
 pub(crate) fn retain_distinct_matching_supports(
@@ -285,22 +288,21 @@ pub(crate) fn retain_distinct_matching_supports(
         }
     }
 
-    let mut component =
-        alloc_filled(node_count, usize::MAX, "catia_match_support_components").ok()?;
+    let mut component = alloc_filled(node_count, None, "catia_match_support_components").ok()?;
     let mut component_count = 0usize;
     for &start in finish_order.iter().rev() {
-        if component[start] != usize::MAX {
+        if component[start].is_some() {
             continue;
         }
-        component[start] = component_count;
+        component[start] = Some(component_count);
         let mut stack = vec![start];
         while let Some(node) = stack.pop() {
             for &next in &reverse[node] {
                 if budget.is_some_and(|budget| !budget.charge()) {
                     return None;
                 }
-                if component[next] == usize::MAX {
-                    component[next] = component_count;
+                if component[next].is_none() {
+                    component[next] = Some(component_count);
                     stack.push(next);
                 }
             }

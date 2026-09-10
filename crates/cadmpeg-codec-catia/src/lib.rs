@@ -43,6 +43,7 @@ mod appearance;
 pub(crate) mod assemble;
 mod boundary_roles;
 pub(crate) mod catalog;
+pub(crate) mod checked;
 pub(crate) mod container;
 pub(crate) mod coverage;
 pub(crate) mod decode;
