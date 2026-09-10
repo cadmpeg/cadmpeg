@@ -265,16 +265,31 @@ fn hole_construction_preserves_tangent_and_input_reference_wire() {
 
 #[test]
 fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
-    for (field, value) in [
-        ("coil_operation", "\"cut\""),
-        ("coil_extent", "\"spiral\""),
-        ("coil_section", "\"circular\""),
-        ("coil_section_placement", "\"inside\""),
-        ("coil_clockwise", "false"),
+    for (field, value, unlocated_is_legal) in [
+        ("coil_operation", "\"cut\"", false),
+        ("coil_extent", "\"spiral\"", true),
+        ("coil_section", "\"circular\"", true),
+        ("coil_section_placement", "\"inside\"", true),
+        ("coil_clockwise", "false", true),
     ] {
+        let unlocated = format!("{{\"{field}\":{value}}}");
+        if unlocated_is_legal {
+            let parsed: crate::records::feature::DesignCoilScope =
+                serde_json::from_str(&unlocated).expect("dialect-fixed Coil field");
+            assert_eq!(
+                serde_json::to_string(&parsed).expect("Coil wire"),
+                unlocated
+            );
+        } else {
+            let error =
+                serde_json::from_str::<crate::records::feature::DesignCoilScope>(&unlocated)
+                    .expect_err("value without offset")
+                    .to_string();
+            assert!(error.contains(field), "{error}");
+            assert!(error.contains(&format!("{field}_offset")), "{error}");
+        }
         for wire in [
             "{}".to_owned(),
-            format!("{{\"{field}\":{value}}}"),
             format!("{{\"{field}\":{value},\"{field}_offset\":0}}"),
             format!("{{\"{field}\":{value},\"{field}_offset\":30}}"),
         ] {

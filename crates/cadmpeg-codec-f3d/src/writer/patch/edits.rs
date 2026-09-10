@@ -10,21 +10,6 @@ use crate::records::{
     LostEdgeReference, SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
-
-/// The before-value carried at the after-record's location, for comparing an
-/// edited record against the record it replaces.
-fn normalized_token<T: Clone>(
-    before: Option<&crate::records::RecordedValue<T>>,
-    after: Option<&crate::records::RecordedValue<T>>,
-) -> Option<crate::records::RecordedValue<T>> {
-    match (before, after) {
-        (Some(before), Some(after)) => Some(crate::records::RecordedValue {
-            value: before.value.clone(),
-            offset: after.offset,
-        }),
-        _ => after.cloned(),
-    }
-}
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
@@ -42,6 +27,21 @@ use crate::native::F3dNative;
 use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
 use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+
+/// The before-value carried at the after-record's location, for comparing an
+/// edited record against the record it replaces.
+fn normalized_token<T: Clone>(
+    before: Option<&crate::records::RecordedValue<T>>,
+    after: Option<&crate::records::RecordedValue<T>>,
+) -> Option<crate::records::RecordedValue<T>> {
+    match (before, after) {
+        (Some(before), Some(after)) => Some(crate::records::RecordedValue {
+            value: before.value.clone(),
+            offset: after.offset,
+        }),
+        _ => after.cloned(),
+    }
+}
 
 const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
 

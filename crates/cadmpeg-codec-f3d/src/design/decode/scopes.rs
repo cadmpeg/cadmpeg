@@ -8977,10 +8977,10 @@ pub(crate) fn parse_parameter_scope(
     let coil = if family == Some(DesignFeatureFamily::Coil) {
         Some(crate::records::feature::DesignCoilScope {
             coil_operation: coil_discriminators.as_ref().map(|fields| {
-                crate::records::MaybeRecordedValue::Located(crate::records::RecordedValue {
+                crate::records::RecordedValue {
                     value: fields.operation,
                     offset: fields.operation_offset,
-                })
+                }
             }),
             coil_extent: coil_discriminators
                 .as_ref()

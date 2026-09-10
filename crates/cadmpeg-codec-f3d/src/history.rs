@@ -6784,7 +6784,9 @@ impl HistoricalIdentityIndex {
                     .all(|state| match &state.topology_cache {
                         crate::history_records::AsmTopologyCache::Absent => false,
                         crate::history_records::AsmTopologyCache::Complete(_) => true,
-                        crate::history_records::AsmTopologyCache::Retained(_) => true,
+                        crate::history_records::AsmTopologyCache::Retained(_) => {
+                            history.projection_finalized()
+                        }
                         crate::history_records::AsmTopologyCache::Released => false,
                     })
         }) {

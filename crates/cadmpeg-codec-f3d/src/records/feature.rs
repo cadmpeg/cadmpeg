@@ -7,7 +7,7 @@ use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
     ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
     DesignEntityId, DesignRecipeReference, DesignRelaxedGuidText, DesignSecondaryIdentity, Located,
-    MaybeRecordedValue, NonEmptyVec, ReferenceRun, IDENTITY_MATRIX,
+    MaybeRecordedValue, NonEmptyVec, RecordedValue, ReferenceRun, IDENTITY_MATRIX,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::Deserialize;
@@ -5623,7 +5623,7 @@ struct DesignPathFeatureWire {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 pub struct DesignCoilScope {
-    pub coil_operation: Option<MaybeRecordedValue<DesignExtrudeOperation>>,
+    pub coil_operation: Option<RecordedValue<DesignExtrudeOperation>>,
     pub coil_extent: Option<MaybeRecordedValue<DesignCoilExtent>>,
     pub coil_section: Option<MaybeRecordedValue<DesignCoilSection>>,
     pub coil_section_placement: Option<MaybeRecordedValue<DesignCoilSectionPlacement>>,
@@ -5679,7 +5679,7 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
     type Error = String;
     fn try_from(wire: DesignCoilScopeWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            coil_operation: MaybeRecordedValue::from_wire(
+            coil_operation: RecordedValue::from_wire(
                 wire.coil_operation,
                 wire.coil_operation_offset,
                 "coil_operation",
@@ -5713,8 +5713,8 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
 impl From<DesignCoilScope> for DesignCoilScopeWire {
     fn from(value: DesignCoilScope) -> Self {
         Self {
-            coil_operation: value.coil_operation.map(|field| field.value()),
-            coil_operation_offset: value.coil_operation.and_then(|field| field.offset()),
+            coil_operation: value.coil_operation.map(|field| field.value),
+            coil_operation_offset: value.coil_operation.map(|field| field.offset),
             coil_extent: value.coil_extent.map(|field| field.value()),
             coil_extent_offset: value.coil_extent.and_then(|field| field.offset()),
             coil_section: value.coil_section.map(|field| field.value()),
@@ -7728,12 +7728,12 @@ impl DesignParameterScope {
 
     pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
         self.coil()
-            .and_then(|coil| coil.coil_operation.map(|field| field.value()))
+            .and_then(|coil| coil.coil_operation.map(|field| field.value))
     }
 
     pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_operation.and_then(|field| field.offset()))
+            .and_then(|coil| coil.coil_operation.map(|field| field.offset))
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
