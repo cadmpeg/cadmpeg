@@ -27,13 +27,15 @@ use crate::native::{CatiaNative, CatiaRangeInterval};
 pub(crate) fn transfer_dimensions(
     ir: &mut CadIr,
     native: &CatiaNative,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
     transferred_sketch_ranges: &HashSet<String>,
 ) -> usize {
     let mut transferred = 0;
-    for entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         if transferred_sketch_ranges.contains(&entity.object_record) {
             continue;
         }
@@ -290,7 +292,12 @@ mod tests {
         };
 
         assert_eq!(
-            transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
+            transfer_dimensions(
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new()
+            ),
             0
         );
         assert!(ir.model.pmi.is_empty());
@@ -308,7 +315,12 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
+            transfer_dimensions(
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new()
+            ),
             2
         );
         let dimensions = ir
@@ -401,7 +413,12 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
+            transfer_dimensions(
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new()
+            ),
             0
         );
         assert!(ir.model.pmi.is_empty());

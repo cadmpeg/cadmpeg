@@ -173,50 +173,42 @@ fn finish_decode(
     let modeling_object_records = native
         .object_graphs
         .iter()
-        .filter(|graph| {
-            modeling_graph_scope
-                .as_ref()
-                .is_none_or(|scope| scope.contains(graph.id.as_str()))
-        })
+        .filter(|graph| modeling_graph_scope.contains(graph.id.as_str()))
         .flat_map(|graph| graph.records.iter().map(|record| record.id.clone()))
         .collect::<HashSet<_>>();
     let design_feature_transfer =
-        design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
+        design_feature::transfer_design_features(&mut ir, &native, &modeling_graph_scope);
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
         &mut ir,
         &native,
         &design_feature_transfer,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
     );
     let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
         &mut ir,
         &native,
         &design_feature_transfer,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
     )?;
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         &mut ir,
         &native,
         &design_feature_transfer,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
     )?;
     let transferred_pmi_dimension_count = pmi::transfer_dimensions(
         &mut ir,
         &native,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
         &transferred_constraint_range_records,
     );
-    let formula_transfer = formula::transfer_parameters(
-        &mut ir,
-        &native,
-        &mut annotations,
-        modeling_graph_scope.as_ref(),
-    )?;
+    let formula_transfer =
+        formula::transfer_parameters(&mut ir, &native, &mut annotations, &modeling_graph_scope)?;
     design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         &mut ir,
         &native,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
         standard_face_population
             .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
@@ -226,22 +218,24 @@ fn finish_decode(
         .iter()
         .map(|graph| graph.records.len())
         .sum();
-    let modeling_scope_is_unresolved = modeling_graph_scope.as_ref().is_some_and(HashSet::is_empty);
-    let retained_unscoped_object_graph_count = modeling_graph_scope.as_ref().map_or(0, |scope| {
+    let modeling_scope_is_unresolved =
+        matches!(modeling_graph_scope, ModelingGraphScope::Unresolved);
+    let unscoped_object_graphs = || {
         native
             .object_graphs
             .iter()
-            .filter(|graph| !scope.contains(graph.id.as_str()))
-            .count()
-    });
-    let retained_unscoped_object_record_count = modeling_graph_scope.as_ref().map_or(0, |scope| {
-        native
-            .object_graphs
-            .iter()
-            .filter(|graph| !scope.contains(graph.id.as_str()))
+            .filter(|graph| !modeling_graph_scope.contains(graph.id.as_str()))
+    };
+    let retained_unscoped_object_graph_count = match modeling_graph_scope {
+        ModelingGraphScope::Unscoped => 0,
+        _ => unscoped_object_graphs().count(),
+    };
+    let retained_unscoped_object_record_count = match modeling_graph_scope {
+        ModelingGraphScope::Unscoped => 0,
+        _ => unscoped_object_graphs()
             .map(|graph| graph.records.len())
-            .sum()
-    });
+            .sum(),
+    };
     let resolved_storage_record_count = native
         .object_graphs
         .iter()
@@ -1773,11 +1767,7 @@ fn finish_decode(
     let unresolved_design_object_count = native
         .design_objects
         .iter()
-        .filter(|object| {
-            modeling_graph_scope
-                .as_ref()
-                .is_none_or(|scope| scope.contains(object.parent.as_str()))
-        })
+        .filter(|object| modeling_graph_scope.contains(object.parent.as_str()))
         .filter(|object| {
             object
                 .fields
@@ -2255,9 +2245,7 @@ fn finish_decode(
         (crate::coverage::DECODED_OBJECT_RECORD_COUNT, object_record_count),
         (
             crate::coverage::MODELING_OBJECT_GRAPH_COUNT,
-            modeling_graph_scope
-                .as_ref()
-                .map_or(native.object_graphs.len(), HashSet::len),
+            modeling_graph_scope.graph_count(native.object_graphs.len()),
         ),
         (
             crate::coverage::MODELING_OBJECT_RECORD_COUNT,
@@ -3529,12 +3517,48 @@ fn finish_decode(
     decode_result(scan, matched, ir, report, annotations, unknowns)
 }
 
+/// Modeling scope of a part's decoded object graphs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ModelingGraphScope {
+    /// No outer container declarations: every object graph is in modeling scope.
+    Unscoped,
+    /// Outer declarations exist, but no single part graph is resolvable.
+    Unresolved,
+    /// The uniquely resolved part object graph.
+    Scoped(String),
+}
+
+impl ModelingGraphScope {
+    /// Reports whether an object graph identity is inside the modeling scope.
+    pub(crate) fn contains(&self, graph: &str) -> bool {
+        match self {
+            Self::Unscoped => true,
+            Self::Unresolved => false,
+            Self::Scoped(part) => part == graph,
+        }
+    }
+
+    /// Reports whether no outer container declaration bounds the modeling scope.
+    pub(crate) fn is_unscoped(&self) -> bool {
+        matches!(self, Self::Unscoped)
+    }
+
+    /// Returns the number of scoped graphs among `decoded` decoded graphs.
+    pub(crate) fn graph_count(&self, decoded: usize) -> usize {
+        match self {
+            Self::Unscoped => decoded,
+            Self::Unresolved => 0,
+            Self::Scoped(_) => 1,
+        }
+    }
+}
+
 fn modeling_graph_scope(
     has_outer_declarations: bool,
     graphs: &[CatiaObjectGraph],
-) -> Option<HashSet<String>> {
+) -> ModelingGraphScope {
     if !has_outer_declarations {
-        return None;
+        return ModelingGraphScope::Unscoped;
     }
     let mut part_graphs = graphs.iter().filter(|graph| {
         graph
@@ -3543,8 +3567,8 @@ fn modeling_graph_scope(
             .is_some_and(|container| container.class_name == "CATPrtCont")
     });
     match (part_graphs.next(), part_graphs.next()) {
-        (Some(graph), None) => Some(HashSet::from([graph.id.clone()])),
-        _ => Some(HashSet::new()),
+        (Some(graph), None) => ModelingGraphScope::Scoped(graph.id.clone()),
+        _ => ModelingGraphScope::Unresolved,
     }
 }
 

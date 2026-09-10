@@ -16,7 +16,7 @@ pub(crate) fn transfer_parameters(
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut Annotations,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<FormulaTransfer, cadmpeg_core::CodecError> {
     let entities = native
         .entity_records
@@ -39,9 +39,11 @@ pub(crate) fn transfer_parameters(
     );
     let mut programs = Vec::<FormulaProgramCandidate>::new();
     let mut formula_definition_counts = HashMap::<ParameterId, usize>::new();
-    for entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         let outputs = entity
             .formula_relation()
             .and_then(|relation| relation.output_entity.reference.entity())
@@ -58,24 +60,27 @@ pub(crate) fn transfer_parameters(
                 .or_default() += 1;
         }
     }
-    let legacy_scope = match graph_scope {
-        None => LegacyModelingScope::Unbounded,
-        Some(scope) => native
+    let legacy_scope = if graph_scope.is_unscoped() {
+        LegacyModelingScope::Unbounded
+    } else {
+        native
             .object_graphs
             .iter()
-            .find(|graph| scope.contains(graph.id.as_str()))
+            .find(|graph| graph_scope.contains(graph.id.as_str()))
             .and_then(|graph| graph.outer_container.as_ref())
             .map_or(
                 LegacyModelingScope::Unresolved,
                 LegacyModelingScope::Container,
-            ),
+            )
     };
     let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope);
     let mut relation_program_parameters =
         BTreeMap::<ParameterId, Option<(DesignParameter, FormulaParameterType)>>::new();
-    for program_entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for program_entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         let Some(inputs) = program_entity
             .relation_program_instance()
             .and_then(|instance| instance.inputs.as_ref())
@@ -117,9 +122,11 @@ pub(crate) fn transfer_parameters(
         }
     }
 
-    for formula_entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for formula_entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         let Some(formula) = &formula_entity.formula_relation() else {
             continue;
         };
@@ -301,9 +308,11 @@ pub(crate) fn transfer_parameters(
         }
     }
 
-    for relation_entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for relation_entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         let Some(instance) = relation_entity.relation_program_instance() else {
             continue;
         };
@@ -524,13 +533,15 @@ pub(crate) fn transfer_parameters(
 /// states remain native because they do not contain a neutral parameter value.
 fn collect_definition_chain_parameters(
     native: &CatiaNative,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
     conflicting_inputs: &mut BTreeSet<ParameterId>,
 ) {
-    for entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         let Some(chain) = entity.definition_chain_value() else {
             continue;
         };
