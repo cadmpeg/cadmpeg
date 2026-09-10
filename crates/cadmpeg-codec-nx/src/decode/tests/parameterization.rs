@@ -106,7 +106,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                     -0.75,
                     None,
                     None,
-                    None,
+                    false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),
@@ -246,7 +246,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                     0.75,
                     None,
                     None,
-                    None,
+                    false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),
@@ -300,7 +300,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                     0.5,
                     None,
                     None,
-                    None,
+                    false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),
@@ -1163,7 +1163,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                         0.0,
                         None,
                         None,
-                        None,
+                        false,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy(
                             cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                         ),
@@ -1745,7 +1745,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                         30.0,
                         Some(0),
                         Some(0),
-                        None,
+                        false,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy(
                             cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                         ),
@@ -1814,9 +1814,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ir.model.procedural_surfaces[1]
         .edit_definition(|definition| {
             if let ProceduralSurfaceDefinition::Offset(definition_payload) = definition {
-                definition_payload.set_support_extension(Some(
-                    cadmpeg_ir::geometry::OffsetSupportExtension::Linear,
-                ));
+                definition_payload.set_linear_support_extension(true);
             }
         })
         .unwrap();
@@ -1828,7 +1826,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ir.model.procedural_surfaces[1]
         .edit_definition(|definition| {
             if let ProceduralSurfaceDefinition::Offset(definition_payload) = definition {
-                definition_payload.set_support_extension(None);
+                definition_payload.set_linear_support_extension(false);
                 definition_payload.try_set_distance(31.0).unwrap();
             }
         })

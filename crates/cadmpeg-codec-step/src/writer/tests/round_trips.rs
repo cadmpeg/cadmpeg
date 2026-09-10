@@ -648,8 +648,12 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             ],
             vec![[0, 1, 2], [2, 1, 0]],
             Vec::new(),
-            vec![Vector3::new(0.0, 0.0, 1.0); 3],
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(vec![
+                Vector3::new(
+                    0.0, 0.0, 1.0
+                );
+                3
+            ]),
             Vec::new(),
         )
         .expect("valid tessellation")

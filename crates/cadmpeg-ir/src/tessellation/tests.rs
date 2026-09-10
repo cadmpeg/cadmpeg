@@ -35,7 +35,7 @@ fn per_corner_mesh_exposes_its_normals() {
         base.vertices().to_vec(),
         base.triangles().to_vec(),
         TessellationTopology::List,
-        TessellationNormals::PerCorner(normals.clone()),
+        TessellationNormals::per_corner(normals.clone()),
         Vec::new(),
     )
     .unwrap();
@@ -57,7 +57,7 @@ fn per_vertex_mesh_exposes_its_normals() {
         base.vertices().to_vec(),
         base.triangles().to_vec(),
         TessellationTopology::List,
-        TessellationNormals::PerVertex(normals.clone()),
+        TessellationNormals::per_vertex(normals.clone()),
         Vec::new(),
     )
     .unwrap();
@@ -232,9 +232,9 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
             let mut normals = vec![Vector3::new(0.0, 0.0, 1.0); count];
             normals[0].y = invalid;
             let shading = if corner {
-                TessellationNormals::PerCorner(normals.clone())
+                TessellationNormals::per_corner(normals.clone())
             } else {
-                TessellationNormals::PerVertex(normals.clone())
+                TessellationNormals::per_vertex(normals.clone())
             };
             assert!(Tessellation::new(
                 "test:mesh:tessellation#numeric",
@@ -245,7 +245,13 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
                 Vec::new(),
             )
             .is_err());
-            rejects_wire_field(if corner { "corner_normals" } else { "normals" }, normals);
+            rejects_wire_field(
+                "shading",
+                serde_json::json!({
+                    "kind": if corner { "per_corner" } else { "per_vertex" },
+                    "values": normals,
+                }),
+            );
         }
     }
 }
@@ -261,9 +267,9 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
             base.triangles().to_vec(),
             TessellationTopology::List,
             if corner {
-                TessellationNormals::PerCorner(normals)
+                TessellationNormals::per_corner(normals)
             } else {
-                TessellationNormals::PerVertex(normals)
+                TessellationNormals::per_vertex(normals)
             },
             Vec::new(),
         )
@@ -330,4 +336,34 @@ fn absent_normals_reject_edit_without_calling_the_editor() {
     assert!(value.edit_normals(|_| called = true).is_err());
     assert!(!called);
     assert_eq!(value, original);
+}
+
+// The literal route to an empty sample run does not compile: `TessellationNormals`
+// carries a `NormalSamples`, whose vector is private and whose only mint,
+// `NormalSamples::new`, returns `None` for an empty vector. `PerVertex(vec![])`
+// and `PerCorner(vec![])` are therefore type errors, not values this test could
+// construct and reject at run time.
+#[test]
+fn empty_wire_shading_is_the_absent_shading() {
+    assert!(NormalSamples::new(Vec::new()).is_none());
+    let empty = Tessellation::new(
+        "test:mesh:tessellation#empty",
+        Vec::new(),
+        Vec::new(),
+        TessellationTopology::List,
+        TessellationNormals::None,
+        Vec::new(),
+    )
+    .unwrap();
+    for kind in ["per_vertex", "per_corner"] {
+        let mut wire = serde_json::to_value(&empty).unwrap();
+        wire["shading"] = serde_json::json!({"kind": kind, "values": []});
+        let admitted: Tessellation = serde_json::from_value(wire).unwrap();
+        assert_eq!(*admitted.shading(), TessellationNormals::None);
+        assert_eq!(admitted, empty);
+        assert_eq!(
+            serde_json::to_value(&admitted).unwrap()["shading"],
+            serde_json::Value::Null
+        );
+    }
 }

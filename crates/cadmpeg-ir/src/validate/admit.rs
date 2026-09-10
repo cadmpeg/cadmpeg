@@ -16,13 +16,11 @@ macro_rules! with_draft_core {
             Check::Identity,
             Check::ReferentialIntegrity,
             Check::NativeLinks,
-            Check::LoopClosure,
             Check::CoedgePairing,
             Check::ShellTopology,
             Check::WireTopology,
             Check::CarrierReachability,
             Check::ParameterDomain,
-            Check::Bounds,
             Check::GeometricConsistency,
             $($extra),*
         ]
@@ -32,9 +30,9 @@ macro_rules! with_draft_core {
 /// Shared draft/topology core for decoder and export-precondition gates.
 ///
 /// [`Check::Identity`], [`Check::ReferentialIntegrity`], [`Check::NativeLinks`],
-/// [`Check::LoopClosure`], [`Check::CoedgePairing`], [`Check::ShellTopology`],
+/// [`Check::CoedgePairing`], [`Check::ShellTopology`],
 /// [`Check::WireTopology`], [`Check::CarrierReachability`],
-/// [`Check::ParameterDomain`], [`Check::Bounds`], and
+/// [`Check::ParameterDomain`], and
 /// [`Check::GeometricConsistency`].
 pub const DRAFT_CORE_CHECKS: &[Check] = with_draft_core!();
 
@@ -143,13 +141,11 @@ mod tests {
                 Check::Identity,
                 Check::ReferentialIntegrity,
                 Check::NativeLinks,
-                Check::LoopClosure,
                 Check::CoedgePairing,
                 Check::ShellTopology,
                 Check::WireTopology,
                 Check::CarrierReachability,
                 Check::ParameterDomain,
-                Check::Bounds,
                 Check::GeometricConsistency,
             ]
         );

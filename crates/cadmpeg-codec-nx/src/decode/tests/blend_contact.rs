@@ -441,7 +441,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
                         1.0,
                         Some(0),
                         Some(0),
-                        None,
+                        false,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy(
                             cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                         ),
@@ -979,7 +979,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     1.0,
                     None,
                     None,
-                    None,
+                    false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),

@@ -26,18 +26,6 @@ fn default_true() -> bool {
     true
 }
 
-/// Parameter-space continuation used when an offset evaluates beyond its
-/// support's active NURBS rectangle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum OffsetSupportExtension {
-    /// Continue the support's terminal polynomial patch.
-    Natural,
-    /// Continue boundary tangents as ruled linear strips.
-    Linear,
-}
-
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyExtensionFlags {
@@ -1136,7 +1124,27 @@ impl ProceduralSurfaceDefinition {
             }
             Self::Deformable(payload) => payload.revision_cache(),
             Self::Blend(payload) => payload.revision_cache(),
-            _ => None,
+            Self::Compound(_)
+            | Self::SubSurface(_)
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::G2Blend(_)
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Subset(_)
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::Ruled { .. }
+            | Self::RollingBallJet(_)
+            | Self::Unknown { .. } => None,
         }
     }
 
@@ -1158,7 +1166,27 @@ impl ProceduralSurfaceDefinition {
                 .map(|form| &mut form.cache),
             Self::Deformable(payload) => payload.revision_cache_mut(),
             Self::Blend(payload) => payload.revision_cache_mut(),
-            _ => None,
+            Self::Compound(_)
+            | Self::SubSurface(_)
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::G2Blend(_)
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Subset(_)
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::Ruled { .. }
+            | Self::RollingBallJet(_)
+            | Self::Unknown { .. } => None,
         }
     }
 
@@ -2415,9 +2443,9 @@ struct TSplineSurfaceConstructionReadWire {
     type_code: i64,
     subtransform: TSplineSubtransform,
     #[serde(default)]
-    program_graph: Option<TSplineProgram>,
+    program_graph: Option<TSplineProgramWire>,
     #[serde(default)]
-    values_graph: Option<TSplineProgram>,
+    values_graph: Option<TSplineProgramWire>,
     trailing_value: i64,
     discontinuities: [Vec<f64>; 6],
     discontinuity_flag: bool,
@@ -2466,7 +2494,7 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         if wire
             .program_graph
             .as_ref()
-            .is_some_and(|graph| *graph != construction.program_graph())
+            .is_some_and(|graph| !construction.program_graph().matches_wire(graph))
         {
             return Err(serde::de::Error::custom(
                 "program_graph does not match the T-spline program",
@@ -2475,7 +2503,7 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         if wire
             .values_graph
             .as_ref()
-            .is_some_and(|graph| *graph != construction.values_graph())
+            .is_some_and(|graph| !construction.values_graph().matches_wire(graph))
         {
             return Err(serde::de::Error::custom(
                 "values_graph does not match the T-spline values program",
@@ -2496,61 +2524,224 @@ impl JsonSchema for TSplineSurfaceConstruction {
     }
 }
 
-/// Parsed line-oriented T-spline subtransform program.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TSplineProgram {
-    /// Ordered recognized header declarations.
-    pub headers: Vec<TSplineProgramLine>,
-    /// Ordered recognized topology, geometry, and constraint records.
-    pub records: Vec<TSplineProgramLine>,
-    /// Non-comment lines outside the defined vocabulary.
-    pub unparsed_lines: Vec<String>,
+/// Leading token of a recognized T-spline header declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TSplineHeaderKind {
+    /// `degree`
+    #[serde(rename = "degree")]
+    Degree,
+    /// `cap_type`
+    #[serde(rename = "cap_type")]
+    CapType,
+    /// `units`
+    #[serde(rename = "units")]
+    Units,
+    /// `end_conditions`
+    #[serde(rename = "end_conditions")]
+    EndConditions,
+    /// `star_knot_rule`
+    #[serde(rename = "star_knot_rule")]
+    StarKnotRule,
+    /// `star_smoothness`
+    #[serde(rename = "star_smoothness")]
+    StarSmoothness,
+    /// `tol`
+    #[serde(rename = "tol")]
+    Tol,
+    /// `ver`
+    #[serde(rename = "ver")]
+    Ver,
+    /// `behavior_version`
+    #[serde(rename = "behavior_version")]
+    BehaviorVersion,
+    /// `geom_tol`
+    #[serde(rename = "geom_tol")]
+    GeomTol,
+    /// `compat_version`
+    #[serde(rename = "compat_version")]
+    CompatVersion,
 }
 
-/// One tokenized T-spline program line.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TSplineProgramLine {
+impl TSplineHeaderKind {
+    /// Return the native leading token.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Degree => "degree",
+            Self::CapType => "cap_type",
+            Self::Units => "units",
+            Self::EndConditions => "end_conditions",
+            Self::StarKnotRule => "star_knot_rule",
+            Self::StarSmoothness => "star_smoothness",
+            Self::Tol => "tol",
+            Self::Ver => "ver",
+            Self::BehaviorVersion => "behavior_version",
+            Self::GeomTol => "geom_tol",
+            Self::CompatVersion => "compat_version",
+        }
+    }
+
+    fn from_token(token: &str) -> Option<Self> {
+        Some(match token {
+            "degree" => Self::Degree,
+            "cap_type" => Self::CapType,
+            "units" => Self::Units,
+            "end_conditions" => Self::EndConditions,
+            "star_knot_rule" => Self::StarKnotRule,
+            "star_smoothness" => Self::StarSmoothness,
+            "tol" => Self::Tol,
+            "ver" => Self::Ver,
+            "behavior_version" => Self::BehaviorVersion,
+            "geom_tol" => Self::GeomTol,
+            "compat_version" => Self::CompatVersion,
+            _ => return None,
+        })
+    }
+}
+
+/// Leading token of a recognized T-spline topology, geometry, or constraint record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TSplineRecordKind {
+    /// `f`
+    #[serde(rename = "f")]
+    Face,
+    /// `e`
+    #[serde(rename = "e")]
+    Edge,
+    /// `v`
+    #[serde(rename = "v")]
+    Vertex,
+    /// `l`
+    #[serde(rename = "l")]
+    Link,
+    /// `ec`
+    #[serde(rename = "ec")]
+    EdgeCondition,
+    /// `0m`
+    #[serde(rename = "0m")]
+    Material0,
+    /// `0g`
+    #[serde(rename = "0g")]
+    Geometry0,
+    /// `100edges`
+    #[serde(rename = "100edges")]
+    Edges100,
+    /// `100verts`
+    #[serde(rename = "100verts")]
+    Verts100,
+    /// `105sym`
+    #[serde(rename = "105sym")]
+    Symmetry105,
+    /// `105plane`
+    #[serde(rename = "105plane")]
+    Plane105,
+    /// `105a`
+    #[serde(rename = "105a")]
+    A105,
+    /// `106ek`
+    #[serde(rename = "106ek")]
+    EdgeKnots106,
+    /// `50000grip`
+    #[serde(rename = "50000grip")]
+    Grip50000,
+}
+
+impl TSplineRecordKind {
+    /// Return the native leading token.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Face => "f",
+            Self::Edge => "e",
+            Self::Vertex => "v",
+            Self::Link => "l",
+            Self::EdgeCondition => "ec",
+            Self::Material0 => "0m",
+            Self::Geometry0 => "0g",
+            Self::Edges100 => "100edges",
+            Self::Verts100 => "100verts",
+            Self::Symmetry105 => "105sym",
+            Self::Plane105 => "105plane",
+            Self::A105 => "105a",
+            Self::EdgeKnots106 => "106ek",
+            Self::Grip50000 => "50000grip",
+        }
+    }
+
+    fn from_token(token: &str) -> Option<Self> {
+        Some(match token {
+            "f" => Self::Face,
+            "e" => Self::Edge,
+            "v" => Self::Vertex,
+            "l" => Self::Link,
+            "ec" => Self::EdgeCondition,
+            "0m" => Self::Material0,
+            "0g" => Self::Geometry0,
+            "100edges" => Self::Edges100,
+            "100verts" => Self::Verts100,
+            "105sym" => Self::Symmetry105,
+            "105plane" => Self::Plane105,
+            "105a" => Self::A105,
+            "106ek" => Self::EdgeKnots106,
+            "50000grip" => Self::Grip50000,
+            _ => return None,
+        })
+    }
+}
+
+/// Parsed line-oriented T-spline subtransform program.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TSplineProgram {
+    headers: Vec<TSplineProgramLine<TSplineHeaderKind>>,
+    records: Vec<TSplineProgramLine<TSplineRecordKind>>,
+    unparsed_lines: Vec<String>,
+}
+
+impl TSplineProgram {
+    /// Ordered recognized header declarations.
+    #[must_use]
+    pub fn headers(&self) -> &[TSplineProgramLine<TSplineHeaderKind>] {
+        &self.headers
+    }
+
+    /// Ordered recognized topology, geometry, and constraint records.
+    #[must_use]
+    pub fn records(&self) -> &[TSplineProgramLine<TSplineRecordKind>] {
+        &self.records
+    }
+
+    /// Non-comment lines outside the defined vocabulary.
+    #[must_use]
+    pub fn unparsed_lines(&self) -> &[String] {
+        &self.unparsed_lines
+    }
+}
+
+/// One tokenized T-spline program line of a single vocabulary bucket.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TSplineProgramLine<K> {
+    kind: K,
+    fields: Vec<String>,
+}
+
+impl<K: Copy> TSplineProgramLine<K> {
     /// Leading record or header token.
-    pub kind: String,
+    #[must_use]
+    pub fn kind(&self) -> K {
+        self.kind
+    }
+
     /// Ordered remaining fields without interpretation loss.
-    pub fields: Vec<String>,
+    #[must_use]
+    pub fn fields(&self) -> &[String] {
+        &self.fields
+    }
 }
 
 impl TSplineProgram {
     /// Parse the defined line vocabulary while retaining every other line.
     #[must_use]
     pub fn parse(program: &str) -> Self {
-        const HEADERS: &[&str] = &[
-            "degree",
-            "cap_type",
-            "units",
-            "end_conditions",
-            "star_knot_rule",
-            "star_smoothness",
-            "tol",
-            "ver",
-            "behavior_version",
-            "geom_tol",
-            "compat_version",
-        ];
-        const RECORDS: &[&str] = &[
-            "f",
-            "e",
-            "v",
-            "l",
-            "ec",
-            "0m",
-            "0g",
-            "100edges",
-            "100verts",
-            "105sym",
-            "105plane",
-            "105a",
-            "106ek",
-            "50000grip",
-        ];
         let mut parsed = Self {
             headers: Vec::new(),
             records: Vec::new(),
@@ -2562,21 +2753,62 @@ impl TSplineProgram {
                 continue;
             }
             let mut fields = line.split_whitespace();
-            let Some(kind) = fields.next() else { continue };
-            let parsed_line = TSplineProgramLine {
-                kind: kind.into(),
-                fields: fields.map(String::from).collect(),
-            };
-            if HEADERS.contains(&kind) {
-                parsed.headers.push(parsed_line);
-            } else if RECORDS.contains(&kind) {
-                parsed.records.push(parsed_line);
+            let Some(token) = fields.next() else { continue };
+            if let Some(kind) = TSplineHeaderKind::from_token(token) {
+                parsed.headers.push(TSplineProgramLine {
+                    kind,
+                    fields: fields.map(String::from).collect(),
+                });
+            } else if let Some(kind) = TSplineRecordKind::from_token(token) {
+                parsed.records.push(TSplineProgramLine {
+                    kind,
+                    fields: fields.map(String::from).collect(),
+                });
             } else {
                 parsed.unparsed_lines.push(line.into());
             }
         }
         parsed
     }
+
+    fn matches_wire(&self, wire: &TSplineProgramWire) -> bool {
+        self.headers.len() == wire.headers.len()
+            && self.records.len() == wire.records.len()
+            && self.unparsed_lines == wire.unparsed_lines
+            && self
+                .headers
+                .iter()
+                .zip(&wire.headers)
+                .all(|(line, mirror)| {
+                    line.kind.as_str() == mirror.kind && line.fields == mirror.fields
+                })
+            && self
+                .records
+                .iter()
+                .zip(&wire.records)
+                .all(|(line, mirror)| {
+                    line.kind.as_str() == mirror.kind && line.fields == mirror.fields
+                })
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TSplineProgramWire {
+    #[serde(default)]
+    headers: Vec<TSplineProgramLineWire>,
+    #[serde(default)]
+    records: Vec<TSplineProgramLineWire>,
+    #[serde(default)]
+    unparsed_lines: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TSplineProgramLineWire {
+    kind: String,
+    #[serde(default)]
+    fields: Vec<String>,
 }
 
 /// One oriented support of a procedural blend.

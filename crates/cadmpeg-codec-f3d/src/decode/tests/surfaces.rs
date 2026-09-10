@@ -524,7 +524,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let distance = definition_payload.distance();
         let u_sense = definition_payload.u_sense();
         let v_sense = definition_payload.v_sense();
-        let _ = definition_payload.support_extension();
+        let _ = definition_payload.linear_support_extension();
         let extension = definition_payload.extension();
         assert_eq!(*distance, -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
@@ -1022,11 +1022,17 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     assert_eq!(inline.separator, Some(false));
     assert_eq!(inline.values.as_str(), "100verts 1 2\n");
     let graph = native.program_graph();
-    assert_eq!(graph.headers.len(), 2);
-    assert_eq!(graph.records.len(), 3);
-    assert_eq!(graph.records[0].kind, "v");
-    assert!(graph.unparsed_lines.is_empty());
-    assert_eq!(native.values_graph().records[0].kind, "100verts");
+    assert_eq!(graph.headers().len(), 2);
+    assert_eq!(graph.records().len(), 3);
+    assert_eq!(
+        graph.records()[0].kind(),
+        cadmpeg_ir::geometry::TSplineRecordKind::Vertex
+    );
+    assert!(graph.unparsed_lines().is_empty());
+    assert_eq!(
+        native.values_graph().records()[0].kind(),
+        cadmpeg_ir::geometry::TSplineRecordKind::Verts100
+    );
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;

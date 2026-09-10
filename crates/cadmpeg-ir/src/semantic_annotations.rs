@@ -12,6 +12,8 @@ crate::ids::id_type!(
 );
 
 /// Semantic role of an annotation independent of its drawing presentation.
+///
+/// GD&T frames and datum features are modelled in [`crate::pmi`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -20,10 +22,6 @@ pub enum SemanticAnnotationKind {
     Dimension,
     /// Free or model-associated text note.
     Text,
-    /// Geometric tolerance frame.
-    GeometricTolerance,
-    /// Datum feature or datum target.
-    Datum,
     /// Numbered or named callout balloon.
     Balloon,
     /// Leader associated with a semantic callout.

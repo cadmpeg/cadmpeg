@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::container::SectionRole;
+use std::num::NonZeroU64;
 
 use std::io::Cursor;
 
@@ -294,8 +295,20 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     let summary = container::summarize(&scan, &classification);
-    assert_eq!(summary.entries[0].compression.as_str(), "unix-compress");
-    assert_eq!(summary.entries[0].uncompressed_size, 18);
+    let cadmpeg_core::container::EntryStorage::Compressed {
+        method,
+        stored,
+        expanded,
+    } = summary.entries[0].storage
+    else {
+        panic!("a unix-compressed section stores compressed bytes");
+    };
+    assert_eq!(
+        method,
+        cadmpeg_core::container::CompressionMethod::UnixCompress
+    );
+    assert_eq!(stored, NonZeroU64::new(section_length as u64));
+    assert_eq!(expanded, NonZeroU64::new(18));
 }
 
 #[test]

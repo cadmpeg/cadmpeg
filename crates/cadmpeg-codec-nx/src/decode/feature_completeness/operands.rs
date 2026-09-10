@@ -68,8 +68,8 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
     };
     match kind {
         HoleKind::Unresolved(_)
-        | HoleKind::PartialCounterbore { .. }
-        | HoleKind::PartialCountersink { .. } => true,
+        | HoleKind::PartialCounterbore(..)
+        | HoleKind::PartialCountersink(..) => true,
         HoleKind::Simple => false,
         HoleKind::Chamfer { diameter, .. } | HoleKind::Countersink { diameter, .. } => {
             treatment_diameter_is_incomplete(*diameter)

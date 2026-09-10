@@ -2,9 +2,10 @@
 //! Bounded Rhino 3DM container scanning and summary construction.
 
 use crate::loss::Diagnostics;
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
@@ -174,21 +175,72 @@ pub(crate) struct NativeInstall {
     pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
-/// A table descriptor with explicit source ranges.
+/// A table descriptor whose body is a strict sub-range of its chunk range.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Table {
     /// Table typecode.
     pub(crate) typecode: u32,
     /// Complete table chunk range.
-    pub(crate) range: std::ops::Range<usize>,
-    /// Table body range, excluding the table checksum.
-    pub(crate) body: std::ops::Range<usize>,
+    range: std::ops::Range<usize>,
+    /// Table body range, excluding the table header and checksum.
+    body: std::ops::Range<usize>,
+    /// Chunk bytes outside the body: the header and any checksum.
+    framing: NonZeroU32,
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
     /// Number of direct records, including compactly summarized records.
     pub(crate) record_count: usize,
     /// Object record typecode counts discovered without class parsing.
     pub(crate) object_typecodes: BTreeMap<u32, usize>,
+}
+
+impl Table {
+    /// A table whose `body` lies strictly inside its chunk `range`.
+    ///
+    /// Absent when the body escapes the range, fills it exactly, or leaves
+    /// more framing bytes than a `u32` counts.
+    pub(crate) fn new(
+        typecode: u32,
+        range: std::ops::Range<usize>,
+        body: std::ops::Range<usize>,
+        records: Vec<Record>,
+        record_count: usize,
+        object_typecodes: BTreeMap<u32, usize>,
+    ) -> Option<Self> {
+        (body.start <= body.end && body.start >= range.start && body.end <= range.end)
+            .then_some(())?;
+        let framing = range.len().checked_sub(body.len())?;
+        let framing = NonZeroU32::new(u32::try_from(framing).ok()?)?;
+        Some(Self {
+            typecode,
+            range,
+            body,
+            framing,
+            records,
+            record_count,
+            object_typecodes,
+        })
+    }
+
+    /// Complete table chunk range.
+    pub(crate) fn range(&self) -> &std::ops::Range<usize> {
+        &self.range
+    }
+
+    /// Table body bytes inside `data`, absent when the body is out of view.
+    pub(crate) fn body_bytes<'a>(&self, data: &'a [u8]) -> Option<&'a [u8]> {
+        data.get(self.body.clone())
+    }
+
+    /// Table body range, excluding the table header and checksum.
+    pub(crate) fn body(&self) -> &std::ops::Range<usize> {
+        &self.body
+    }
+
+    /// Table chunk bytes outside the body: the header and any checksum.
+    pub(crate) fn framing(&self) -> NonZeroU32 {
+        self.framing
+    }
 }
 
 /// The result of scanning a complete supported container.
@@ -1068,14 +1120,20 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             history = parsed.records;
             opaque_records.extend(parsed.opaque_records);
         }
-        tables.push(Table {
-            typecode: chunk.typecode,
-            range: offset..chunk.next_offset(),
-            body: chunk.body(),
+        let table = Table::new(
+            chunk.typecode,
+            offset..chunk.next_offset(),
+            chunk.body(),
             records,
-            record_count: table_record_count,
+            table_record_count,
             object_typecodes,
-        });
+        )
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "table chunk at {offset} declares a body that does not fit its framing"
+            ))
+        })?;
+        tables.push(table);
         offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
@@ -1102,19 +1160,21 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), table.range.start.to_string());
-        attributes.insert("size".to_string(), table.range.len().to_string());
-        attributes.insert("body_offset".to_string(), table.body.start.to_string());
+        attributes.insert("offset".to_string(), table.range().start.to_string());
+        attributes.insert("size".to_string(), table.range().len().to_string());
+        attributes.insert("body_offset".to_string(), table.body().start.to_string());
         attributes.insert("record_count".to_string(), table.record_count.to_string());
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
+        let storage = table.body_bytes(scan.data).map_or_else(
+            || EntryStorage::unreported(VerbatimLabel::None),
+            |body| EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing()),
+        );
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
-            compression: EntryCompression::None,
-            compressed_size: table.range.len() as u64,
-            uncompressed_size: table.body.len() as u64,
+            storage,
             attributes,
         });
     }
@@ -1135,9 +1195,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: format!("class-{class_uuid}"),
             role: ContainerRole::ObjectClass,
-            compression: EntryCompression::None,
-            compressed_size: bytes as u64,
-            uncompressed_size: bytes as u64,
+            storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
             attributes,
         });
     }

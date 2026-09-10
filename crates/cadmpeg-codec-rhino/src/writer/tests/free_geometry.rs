@@ -326,8 +326,9 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(
+                vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+            ),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -397,8 +398,7 @@ fn mesh_precision_is_target_specific_and_reported() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -463,8 +463,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
             vertices,
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             channels.clone(),
         )
         .expect("valid tessellation"),
@@ -507,8 +506,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(
                 cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
                 8,

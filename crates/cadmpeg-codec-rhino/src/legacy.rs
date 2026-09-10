@@ -2113,8 +2113,7 @@ fn legacy_mesh(
         vertices,
         triangles,
         Vec::new(),
-        normals,
-        Vec::new(),
+        cadmpeg_ir::tessellation::TessellationNormals::per_vertex(normals),
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))

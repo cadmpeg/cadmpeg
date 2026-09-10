@@ -397,7 +397,7 @@ fn emit_carrier_surface(
                 };
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                        support_id, distance, u_sense, v_sense, None, extension,
+                        support_id, distance, u_sense, v_sense, false, extension,
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )

@@ -3924,8 +3924,8 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 &resolved_construction,
                 cadmpeg_ir::features::HoleConstruction::Form {
                     kind: cadmpeg_ir::features::HoleKind::Unresolved(_)
-                        | cadmpeg_ir::features::HoleKind::PartialCounterbore { .. }
-                        | cadmpeg_ir::features::HoleKind::PartialCountersink { .. },
+                        | cadmpeg_ir::features::HoleKind::PartialCounterbore(..)
+                        | cadmpeg_ir::features::HoleKind::PartialCountersink(..),
                     ..
                 }
             );

@@ -375,8 +375,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation")
@@ -807,8 +806,7 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(
                 cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
                 2,
@@ -1303,8 +1301,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation")

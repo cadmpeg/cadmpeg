@@ -308,10 +308,23 @@ fn sketch_curve_offset_matches(
             <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
 }
 
+struct SpatialParallelLines {
+    first: [crate::math::Point3; 2],
+    second: [crate::math::Point3; 2],
+    distance: f64,
+}
+
 fn spatial_parallel_line_distance(
     first: &SpatialSketchGeometry,
     second: &SpatialSketchGeometry,
 ) -> Option<f64> {
+    spatial_parallel_lines(first, second).map(|lines| lines.distance)
+}
+
+fn spatial_parallel_lines(
+    first: &SpatialSketchGeometry,
+    second: &SpatialSketchGeometry,
+) -> Option<SpatialParallelLines> {
     let (
         SpatialSketchGeometryDefinition::Line {
             start: first_start,
@@ -354,15 +367,17 @@ fn spatial_parallel_line_distance(
         second_start.y - first_start.y,
         second_start.z - first_start.z,
     );
-    Some(
-        crate::math::Vector3::new(
+    Some(SpatialParallelLines {
+        first: [*first_start, *first_end],
+        second: [*second_start, *second_end],
+        distance: crate::math::Vector3::new(
             offset.y * first_direction.z - offset.z * first_direction.y,
             offset.z * first_direction.x - offset.x * first_direction.z,
             offset.x * first_direction.y - offset.y * first_direction.x,
         )
         .norm()
             / first_length,
-    )
+    })
 }
 
 fn spatial_line_length(geometry: &SpatialSketchGeometry) -> Option<f64> {
@@ -409,20 +424,9 @@ fn spatial_parallel_line_span_distance(
     second: &SpatialSketchGeometry,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    let distance = spatial_parallel_line_distance(first, second)?;
-    let (
-        SpatialSketchGeometryDefinition::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SpatialSketchGeometryDefinition::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (first.definition(), second.definition())
-    else {
-        unreachable!("parallel line distance requires line geometry")
-    };
+    let lines = spatial_parallel_lines(first, second)?;
+    let [first_start, first_end] = lines.first;
+    let [second_start, second_end] = lines.second;
     let direction = crate::math::Vector3::new(
         first_end.x - first_start.x,
         first_end.y - first_start.y,
@@ -432,13 +436,14 @@ fn spatial_parallel_line_span_distance(
     let project = |point: crate::math::Point3| {
         (point.x * direction.x + point.y * direction.y + point.z * direction.z) / length
     };
-    let first_interval = [project(*first_start), project(*first_end)];
-    let second_interval = [project(*second_start), project(*second_end)];
+    let first_interval = [project(first_start), project(first_end)];
+    let second_interval = [project(second_start), project(second_end)];
     let first_min = first_interval[0].min(first_interval[1]);
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);
     let second_max = second_interval[0].max(second_interval[1]);
-    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance)
+        .then_some(lines.distance)
 }
 
 fn spatial_length_parameter_matches(
@@ -1498,7 +1503,20 @@ fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
     (left.u - right.u).hypot(left.v - right.v)
 }
 
+struct PlanarParallelLines {
+    first: [crate::math::Point2; 2],
+    second: [crate::math::Point2; 2],
+    distance: f64,
+}
+
 fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
+    planar_parallel_lines(first, second).map(|lines| lines.distance)
+}
+
+fn planar_parallel_lines(
+    first: &SketchGeometry,
+    second: &SketchGeometry,
+) -> Option<PlanarParallelLines> {
     let (
         SketchGeometryDefinition::Line {
             start: first_start,
@@ -1531,7 +1549,12 @@ fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry
         second_start.u - first_start.u,
         second_start.v - first_start.v,
     );
-    Some((offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length)
+    Some(PlanarParallelLines {
+        first: [*first_start, *first_end],
+        second: [*second_start, *second_end],
+        distance: (offset.u * first_direction.v - offset.v * first_direction.u).abs()
+            / first_length,
+    })
 }
 
 fn planar_parallel_line_span_distance(
@@ -1539,32 +1562,22 @@ fn planar_parallel_line_span_distance(
     second: &SketchGeometry,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    let distance = planar_parallel_line_distance(first, second)?;
-    let (
-        SketchGeometryDefinition::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SketchGeometryDefinition::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (first.definition(), second.definition())
-    else {
-        unreachable!("parallel line distance requires line geometry")
-    };
+    let lines = planar_parallel_lines(first, second)?;
+    let [first_start, first_end] = lines.first;
+    let [second_start, second_end] = lines.second;
     let direction =
         crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let length = direction.u.hypot(direction.v);
     let project =
         |point: crate::math::Point2| (point.u * direction.u + point.v * direction.v) / length;
-    let first_interval = [project(*first_start), project(*first_end)];
-    let second_interval = [project(*second_start), project(*second_end)];
+    let first_interval = [project(first_start), project(first_end)];
+    let second_interval = [project(second_start), project(second_end)];
     let first_min = first_interval[0].min(first_interval[1]);
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);
     let second_max = second_interval[0].max(second_interval[1]);
-    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance)
+        .then_some(lines.distance)
 }
 
 fn oriented_endpoints(
