@@ -98,7 +98,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
 
             unit: Some(crate::records::RecordedValue {
                 value: unit.into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: source_kind.into(),
             name_offset: 80,
@@ -639,7 +639,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
 
             unit: Some(crate::records::RecordedValue {
                 value: unit.into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: source_kind.into(),
             name_offset: 80,
@@ -1148,7 +1148,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
 
             unit: Some(crate::records::RecordedValue {
                 value: unit.into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: source_kind.into(),
             name_offset: 80,

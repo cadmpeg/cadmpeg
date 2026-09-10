@@ -37,7 +37,6 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state],
     };
     let unrelated = history(
@@ -137,7 +136,6 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state],
     };
     let face_selection = crate::records::feature::DesignHoleFaceSelection {
@@ -308,7 +306,6 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![current, previous],
     };
 
@@ -467,7 +464,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: design_id.into(),
-                offset: None,
+                offset: 0,
             },
             selector: Some(ConstructionRecipeSelector {
                 value: selector,
@@ -1584,7 +1581,6 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![previous, current],
     };
     let bound_history_id = history.id.clone();
@@ -1750,7 +1746,6 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(
                 2,
@@ -1956,7 +1951,6 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state(2, topology()), state(1, topology())],
     };
 

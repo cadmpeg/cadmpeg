@@ -38,7 +38,7 @@ fn generated_source_less_writes_design_type_metastream() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 7,
             version_offset: 0,
         },
@@ -52,15 +52,13 @@ fn generated_source_less_writes_design_type_metastream() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue {
-                value: Some(
-                    "11111111-2222-3333-4444-555555555555"
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
-                offset: None,
-            }),
+            base_type_guid: crate::records::BaseTypeGuid::Guid {
+                value: "11111111-2222-3333-4444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
+                offset: 0,
+            },
             version: 9,
             version_offset: 0,
         },
@@ -74,15 +72,13 @@ fn generated_source_less_writes_design_type_metastream() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue {
-                value: Some(
-                    "11111111-2222-3333-4444-555555555555"
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
-                offset: None,
-            }),
+            base_type_guid: crate::records::BaseTypeGuid::Guid {
+                value: "11111111-2222-3333-4444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
+                offset: 0,
+            },
             version: 11,
             version_offset: 0,
         },
@@ -105,15 +101,13 @@ fn generated_source_less_writes_design_type_metastream() {
         .to_string()
         .contains("Design type module name is GUID-shaped"));
     f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
-        Some(crate::records::RecordedValue {
-            value: Some(
-                "22222222-3333-4444-5555-666666666666"
-                    .to_owned()
-                    .try_into()
-                    .expect("base GUID"),
-            ),
-            offset: None,
-        });
+        crate::records::BaseTypeGuid::Guid {
+            value: "22222222-3333-4444-5555-666666666666"
+                .to_owned()
+                .try_into()
+                .expect("base GUID"),
+            offset: 0,
+        };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -138,17 +132,17 @@ fn generated_source_less_writes_design_type_metastream() {
         [1, 2]
     );
     assert_eq!(fusion.version, 7);
-    assert_eq!(fusion.base_type_guid, None);
+    assert_eq!(fusion.base_type_guid, crate::records::BaseTypeGuid::Absent);
     let sketch = types
         .iter()
         .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
         .expect("sketch-module type");
     assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), [277]);
     assert_eq!(
-        sketch.base_type_guid.as_ref().and_then(|field| field
-            .value
-            .as_ref()
-            .map(crate::records::DesignRelaxedGuidText::as_str)),
+        sketch
+            .base_type_guid
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str),
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(sketch.version, 9);
@@ -186,7 +180,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: format!("{}", 320 + ordinal),
-                offset: None,
+                offset: 0,
             },
             selector: None,
         }),
@@ -376,7 +370,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             .try_into()
             .expect("type GUID"),
         type_guid_offset: 0,
-        base_type_guid: None,
+        base_type_guid: crate::records::BaseTypeGuid::Absent,
         version: 4,
         version_offset: 0,
     }];
@@ -506,7 +500,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 1,
             version_offset: 0,
         },
@@ -520,7 +514,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 1,
             version_offset: 0,
         },
@@ -534,7 +528,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 11,
             version_offset: 0,
         },
@@ -548,7 +542,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 2,
             version_offset: 0,
         },
@@ -562,7 +556,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 0,
             version_offset: 0,
         },
@@ -576,7 +570,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: 3,
             version_offset: 0,
         },
@@ -591,7 +585,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
             version_offset: 0,
         },
@@ -626,7 +620,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         coordinate_offset: 89,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -988,6 +981,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 depth: 7.5,
                 entity_genesis: point.entity_genesis(),
                 padded_paired_reference: true,
+                companion_prefix_present_zero: true,
                 persistent_id,
                 flags: [true, false, false, true, false, true, false, true],
                 closure: crate::records::SketchPointClosure::Selector4State0,
@@ -995,7 +989,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
         point
             .try_set_companion(crate::records::SketchPointCompanion {
-                prefix_present_zero: true,
                 incident_curves: vec![600],
             })
             .unwrap();

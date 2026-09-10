@@ -113,7 +113,7 @@ impl ParsedDesignParameter {
         let unit = match self.unit {
             Some(unit) => Some(crate::records::RecordedValue {
                 value: unit.value,
-                offset: Some(unit.offset.absolute(frame_start)?),
+                offset: unit.offset.absolute(frame_start)?,
             }),
             None => None,
         };

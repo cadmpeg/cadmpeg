@@ -114,7 +114,6 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 
             design_reference: 7,
             ordinal: 0,
-            is_current: false,
         },
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#1".into(),
@@ -123,7 +122,6 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 
             design_reference: 8,
             ordinal: 1,
-            is_current: true,
         },
     ];
     native.persistent_subentity_tags = vec![
@@ -276,7 +274,13 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.persistent_design_links[0].design_reference, 7);
     assert_eq!(native.persistent_design_links[1].design_id.as_str(), "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
-    assert!(native.persistent_design_links[1].is_current);
+    assert_eq!(
+        crate::records::current_persistent_design_links(&native.persistent_design_links)
+            .values()
+            .map(|link| link.design_id.as_str())
+            .collect::<Vec<_>>(),
+        ["322"]
+    );
     assert_eq!(native.persistent_subentity_tags.len(), 3);
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
@@ -340,7 +344,6 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 
         design_reference: 7,
         ordinal: 1,
-        is_current: false,
     }];
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
@@ -368,9 +371,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("noncanonical persistent link order must not be rewritten");
-    assert!(error
-        .to_string()
-        .contains("contiguous ordinals and only the final link current"));
+    assert!(error.to_string().contains("contiguous ordinals"));
 }
 
 #[test]

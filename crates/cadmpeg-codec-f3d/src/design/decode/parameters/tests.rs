@@ -947,7 +947,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "cm".into(),
-                offset: Some(280),
+                offset: 280,
             }),
             name: "distance".into(),
             name_offset: 300,
@@ -1024,7 +1024,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d1".into(),
             name_offset: 80,

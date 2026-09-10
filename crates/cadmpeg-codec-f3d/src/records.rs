@@ -323,6 +323,27 @@ impl<T, O> ReferenceRun<T, O> {
     }
 }
 
+/// A vector that always holds at least one element.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonEmptyVec<T>(Vec<T>);
+
+impl<T> NonEmptyVec<T> {
+    /// Wrap `items`, or return `None` when `items` is empty.
+    pub fn new(items: Vec<T>) -> Option<Self> {
+        (!items.is_empty()).then_some(Self(items))
+    }
+
+    /// Borrow the elements in order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    /// Take the elements in order.
+    pub fn into_vec(self) -> Vec<T> {
+        self.0
+    }
+}
+
 /// A non-empty half-open interval of source bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NonEmptyByteSpan {
@@ -351,11 +372,11 @@ impl NonEmptyByteSpan {
     }
 }
 
-/// A value with an optional source encoding location.
+/// A value with its source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordedValue<T> {
     pub value: T,
-    pub offset: Option<u64>,
+    pub offset: u64,
 }
 
 impl<T> RecordedValue<T> {
@@ -365,7 +386,48 @@ impl<T> RecordedValue<T> {
         field: &str,
     ) -> Result<Option<Self>, String> {
         match (value, offset) {
-            (Some(value), offset) => Ok(Some(Self { value, offset })),
+            (Some(value), Some(offset)) => Ok(Some(Self { value, offset })),
+            (Some(_), None) => Err(format!("{field} requires {field}_offset")),
+            (None, None) => Ok(None),
+            (None, Some(_)) => Err(format!("{field}_offset requires {field}")),
+        }
+    }
+}
+
+/// A value that its record form may leave without a source encoding location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaybeRecordedValue<T> {
+    /// The form stores the value at a known offset.
+    Located(RecordedValue<T>),
+    /// The form fixes the value in its envelope and stores no member for it.
+    Unlocated(T),
+}
+
+impl<T: Copy> MaybeRecordedValue<T> {
+    /// The value, located or not.
+    pub fn value(&self) -> T {
+        match self {
+            Self::Located(recorded) => recorded.value,
+            Self::Unlocated(value) => *value,
+        }
+    }
+
+    /// The source encoding location, when the form stores one.
+    pub fn offset(&self) -> Option<u64> {
+        match self {
+            Self::Located(recorded) => Some(recorded.offset),
+            Self::Unlocated(_) => None,
+        }
+    }
+
+    fn from_wire(
+        value: Option<T>,
+        offset: Option<u64>,
+        field: &str,
+    ) -> Result<Option<Self>, String> {
+        match (value, offset) {
+            (Some(value), Some(offset)) => Ok(Some(Self::Located(RecordedValue { value, offset }))),
+            (Some(value), None) => Ok(Some(Self::Unlocated(value))),
             (None, None) => Ok(None),
             (None, Some(_)) => Err(format!("{field}_offset requires {field}")),
         }
@@ -496,9 +558,27 @@ pub struct PersistentDesignLink {
     pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     pub ordinal: u32,
-    /// Whether this is the active persistent id for `target`, as opposed to a
-    /// superseded historical id retained for provenance.
-    pub is_current: bool,
+}
+
+/// The active persistent design link of every target: the highest-ordinal link
+/// of that target's ordered run. Every other link of the run is a superseded
+/// historical id retained for provenance.
+pub(crate) fn current_persistent_design_links(
+    links: &[PersistentDesignLink],
+) -> std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> {
+    let mut current: std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> =
+        std::collections::BTreeMap::new();
+    for link in links {
+        current
+            .entry(&link.target)
+            .and_modify(|existing| {
+                if link.ordinal > existing.ordinal {
+                    *existing = link;
+                }
+            })
+            .or_insert(link);
+    }
+    current
 }
 
 #[derive(Serialize, Deserialize)]
@@ -514,9 +594,6 @@ struct PersistentDesignLinkWire {
     design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     ordinal: u32,
-    /// Whether this is the active persistent id for `target`, as opposed to a
-    /// superseded historical id retained for provenance.
-    is_current: bool,
 }
 
 impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
@@ -532,7 +609,6 @@ impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
             design_id: wire.design_id.try_into()?,
             design_reference: wire.design_reference,
             ordinal: wire.ordinal,
-            is_current: wire.is_current,
         })
     }
 }
@@ -546,7 +622,6 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
             entity_kind: 3,
             design_reference: record.design_reference,
             ordinal: record.ordinal,
-            is_current: record.is_current,
         }
     }
 }
@@ -704,7 +779,11 @@ impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
 impl From<ConstructionRecipe> for ConstructionRecipeWire {
     fn from(value: ConstructionRecipe) -> Self {
         let (design_id, design_id_offset, design_selector) = match value.design {
-            Some(design) => (Some(design.id.value), design.id.offset, design.selector),
+            Some(design) => (
+                Some(design.id.value),
+                Some(design.id.offset),
+                design.selector,
+            ),
             None => (None, None, None),
         };
         Self {
@@ -898,7 +977,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             .map(|unit| {
                 Ok::<_, String>(Located {
                     value: NonEmptyString::new(unit.value).ok_or("unit must not be empty")?,
-                    offset: unit.offset.ok_or("unit_offset is required with unit")?,
+                    offset: unit.offset,
                 })
             })
             .transpose()?;
@@ -3010,8 +3089,6 @@ struct DesignSketchPlacementWire {
     scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     entity_id: String,
-    /// Numeric suffix of `entity_id`.
-    entity_suffix: u64,
     /// Typed sketch-container visibility for the placed sketch entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     visibility: Option<DesignSketchVisibility>,
@@ -3044,9 +3121,6 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
         use DesignSketchFrameForm as Form;
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
-            return Err("entity_suffix disagrees with entity_id".into());
-        }
 
         let form = match (wire.member_run_head, wire.frame_length) {
             (false, 201) => Form::ScopeCompact,
@@ -3096,7 +3170,6 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
 
 impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
     fn from(value: DesignSketchPlacement) -> Self {
-        let entity_suffix = value.entity_id.suffix();
         let byte_offset = value.byte_offset();
         let frame_length = value.frame_length();
         let transform = *value.transform();
@@ -3107,7 +3180,6 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
             id: value.id,
             scope_record_index: value.scope_record_index,
             entity_id: value.entity_id.0,
-            entity_suffix,
             visibility: value.visibility,
             byte_offset,
             class_tag: value.class_tag.into(),
@@ -3392,8 +3464,6 @@ struct DesignMaterialAssignmentWire {
     pub asm_body_key: u64,
     /// Byte offset of the body-map ASM key.
     pub asm_body_key_offset: u64,
-    /// Numeric suffix of `entity_id`.
-    pub entity_suffix: u64,
     /// Byte offset of the body-map entity suffix.
     pub entity_suffix_offset: u64,
     /// UTF-16 design-entity id.
@@ -3422,9 +3492,6 @@ impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
     type Error = String;
     fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, Self::Error> {
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
-            return Err("entity_suffix disagrees with entity_id".into());
-        }
         Ok(Self {
             id: wire.id,
             asm_body_key: wire.asm_body_key,
@@ -3454,15 +3521,14 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
             id: value.id,
             asm_body_key: value.asm_body_key,
             asm_body_key_offset: value.asm_body_key_offset,
-            entity_suffix: value.entity_id.suffix(),
             entity_suffix_offset: value.entity_suffix_offset,
             entity_id: value.entity_id.0,
             entity_id_offset: value.entity_id_offset,
             visual_guid: value.visual_guid,
             visual_guid_offset: value.visual_guid_offset,
-            physical_token_offset: value.physical_token.as_ref().and_then(|field| field.offset),
+            physical_token_offset: value.physical_token.as_ref().map(|field| field.offset),
             physical_token: value.physical_token.map(|field| field.value),
-            visual_preset_offset: value.visual_preset.as_ref().and_then(|field| field.offset),
+            visual_preset_offset: value.visual_preset.as_ref().map(|field| field.offset),
             visual_preset: value.visual_preset.map(|field| field.value),
         }
     }
@@ -3613,6 +3679,65 @@ pub enum DesignConfigurationKind {
     Rule,
 }
 
+/// The base-type-GUID field of a type-table entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BaseTypeGuid {
+    /// The entry stores no base-type-GUID field.
+    Absent,
+    /// The entry stores an explicit empty root GUID at this location.
+    EmptyRoot {
+        /// Byte offset of the empty base-GUID bytes in the `MetaStream`.
+        offset: u64,
+    },
+    /// The entry names a base type at this location.
+    Guid {
+        /// GUID naming the base type.
+        value: DesignRelaxedGuidText,
+        /// Byte offset of the base-GUID bytes in the `MetaStream`.
+        offset: u64,
+    },
+}
+
+impl BaseTypeGuid {
+    /// The named base type, when the entry names one.
+    pub fn value(&self) -> Option<&DesignRelaxedGuidText> {
+        match self {
+            Self::Absent | Self::EmptyRoot { .. } => None,
+            Self::Guid { value, .. } => Some(value),
+        }
+    }
+
+    /// Byte offset of the stored base-GUID bytes, when the entry stores them.
+    pub fn offset(&self) -> Option<u64> {
+        match *self {
+            Self::Absent => None,
+            Self::EmptyRoot { offset } | Self::Guid { offset, .. } => Some(offset),
+        }
+    }
+
+    fn from_wire(value: Option<String>, offset: Option<u64>) -> Result<Self, String> {
+        match (value, offset) {
+            (None, None) => Ok(Self::Absent),
+            (Some(value), Some(offset)) if value.is_empty() => Ok(Self::EmptyRoot { offset }),
+            (Some(value), Some(offset)) => Ok(Self::Guid {
+                value: DesignRelaxedGuidText::try_from(value)
+                    .map_err(|error| format!("base_type_guid: {error}"))?,
+                offset,
+            }),
+            (Some(_), None) => Err("base_type_guid requires base_type_guid_offset".into()),
+            (None, Some(_)) => Err("base_type_guid_offset requires base_type_guid".into()),
+        }
+    }
+
+    fn into_wire(self) -> (Option<String>, Option<u64>) {
+        match self {
+            Self::Absent => (None, None),
+            Self::EmptyRoot { offset } => (Some(String::new()), Some(offset)),
+            Self::Guid { value, offset } => (Some(value.into()), Some(offset)),
+        }
+    }
+}
+
 /// One type-table entry from a `MetaStream` segment header. The entry registers
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
@@ -3628,9 +3753,8 @@ pub struct SegmentType {
     pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
-    /// Base GUID field and location; its value is `None` for an explicit empty root GUID.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_type_guid: Option<RecordedValue<Option<DesignRelaxedGuidText>>>,
+    /// Base-type-GUID field and location.
+    pub base_type_guid: BaseTypeGuid,
     /// Record version of this type.
     pub version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
@@ -3697,20 +3821,9 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
                 wire.entity_id_offsets,
                 "entity_ids/entity_id_offsets",
             )?,
-            base_type_guid: RecordedValue::from_wire(
-                wire.base_type_guid
-                    .map(|guid| {
-                        if guid.is_empty() {
-                            Ok(None)
-                        } else {
-                            DesignRelaxedGuidText::try_from(guid)
-                                .map(Some)
-                                .map_err(|error| format!("base_type_guid: {error}"))
-                        }
-                    })
-                    .transpose()?,
+            base_type_guid: BaseTypeGuid::from_wire(
+                wire.base_type_guid,
                 wire.base_type_guid_offset,
-                "base_type_guid",
             )?,
         })
     }
@@ -3719,6 +3832,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
         let (entity_ids, entity_id_offsets) = value.entities.into_wire();
+        let (base_type_guid, base_type_guid_offset) = value.base_type_guid.into_wire();
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
@@ -3729,10 +3843,8 @@ impl From<SegmentType> for SegmentTypeWire {
             module: value.module,
             entity_ids,
             entity_id_offsets,
-            base_type_guid_offset: value.base_type_guid.as_ref().and_then(|field| field.offset),
-            base_type_guid: value
-                .base_type_guid
-                .map(|field| field.value.map(String::from).unwrap_or_default()),
+            base_type_guid_offset,
+            base_type_guid,
         }
     }
 }
@@ -4105,8 +4217,6 @@ struct DesignEntityHeaderWire {
     id: String,
     /// Byte offset of this entity header in its Design `BulkStream`.
     byte_offset: u64,
-    /// Numeric suffix of the owning design-entity id (e.g. the `N` in `Body:N`).
-    entity_suffix: u64,
     /// Full UTF-16LE-decoded design-entity id string for this header.
     entity_id: String,
     /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
@@ -4151,9 +4261,6 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
             return Err("declared_reference_count must match reference_indices".into());
         }
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
-            return Err("entity_suffix disagrees with entity_id".into());
-        }
         let references = match (wire.record_reference_offset, wire.declared_reference_count) {
             (Some(offset), Some(_)) => {
                 if wire.reference_indices.len() != wire.reference_offsets.len() {
@@ -4223,7 +4330,6 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             member_offsets,
             id: header.id,
             byte_offset: header.byte_offset,
-            entity_suffix: header.entity_id.suffix(),
             entity_id: header.entity_id.0,
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
@@ -7577,6 +7683,8 @@ pub enum SketchPointRecordForm {
         entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
+        /// Whether the paired companion record carries the fixed present-zero prefix.
+        companion_prefix_present_zero: bool,
         persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
@@ -7589,6 +7697,8 @@ pub enum SketchPointRecordForm {
         entity_genesis: Option<u64>,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
+        /// Whether the paired companion record carries the fixed present-zero prefix.
+        companion_prefix_present_zero: bool,
         persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
@@ -7607,6 +7717,7 @@ impl SketchPointRecordForm {
             depth,
             entity_genesis,
             padded_paired_reference: false,
+            companion_prefix_present_zero: false,
             persistent_id: std::num::NonZeroU64::new(persistent_id).unwrap(),
             flags: [false; 8],
             closure,
@@ -7630,6 +7741,65 @@ impl SketchPointRecordForm {
             Self::Version8 { .. } => 8,
             Self::Version10 { .. } | Self::Version10InlineTyped { .. } => 10,
             Self::Version11 { .. } | Self::Version11InlineTyped { .. } => 11,
+        }
+    }
+
+    pub(crate) fn companion_prefix_present_zero(&self) -> bool {
+        match *self {
+            Self::Version11 {
+                companion_prefix_present_zero,
+                ..
+            }
+            | Self::Version11InlineTyped {
+                companion_prefix_present_zero,
+                ..
+            } => companion_prefix_present_zero,
+            Self::Version0 { .. }
+            | Self::Version8 { .. }
+            | Self::Version10 { .. }
+            | Self::Version10InlineTyped { .. } => false,
+        }
+    }
+
+    /// Return this form with the companion prefix observed on the paired record,
+    /// or `None` when the form has no member for a present-zero prefix.
+    pub(crate) fn with_companion_prefix_present_zero(self, present_zero: bool) -> Option<Self> {
+        match self {
+            Self::Version11 {
+                depth,
+                entity_genesis,
+                padded_paired_reference,
+                persistent_id,
+                flags,
+                closure,
+                ..
+            } => Some(Self::Version11 {
+                depth,
+                entity_genesis,
+                padded_paired_reference,
+                companion_prefix_present_zero: present_zero,
+                persistent_id,
+                flags,
+                closure,
+            }),
+            Self::Version11InlineTyped {
+                depth,
+                entity_genesis,
+                trailing_reference,
+                persistent_id,
+                flags,
+                closure,
+                ..
+            } => Some(Self::Version11InlineTyped {
+                depth,
+                entity_genesis,
+                trailing_reference,
+                companion_prefix_present_zero: present_zero,
+                persistent_id,
+                flags,
+                closure,
+            }),
+            other => (!present_zero).then_some(other),
         }
     }
 
@@ -7680,30 +7850,34 @@ impl SketchPointRecordForm {
 }
 
 /// Encoding of every reference owned by a point companion.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SketchPointCompanionReferenceEncoding {
     /// Target entity ID followed directly by the same-segment flags.
-    #[default]
     SameSegment,
     /// Target entity ID followed by the target type GUID and same-segment flags.
     InlineTyped,
 }
 
+impl SketchPointCompanionReferenceEncoding {
+    /// Return the reference encoding the point record form dictates.
+    pub(crate) fn for_form(form: &SketchPointRecordForm) -> Self {
+        if form.uses_inline_typed_references() {
+            Self::InlineTyped
+        } else {
+            Self::SameSegment
+        }
+    }
+}
+
 /// Reverse curve-incidence record paired with a version-11 sketch point.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SketchPointCompanion {
-    /// Whether the companion prefix carries the fixed present-zero member.
-    pub prefix_present_zero: bool,
     /// Incident sketch-curve record indexes in serialized order.
     pub incident_curves: Vec<u32>,
 }
 
 impl SketchPointCompanion {
-    fn validate_for(&self, form: &SketchPointRecordForm) -> Result<(), String> {
-        if self.prefix_present_zero && form.class_version() != 11 {
-            return Err("sketch point companion.prefix_present_zero requires version 11".into());
-        }
+    fn validate(&self) -> Result<(), String> {
         let unique: std::collections::HashSet<_> = self.incident_curves.iter().collect();
         if unique.len() != self.incident_curves.len() {
             return Err("sketch point companion.incident_curves must be distinct".into());
@@ -7721,9 +7895,6 @@ pub(crate) struct SketchPointCompanionRef<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SketchPointCompanionWire {
-    prefix_present_zero: bool,
-    #[serde(default)]
-    reference_encoding: SketchPointCompanionReferenceEncoding,
     #[serde(default)]
     incident_curves: Vec<u32>,
 }
@@ -7792,7 +7963,7 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
         if !draft.record_form.depth().is_finite() {
             return Err("sketch point depth must be finite".into());
         }
-        draft.companion.validate_for(&draft.record_form)?;
+        draft.companion.validate()?;
         Ok(Self {
             id: draft.id,
             record_index: draft.record_index,
@@ -7830,7 +8001,6 @@ impl SketchPoint {
         if !record_form.depth().is_finite() {
             return Err("sketch point depth must be finite".into());
         }
-        self.companion.validate_for(&record_form)?;
         self.record_form = record_form;
         Ok(())
     }
@@ -7840,13 +8010,13 @@ impl SketchPoint {
         &mut self,
         companion: SketchPointCompanion,
     ) -> Result<(), String> {
-        companion.validate_for(&self.record_form)?;
+        companion.validate()?;
         self.companion = companion;
         Ok(())
     }
     pub(crate) fn companion(&self) -> SketchPointCompanionRef<'_> {
         SketchPointCompanionRef {
-            prefix_present_zero: self.companion.prefix_present_zero,
+            prefix_present_zero: self.record_form.companion_prefix_present_zero(),
             incident_curves: &self.companion.incident_curves,
         }
     }
@@ -7885,9 +8055,19 @@ enum SketchPointRecordFormSerde {
     Version0,
     Version8,
     Version10,
-    Version10InlineTyped { trailing_reference: u32 },
-    Version11 { padded_paired_reference: bool },
-    Version11InlineTyped { trailing_reference: u32 },
+    Version10InlineTyped {
+        trailing_reference: u32,
+    },
+    Version11 {
+        padded_paired_reference: bool,
+        #[serde(default)]
+        companion_prefix_present_zero: bool,
+    },
+    Version11InlineTyped {
+        trailing_reference: u32,
+        #[serde(default)]
+        companion_prefix_present_zero: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7913,14 +8093,14 @@ struct SketchPointSerde {
     depth: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     closure: Option<SketchPointClosureSerde>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    companion: Option<SketchPointCompanionWire>,
+    companion: SketchPointCompanionWire,
 }
 
 impl Default for SketchPointRecordFormSerde {
     fn default() -> Self {
         Self::Version11 {
             padded_paired_reference: false,
+            companion_prefix_present_zero: false,
         }
     }
 }
@@ -8000,6 +8180,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             (
                 SketchPointRecordFormSerde::Version11 {
                     padded_paired_reference,
+                    companion_prefix_present_zero,
                 },
                 Some(persistent_id),
                 Some(closure),
@@ -8007,18 +8188,23 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 padded_paired_reference,
+                companion_prefix_present_zero,
                 persistent_id,
                 flags,
                 closure,
             },
             (
-                SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
+                SketchPointRecordFormSerde::Version11InlineTyped {
+                    trailing_reference,
+                    companion_prefix_present_zero,
+                },
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11InlineTyped {
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 trailing_reference,
+                companion_prefix_present_zero,
                 persistent_id,
                 flags,
                 closure,
@@ -8034,17 +8220,8 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         {
             return Err("sketch point flags beyond the form width must be zero".into());
         }
-        let companion = wire.companion.ok_or("sketch point companion is required")?;
-        let inline_typed =
-            companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
-        if inline_typed != record_form.uses_inline_typed_references() {
-            return Err(
-                "sketch point companion.reference_encoding disagrees with record_form".into(),
-            );
-        }
         let companion = SketchPointCompanion {
-            prefix_present_zero: companion.prefix_present_zero,
-            incident_curves: companion.incident_curves,
+            incident_curves: wire.companion.incident_curves,
         };
         Self::try_from(SketchPointDraft {
             id: wire.id,
@@ -8063,11 +8240,6 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
 
 impl From<SketchPoint> for SketchPointSerde {
     fn from(point: SketchPoint) -> Self {
-        let reference_encoding = if point.record_form.uses_inline_typed_references() {
-            SketchPointCompanionReferenceEncoding::InlineTyped
-        } else {
-            SketchPointCompanionReferenceEncoding::SameSegment
-        };
         let depth = point.depth();
         let entity_genesis = point.entity_genesis();
         let persistent_id = point.persistent_id();
@@ -8082,19 +8254,24 @@ impl From<SketchPoint> for SketchPointSerde {
             } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
             SketchPointRecordForm::Version11 {
                 padded_paired_reference,
+                companion_prefix_present_zero,
                 ..
             } => SketchPointRecordFormSerde::Version11 {
                 padded_paired_reference,
+                companion_prefix_present_zero,
             },
             SketchPointRecordForm::Version11InlineTyped {
-                trailing_reference, ..
-            } => SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
+                trailing_reference,
+                companion_prefix_present_zero,
+                ..
+            } => SketchPointRecordFormSerde::Version11InlineTyped {
+                trailing_reference,
+                companion_prefix_present_zero,
+            },
         };
-        let companion = Some(SketchPointCompanionWire {
-            prefix_present_zero: point.companion.prefix_present_zero,
-            reference_encoding,
+        let companion = SketchPointCompanionWire {
             incident_curves: point.companion.incident_curves,
-        });
+        };
         Self {
             id: point.id,
             record_index: point.record_index,

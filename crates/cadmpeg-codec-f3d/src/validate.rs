@@ -5476,9 +5476,7 @@ fn validate_body_recipe_operands<'a>(
             && recipe.is_some_and(|recipe| {
                 let selector_is_valid = recipe.design.as_ref().is_some_and(|design| {
                     let design_id = &design.id;
-                    let Some(design_id_offset) = design_id.offset else {
-                        return false;
-                    };
+                    let design_id_offset = design_id.offset;
                     let Some(selector) = design.selector else {
                         return false;
                     };
@@ -7900,9 +7898,11 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
     for links in body_links.values_mut() {
         links.sort_by_key(|link| link.ordinal);
-        if links.iter().enumerate().any(|(ordinal, link)| {
-            link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len())
-        }) {
+        if links
+            .iter()
+            .enumerate()
+            .any(|(ordinal, link)| link.ordinal != ordinal as u32)
+        {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

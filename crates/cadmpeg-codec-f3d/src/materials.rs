@@ -1022,13 +1022,13 @@ pub(crate) fn decode_design_assignments(
                 visual_guid_offset: material.visual_guid_offset,
                 physical_token: Some(crate::records::RecordedValue {
                     value: material.physical_token,
-                    offset: Some(material.physical_token_offset),
+                    offset: material.physical_token_offset,
                 }),
                 visual_preset: material
                     .visual_preset
                     .map(|field| crate::records::RecordedValue {
                         value: field.value,
-                        offset: Some(field.offset),
+                        offset: field.offset,
                     }),
             });
         }

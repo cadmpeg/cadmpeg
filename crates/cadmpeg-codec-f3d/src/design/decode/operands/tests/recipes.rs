@@ -1088,7 +1088,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_recipe.design = Some(crate::records::ConstructionRecipeDesign {
         id: crate::records::RecordedValue {
             value: "303".into(),
-            offset: None,
+            offset: 0,
         },
         selector: None,
     });

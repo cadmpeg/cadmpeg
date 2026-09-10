@@ -281,13 +281,8 @@ fn decode_sketch_visibilities_in_stream(
             || !frame
                 .design_type
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
-                })
+                .value()
+                .map(crate::records::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -338,13 +333,8 @@ fn decode_sketch_visibilities_in_stream(
                     && member_type.module == "Geometry"
                     && member_type
                         .base_type_guid
-                        .as_ref()
-                        .and_then(|field| {
-                            field
-                                .value
-                                .as_ref()
-                                .map(crate::records::DesignRelaxedGuidText::as_str)
-                        })
+                        .value()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
                         })
@@ -1424,12 +1414,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                 "F3D sketch point {record_index} has an invalid trailing container reference"
             )));
         }
-        let companion_encoding = if decoded.record_form.uses_inline_typed_references() {
-            SketchPointCompanionReferenceEncoding::InlineTyped
-        } else {
-            SketchPointCompanionReferenceEncoding::SameSegment
-        };
-        let companion = frames_by_entity
+        let (record_form, companion) = frames_by_entity
             .get(&decoded.paired_reference)
             .filter(|companion_frame| {
                 let design_type = companion_frame.design_type;
@@ -1444,12 +1429,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                 decode_sketch_point_companion(
                     &bytes[companion_frame.start..companion_frame.end],
                     record_index,
-                    companion_encoding,
-                    matches!(
-                        decoded.record_form,
-                        SketchPointRecordForm::Version11 { .. }
-                            | SketchPointRecordForm::Version11InlineTyped { .. }
-                    ),
+                    decoded.record_form.clone(),
                     &types_by_entity,
                 )
             })
@@ -1466,7 +1446,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                 class_tag: frame.class_tag.clone(),
                 byte_offset: frame.start as u64,
                 coordinate_offset: decoded.coordinate_offset,
-                record_form: decoded.record_form,
+                record_form,
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
@@ -2446,6 +2426,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                         depth,
                         entity_genesis,
                         trailing_reference,
+                        companion_prefix_present_zero: false,
                         persistent_id,
                         flags: flags.map(|flag| flag == 1),
                         closure,
@@ -2468,6 +2449,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                         depth,
                         entity_genesis,
                         padded_paired_reference,
+                        companion_prefix_present_zero: false,
                         persistent_id,
                         flags: flags.map(|flag| flag == 1),
                         closure,
@@ -2505,19 +2487,20 @@ fn point_target_has_guid(
 fn decode_sketch_point_companion(
     payload: &[u8],
     point_record_index: u32,
-    reference_encoding: SketchPointCompanionReferenceEncoding,
-    allow_present_zero_prefix: bool,
+    record_form: SketchPointRecordForm,
     types_by_entity: &HashMap<u32, (&str, u32, &str)>,
-) -> Option<SketchPointCompanion> {
+) -> Option<(SketchPointRecordForm, SketchPointCompanion)> {
+    let reference_encoding = SketchPointCompanionReferenceEncoding::for_form(&record_form);
     let (prefix_present_zero, mut cursor) = if payload.get(11..21) == Some(&[0; 10][..]) {
         (false, 21)
     } else if payload.get(11..20) == Some(&[0; 9][..])
         && payload.get(20..25) == Some(&[1, 0, 0, 0, 0][..])
     {
-        allow_present_zero_prefix.then_some((true, 25))?
+        (true, 25)
     } else {
         return None;
     };
+    let record_form = record_form.with_companion_prefix_present_zero(prefix_present_zero)?;
     let count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if count > MAX_RELATION_RUN {
         return None;
@@ -2552,10 +2535,7 @@ fn decode_sketch_point_companion(
     if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
         return None;
     }
-    Some(SketchPointCompanion {
-        prefix_present_zero,
-        incident_curves,
-    })
+    Some((record_form, SketchPointCompanion { incident_curves }))
 }
 
 pub(crate) const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
@@ -3876,7 +3856,7 @@ pub(crate) struct IndexedRecordHeader {
     pub(crate) class_tag: crate::records::DesignClassTag,
 }
 
-fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader> {
+pub(crate) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader> {
     if View::u32_le_at(bytes, at)? != 3 {
         return None;
     }
@@ -3892,13 +3872,6 @@ fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHead
     })
 }
 
-/// The record index carried by the indexed-record header at `at`. The header
-/// spends its first seven bytes on the length-prefixed class tag, so the index
-/// always sits at `at + 7`.
-pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
-    indexed_record_header_at(bytes, at).map(|header| header.record_index)
-}
-
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
     indexed_record_offsets(bytes.get(position..)?)
         .next()
@@ -3909,9 +3882,7 @@ pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Optio
 ///
 /// A class tag is `256` plus an index into the segment's own type table, so a
 /// tag reaches four characters only in a segment registering more than 744
-/// types. No segment registers that many, and `indexed_record_index` reads the
-/// record index at a fixed `at + 7` on the same assumption; both would have to
-/// change together to widen it.
+/// types. No segment registers that many.
 pub(crate) fn indexed_record_offsets(
     bytes: &[u8],
 ) -> impl Iterator<Item = IndexedRecordHeader> + '_ {
@@ -3926,7 +3897,9 @@ pub(crate) fn next_indexed_record_offset_with_index(
 ) -> Option<usize> {
     loop {
         let offset = next_indexed_record_offset(bytes, position)?;
-        if indexed_record_index(bytes, offset) == Some(record_index) {
+        if indexed_record_header_at(bytes, offset)
+            .is_some_and(|header| header.record_index == record_index)
+        {
             return Some(offset);
         }
         position = offset.checked_add(1)?;

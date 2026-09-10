@@ -22,7 +22,7 @@ fn draft() -> DesignParameterDraft {
         source_kind_offset: 160,
         unit: Some(RecordedValue {
             value: "mm".into(),
-            offset: Some(170),
+            offset: 170,
         }),
         name: "Width".into(),
         name_offset: 180,
@@ -48,9 +48,6 @@ fn parameter_rejects_empty_text_and_unlocated_units() {
         .unwrap_err()
         .to_string()
         .contains("unit_offset"));
-    let mut unlocated = draft();
-    unlocated.unit.as_mut().unwrap().offset = None;
-    assert!(DesignParameter::try_from(unlocated).is_err());
 }
 
 #[test]

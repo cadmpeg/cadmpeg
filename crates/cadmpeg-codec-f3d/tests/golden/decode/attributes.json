@@ -128,30 +128,30 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#13",
+          "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#14",
+          "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#15",
+          "end": "f3d:brep:entity#13"
         }
       ],
       "vertices": [
@@ -508,7 +508,6 @@
             "design_id": "311",
             "design_reference": 6,
             "entity_kind": 3,
-            "is_current": false,
             "ordinal": 0,
             "target": {
               "id": "f3d:brep:entity#1",
@@ -520,7 +519,6 @@
             "design_id": "322",
             "design_reference": 7,
             "entity_kind": 3,
-            "is_current": true,
             "ordinal": 1,
             "target": {
               "id": "f3d:brep:entity#1",

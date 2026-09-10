@@ -328,7 +328,6 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
             cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
                 .unwrap(),
             cell_table_paired_byte_offset: 0,
-            cell_count: 2,
             cell_count_offset: 0,
             cell_entries: vec![
                 DesignSurfaceTrimCellEntry {

@@ -103,7 +103,7 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         visual_guid_offset: 0,
         physical_token: Some(crate::records::RecordedValue {
             value: "PrismMaterial-Generated".into(),
-            offset: None,
+            offset: 0,
         }),
         visual_preset: None,
     }];

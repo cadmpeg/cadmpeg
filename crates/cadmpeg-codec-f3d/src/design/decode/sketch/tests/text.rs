@@ -169,7 +169,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::BaseTypeGuid::Absent,
             version,
             version_offset: 0,
             module: module.into(),
