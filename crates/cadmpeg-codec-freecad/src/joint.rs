@@ -64,10 +64,7 @@ pub(crate) fn transfer(
         let joint_type = joint_type_property.map(enumeration_value).transpose()?;
         let body = if grounded_property.is_some() {
             let placement = placement(&owned, "Placement")?.unwrap_or_default();
-            let reference = links(&owned, "ObjectToGround")
-                .into_iter()
-                .next()
-                .and_then(LinkTarget::into_optional);
+            let reference = links(&owned, "ObjectToGround").into_iter().next();
             JointBody::Grounded {
                 reference,
                 placement,
@@ -79,10 +76,7 @@ pub(crate) fn transfer(
                                     offset_name: &str|
              -> Result<JointConnectorRecord, CodecError> {
                 Ok(JointConnectorRecord {
-                    reference: connector(owned, reference_name)?
-                        .into_iter()
-                        .next()
-                        .and_then(LinkTarget::into_optional),
+                    reference: connector(owned, reference_name)?.into_iter().next(),
                     placement: placement(owned, placement_name)?.unwrap_or_default(),
                     offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
