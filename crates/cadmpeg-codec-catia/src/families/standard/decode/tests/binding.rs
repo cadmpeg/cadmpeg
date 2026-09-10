@@ -23,13 +23,9 @@ fn unit_square_surface() -> NurbsSurface {
     .expect("valid unit-square surface")
 }
 
-fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> B2OwnerNumericTail {
-    B2OwnerNumericTail {
-        header: [0x84, 0x41, 0, 0, 0x0d],
-        lower,
-        upper,
-        bounds,
-    }
+fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> CatiaOwnerNumericTail {
+    CatiaOwnerNumericTail::new([0x84, 0x41, 0, 0, 0x0d], lower, upper, bounds)
+        .expect("increasing owner numeric tail")
 }
 
 #[test]

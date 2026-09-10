@@ -914,7 +914,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
         &mut excluded_ir,
         &native,
         &mut annotations,
-        Some(&std::collections::HashSet::new()),
+        &crate::decode::ModelingGraphScope::Unresolved,
     )
     .expect("valid exactness fields");
     assert!(excluded_ir.model.parameters.is_empty());

@@ -32,10 +32,12 @@ use schema_configuration_chain::{
 };
 
 pub(crate) mod owner_chart;
+pub(crate) mod owner_numeric_tail;
 use owner_chart::{
     CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
     CatiaOwnerChartBridgeReference, CatiaOwnerChartCarrier, CatiaOwnerChartRelation,
 };
+pub use owner_numeric_tail::CatiaOwnerNumericTail;
 
 use crate::catalog;
 use crate::container;
@@ -98,20 +100,6 @@ pub struct CatiaFaceNodeRelation {
     pub target: u32,
     /// Two terminal bytes of the face-node payload.
     pub terminal: [u8; 2],
-}
-
-/// Structurally decoded payload of a class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct CatiaOwnerNumericTail {
-    /// Five-byte class-specific header.
-    pub header: [u8; 5],
-    /// Lower coordinate pair of a strictly increasing binary64 box.
-    pub lower: [f64; 2],
-    /// Upper coordinate pair of a strictly increasing binary64 box.
-    pub upper: [f64; 2],
-    /// Three strictly increasing binary32 bounds in serialization order. In
-    /// an all-compact owner these are the model-space X, Y, and Z bounds.
-    pub bounds: [[f32; 2]; 3],
 }
 
 /// Selected class of a fixed-nine owner identity target.
@@ -387,11 +375,11 @@ pub struct CatiaConsolidatedCone {
     /// Cone apex.
     pub apex: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: crate::checked::RelaxedUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: crate::checked::RelaxedUnitVector3,
     /// Cone-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: crate::checked::RelaxedUnitVector3,
     /// Cone half-angle in radians.
     pub half_angle: f64,
     /// Reference radius of the conical surface, independent of the active chart ranges.
@@ -399,9 +387,9 @@ pub struct CatiaConsolidatedCone {
     /// Active azimuth interval.
     pub angular_range: [f64; 2],
     /// Native slant-coordinate interval, including zero at the apex.
-    pub slant_range: [f64; 2],
+    pub slant_range: crate::checked::OrderedInterval,
     /// Scale from azimuth to stored U parameter.
-    pub angular_scale: f64,
+    pub angular_scale: crate::checked::PositiveFinite,
     /// Full-turn azimuth chart domain.
     pub angular_domain: [f64; 2],
 }
@@ -463,9 +451,9 @@ pub struct CatiaConsolidatedCircle {
     /// Two centre coordinates in the host-implied carrier plane.
     pub center_pair: [f64; 2],
     /// Circle radius in millimetres.
-    pub radius: f64,
+    pub radius: crate::checked::PositiveFinite,
     /// Arc-length parameter interval.
-    pub range: [f64; 2],
+    pub range: crate::checked::OrderedInterval,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
 }
@@ -473,7 +461,7 @@ pub struct CatiaConsolidatedCircle {
 impl CatiaConsolidatedCircle {
     /// Whether the interval spans one complete circumference.
     pub fn full_circle(&self) -> bool {
-        crate::families::b2::records::circle_range_is_full_turn(self.radius, self.range)
+        crate::families::b2::records::circle_range_is_full_turn(self.radius.get(), self.range.get())
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -484,8 +472,8 @@ struct CatiaConsolidatedCircleWire {
     record_id: u32,
     frame_token: u8,
     center_pair: [f64; 2],
-    radius: f64,
-    range: [f64; 2],
+    radius: crate::checked::PositiveFinite,
+    range: crate::checked::OrderedInterval,
     full_circle: bool,
     chart_shift: f64,
 }
@@ -535,27 +523,27 @@ pub enum CatiaConsolidatedCylinderPayload {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
-        axis: [f64; 3],
+        axis: crate::checked::RelaxedHypotUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: [f64; 3],
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
     },
     /// Complete three-dimensional frame reconstructed from layout `0x5a`.
     Layout5a {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
-        axis: [f64; 3],
+        axis: crate::checked::RelaxedHypotUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: [f64; 3],
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
     },
     /// Complete layout-`0x62` frame and its redundant range origin.
     RangeOrigin {
         /// Stored unit vector in the token-defined carrier plane.
-        stored_vector: [f64; 2],
+        stored_vector: crate::checked::RelaxedUnitVector2,
         /// Cylinder-axis unit direction.
-        axis: [f64; 3],
+        axis: crate::checked::RelaxedHypotUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: [f64; 3],
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
         /// Origin of the stored partial circumferential interval.
         range_origin: f64,
     },
@@ -585,11 +573,11 @@ pub struct CatiaConsolidatedCylinder {
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder radius.
-    pub radius: f64,
+    pub radius: crate::checked::PositiveFinite,
     /// Arc-length circumferential interval.
-    pub u_range: [f64; 2],
+    pub u_range: crate::checked::OrderedInterval,
     /// Axial interval.
-    pub v_range: [f64; 2],
+    pub v_range: crate::checked::OrderedInterval,
     /// Layout-specific frame data.
     pub payload: CatiaConsolidatedCylinderPayload,
 }
@@ -600,9 +588,9 @@ struct CatiaConsolidatedCylinderWire {
     byte_offset: u64,
     layout: u8,
     origin: [f64; 3],
-    radius: f64,
-    u_range: [f64; 2],
-    v_range: [f64; 2],
+    radius: crate::checked::PositiveFinite,
+    u_range: crate::checked::OrderedInterval,
+    v_range: crate::checked::OrderedInterval,
     payload: CatiaConsolidatedCylinderPayloadWire,
 }
 
@@ -611,13 +599,13 @@ struct CatiaConsolidatedCylinderWire {
 enum CatiaConsolidatedCylinderPayloadWire {
     Resolved {
         frame_token: u8,
-        axis: [f64; 3],
-        reference_direction: [f64; 3],
+        axis: crate::checked::RelaxedHypotUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
     },
     RangeOrigin {
-        stored_vector: [f64; 2],
-        axis: [f64; 3],
-        reference_direction: [f64; 3],
+        stored_vector: crate::checked::RelaxedUnitVector2,
+        axis: crate::checked::RelaxedHypotUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
         range_origin: f64,
     },
 }
@@ -740,17 +728,17 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder radius.
-    pub radius: f64,
+    pub radius: crate::checked::PositiveFinite,
     /// Full-turn arc-length circumferential interval.
-    pub u_range: [f64; 2],
+    pub u_range: crate::checked::OrderedInterval,
     /// Axial interval.
-    pub v_range: [f64; 2],
+    pub v_range: crate::checked::OrderedInterval,
     /// Token selecting the serialized frame-vector role.
     pub frame_token: u8,
     /// Cylinder-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: crate::checked::RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: [f64; 3],
+    pub reference_direction: crate::checked::RelaxedHypotUnitVector3,
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
@@ -1054,13 +1042,13 @@ pub struct CatiaConsolidatedSphere {
     /// Sphere centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: crate::checked::ExactHypotUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: crate::checked::ExactHypotUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: crate::checked::ExactHypotUnitVector3,
     /// Sphere radius.
-    pub radius: f64,
+    pub radius: crate::checked::PositiveFinite,
     /// Active azimuth interval.
     pub azimuth_range: [f64; 2],
     /// Active latitude interval.
@@ -1077,15 +1065,15 @@ pub struct CatiaConsolidatedTorus {
     /// Torus centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: crate::checked::ExactUnitVector3,
     /// Torus-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: crate::checked::ExactUnitVector3,
     /// Major radius.
-    pub major_radius: f64,
+    pub major_radius: crate::checked::PositiveFinite,
     /// Minor radius.
-    pub minor_radius: f64,
+    pub minor_radius: crate::checked::PositiveFinite,
     /// Active major-angle interval.
     pub major_angular_range: [f64; 2],
     /// Full-turn major-angle chart domain.
@@ -1095,9 +1083,9 @@ pub struct CatiaConsolidatedTorus {
     /// Full-turn minor-angle chart domain.
     pub minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
-    pub major_scale: f64,
+    pub major_scale: crate::checked::PositiveFinite,
     /// Scale from minor angle to stored V parameter.
-    pub minor_scale: f64,
+    pub minor_scale: crate::checked::PositiveFinite,
 }
 
 /// One exact consolidated B-family metric line profile.
@@ -1110,9 +1098,9 @@ pub struct CatiaConsolidatedLineProfile {
     /// Stored line origin.
     pub origin: [f64; 3],
     /// Unit line direction.
-    pub direction: [f64; 3],
+    pub direction: crate::checked::ExactUnitVector3,
     /// Increasing stored parameter interval.
-    pub range: [f64; 2],
+    pub range: crate::checked::OrderedInterval,
 }
 
 /// Reference-token dialect of a consolidated surface of revolution.
@@ -1160,20 +1148,20 @@ pub struct CatiaConsolidatedRevolution {
     /// Axis-frame origin.
     pub origin: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: [f64; 3],
+    pub direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: [f64; 3],
+    pub direction_y: crate::checked::ExactUnitVector3,
     /// Revolution-axis unit direction.
-    pub axis: [f64; 3],
+    pub axis: crate::checked::ExactUnitVector3,
     /// Stored full-turn angular parameter interval.
     pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
-    pub profile_range: [f64; 2],
+    pub profile_range: crate::checked::OrderedInterval,
     /// Unique consolidated circle with the same stored profile interval.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_circle: Option<String>,
     /// Positive scale from revolution angle to stored angular parameter.
-    pub angular_scale: f64,
+    pub angular_scale: crate::checked::PositiveFinite,
 }
 
 /// One structurally complete consolidated class-`0x61` record.
@@ -7489,8 +7477,8 @@ fn consolidated_cylinders(
                         reference_direction: cylinder.reference_direction,
                         range_origin: cylinder.range_origin().unwrap_or_else(|| {
                             crate::families::b2::records::cylinder_range_origin(
-                                cylinder.radius,
-                                cylinder.u_range,
+                                cylinder.radius.get(),
+                                cylinder.u_range.get(),
                             )
                         }),
                     }
@@ -8176,12 +8164,7 @@ fn consolidated_owner_packets(
                             CatiaOwnerIdentityEncoding::RawU8
                         }
                     }),
-                    numeric_tail: CatiaOwnerNumericTail {
-                        header: packet.numeric_tail.header,
-                        lower: packet.numeric_tail.lower,
-                        upper: packet.numeric_tail.upper,
-                        bounds: packet.numeric_tail.bounds,
-                    },
+                    numeric_tail: packet.numeric_tail,
                     identity_targets: Vec::new(),
                     owner_chart: None,
                     boundary_cycle: None,
@@ -8708,12 +8691,10 @@ fn resolve_owner_chart_support_aliases(
         .collect::<UniqueIndex<_, _>>();
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
-            *alias = unique_by_tag
-                .get(&reference.value)
-                .map(|row| CatiaOwnerChartAliasBinding {
-                    row: row.id.clone(),
-                    canonical_tag: row.canonical_surface_tag,
-                });
+            *alias = unique_by_tag.get(&reference.value).and_then(|row| {
+                cadmpeg_ir::products::NonEmptyString::new(row.id.clone())
+                    .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
+            });
         }
     };
     for packet in packets {

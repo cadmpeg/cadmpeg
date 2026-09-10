@@ -1,6 +1,6 @@
 //! Transfer of byte-proven CATIA display colors to neutral appearance bindings.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -58,7 +58,7 @@ impl SourcedPacket {
 pub(crate) fn transfer(
     ir: &mut CadIr,
     native: &CatiaNative,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
     standard_fbb: Option<&[u8]>,
 ) -> TransferResult {
     let initial_assets = ir.model.appearances.len();
@@ -67,12 +67,11 @@ pub(crate) fn transfer(
         .value_blocks
         .iter()
         .filter(|block| {
-            graph_scope.is_none_or(|scope| {
-                block
+            graph_scope.is_unscoped()
+                || block
                     .object_graph
                     .as_ref()
-                    .is_some_and(|graph| scope.contains(graph))
-            })
+                    .is_some_and(|graph| graph_scope.contains(graph))
         })
         .flat_map(|block| {
             block
@@ -411,7 +410,12 @@ mod tests {
     fn transfers_unstyled_body_and_all_faces_without_inventing_targets() {
         let mut ir = model(6);
         assert_eq!(
-            transfer(&mut ir, &CatiaNative::default(), None, None),
+            transfer(
+                &mut ir,
+                &CatiaNative::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+                None
+            ),
             TransferResult::default()
         );
         assert!(ir.model.appearances.is_empty());
@@ -420,7 +424,7 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(vec![inline(&[3, 0xd1, 0x1a, 0x1f, 0xff])]),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             None,
         );
         assert_eq!(
@@ -446,7 +450,7 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(vec![inline(&[1, 0xd1, 0x1a, 0x1f])]),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             None,
         );
         assert_eq!(
@@ -475,7 +479,7 @@ mod tests {
                 inline(&[1, 0xd1, 0x1a, 0x1f]),
                 inline(&[3, 0x14, 0x3d, 0xe0, 0xff]),
             ]),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             None,
         );
         assert_eq!(
@@ -551,7 +555,7 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(fields.clone()),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep(rgba)),
         );
         assert_eq!(
@@ -569,7 +573,7 @@ mod tests {
             .appearance_bindings
             .iter()
             .map(|binding| &binding.id)
-            .collect::<HashSet<_>>();
+            .collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), 6);
         assert!(ir.model.appearances[0]
             .base_color
@@ -579,7 +583,7 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(fields),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
         );
         assert_eq!(
@@ -605,7 +609,12 @@ mod tests {
             .map(|_| inline(&[3, rgba[0], rgba[1], rgba[2], rgba[3]]))
             .collect::<Vec<_>>();
         let mut ir = model(6);
-        let result = transfer(&mut ir, &native(fields), None, None);
+        let result = transfer(
+            &mut ir,
+            &native(fields),
+            &crate::decode::ModelingGraphScope::Unscoped,
+            None,
+        );
         assert_eq!(
             (
                 result.decoded_packets,
@@ -631,7 +640,7 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(fields.clone()),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep(rgba)),
         );
         assert_eq!(
@@ -654,7 +663,7 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(fields),
-            None,
+            &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
         );
         assert_eq!(
@@ -700,7 +709,7 @@ mod tests {
                     inline(&[1, gray[0], gray[1], gray[2]]),
                     inline(&[3, blue[0], blue[1], blue[2], blue[3]]),
                 ]),
-                None,
+                &crate::decode::ModelingGraphScope::Unscoped,
                 Some(&brep),
             );
             assert_eq!(
@@ -746,7 +755,12 @@ mod tests {
             .flat_map(|rgba| [0xb0, 4, 4, 0xff, rgba[3], rgba[2], rgba[1], rgba[0]])
             .collect::<Vec<_>>();
         let mut ir = model(6);
-        let result = transfer(&mut ir, &native(fields.clone()), None, Some(&brep));
+        let result = transfer(
+            &mut ir,
+            &native(fields.clone()),
+            &crate::decode::ModelingGraphScope::Unscoped,
+            Some(&brep),
+        );
         assert_eq!(
             (
                 result.decoded_packets,
@@ -766,7 +780,12 @@ mod tests {
         let mut mismatched = brep;
         mismatched[7] = 0xff;
         let mut ir = model(6);
-        let result = transfer(&mut ir, &native(fields), None, Some(&mismatched));
+        let result = transfer(
+            &mut ir,
+            &native(fields),
+            &crate::decode::ModelingGraphScope::Unscoped,
+            Some(&mismatched),
+        );
         assert_eq!(
             (
                 result.transferred_packets,

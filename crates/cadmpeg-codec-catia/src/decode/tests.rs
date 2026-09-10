@@ -3,7 +3,6 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use std::collections::HashSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -43,7 +42,7 @@ fn modeling_scope_includes_only_the_declared_part_graph() {
 
     assert_eq!(
         modeling_graph_scope(true, &graphs),
-        Some(HashSet::from(["part-graph".to_string()]))
+        super::ModelingGraphScope::Scoped("part-graph".to_string())
     );
 }
 
@@ -54,7 +53,10 @@ fn modeling_scope_does_not_promote_application_extension_graphs() {
         graph("design-graph", "design", "CATSmd_Nom_User_Container"),
     ];
 
-    assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
+    assert_eq!(
+        modeling_graph_scope(true, &graphs),
+        super::ModelingGraphScope::Unresolved
+    );
 }
 
 #[test]
@@ -64,7 +66,10 @@ fn modeling_scope_rejects_multiple_graphs_in_one_part_stream() {
         graph("second", "part", "CATPrtCont"),
     ];
 
-    assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
+    assert_eq!(
+        modeling_graph_scope(true, &graphs),
+        super::ModelingGraphScope::Unresolved
+    );
 }
 
 #[test]
@@ -74,14 +79,20 @@ fn modeling_scope_rejects_multiple_declared_part_graphs() {
         graph("second", "second-part", "CATPrtCont"),
     ];
 
-    assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
+    assert_eq!(
+        modeling_graph_scope(true, &graphs),
+        super::ModelingGraphScope::Unresolved
+    );
 }
 
 #[test]
 fn modeling_scope_without_outer_declarations_remains_unbounded() {
     let graphs = vec![graph("fragment-graph", "part", "CATPrtCont")];
 
-    assert_eq!(modeling_graph_scope(false, &graphs), None);
+    assert_eq!(
+        modeling_graph_scope(false, &graphs),
+        super::ModelingGraphScope::Unscoped
+    );
 }
 
 #[test]

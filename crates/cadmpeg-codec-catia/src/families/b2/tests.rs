@@ -218,13 +218,13 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         )
     );
     assert_eq!(
-        packets[0].numeric_tail.header,
+        packets[0].numeric_tail.header(),
         [0x84, 0x41, 0xbb, 0x05, 0x0d]
     );
-    assert_eq!(packets[0].numeric_tail.lower, [-0.0, 4.5]);
-    assert_eq!(packets[0].numeric_tail.upper, [12.25, 7.0]);
+    assert_eq!(packets[0].numeric_tail.lower(), [-0.0, 4.5]);
+    assert_eq!(packets[0].numeric_tail.upper(), [12.25, 7.0]);
     assert_eq!(
-        packets[0].numeric_tail.bounds,
+        packets[0].numeric_tail.bounds(),
         [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
     );
 
@@ -465,7 +465,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
             .expect("six bridge controls");
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
-        assert_eq!(construction_radius, 1.0);
+        assert_eq!(construction_radius.get(), 1.0);
         assert_eq!(
             chart.parameter_point_offsets().map(|pos| {
                 crate::families::b2::records::b2_parameter_points(&bytes)
@@ -942,15 +942,15 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(u8::from(records[0].reference_token), reference_token);
         assert_eq!(records[0].profile_allocation_id, 0x1234);
         assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
-        assert_eq!(records[0].direction_x, [1.0, 0.0, 0.0]);
-        assert_eq!(records[0].direction_y, [0.0, 1.0, 0.0]);
-        assert_eq!(records[0].axis, [0.0, 0.0, 1.0]);
+        assert_eq!(records[0].direction_x.get(), [1.0, 0.0, 0.0]);
+        assert_eq!(records[0].direction_y.get(), [0.0, 1.0, 0.0]);
+        assert_eq!(records[0].axis.get(), [0.0, 0.0, 1.0]);
         assert_eq!(
             records[0].angular_range,
             [2.0 * 0.5, 2.0 * (0.5 + std::f64::consts::TAU)]
         );
-        assert_eq!(records[0].profile_range, [-4.0, 9.0]);
-        assert_eq!(records[0].angular_scale, 2.0);
+        assert_eq!(records[0].profile_range.get(), [-4.0, 9.0]);
+        assert_eq!(records[0].angular_scale.get(), 2.0);
     }
 }
 
@@ -961,7 +961,10 @@ fn b2_revolution_profile_requires_one_exact_circle_interval() {
     let [resolved] = resolved.as_slice() else {
         panic!("one resolved revolution profile")
     };
-    assert_eq!(resolved.revolution.profile_range, resolved.profile.range);
+    assert_eq!(
+        resolved.revolution.profile_range.get(),
+        resolved.profile.range.get()
+    );
     assert_eq!(resolved.revolution_index, 0);
 
     let mut unmatched_prefix = b2_revolution_stream();
@@ -1044,8 +1047,8 @@ fn b2_line_profile_parser_reads_exact_origin_direction_and_range() {
         };
         assert_eq!(line.pos, 0);
         assert_eq!(line.origin, [1.0, 2.0, 3.0]);
-        assert_eq!(line.direction, [0.0, 0.6, 0.8]);
-        assert_eq!(line.range, [-4.0, 9.0]);
+        assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
+        assert_eq!(line.range.get(), [-4.0, 9.0]);
     }
 }
 
@@ -1097,11 +1100,11 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
     };
     assert_eq!(torus.pos, 0);
     assert_eq!(torus.center, [1.0, 2.0, 3.0]);
-    assert_eq!(torus.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(torus.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(torus.major_radius, 7.0);
-    assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(torus.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(torus.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(torus.major_radius.get(), 7.0);
+    assert_eq!(torus.minor_radius.get(), 2.0);
     assert_eq!(
         torus.major_angular_range,
         [
@@ -1118,8 +1121,8 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
             3.0 * std::f64::consts::FRAC_PI_2
         ]
     );
-    assert_eq!(torus.major_scale, 14.0);
-    assert_eq!(torus.minor_scale, 4.0);
+    assert_eq!(torus.major_scale.get(), 14.0);
+    assert_eq!(torus.minor_scale.get(), 4.0);
 }
 
 #[test]
@@ -1410,10 +1413,10 @@ fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
     };
     assert_eq!(sphere.pos, 0);
     assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
-    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(sphere.radius, 5.0);
+    assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius.get(), 5.0);
     assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
     assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 }
@@ -1435,10 +1438,10 @@ fn b2_sphere_parser_validates_tiny_radius_scaled_frame() {
     let [sphere] = crate::families::b2::records::b2_spheres(&stream)
         .try_into()
         .expect("tiny sphere frame");
-    assert_eq!(sphere.radius, tiny);
-    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
-    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
-    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius.get(), tiny);
+    assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
 
     stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&(2.0 * tiny).to_le_bytes());
     assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
@@ -1576,7 +1579,7 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     assert_eq!(circles.len(), 1);
     assert_eq!(circles[0].record_id, 0x1234);
     assert_eq!(circles[0].center_pair, [4.0, -2.0]);
-    assert_eq!(circles[0].radius, 3.0);
+    assert_eq!(circles[0].radius.get(), 3.0);
     assert_eq!(circles[0].chart_shift, 0.0);
     assert!(circles[0].full_circle());
 
@@ -1593,7 +1596,9 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     large[24..32].copy_from_slice(&radius.to_le_bytes());
     large[40..48].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
     assert_eq!(
-        crate::families::b2::records::b2_circles(&large)[0].radius,
+        crate::families::b2::records::b2_circles(&large)[0]
+            .radius
+            .get(),
         radius
     );
 
@@ -1611,8 +1616,11 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
 fn b2_cylinder_parser_reads_arc_length_carrier() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
-    assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
+    assert_eq!(
+        cylinders[0].u_range.get(),
+        [0.0, 4.0 * std::f64::consts::PI]
+    );
+    assert_eq!(cylinders[0].v_range.get(), [-4.0, 5.0]);
     match cylinders[0].surface_geometry().unwrap() {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
@@ -1647,7 +1655,9 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     tiny_full[54..62].copy_from_slice(&tiny.to_le_bytes());
     tiny_full[70..78].copy_from_slice(&(std::f64::consts::TAU * tiny).to_le_bytes());
     assert_eq!(
-        crate::families::b2::records::b2_cylinders(&tiny_full)[0].radius,
+        crate::families::b2::records::b2_cylinders(&tiny_full)[0]
+            .radius
+            .get(),
         tiny
     );
 
@@ -1659,8 +1669,10 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
 fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
     let tiny = 1e-200_f64;
     let mut cylinder = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream()).remove(0);
-    cylinder.u_range = [0.0, tiny];
-    cylinder.v_range = [0.0, tiny];
+    cylinder.u_range =
+        crate::checked::OrderedInterval::new([0.0, tiny]).expect("increasing u range");
+    cylinder.v_range =
+        crate::checked::OrderedInterval::new([0.0, tiny]).expect("increasing v range");
     assert!(crate::families::b2::records::b2_cylinder_point(&cylinder, [tiny, tiny]).is_some());
     assert!(
         crate::families::b2::records::b2_cylinder_point(&cylinder, [2.0 * tiny, tiny]).is_none()
@@ -1670,7 +1682,8 @@ fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
     );
 
     let mut cone = crate::families::b2::records::b2_cones(&b2_cone_stream()).remove(0);
-    cone.slant_range = [0.0, tiny];
+    cone.slant_range =
+        crate::checked::OrderedInterval::new([0.0, tiny]).expect("increasing slant range");
     assert!(crate::families::b2::records::b2_cone_point(&cone, [0.0, tiny]).is_some());
     assert!(crate::families::b2::records::b2_cone_point(&cone, [0.0, 2.0 * tiny]).is_none());
 }
@@ -1727,14 +1740,62 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 }
 
 #[test]
+fn b2_cylinder_parser_admits_the_full_stored_pair_tolerance_band() {
+    let deviation = 6.0e-10_f64;
+    let component = 1.0 + deviation;
+    let squared_deviation = (component * component - 1.0).abs();
+    assert!(
+        squared_deviation > 1.0e-9,
+        "the pair is inside the stored-length band and outside the squared-length one"
+    );
+
+    let mut stream = b2_cylinder_stream();
+    stream[30..38].copy_from_slice(&component.to_le_bytes());
+    stream[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    let cylinders = crate::families::b2::records::b2_cylinders(&stream);
+    let [cylinder] = cylinders.as_slice() else {
+        panic!("one B2 cylinder with a stored pair at the tolerance edge")
+    };
+    assert_eq!(cylinder.axis.get(), [component, 0.0, 0.0]);
+    assert_eq!(cylinder.reference_direction.get(), [-0.0, component, 0.0]);
+
+    let mut quarter_turned = b2_cylinder_stream();
+    quarter_turned[29] = 0x1c;
+    quarter_turned[30..38].copy_from_slice(&component.to_le_bytes());
+    quarter_turned[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    let cylinders = crate::families::b2::records::b2_cylinders(&quarter_turned);
+    let [cylinder] = cylinders.as_slice() else {
+        panic!("one quarter-turned B2 cylinder at the tolerance edge")
+    };
+    assert_eq!(cylinder.axis.get(), [0.0, -component, 0.0]);
+    assert_eq!(cylinder.reference_direction.get(), [component, 0.0, 0.0]);
+
+    let mut range_origin = b2_range_origin_cylinder_stream();
+    range_origin[30..38].copy_from_slice(&0.0_f64.to_le_bytes());
+    range_origin[38..46].copy_from_slice(&component.to_le_bytes());
+    let cylinders = crate::families::b2::records::b2_cylinders(&range_origin);
+    let [cylinder] = cylinders.as_slice() else {
+        panic!("one range-origin B2 cylinder at the tolerance edge")
+    };
+    assert_eq!(cylinder.axis.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder.reference_direction.get(), [0.0, 0.0, component]);
+
+    for mut outside in [b2_cylinder_stream(), b2_range_origin_cylinder_stream()] {
+        let far = 1.0 + 2.0e-9_f64;
+        outside[30..38].copy_from_slice(&far.to_le_bytes());
+        outside[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+        assert!(crate::families::b2::records::b2_cylinders(&outside).is_empty());
+    }
+}
+
+#[test]
 fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_range_origin_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert!(matches!(
         cylinders[0].layout,
-        crate::families::b2::records::B2CylinderLayout::RangeOrigin {
-            stored_vector: [0.0, 1.0],
-        }
+        crate::families::b2::records::B2CylinderLayout::RangeOrigin { stored_vector }
+            if stored_vector.get() == [0.0, 1.0]
     ));
     assert!(
         matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
@@ -1765,12 +1826,12 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     let cones = crate::families::b2::records::b2_cones(&b2_cone_stream());
     assert_eq!(cones.len(), 1);
     assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
-    assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
+    assert_eq!(cones[0].axis.get(), [0.0, 0.0, 1.0]);
     assert_eq!(cones[0].half_angle, 0.25);
     assert_eq!(cones[0].reference_radius, 4.0);
     assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
-    assert_eq!(cones[0].slant_range, [2.0, 8.0]);
-    assert_eq!(cones[0].angular_scale, 3.0);
+    assert_eq!(cones[0].slant_range.get(), [2.0, 8.0]);
+    assert_eq!(cones[0].angular_scale.get(), 3.0);
     assert_eq!(
         cones[0].angular_domain,
         [
@@ -1783,8 +1844,8 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     large[141..149].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[149..157].copy_from_slice(&3_000_000.0_f64.to_le_bytes());
     let cones = crate::families::b2::records::b2_cones(&large);
-    assert_eq!(cones[0].slant_range, [2.0, 2_000_000.0]);
-    assert_eq!(cones[0].angular_scale, 3_000_000.0);
+    assert_eq!(cones[0].slant_range.get(), [2.0, 2_000_000.0]);
+    assert_eq!(cones[0].angular_scale.get(), 3_000_000.0);
 }
 
 #[test]
@@ -1793,7 +1854,7 @@ fn b2_cone_parser_accepts_and_canonicalizes_an_apex_origin() {
     stream[133..141].copy_from_slice(&(-5e-13f64).to_le_bytes());
     let cones = crate::families::b2::records::b2_cones(&stream);
     assert_eq!(cones.len(), 1);
-    assert_eq!(cones[0].slant_range, [0.0, 8.0]);
+    assert_eq!(cones[0].slant_range.get(), [0.0, 8.0]);
 
     stream[133..141].copy_from_slice(&(-2e-12f64).to_le_bytes());
     assert!(crate::families::b2::records::b2_cones(&stream).is_empty());

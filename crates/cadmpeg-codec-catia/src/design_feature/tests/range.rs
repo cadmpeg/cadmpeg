@@ -83,7 +83,11 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = transfer_design_features(
+        &mut ir,
+        &native,
+        &crate::decode::ModelingGraphScope::Unscoped,
+    );
 
     let properties = &ir.model.features[0].source_properties;
     assert_eq!(properties["catia_range_0_entity"], "range-entity");

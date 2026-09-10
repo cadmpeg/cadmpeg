@@ -1538,8 +1538,8 @@ fn support_points(
 fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
     cadmpeg_ir::eval::surface_point(
         &b2_torus_geometry(torus)?,
-        u / torus.major_scale,
-        v / torus.minor_scale,
+        u / torus.major_scale.get(),
+        v / torus.minor_scale.get(),
     )
 }
 
@@ -1595,12 +1595,12 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
     ) else {
         return false;
     };
-    let span = circle.range[1] - circle.range[0];
+    let span = circle.range.upper() - circle.range.lower();
     span.is_finite()
         && span > 0.0
         && (first[1] - last[1]).abs() <= EPS_ENDPOINT_RANGE * span
-        && (first[0].min(last[0]) - circle.range[0]).abs() <= EPS_CIRCLE_ENDPOINT * span
-        && (first[0].max(last[0]) - circle.range[1]).abs() <= EPS_CIRCLE_ENDPOINT * span
+        && (first[0].min(last[0]) - circle.range.lower()).abs() <= EPS_CIRCLE_ENDPOINT * span
+        && (first[0].max(last[0]) - circle.range.upper()).abs() <= EPS_CIRCLE_ENDPOINT * span
 }
 
 fn pcurve_endpoints_match_cone(
@@ -1838,8 +1838,8 @@ mod tests {
             record_id: 1,
             frame_token: 0,
             center_pair: [0.0; 2],
-            radius: span,
-            range: [0.0, span],
+            radius: crate::checked::PositiveFinite::new(span).expect("positive span"),
+            range: crate::checked::OrderedInterval::new([0.0, span]).expect("increasing span"),
             chart_shift: 0.0,
         };
         let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {
