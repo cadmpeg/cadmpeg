@@ -311,16 +311,16 @@ mod tests {
     #[test]
     fn numbered_intersect_name_identifies_section_shape_feature() {
         let table = || {
-            crate::feature::FeatureEntityTable {
-                surface_ids: std::collections::BTreeSet::new(),
-                feature_id: 50,
-                table_class_id: 29,
-                entries: vec![
+            crate::feature::FeatureEntityTable::new(
+                50,
+                29,
+                vec![
                     crate::feature::dummy_table_entry(61),
                     crate::feature::dummy_table_entry(75),
                 ],
-                offset: 0,
-            }
+                &std::collections::BTreeSet::new(),
+                0,
+            )
             .with_surface_ids([61, 75])
         };
         let surface = |id, feature_id| crate::surface::SurfaceRow {

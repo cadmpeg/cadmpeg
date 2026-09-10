@@ -88,17 +88,17 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 7,
-            table_class_id: 29,
-            entries: vec![
+        crate::feature::FeatureEntityTable::new(
+            7,
+            29,
+            vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32, 33]),
     );
     for id in [31, 32, 33] {
@@ -245,13 +245,13 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     .expect("valid positional cylinder frame");
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 7,
-            table_class_id: 29,
-            entries: vec![entry],
-            offset: 0,
-        }
+        crate::feature::FeatureEntityTable::new(
+            7,
+            29,
+            vec![entry],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([33]),
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {

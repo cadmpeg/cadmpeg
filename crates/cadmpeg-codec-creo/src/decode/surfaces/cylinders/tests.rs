@@ -797,13 +797,13 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         end_offset: entity_id as usize + 1,
     };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 42,
-            table_class_id: 29,
-            entries: vec![entry(1, 100), entry(2, 100), entry(3, 101), entry(4, 101)],
-            offset: 0,
-        }
+        crate::feature::FeatureEntityTable::new(
+            42,
+            29,
+            vec![entry(1, 100), entry(2, 100), entry(3, 101), entry(4, 101)],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([1, 2, 3, 4]),
     );
     scan
@@ -930,18 +930,18 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            surface_ids: std::collections::BTreeSet::new(),
-            feature_id: 23,
-            table_class_id: 80,
-            entries: vec![
+        crate::feature::FeatureEntityTable::new(
+            23,
+            80,
+            vec![
                 crate::feature::dummy_table_entry(10),
                 crate::feature::dummy_table_entry(11),
                 crate::feature::dummy_table_entry(12),
                 crate::feature::dummy_table_entry(13),
             ],
-            offset: 47,
-        }
+            &std::collections::BTreeSet::new(),
+            47,
+        )
         .with_surface_ids([10, 11, 13]),
     );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -972,18 +972,18 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         next_surface: 0,
         offset: 0,
     };
-    let table = crate::feature::FeatureEntityTable {
-        surface_ids: std::collections::BTreeSet::new(),
-        feature_id: 23,
-        table_class_id: 80,
-        entries: vec![
+    let table = crate::feature::FeatureEntityTable::new(
+        23,
+        80,
+        vec![
             crate::feature::dummy_table_entry(10),
             crate::feature::dummy_table_entry(11),
             crate::feature::dummy_table_entry(12),
             crate::feature::dummy_table_entry(13),
         ],
-        offset: 47,
-    }
+        &std::collections::BTreeSet::new(),
+        47,
+    )
     .with_surface_ids([10, 11, 13]);
     let rows = vec![
         row(10, crate::surface::SurfaceKind::Plane),
