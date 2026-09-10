@@ -613,7 +613,7 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         || profile_dependency_is_incomplete(profile, &feature.dependencies)
         || matches!(
             direction,
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
         )
         || extrude_start_is_incomplete(start)
         || extrude_extent_is_incomplete(extent, &feature.dependencies)

@@ -54,7 +54,7 @@ fn named_feature(id: &str, name: &str) -> Feature {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::StoredGeometry,
+            FeatureDefinition::StoredGeometry {},
         ),
         native_ref: None,
     }

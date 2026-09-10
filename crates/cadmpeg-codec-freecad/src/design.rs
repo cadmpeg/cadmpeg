@@ -154,7 +154,7 @@ pub(crate) fn transfer(
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             }
         } else if is_stored_geometry_feature(&object.type_name) {
-            FeatureDefinition::StoredGeometry
+            FeatureDefinition::StoredGeometry {}
         } else if object.type_name == "PartDesign::FeatureBase" {
             feature_base_definition(&owned, &feature_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -4017,7 +4017,7 @@ fn extrusion_definition(
                 vector: cadmpeg_ir::features::FeatureDirection3::new(vector)?,
                 source: Some(ExtrusionDirectionSource::ProfileNormal),
             },
-            None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
         }
     };
     if bool_selector(properties, "Reversed", false)? {
@@ -4268,7 +4268,7 @@ fn derived_shape_definition(
     match kind {
         "Part::Compound" | "Part::Compound2" => {
             let Some(links) = property(properties, "Links") else {
-                return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry);
+                return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry {});
             };
             if links.links().is_empty() {
                 return None;
@@ -4296,7 +4296,7 @@ fn derived_shape_definition(
 fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     property(properties, "Shape")
         .filter(|shape| !shape.side_entries().is_empty())
-        .map(|_| FeatureDefinition::StoredGeometry)
+        .map(|_| FeatureDefinition::StoredGeometry {})
 }
 
 fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {

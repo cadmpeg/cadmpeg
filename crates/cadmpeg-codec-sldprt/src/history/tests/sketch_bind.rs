@@ -395,7 +395,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "native-consumer",
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("native-alias".into()),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {

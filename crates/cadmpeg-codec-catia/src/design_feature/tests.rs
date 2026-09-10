@@ -55,7 +55,7 @@ fn feature(id: &str, native_ref: &str) -> Feature {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::StoredGeometry,
+            FeatureDefinition::StoredGeometry {},
         ),
         native_ref: Some(native_ref.to_string()),
     }

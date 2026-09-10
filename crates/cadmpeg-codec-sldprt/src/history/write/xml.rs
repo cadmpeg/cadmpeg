@@ -35,7 +35,7 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. } => "Sketch",
         FeatureDefinition::SketchBlockDefinition { .. } => "Block",
         FeatureDefinition::SketchBlockInstance { .. } => "Feature",
-        FeatureDefinition::StoredGeometry => "Feature",
+        FeatureDefinition::StoredGeometry {} => "Feature",
         FeatureDefinition::BaseFeature { .. }
         | FeatureDefinition::InsertBodies { .. }
         | FeatureDefinition::Form { .. }

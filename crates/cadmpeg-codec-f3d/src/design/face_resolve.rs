@@ -1924,10 +1924,10 @@ pub(crate) fn bind_extrude_target_faces(
                 break 'feature_edit;
             };
             let sweep_direction = match direction {
-                ExtrudeDirection::ProfileNormal => profile_normal,
-                ExtrudeDirection::ReversedProfileNormal => profile_normal.scale(-1.0),
+                ExtrudeDirection::ProfileNormal {} => profile_normal,
+                ExtrudeDirection::ReversedProfileNormal {} => profile_normal.scale(-1.0),
                 ExtrudeDirection::Explicit { vector, .. } => vector.get(),
-                ExtrudeDirection::Unresolved => break 'feature_edit,
+                ExtrudeDirection::Unresolved {} => break 'feature_edit,
             };
             if !sweep_direction.x.is_finite()
                 || !sweep_direction.y.is_finite()

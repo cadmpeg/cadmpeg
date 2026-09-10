@@ -1091,7 +1091,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             | FeatureDefinition::Decal { asset, .. } => {
                 !ir.model.assets.iter().any(|candidate| candidate.id == *asset)
             }
-            FeatureDefinition::StoredGeometry => state.outputs.is_empty(),
+            FeatureDefinition::StoredGeometry {} => state.outputs.is_empty(),
             FeatureDefinition::ExtractBody { source } => incomplete_body_selection(source),
             FeatureDefinition::DerivedGeometry { source } => {
                 feature_positions
@@ -1194,7 +1194,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 ..
             } => {
                 incomplete_profile(profile)
-                    || matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Unresolved)
+                    || matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Unresolved {})
                     || match start {
                         cadmpeg_ir::features::ExtrudeStart::Unresolved => true,
                         cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {

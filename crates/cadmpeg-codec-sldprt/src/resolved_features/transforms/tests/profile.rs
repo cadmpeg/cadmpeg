@@ -1120,7 +1120,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                     profile: ProfileRef::Feature(
                         FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
                     ),
-                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                     start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {

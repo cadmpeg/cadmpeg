@@ -606,7 +606,7 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved,
@@ -656,7 +656,7 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved,
@@ -740,7 +740,7 @@ fn decode_types_named_base_protrusion_as_new_body() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved,
@@ -779,7 +779,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         feature("creo:model:feature#4").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved,
@@ -803,7 +803,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         feature("creo:model:feature#6").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved,

@@ -165,7 +165,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Unresolved("native:missing-owner".into()),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {

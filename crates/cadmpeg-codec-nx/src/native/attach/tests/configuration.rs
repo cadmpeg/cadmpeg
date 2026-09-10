@@ -1155,7 +1155,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         ),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native("nx:profile#1".to_string()),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+            direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Unresolved,

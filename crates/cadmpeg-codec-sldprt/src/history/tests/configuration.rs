@@ -755,7 +755,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             producer_id.clone(),
             0,
             "producer-native",
-            FeatureDefinition::StoredGeometry,
+            FeatureDefinition::StoredGeometry {},
         ),
         neutral_feature(
             consumer_id.clone(),
@@ -784,7 +784,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::StoredGeometry,
+                    definition: FeatureDefinition::StoredGeometry {},
                 },
             ),
             (

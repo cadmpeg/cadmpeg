@@ -750,7 +750,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         allow_multi_profile_faces: None,
     };
     let complete = definition(
-        ExtrudeDirection::ProfileNormal,
+        ExtrudeDirection::ProfileNormal {},
         ExtrudeStart::ProfilePlane,
         Some(true),
     );
@@ -776,17 +776,17 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
 
     for incomplete in [
         definition(
-            ExtrudeDirection::Unresolved,
+            ExtrudeDirection::Unresolved {},
             ExtrudeStart::ProfilePlane,
             Some(true),
         ),
         definition(
-            ExtrudeDirection::ProfileNormal,
+            ExtrudeDirection::ProfileNormal {},
             ExtrudeStart::Unresolved,
             Some(true),
         ),
         definition(
-            ExtrudeDirection::ProfileNormal,
+            ExtrudeDirection::ProfileNormal {},
             ExtrudeStart::ProfilePlane,
             None,
         ),

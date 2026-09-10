@@ -1227,3 +1227,62 @@ fn an_unknown_key_beside_the_draft_anchor_is_rejected_by_name() {
     assert_key_beside_the_nested_field_is_rejected(&draft);
     assert_key_inside_the_nested_field_is_rejected(&draft, "anchor");
 }
+
+#[test]
+fn an_unknown_key_beside_the_stored_geometry_definition_is_rejected_by_name() {
+    let stored = serde_json::json!({"definition": "stored_geometry"});
+    assert_key_beside_the_nested_field_is_rejected(&stored);
+}
+
+#[test]
+fn an_unknown_key_inside_the_extrude_direction_is_rejected_by_name() {
+    let extrude = serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "test:profile"},
+        "direction": {"kind": "profile_normal"},
+        "start": {"kind": "profile_plane"},
+        "extent": {
+            "kind": "one_sided",
+            "side": {"termination": {"kind": "blind", "length": 4.0}}
+        },
+        "op": "new_body"
+    });
+    assert_key_beside_the_nested_field_is_rejected(&extrude);
+    assert_key_inside_the_nested_field_is_rejected(&extrude, "direction");
+
+    for kind in ["unresolved", "reversed_profile_normal", "explicit"] {
+        let mut variant = extrude.clone();
+        variant["direction"] = if kind == "explicit" {
+            serde_json::json!({
+                "kind": "explicit",
+                "vector": {"x": 0.0, "y": 1.0, "z": 0.0}
+            })
+        } else {
+            serde_json::json!({"kind": kind})
+        };
+        assert_key_beside_the_nested_field_is_rejected(&variant);
+        assert_key_inside_the_nested_field_is_rejected(&variant, "direction");
+    }
+}
+
+#[test]
+fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
+    use crate::features::FeatureDefinition;
+
+    let trim = serde_json::json!({
+        "definition": "trim_surface",
+        "faces": {"kind": "unresolved"},
+        "tool": {"kind": "unresolved", "value": "test:trim-tool"},
+        "keep": {"cells": {"removed": [1, 4], "total": 5}}
+    });
+    assert!(
+        serde_json::from_value::<FeatureDefinition>(trim.clone()).is_ok(),
+        "{trim}"
+    );
+    let mut inside = trim;
+    inside["keep"]["cells"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<FeatureDefinition>(inside)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}

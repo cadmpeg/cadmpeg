@@ -204,7 +204,7 @@ fn complete_extrude_feature(
         ordinal,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile.clone()),
-            direction: ExtrudeDirection::ProfileNormal,
+            direction: ExtrudeDirection::ProfileNormal {},
             start: ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {

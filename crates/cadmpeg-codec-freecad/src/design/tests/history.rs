@@ -44,7 +44,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .expect("base feature");
     assert!(matches!(
         source.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry {}
     ));
     assert!(matches!(
         base.evaluation.definition(),
@@ -364,7 +364,7 @@ fn transfers_stored_and_external_part_feature_families() {
                 .expect("stored feature")
                 .evaluation
                 .definition(),
-            cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+            cadmpeg_ir::features::FeatureDefinition::StoredGeometry {}
         ));
     }
     for (name, format) in [

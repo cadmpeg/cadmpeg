@@ -533,7 +533,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Sketch(sketch_id.clone()),
-                direction: ExtrudeDirection::ProfileNormal,
+                direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
@@ -621,7 +621,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
                 profile,
-                direction: ExtrudeDirection::ProfileNormal,
+                direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {

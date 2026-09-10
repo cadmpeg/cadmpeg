@@ -57,7 +57,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::Native { kind, parameters } => {
                 Ok(self.encode_native(kind, parameters))
             }
-            FeatureDefinition::StoredGeometry => Ok(self.encode_stored_geometry()),
+            FeatureDefinition::StoredGeometry {} => Ok(self.encode_stored_geometry()),
             FeatureDefinition::DerivedGeometry { .. } => self.encode_derived_geometry(),
             FeatureDefinition::ImportedGeometry { .. } => self.encode_imported_geometry(),
             FeatureDefinition::Primitive { .. } => self.encode_primitive(),

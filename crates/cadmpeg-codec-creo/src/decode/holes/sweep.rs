@@ -392,7 +392,7 @@ pub fn circular_sweep_feature_definition(
             sweep.direction[2],
         ))
         .map_or(
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector,
                 source: None,

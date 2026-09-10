@@ -114,7 +114,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
             .unwrap(),
         },
     );
-    let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry);
+    let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry {});
     let model = Model {
         features: vec![parent, child],
         ..Model::default()
@@ -130,8 +130,8 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 
     let mut regeneration = Model {
         features: vec![
-            Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry),
-            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+            Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry {}),
+            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry {}),
         ],
         ..Model::default()
     };
@@ -164,8 +164,8 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                         .unwrap(),
                 },
             ),
-            Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry),
-            Feature::new(child_id, 2, FeatureDefinition::StoredGeometry),
+            Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry {}),
+            Feature::new(child_id, 2, FeatureDefinition::StoredGeometry {}),
         ],
         ..Model::default()
     };
@@ -449,7 +449,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                     children: crate::features::TreeChildren::default(),
                 },
             ),
-            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry {}),
         ],
         ..Model::default()
     };

@@ -267,7 +267,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         &blind,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(profile),
-            direction: ExtrudeDirection::ProfileNormal,
+            direction: ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -362,7 +362,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         through_all,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ReversedProfileNormal,
+            direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
@@ -386,7 +386,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         symmetric_through_all,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ProfileNormal,
+            direction: ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
@@ -1128,7 +1128,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         reversed_hybrid,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ReversedProfileNormal,
+            direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1175,7 +1175,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         reversed_native_profile,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native(ref native),
-            direction: ExtrudeDirection::ReversedProfileNormal,
+            direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1316,7 +1316,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         reversed,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ReversedProfileNormal,
+            direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1350,7 +1350,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         to_face,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ReversedProfileNormal,
+            direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
@@ -1439,7 +1439,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         two_sided_to_faces,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ProfileNormal,
+            direction: ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::ToFace {
@@ -1484,7 +1484,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         reversed_two_sided_to_faces,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ReversedProfileNormal,
+            direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::TwoSided { .. },
             ..
         }
@@ -1504,7 +1504,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         mixed_two_sided,
         FeatureDefinition::Extrude {
-            direction: ExtrudeDirection::ProfileNormal,
+            direction: ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
