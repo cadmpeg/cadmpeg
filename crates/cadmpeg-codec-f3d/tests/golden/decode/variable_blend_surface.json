@@ -669,22 +669,24 @@
                 -2.0,
                 4.0
               ],
-              "radius_kind": "single_radius",
-              "first_value": {
-                "name": "two_ends",
-                "modern_flag": true,
-                "discriminator": 7,
-                "calibrated": 3,
-                "payload": {
-                  "kind": "two_ends",
-                  "parameters": [
-                    0.25,
-                    0.75
-                  ],
-                  "radii": [
-                    15.0,
-                    25.0
-                  ]
+              "radii": {
+                "kind": "single",
+                "value": {
+                  "name": "two_ends",
+                  "modern_flag": true,
+                  "discriminator": 7,
+                  "calibrated": 3,
+                  "payload": {
+                    "kind": "two_ends",
+                    "parameters": [
+                      0.25,
+                      0.75
+                    ],
+                    "radii": [
+                      15.0,
+                      25.0
+                    ]
+                  }
                 }
               },
               "u_range": [
