@@ -812,7 +812,7 @@ impl CodecBackend for FcstdCodec {
         let mut gui_losses = Vec::new();
         let mut topology_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
-        let primary = dialect::FcstdDialect::classify(&scan.document);
+        let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
@@ -841,7 +841,8 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, &scan.document, Some(ctx))?;
+            let graph =
+                persistence::parse_with_context(document_bytes, &scan.schema_version, Some(ctx))?;
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {

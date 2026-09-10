@@ -7,14 +7,14 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
-    let facts =
+    let (_facts, schema_version) =
         crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
             cadmpeg_core::CodecError::WrongFormat(message) => {
                 cadmpeg_core::CodecError::Malformed(message)
             }
             error => error,
         })?;
-    super::parse_with_context(document.as_bytes(), &facts, None)
+    super::parse_with_context(document.as_bytes(), &schema_version, None)
 }
 
 #[test]

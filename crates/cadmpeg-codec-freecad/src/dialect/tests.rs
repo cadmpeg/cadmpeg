@@ -17,10 +17,9 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 
 /// A document element carrying `schema_version`, with the other declarations
 /// fixed.
-fn document(schema_version: &str) -> DocumentFacts {
+fn document(_schema_version: &str) -> DocumentFacts {
     DocumentFacts {
         id: "document-0".into(),
-        schema_version: schema_version.into(),
         file_version: "1".to_owned().try_into().unwrap(),
         program_version: Some("1.1R20260414 (Git shallow)".into()),
         root_name: "Document".into(),
@@ -86,7 +85,7 @@ const CASES: &[Case] = &[
 #[test]
 fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
     for case in CASES {
-        let matched = FcstdDialect::classify(&document(case.declaration));
+        let matched = FcstdDialect::classify(&document(case.declaration), case.declaration);
         let context = format!("SchemaVersion {:?}", case.declaration);
 
         assert_eq!(matched.format(), FORMAT, "{context}");
@@ -109,7 +108,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         .code;
     for case in CASES {
         let facts = document(case.declaration);
-        let matched = FcstdDialect::classify(&facts);
+        let matched = FcstdDialect::classify(&facts, case.declaration);
         let charged =
             FcstdDialect::dialect_loss(&matched).is_some_and(|note| note.code == expected);
         assert_eq!(
@@ -132,7 +131,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
     // there was necessarily read with a vocabulary no row declares for it, so
     // the pair (unknown, Admitted) must be unreachable.
     for case in CASES {
-        let matched = FcstdDialect::classify(&document(case.declaration));
+        let matched = FcstdDialect::classify(&document(case.declaration), case.declaration);
         if matched.dialect().as_str() == FcstdDialect::Unknown.id().as_str() {
             assert_ne!(
                 *matched.admission(),
@@ -146,7 +145,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
 
 #[test]
 fn the_declared_keys_are_pinned_and_verbatim() {
-    let matched = FcstdDialect::classify(&document("4"));
+    let matched = FcstdDialect::classify(&document("4"), "4");
     assert_eq!(
         matched.declared().keys().collect::<Vec<_>>(),
         ["file_version", "program_version", "schema_version"]
@@ -162,7 +161,7 @@ fn the_declared_keys_are_pinned_and_verbatim() {
     // absent attribute leaves the key out rather than inventing a value.
     let mut facts = document("4");
     facts.program_version = None;
-    let matched = FcstdDialect::classify(&facts);
+    let matched = FcstdDialect::classify(&facts, "4");
     assert_eq!(
         matched.declared().keys().collect::<Vec<_>>(),
         ["file_version", "schema_version"]

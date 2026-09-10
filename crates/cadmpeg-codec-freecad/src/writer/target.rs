@@ -32,6 +32,7 @@ pub(crate) struct Resolution<'a> {
     ir: &'a CadIr,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     document: DocumentFacts,
+    schema_version: String,
     target: DialectId,
 }
 
@@ -46,6 +47,10 @@ impl<'a> Resolution<'a> {
 
     pub(super) const fn document(&self) -> &DocumentFacts {
         &self.document
+    }
+
+    pub(super) fn schema_version(&self) -> &str {
+        &self.schema_version
     }
 
     pub(super) const fn target(&self) -> &DialectId {
@@ -137,10 +142,18 @@ pub(in crate::writer) fn retained_baseline<'a>(
     let [document] = documents.as_slice() else {
         return None;
     };
+    let schema_version = ir
+        .source
+        .as_ref()?
+        .dialect()?
+        .declared()
+        .get(crate::dialect::DECLARED_SCHEMA_VERSION)?
+        .clone();
     Some(Resolution {
         ir,
         namespace,
         document: document.clone(),
+        schema_version,
         target: target.clone(),
     })
 }
