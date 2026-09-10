@@ -770,7 +770,7 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: d.name.clone(),
             role: ContainerRole::DirectoryEntry,
-            storage: EntryStorage::unreported_span(VerbatimLabel::None, d.size as u64),
+            storage: EntryStorage::payload_only(VerbatimLabel::None, d.size as u64),
             attributes,
         });
     }
@@ -782,7 +782,7 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: c.name.clone(),
             role: ContainerRole::CacheCell,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(c.logical_len)),
             attributes,
         });
     }

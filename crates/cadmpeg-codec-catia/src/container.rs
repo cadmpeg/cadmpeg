@@ -278,6 +278,9 @@ fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReferen
     })
 }
 
+/// Tag byte plus one-byte length that precede a length-prefixed ASCII string.
+const LENGTH_PREFIXED_ASCII_HEADER: usize = 2;
+
 fn length_prefixed_ascii(data: &[u8], at: &mut usize) -> Option<String> {
     (data.get(*at) == Some(&0x34)).then_some(())?;
     let length = usize::from(*data.get(*at + 1)?);
@@ -1451,7 +1454,11 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: reference.target.clone(),
             role: ContainerRole::ExternalReference,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, 0),
+            storage: EntryStorage::framed(
+                VerbatimLabel::None,
+                reference.target.len() as u64,
+                (reference.target.len() + LENGTH_PREFIXED_ASCII_HEADER) as u64,
+            ),
             attributes,
         });
     }
