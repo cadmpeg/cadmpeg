@@ -1037,9 +1037,21 @@ fn extended_geometry_json(
             scale,
             archive,
         )
+        .map_err(|error| {
+            warnings.push(format!(
+                "embedded history dimension at offset {}: {error}",
+                value.class_data_range.start
+            ));
+        })
         .ok()?;
         let mut dimension = dimension;
         crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
+            .map_err(|error| {
+                warnings.push(format!(
+                    "embedded history dimension userdata at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+            })
             .ok()?;
         return crate::dimensions::semantic_json(&dimension)
             .map_err(|error| {

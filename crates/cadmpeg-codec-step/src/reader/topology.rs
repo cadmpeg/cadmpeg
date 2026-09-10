@@ -988,7 +988,11 @@ fn build_wire_set(
             color: None,
             visible: None,
         },
-    )?;
+    )
+    .map_err(|error| {
+        warnings.push(format!("CONNECTED_EDGE_SET #{set_id}: {error}"));
+    })
+    .ok()?;
     built.shell_sources.insert(set_id);
     Some(built)
 }
@@ -1192,7 +1196,11 @@ fn build_shell_wire_set(
             color: None,
             visible: None,
         },
-    )?;
+    )
+    .map_err(|error| {
+        warnings.push(format!("wire shell #{shell_id}: {error}"));
+    })
+    .ok()?;
     built.shell_sources.insert(shell_id);
     Some(built)
 }
@@ -1241,7 +1249,12 @@ fn build_geometric_set(
     carrier_index: &CarrierIndex,
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
-    let set_ids = representation_items(representation)?;
+    let Some(set_ids) = representation_items(representation) else {
+        warnings.push(format!(
+            "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no item list"
+        ));
+        return None;
+    };
     let mut typed = HashSet::from([id]);
     let body = BodyId::from(ids::data(kind!("body"), id));
     let region = RegionId::from(ids::data(kind!("region"), id));
@@ -1298,6 +1311,12 @@ fn build_geometric_set(
             }
         }
     }
+    let Some(shell) = shell else {
+        warnings.push(format!(
+            "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no indexed surface member; set dropped"
+        ));
+        return None;
+    };
     staged_topology(
         typed,
         Vec::new(),
@@ -1306,7 +1325,7 @@ fn build_geometric_set(
         Vec::new(),
         faces,
         Vec::new(),
-        vec![shell?],
+        vec![shell],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1322,6 +1341,12 @@ fn build_geometric_set(
             visible: None,
         },
     )
+    .map_err(|error| {
+        warnings.push(format!(
+            "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
+        ));
+    })
+    .ok()
 }
 
 #[derive(Clone)]
@@ -1773,36 +1798,36 @@ fn staged_topology(
     shells: Vec<Shell>,
     region: Region,
     body: Body,
-) -> Option<Built> {
+) -> Result<Built, cadmpeg_ir::draft::DraftError> {
     let mut draft = ModelDraft::new();
     for vertex in vertices {
-        draft.insert(vertex).ok()?;
+        draft.insert(vertex)?;
     }
     for edge in edges {
-        draft.insert(edge).ok()?;
+        draft.insert(edge)?;
     }
     for coedge in coedges {
-        draft.insert(coedge).ok()?;
+        draft.insert(coedge)?;
     }
     for loop_ in loops {
-        draft.insert(loop_).ok()?;
+        draft.insert(loop_)?;
     }
     for face in faces {
-        draft.insert(face).ok()?;
+        draft.insert(face)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
         if surface_ids.insert(surface.id.as_str().to_owned()) {
-            draft.insert(surface).ok()?;
+            draft.insert(surface)?;
         }
     }
     for shell in shells {
-        draft.insert(shell).ok()?;
+        draft.insert(shell)?;
     }
-    draft.insert(region).ok()?;
+    draft.insert(region)?;
     let body_id = body.id.clone();
-    draft.insert(body).ok()?;
-    Some(Built {
+    draft.insert(body)?;
+    Ok(Built {
         typed,
         draft,
         body_id,
@@ -2844,7 +2869,8 @@ fn build_one(
     let mut built = require_carrier(
         staged_topology(
             typed, vertices, edges, coedges, loops, faces, surfaces, shells, region, body,
-        ),
+        )
+        .ok(),
         failure,
         id,
         CarrierKind::TopologyDraft,
