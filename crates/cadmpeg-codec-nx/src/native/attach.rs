@@ -12,7 +12,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     AppearanceId, AttributeId, BodyId, CurveId, EdgeId, FaceId, FeatureResultTopologyId, LoopId,
     SurfaceId, UnknownId,
@@ -911,7 +910,7 @@ fn attach_material_texture_assets(
         let Some(bytes) = scan.container.data.get(start..end) else {
             return Ok(());
         };
-        if sha256_hex(bytes) != texture.sha256 {
+        if crate::native::hex::Sha256Hex::digest(bytes) != texture.sha256 {
             return Ok(());
         }
         sources.push((texture, bytes));

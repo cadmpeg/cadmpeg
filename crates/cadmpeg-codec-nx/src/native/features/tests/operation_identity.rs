@@ -527,8 +527,8 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         ordinal: 0,
-        sha256: "record-sha256".to_string(),
-        payload_sha256: "payload-sha256".to_string(),
+        sha256: crate::native::hex::Sha256Hex::digest(b"record-sha256"),
+        payload_sha256: crate::native::hex::Sha256Hex::digest(b"payload-sha256"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
             .unwrap(),

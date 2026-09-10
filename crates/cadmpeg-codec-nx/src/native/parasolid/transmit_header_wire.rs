@@ -12,7 +12,7 @@ pub(super) struct TransmitHeaderWire {
     #[serde(flatten)]
     state: TransmitState,
     byte_len: u64,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     inflated_offset: u64,
 }
 
