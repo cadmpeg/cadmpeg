@@ -246,12 +246,12 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
         ["ISO-10303.p21", "parts/child.p21", "preview.bin"]
     );
     assert_eq!(summary.entries[0].role.as_str(), "root-exchange");
-    let cadmpeg_core::container::EntryStorage::Bytes { compression, .. } =
+    let cadmpeg_core::container::EntryStorage::Compressed { method, .. } =
         &summary.entries[0].storage
     else {
-        panic!("a zip entry stores bytes");
+        panic!("a deflated zip entry stores compressed bytes");
     };
-    assert_eq!(compression.as_str(), "deflate");
+    assert_eq!(method.as_str(), "deflate");
     assert_eq!(summary.entries[1].role.as_str(), "subsidiary-exchange");
     assert!(summary.entries[0].attributes["logical_sections"].contains("HEADER"));
 

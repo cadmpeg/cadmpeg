@@ -108,7 +108,7 @@ pub use evaluation::{
 };
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
+use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
 
@@ -186,11 +186,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: entry.name.clone(),
             role: entry.content().role(),
-            storage: EntryStorage::Bytes {
-                compression: EntryCompression::None,
-                compressed_size: compressed,
-                uncompressed_size: uncompressed,
-            },
+            storage: EntryStorage::framed(VerbatimLabel::None, uncompressed, compressed),
             attributes,
         });
     }
@@ -300,10 +296,15 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             }
         }
-        let (compression, compressed_size) = match scan.container.layout {
-            container::ContainerLayout::Modern { .. } => (EntryCompression::Zlib, 0),
+        let inflated_len = stream.inflated.len() as u64;
+        let storage = match scan.container.layout {
+            container::ContainerLayout::Modern { .. } => EntryStorage::Compressed {
+                method: CompressionMethod::Zlib,
+                stored: None,
+                expanded: Some(inflated_len),
+            },
             container::ContainerLayout::LegacyCfb { .. } => {
-                (EntryCompression::Stored, stream.consumed)
+                EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed)
             }
         };
         entries.push(ContainerEntry {
@@ -313,11 +314,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             } else {
                 ContainerRole::Preview
             },
-            storage: EntryStorage::Bytes {
-                compression,
-                compressed_size,
-                uncompressed_size: stream.inflated.len() as u64,
-            },
+            storage,
             attributes,
         });
     }
