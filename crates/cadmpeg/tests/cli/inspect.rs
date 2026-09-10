@@ -138,7 +138,8 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
-    assert_eq!(value["confidence"], "high");
+    assert_eq!(value["selection"]["kind"], "detected");
+    assert_eq!(value["selection"]["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
     assert_eq!(value["summary"]["container_kind"], "3dm-chunks");
     assert_eq!(value["summary"]["entries"].as_array().unwrap().len(), 3);
