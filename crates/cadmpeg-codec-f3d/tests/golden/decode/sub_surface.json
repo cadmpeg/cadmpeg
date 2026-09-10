@@ -175,48 +175,48 @@
       "edges": [
         {
           "id": "f3d:brep:entity#16",
-          "start": "f3d:brep:entity#21",
-          "end": "f3d:brep:entity#22",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#21",
+          "end": "f3d:brep:entity#22"
         },
         {
           "id": "f3d:brep:entity#17",
-          "start": "f3d:brep:entity#22",
-          "end": "f3d:brep:entity#23",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#22",
+          "end": "f3d:brep:entity#23"
         },
         {
           "id": "f3d:brep:entity#18",
-          "start": "f3d:brep:entity#23",
-          "end": "f3d:brep:entity#21",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#23",
+          "end": "f3d:brep:entity#21"
         },
         {
           "id": "f3d:brep:entity#19",
-          "start": "f3d:brep:entity#21",
-          "end": "f3d:brep:entity#24",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#21",
+          "end": "f3d:brep:entity#24"
         },
         {
           "id": "f3d:brep:entity#20",
-          "start": "f3d:brep:entity#24",
-          "end": "f3d:brep:entity#22",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#24",
+          "end": "f3d:brep:entity#22"
         }
       ],
       "vertices": [

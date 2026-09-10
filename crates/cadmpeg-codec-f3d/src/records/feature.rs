@@ -6081,9 +6081,6 @@ impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
     }
 }
 impl DesignSurfaceTrimOperation {
-    pub(crate) fn cell_count(&self) -> usize {
-        self.cell_entries.as_slice().len()
-    }
     pub(crate) fn cell_entries(&self) -> &[DesignSurfaceTrimCellEntry] {
         self.cell_entries.as_slice()
     }

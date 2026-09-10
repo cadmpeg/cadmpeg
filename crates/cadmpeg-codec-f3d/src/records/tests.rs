@@ -96,17 +96,21 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
     let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
     for field in ["physical_token", "visual_preset"] {
         for value in ["\"\"", "\"Prism-002\""] {
-            for offset in [None, Some(0), Some(50)] {
+            for offset in [0, 50] {
                 let mut wire = format!("{prefix},\"{field}\":{value}");
-                if let Some(offset) = offset {
-                    write!(wire, ",\"{field}_offset\":{offset}").unwrap();
-                }
+                write!(wire, ",\"{field}_offset\":{offset}").unwrap();
                 wire.push('}');
                 let parsed: crate::records::DesignMaterialAssignment =
                     serde_json::from_str(&wire).expect("material token");
                 assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
             }
         }
+        let wire = format!("{prefix},\"{field}\":\"Prism-002\"}}");
+        let error = serde_json::from_str::<crate::records::DesignMaterialAssignment>(&wire)
+            .expect_err("unlocated material token")
+            .to_string();
+        assert!(error.contains(field));
+        assert!(error.contains(&format!("{field}_offset")));
         let wire = format!("{prefix},\"{field}_offset\":50}}");
         let error = serde_json::from_str::<crate::records::DesignMaterialAssignment>(&wire)
             .expect_err("orphan material offset")
@@ -129,11 +133,9 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"recipe#0","byte_offset":27,"kind":"body""#;
     let suffix = r#","recipe_index":0,"record_index":12}"#;
     for value in ["\"\"", "\"301\""] {
-        for offset in [None, Some(0), Some(4)] {
+        for offset in [0, 4] {
             let mut wire = format!("{prefix},\"design_id\":{value}");
-            if let Some(offset) = offset {
-                write!(wire, ",\"design_id_offset\":{offset}").unwrap();
-            }
+            write!(wire, ",\"design_id_offset\":{offset}").unwrap();
             wire.push_str(suffix);
             let parsed: crate::records::ConstructionRecipe =
                 serde_json::from_str(&wire).expect("recipe id");
@@ -156,11 +158,9 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
     let suffix = r#","version":1,"version_offset":80,"module":"Fusion","entity_ids":[1],"entity_id_offsets":[]}"#;
     for value in ["\"\"", "\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\""] {
-        for offset in [None, Some(0), Some(44)] {
+        for offset in [0, 44] {
             let mut wire = format!("{prefix},\"base_type_guid\":{value}");
-            if let Some(offset) = offset {
-                write!(wire, ",\"base_type_guid_offset\":{offset}").unwrap();
-            }
+            write!(wire, ",\"base_type_guid_offset\":{offset}").unwrap();
             wire.push_str(suffix);
             let parsed: crate::records::SegmentType =
                 serde_json::from_str(&wire).expect("base GUID");
@@ -551,9 +551,7 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
     let suffix = r#","recipe_index":0,"record_index":7}"#;
     for fields in [
         "",
-        ",\"design_id\":\"301\"",
         ",\"design_id\":\"301\",\"design_id_offset\":12",
-        ",\"design_id\":\"301\",\"design_selector\":{\"value\":2,\"byte_offset\":0}",
         ",\"design_id\":\"301\",\"design_id_offset\":12,\"design_selector\":{\"value\":2,\"byte_offset\":15}",
     ] {
         let wire = format!("{prefix}\"{fields}{suffix}");
@@ -1538,7 +1536,8 @@ fn sketch_identity_sidecar_rejects_zero() {
     let point = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
-        "persistent_id": 0, "closure": {"selector": 0, "state": 0}});
+        "persistent_id": 0, "closure": {"selector": 0, "state": 0},
+        "companion": {"incident_curves": []}});
     assert!(serde_json::from_value::<super::SketchPoint>(point)
         .unwrap_err()
         .to_string()

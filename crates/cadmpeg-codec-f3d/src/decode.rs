@@ -2079,11 +2079,14 @@ struct DeferredBodylessInputs {
     has_appearance: bool,
 }
 
+/// Geometry-path inputs carried from construction to product decoding.
+struct GeometrySessionPath {
+    index: GeometryIndex,
+    materials: materials::DecodedMaterials,
+}
+
 enum SessionPath {
-    Geometry {
-        index: GeometryIndex,
-        materials: materials::DecodedMaterials,
-    },
+    Geometry(Box<GeometrySessionPath>),
     Bodyless,
 }
 
@@ -2172,14 +2175,14 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
             },
-            SessionPath::Geometry {
+            SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
                     primary_model_brep_name: primary_model_brep.name.clone(),
                     annotation_records,
                     mesh_projection,
                 },
                 materials: geometry_materials,
-            },
+            })),
         ))
     }
 
@@ -2396,10 +2399,8 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_surface_trim_operations,
         )?;
-        if let SessionPath::Geometry {
-            index: geometry, ..
-        } = path
-        {
+        if let SessionPath::Geometry(geometry_path) = path {
+            let geometry = &geometry_path.index;
             bind_mesh_feature_definitions(
                 &mut self.ir.model.features,
                 &self.native.design_parameter_scopes,
@@ -2625,7 +2626,7 @@ impl<'a> F3dDecodeSession<'a> {
                 arrangement_budget: &arrangement_budget,
             },
         )?;
-        if matches!(path, SessionPath::Geometry { .. }) {
+        if matches!(path, SessionPath::Geometry(_)) {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
         let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
@@ -2725,7 +2726,8 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.act_table_references = act.table_references;
 
         let finalize_path = match path {
-            SessionPath::Geometry { index, materials } => {
+            SessionPath::Geometry(geometry_path) => {
+                let GeometrySessionPath { index, materials } = *geometry_path;
                 report_unretained_act_component_links(
                     &mut self.report,
                     non_root_act_component_links,
