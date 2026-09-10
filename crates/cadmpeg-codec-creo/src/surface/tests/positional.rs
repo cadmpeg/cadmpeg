@@ -50,7 +50,6 @@ fn line_extrusion_parameter_record(
                 slots: directrix_slots,
             },
         ],
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Extrusion(
                 crate::surface::ExtrusionVariant::TabulatedCylinder,

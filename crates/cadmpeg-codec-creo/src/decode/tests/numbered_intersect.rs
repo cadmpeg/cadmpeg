@@ -1437,7 +1437,6 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
                     .collect(),
             },
         ],
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Extrusion(
                 crate::surface::ExtrusionVariant::TabulatedCylinder,
@@ -1648,7 +1647,6 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
                 parameter_slot(0.0),
             ],
         }],
-        terminal_scalar_frame: None,
         carrier: tabulated_cylinder_frame.map_or(
             crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::Extrusion(

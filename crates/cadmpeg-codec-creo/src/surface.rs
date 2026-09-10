@@ -424,8 +424,6 @@ pub struct SurfaceParameterRecord {
     pub opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
     /// Maximal contiguous scalar-token frames in byte order.
     pub scalar_frames: Vec<SurfaceParameterScalarFrame>,
-    /// Maximal scalar-token frame ending at the body boundary.
-    pub terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
     /// Row kind and its decoded carrier, when available.
     pub carrier: SurfaceParameterCarrier,
     /// Structural form that bounded the body.
@@ -1360,7 +1358,7 @@ impl SurfaceParameterRecord {
             && prototype_minor_radius.is_finite()
             && prototype_minor_radius > 0.0)
             .then_some(())?;
-        let frame = self.terminal_scalar_frame.as_ref()?;
+        let frame = self.terminal_scalar_frame()?;
         let slot = frame.slots.last()?;
         let value = slot.value?;
         (slot.offset.checked_add(slot.raw.len()) == Some(self.body.len())
@@ -1732,6 +1730,12 @@ impl SurfaceParameterRecord {
                     (Some(_), Some(_)) | (None, None) => None,
                 }
             })
+    }
+
+    /// The maximal scalar-token frame ending at the body boundary.
+    #[must_use]
+    pub fn terminal_scalar_frame(&self) -> Option<&SurfaceParameterScalarFrame> {
+        terminal_scalar_frame_of(&self.body, &self.scalar_frames)
     }
 
     fn terminal_scalar_frame_has_owned_end(
@@ -3792,13 +3796,13 @@ fn scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScala
     frames
 }
 
-fn terminal_scalar_frame(
+fn terminal_scalar_frame_of<'a>(
     body: &[u8],
-    frames: &[SurfaceParameterScalarFrame],
-) -> Option<SurfaceParameterScalarFrame> {
+    frames: &'a [SurfaceParameterScalarFrame],
+) -> Option<&'a SurfaceParameterScalarFrame> {
     let frame = frames.last()?;
     let last = frame.slots.last()?;
-    (last.offset + last.raw.len() == body.len()).then(|| frame.clone())
+    (last.offset + last.raw.len() == body.len()).then_some(frame)
 }
 
 fn split_cylinder_outline_bounds(
@@ -4932,13 +4936,11 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
         let opaque_spans = opaque_spans(&body, &scalar_tokens);
         let scalar_frames = scalar_frames(&scalar_tokens);
-        let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_frames);
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
             scalar_tokens,
             opaque_spans,
             scalar_frames,
-            terminal_scalar_frame,
             carrier: SurfaceParameterCarrier::Unresolved(row.kind),
             body,
             boundary,
@@ -8407,7 +8409,7 @@ fn complete_plane_compact_scalar_suffix(
     }
     let tokens = scalar_tokens(SurfaceKind::Plane, body, cache);
     let frames = scalar_frames(&tokens);
-    let frame = terminal_scalar_frame(body, &frames)?;
+    let frame = terminal_scalar_frame_of(body, &frames)?;
     (frame.offset > 0 && frame.slots.len() == 9).then_some(())?;
     let slots = complete_plane_envelope_slots(&body[frame.offset..], 9, cache)?;
     slots

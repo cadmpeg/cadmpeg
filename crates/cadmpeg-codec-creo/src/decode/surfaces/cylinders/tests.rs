@@ -254,7 +254,6 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::CylinderBounds(bounds),
         ),
@@ -378,7 +377,6 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame: crate::surface::PositionalCylinderFrame::new(
@@ -448,7 +446,6 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
                 frame: crate::surface::PositionalCylinderFrame::new(
@@ -512,7 +509,6 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame: crate::surface::PositionalCylinderFrame::new(
@@ -577,7 +573,6 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame: crate::surface::PositionalCylinderFrame::new(
@@ -777,7 +772,6 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame: crate::surface::PositionalCylinderFrame::new(

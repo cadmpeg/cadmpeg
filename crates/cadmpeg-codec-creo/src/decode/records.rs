@@ -2014,7 +2014,7 @@ pub(super) fn surface_parameter_records(
                 slots: record.scalar_tokens.clone(),
                 opaque_spans: record.opaque_spans.clone(),
                 scalar_frames: record.scalar_frames.clone(),
-                terminal_scalar_frame: record.terminal_scalar_frame.clone(),
+                terminal_scalar_frame: record.terminal_scalar_frame().cloned(),
                 tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
                         values: frame.values(),

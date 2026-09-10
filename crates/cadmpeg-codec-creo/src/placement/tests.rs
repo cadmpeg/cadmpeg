@@ -983,7 +983,6 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
                 frame: PositionalCylinderFrame::new(
