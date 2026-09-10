@@ -570,16 +570,18 @@
         {
           "construction": false,
           "geometry": {
+            "bounds": [
+              5.863185307179586,
+              7.653185307179586
+            ],
             "center": {
               "u": 30.0,
               "v": 0.0
             },
-            "end_angle": 7.653185307179586,
             "kind": "ellipse",
             "major_angle": 0.5300000000000001,
             "major_radius": 10.999999999999998,
-            "minor_radius": 4.000000000000001,
-            "start_angle": 5.863185307179586
+            "minor_radius": 4.000000000000001
           },
           "id": "fcstd:design:sketch-entity#ConicWitness:4",
           "native_ref": "fcstd:native:property#ConicWitness:Geometry",
@@ -604,16 +606,18 @@
         {
           "construction": false,
           "geometry": {
+            "bounds": [
+              -0.63,
+              0.88
+            ],
             "center": {
               "u": 30.0,
               "v": 30.0
             },
-            "end_parameter": 0.88,
             "kind": "hyperbola",
             "major_angle": 0.4700000000000007,
             "major_radius": 7.000000000000004,
-            "minor_radius": 3.0000000000000027,
-            "start_parameter": -0.63
+            "minor_radius": 3.0000000000000027
           },
           "id": "fcstd:design:sketch-entity#ConicWitness:6",
           "native_ref": "fcstd:native:property#ConicWitness:Geometry",
@@ -623,10 +627,12 @@
           "construction": false,
           "geometry": {
             "axis_angle": 0.6700000000000007,
-            "end_parameter": 2.4,
+            "bounds": [
+              -2.1,
+              2.4
+            ],
             "focal_length": 3.9999999999999996,
             "kind": "parabola",
-            "start_parameter": -2.1,
             "vertex": {
               "u": 60.0,
               "v": 20.0
