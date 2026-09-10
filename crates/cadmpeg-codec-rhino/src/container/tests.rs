@@ -874,6 +874,7 @@ fn skips_short_and_long_unknown_table_records() {
 
 #[test]
 fn a_table_body_must_leave_framing_inside_its_chunk_range() {
+    const INVERTED_BODY: std::ops::Range<usize> = std::ops::Range { start: 30, end: 10 };
     let empty = || std::collections::BTreeMap::new();
     let table = crate::container::Table::new(0x1000_0014, 0..40, 4..36, Vec::new(), 0, empty())
         .expect("a body inside its chunk range");
@@ -889,9 +890,15 @@ fn a_table_body_must_leave_framing_inside_its_chunk_range() {
     assert!(
         crate::container::Table::new(0x1000_0014, 0..40, 4..44, Vec::new(), 0, empty()).is_none()
     );
-    assert!(
-        crate::container::Table::new(0x1000_0014, 0..40, 30..10, Vec::new(), 0, empty()).is_none()
-    );
+    assert!(crate::container::Table::new(
+        0x1000_0014,
+        0..40,
+        INVERTED_BODY,
+        Vec::new(),
+        0,
+        empty()
+    )
+    .is_none());
     assert!(crate::container::Table::new(
         0x1000_0014,
         0..u32::MAX as usize + 2,
