@@ -11,8 +11,8 @@ fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
         cadmpeg_ir::math::Point3::new(17.0, 23.0, 13.0)
     );
     assert!((circle.axis.z - 1.0).abs() < 1.0e-12);
-    assert_eq!(circle.radius, 7.0);
-    assert_eq!(circle.range, [0.0, 11.2]);
+    assert_eq!(circle.radius.get(), 7.0);
+    assert_eq!(circle.range.get(), [0.0, 11.2]);
     assert_eq!(circle.chart_shift, -16.391_148_575_128_55);
 }
 
@@ -47,7 +47,7 @@ fn b2_composite_parser_reads_embedded_cylinder_frame() {
     assert_eq!(cylinders[0].object_id, 0x5678);
     assert_eq!(cylinders[0].wrapper_pos, 0);
     assert_eq!(
-        cylinders[0].cylinder.u_range,
+        cylinders[0].cylinder.u_range.get(),
         [0.0, 4.0 * std::f64::consts::PI]
     );
     assert!(crate::families::b2::records::b2_cylinders(&bytes).is_empty());

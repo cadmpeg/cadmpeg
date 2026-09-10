@@ -15,13 +15,6 @@ pub(super) fn validate_consolidated_owner_packets(
                 numeric_tail.header[0] == 0x84
                     && matches!(numeric_tail.header[1], 0x41 | 0xc1)
                     && numeric_tail.header[4] == 0x0d
-                    && numeric_tail.lower.iter().all(|value| value.is_finite())
-                    && numeric_tail.upper.iter().all(|value| value.is_finite())
-                    && numeric_tail.lower[0] < numeric_tail.upper[0]
-                    && numeric_tail.lower[1] < numeric_tail.upper[1]
-                    && numeric_tail.bounds.iter().all(|bounds| {
-                        bounds[0].is_finite() && bounds[1].is_finite() && bounds[0] < bounds[1]
-                    })
             }
             CatiaOwnerPacketPayload::Counted { references, tail } => {
                 !references.is_empty() && !tail.is_empty()
