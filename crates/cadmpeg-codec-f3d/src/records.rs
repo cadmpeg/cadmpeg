@@ -558,9 +558,27 @@ pub struct PersistentDesignLink {
     pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     pub ordinal: u32,
-    /// Whether this is the active persistent id for `target`, as opposed to a
-    /// superseded historical id retained for provenance.
-    pub is_current: bool,
+}
+
+/// The active persistent design link of every target: the highest-ordinal link
+/// of that target's ordered run. Every other link of the run is a superseded
+/// historical id retained for provenance.
+pub(crate) fn current_persistent_design_links(
+    links: &[PersistentDesignLink],
+) -> std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> {
+    let mut current: std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> =
+        std::collections::BTreeMap::new();
+    for link in links {
+        current
+            .entry(&link.target)
+            .and_modify(|existing| {
+                if link.ordinal > existing.ordinal {
+                    *existing = link;
+                }
+            })
+            .or_insert(link);
+    }
+    current
 }
 
 #[derive(Serialize, Deserialize)]
@@ -576,9 +594,6 @@ struct PersistentDesignLinkWire {
     design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     ordinal: u32,
-    /// Whether this is the active persistent id for `target`, as opposed to a
-    /// superseded historical id retained for provenance.
-    is_current: bool,
 }
 
 impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
@@ -594,7 +609,6 @@ impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
             design_id: wire.design_id.try_into()?,
             design_reference: wire.design_reference,
             ordinal: wire.ordinal,
-            is_current: wire.is_current,
         })
     }
 }
@@ -608,7 +622,6 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
             entity_kind: 3,
             design_reference: record.design_reference,
             ordinal: record.ordinal,
-            is_current: record.is_current,
         }
     }
 }
