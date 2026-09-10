@@ -114,7 +114,9 @@ pub(crate) fn project_local_components(
 
     let mut occurrences = occurrences.into_values().collect::<Vec<_>>();
     for (ordinal, occurrence) in occurrences.iter_mut().enumerate() {
-        occurrence.ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+        occurrence.ordinal = u32::try_from(ordinal).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32")
+        })?;
     }
     Ok((components.into_values().collect(), occurrences))
 }
@@ -195,8 +197,13 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             id: occurrence_id,
             prototype: PrototypeReference::Unresolved,
             parent: OccurrenceParent::Root,
-            ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
-                .unwrap_or(u32::MAX),
+            ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len())).map_err(
+                |_| {
+                    cadmpeg_core::CodecError::malformed(
+                        "Fusion Design occurrence ordinal exceeds u32",
+                    )
+                },
+            )?,
             transform: neutral_transform(*construction.transform())?,
             linked_prototype: None,
             scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],

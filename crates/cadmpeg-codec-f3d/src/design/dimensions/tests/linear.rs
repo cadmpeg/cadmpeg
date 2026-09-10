@@ -803,18 +803,20 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             companion_record_index: 22,
         })
         .unwrap();
-    let companion = DesignParameterCompanion {
-        id: format!("{stream}:design-parameter-companion#22"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        record_index: 22,
-        owner_record_index: 21,
-        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
-        timestamp_micros_offset: 42,
-        payload_byte_offset: 58,
-        payload_byte_length: 0,
-        owned_recipe_ids: Vec::new(),
-    };
+    let companion = DesignParameterCompanion::unbound(
+        format!("{stream}:design-parameter-companion#22"),
+        0,
+        crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        22,
+        21,
+        std::num::NonZeroU64::new(1).unwrap(),
+        42,
+    )
+    .bound(crate::records::DesignCompanionPayload::new(
+        58,
+        0,
+        Vec::new(),
+    ));
     let pair = DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
         id: format!("{stream}:design-dimension-locus-pair#30"),
         companion_record_index: 99,
