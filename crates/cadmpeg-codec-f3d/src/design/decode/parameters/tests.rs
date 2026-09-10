@@ -1070,13 +1070,15 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
 
     let bound = super::bind_parameter_companion_payloads(
         vec![companion],
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        &[],
-        &[],
-        &[],
-        &recipes,
-        &std::collections::HashMap::from([(stream.to_owned(), 200)]),
+        &super::ParameterCompanionInputs {
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            scopes: &[],
+            entities: &[],
+            headers: &[],
+            recipes: &recipes,
+            stream_lengths: &std::collections::HashMap::from([(stream.to_owned(), 200)]),
+        },
     );
 
     let payload = bound[0].payload().expect("bound payload");

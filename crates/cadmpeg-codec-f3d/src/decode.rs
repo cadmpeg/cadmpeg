@@ -4698,13 +4698,15 @@ fn extend_related_design_records(
     native.design_parameter_companions =
         crate::design::decode::parameters::bind_parameter_companion_payloads(
             std::mem::take(&mut native.design_parameter_companions),
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_parameter_scopes,
-            &native.design_entity_headers,
-            &native.design_record_headers,
-            &native.construction_recipes,
-            &stream_lengths,
+            &crate::design::decode::parameters::ParameterCompanionInputs {
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                scopes: &native.design_parameter_scopes,
+                entities: &native.design_entity_headers,
+                headers: &native.design_record_headers,
+                recipes: &native.construction_recipes,
+                stream_lengths: &stream_lengths,
+            },
         );
     native.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(

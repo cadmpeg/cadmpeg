@@ -1030,13 +1030,15 @@ pub(super) fn fixed_kind_path_operations(
     };
     let bound = bind_parameter_companion_payloads(
         vec![companion.clone()],
-        std::slice::from_ref(&parameter),
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&recipe),
-        &HashMap::from([("f3d:native".into(), 100)]),
+        &crate::design::decode::parameters::ParameterCompanionInputs {
+            parameters: std::slice::from_ref(&parameter),
+            owners: &[],
+            scopes: &[],
+            entities: &[],
+            headers: &[],
+            recipes: std::slice::from_ref(&recipe),
+            stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
+        },
     );
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
@@ -1071,13 +1073,15 @@ pub(super) fn fixed_kind_path_operations(
     };
     let bound = bind_parameter_companion_payloads(
         vec![companion],
-        &[],
-        &[],
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&entity),
-        &[],
-        &[],
-        &HashMap::from([("f3d:native".into(), 100)]),
+        &crate::design::decode::parameters::ParameterCompanionInputs {
+            parameters: &[],
+            owners: &[],
+            scopes: std::slice::from_ref(&scope),
+            entities: std::slice::from_ref(&entity),
+            headers: &[],
+            recipes: &[],
+            stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
+        },
     );
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
