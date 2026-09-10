@@ -110,6 +110,14 @@ impl ChannelAddressing {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TessellationShadingWire {
+    PerVertex { values: Vec<Vector3> },
+    PerCorner { values: Vec<Vector3> },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct TessellationWire {
     id: TessellationId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,10 +134,8 @@ struct TessellationWire {
     feature_edges: Vec<[u32; 2]>,
     #[serde(default)]
     strip_lengths: Vec<u32>,
-    #[serde(default)]
-    normals: Vec<Vector3>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    corner_normals: Vec<Vector3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shading: Option<TessellationShadingWire>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     triangle_groups: Vec<TessellationTriangleGroup>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -306,6 +312,32 @@ fn shading_from_parts(
         (false, false) => Err(tessellation_error(
             "tessellation cannot store both vertex normals and corner normals",
         )),
+    }
+}
+
+fn shading_from_wire(
+    vertices: &[Point3],
+    triangles: &[[u32; 3]],
+    wire: Option<TessellationShadingWire>,
+) -> Result<TessellationNormals, TessellationError> {
+    match wire {
+        None => Ok(TessellationNormals::None),
+        Some(TessellationShadingWire::PerVertex { values }) => {
+            if values.len() != vertices.len() {
+                return Err(tessellation_error(
+                    "tessellation normals do not match vertex count",
+                ));
+            }
+            Ok(TessellationNormals::PerVertex(values))
+        }
+        Some(TessellationShadingWire::PerCorner { values }) => {
+            if triangles.len().checked_mul(3) != Some(values.len()) {
+                return Err(tessellation_error(
+                    "tessellation corner normals do not match triangle corners",
+                ));
+            }
+            Ok(TessellationNormals::PerCorner(values))
+        }
     }
 }
 
@@ -830,8 +862,15 @@ impl TessellationChannel {
 impl From<Tessellation> for TessellationWire {
     fn from(mesh: Tessellation) -> Self {
         let strip_lengths = mesh.strip_lengths().to_vec();
-        let normals = mesh.vertex_normals().to_vec();
-        let corner_normals = mesh.per_corner_normals().to_vec();
+        let shading = match &mesh.shading {
+            TessellationNormals::None => None,
+            TessellationNormals::PerVertex(values) => Some(TessellationShadingWire::PerVertex {
+                values: values.clone(),
+            }),
+            TessellationNormals::PerCorner(values) => Some(TessellationShadingWire::PerCorner {
+                values: values.clone(),
+            }),
+        };
         Self {
             id: mesh.id,
             body: mesh.body,
@@ -842,8 +881,7 @@ impl From<Tessellation> for TessellationWire {
             triangles: mesh.triangles,
             feature_edges: mesh.feature_edges,
             strip_lengths,
-            normals,
-            corner_normals,
+            shading,
             triangle_groups: mesh.triangle_groups,
             texture_assignments: mesh.texture_assignments,
             channels: mesh.channels,
@@ -855,12 +893,7 @@ impl TryFrom<TessellationWire> for Tessellation {
     type Error = TessellationError;
 
     fn try_from(wire: TessellationWire) -> Result<Self, Self::Error> {
-        let shading = shading_from_parts(
-            &wire.vertices,
-            &wire.triangles,
-            wire.normals,
-            wire.corner_normals,
-        )?;
+        let shading = shading_from_wire(&wire.vertices, &wire.triangles, wire.shading)?;
         let topology = topology_from_parts(&wire.vertices, &wire.triangles, wire.strip_lengths)?;
         let mut mesh = Self::new(
             wire.id.into_string(),
