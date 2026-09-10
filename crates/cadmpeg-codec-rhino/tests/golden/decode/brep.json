@@ -206,12 +206,15 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "rhino:object:coedge#record-000000-offset-177.slot-0",
+              "rhino:object:coedge#record-000000-offset-177.slot-1",
+              "rhino:object:coedge#record-000000-offset-177.slot-2"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "rhino:object:coedge#record-000000-offset-177.slot-0",
-            "rhino:object:coedge#record-000000-offset-177.slot-1",
-            "rhino:object:coedge#record-000000-offset-177.slot-2"
-          ],
           "face": "rhino:object:face#record-000000-offset-177.slot-0",
           "id": "rhino:object:loop#record-000000-offset-177.slot-0"
         }

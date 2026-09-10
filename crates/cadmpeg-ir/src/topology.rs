@@ -696,7 +696,6 @@ pub struct Loop {
     /// Owning face.
     pub face: FaceId,
     /// Vertex-only or coedge-ring boundary.
-    #[cfg_attr(feature = "schema", schemars(with = "LoopBoundarySchemaWire"))]
     pub boundary: LoopBoundary,
 }
 
@@ -706,7 +705,6 @@ struct LoopReadWire {
     face: FaceId,
     #[serde(default)]
     boundary_role: LoopBoundaryRole,
-    #[serde(flatten, with = "loop_boundary_wire")]
     boundary: LoopBoundary,
 }
 
@@ -727,7 +725,6 @@ struct LoopWriteWire<'a> {
     id: &'a LoopId,
     face: &'a FaceId,
     boundary_role: LoopBoundaryRole,
-    #[serde(flatten, with = "loop_boundary_wire")]
     boundary: &'a LoopBoundary,
 }
 
@@ -758,14 +755,16 @@ pub struct PcurveUse {
 }
 
 /// The mutually exclusive forms of a loop boundary.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoopBoundary {
     /// One unanchored vertex at a surface singularity.
     Vertex {
         /// Referenced pole vertex.
         vertex: VertexId,
         /// Ordered parameter-space images associated with the pole.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pcurves: Vec<PcurveUse>,
     },
     /// An ordered coedge ring and its anchored pole occurrences.
@@ -785,11 +784,30 @@ impl std::fmt::Display for LoopRingError {
 impl std::error::Error for LoopRingError {}
 
 /// A checked, ordered coedge ring and its anchored pole occurrences.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "LoopRingWire")]
 pub struct LoopRing {
     coedges: Vec<CoedgeId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_uses: Vec<AnchoredVertexUse>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct LoopRingWire {
+    coedges: Vec<CoedgeId>,
+    #[serde(default)]
+    vertex_uses: Vec<AnchoredVertexUse>,
+}
+
+impl TryFrom<LoopRingWire> for LoopRing {
+    type Error = LoopRingError;
+
+    fn try_from(wire: LoopRingWire) -> Result<Self, Self::Error> {
+        Self::new(wire.coedges, wire.vertex_uses)
+    }
 }
 
 impl LoopRing {
@@ -987,122 +1005,6 @@ pub struct AnchoredVertexUse {
     pub pcurves: Vec<PcurveUse>,
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the loop boundary wire schema")]
-struct LoopBoundarySchemaWire {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    coedges: Vec<CoedgeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    vertex_uses: Vec<LoopVertexUseSchemaWire>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the loop vertex-use wire schema")]
-struct LoopVertexUseSchemaWire {
-    vertex: VertexId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    after: Option<CoedgeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pcurves: Vec<PcurveUse>,
-}
-
-mod loop_boundary_wire {
-    use super::{AnchoredVertexUse, CoedgeId, LoopBoundary, LoopRing, PcurveUse, VertexId};
-    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        coedges: Vec<CoedgeId>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        vertex_uses: Vec<VertexUseWire>,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct VertexUseWire {
-        vertex: VertexId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        after: Option<CoedgeId>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pcurves: Vec<PcurveUse>,
-    }
-
-    pub fn serialize<S>(value: &LoopBoundary, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            LoopBoundary::Vertex { vertex, pcurves } => Wire {
-                coedges: Vec::new(),
-                vertex_uses: vec![VertexUseWire {
-                    vertex: vertex.clone(),
-                    after: None,
-                    pcurves: pcurves.clone(),
-                }],
-            },
-            LoopBoundary::Ring(ring) => Wire {
-                coedges: ring.coedges().to_vec(),
-                vertex_uses: ring
-                    .vertex_uses()
-                    .iter()
-                    .map(|vertex_use| VertexUseWire {
-                        vertex: vertex_use.vertex.clone(),
-                        after: Some(vertex_use.after.clone()),
-                        pcurves: vertex_use.pcurves.clone(),
-                    })
-                    .collect(),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<LoopBoundary, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        if wire.coedges.is_empty() {
-            let [vertex_use] = <[VertexUseWire; 1]>::try_from(wire.vertex_uses).map_err(|_| {
-                D::Error::custom("loop vertex_uses must contain one item when coedges is empty")
-            })?;
-            if vertex_use.after.is_some() {
-                return Err(D::Error::custom(
-                    "loop vertex use must omit after when coedges is empty",
-                ));
-            }
-            return Ok(LoopBoundary::Vertex {
-                vertex: vertex_use.vertex,
-                pcurves: vertex_use.pcurves,
-            });
-        }
-
-        let vertex_uses = wire
-            .vertex_uses
-            .into_iter()
-            .map(|vertex_use| {
-                let after = vertex_use
-                    .after
-                    .ok_or_else(|| D::Error::custom("loop ring vertex use must include after"))?;
-                if !wire.coedges.contains(&after) {
-                    return Err(D::Error::custom(
-                        "loop ring vertex use after must name a coedge in the ring",
-                    ));
-                }
-                Ok(AnchoredVertexUse {
-                    vertex: vertex_use.vertex,
-                    after,
-                    pcurves: vertex_use.pcurves,
-                })
-            })
-            .collect::<Result<_, D::Error>>()?;
-        LoopRing::new(wire.coedges, vertex_uses)
-            .map(LoopBoundary::Ring)
-            .map_err(D::Error::custom)
-    }
-}
-
 /// One use of an edge by a loop.
 ///
 /// Coedges form a loop ring through the owning [`Loop`] coedge order, and a
@@ -1124,8 +1026,7 @@ pub struct Coedge {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
-    #[serde(flatten, deserialize_with = "coedge_use_curve_wire::deserialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "CoedgeUseCurveSchemaWire"))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_curve: Option<CoedgeUseCurve>,
 }
 
@@ -1209,9 +1110,7 @@ struct CoedgeWriteWire<'a> {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pcurves: &'a Vec<PcurveUse>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    use_curve: Option<&'a CurveId>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    use_curve_parameter_range: Option<[f64; 2]>,
+    use_curve: Option<&'a CoedgeUseCurve>,
 }
 
 impl Serialize for Coedge {
@@ -1233,11 +1132,7 @@ impl Serialize for Coedge {
             radial_next: &self.radial_next,
             sense: self.sense,
             pcurves: &self.pcurves,
-            use_curve: self.use_curve.as_ref().map(|value| &value.curve),
-            use_curve_parameter_range: self
-                .use_curve
-                .as_ref()
-                .map(|value| value.parameter_range.endpoints()),
+            use_curve: self.use_curve.as_ref(),
         }
         .serialize(serializer)
     }
@@ -1246,52 +1141,12 @@ impl Serialize for Coedge {
 /// A coedge-local curve and its loop-traversal interval.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CoedgeUseCurve {
     /// Local 3D curve carrier.
     pub curve: CurveId,
     /// Interval on the carrier in loop-traversal order.
     pub parameter_range: ParameterInterval,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the coedge use-curve wire schema")]
-struct CoedgeUseCurveSchemaWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    use_curve: Option<CurveId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    use_curve_parameter_range: Option<[f64; 2]>,
-}
-
-mod coedge_use_curve_wire {
-    use super::{CoedgeUseCurve, CurveId};
-    use serde::{Deserialize, Deserializer};
-
-    #[derive(Deserialize)]
-    struct Wire {
-        #[serde(default)]
-        use_curve: Option<CurveId>,
-        #[serde(default)]
-        use_curve_parameter_range: Option<[f64; 2]>,
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CoedgeUseCurve>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.use_curve, wire.use_curve_parameter_range) {
-            (Some(curve), Some(parameter_range)) => Ok(Some(CoedgeUseCurve {
-                curve,
-                parameter_range: super::ParameterInterval::new(parameter_range)
-                    .map_err(serde::de::Error::custom)?,
-            })),
-            (None, None) => Ok(None),
-            _ => Err(serde::de::Error::custom(
-                "use_curve and use_curve_parameter_range must occur together",
-            )),
-        }
-    }
 }
 
 /// A finite ordered parameter interval.
@@ -1677,13 +1532,15 @@ mod tests {
             "previous": "test:model:coedge#0",
             "radial_next": "test:model:coedge#0",
             "sense": "forward",
-            "use_curve": "test:model:curve#0",
-            "use_curve_parameter_range": [0.25, 0.75]
+            "use_curve": {
+                "curve": "test:model:curve#0",
+                "parameter_range": [0.25, 0.75]
+            }
         })
     }
 
     #[test]
-    fn coedge_use_curve_preserves_the_flat_wire_fields() {
+    fn the_coedge_use_curve_is_one_nested_key() {
         let coedge: Coedge = serde_json::from_value(coedge_json()).unwrap();
         assert_eq!(
             coedge.use_curve,
@@ -1705,10 +1562,16 @@ mod tests {
             std::slice::from_ref(&coedge),
             || serde_json::to_value(&coedge).unwrap(),
         );
-        assert_eq!(encoded["use_curve"], "test:model:curve#0");
         assert_eq!(
-            encoded["use_curve_parameter_range"],
-            serde_json::json!([0.25, 0.75])
+            encoded["use_curve"],
+            serde_json::json!({
+                "curve": "test:model:curve#0",
+                "parameter_range": [0.25, 0.75]
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<Coedge>(encoded).unwrap().use_curve,
+            coedge.use_curve
         );
     }
 
@@ -1758,21 +1621,49 @@ mod tests {
     }
 
     #[test]
-    fn coedge_use_curve_rejects_a_split_wire_pair() {
-        let mut json = coedge_json();
-        json.as_object_mut()
-            .unwrap()
-            .remove("use_curve_parameter_range");
-        assert!(serde_json::from_value::<Coedge>(json).is_err());
+    fn a_half_stated_coedge_use_curve_has_no_encoding() {
+        let mut without_range = coedge_json();
+        without_range["use_curve"]
+            .as_object_mut()
+            .expect("a use-curve object")
+            .remove("parameter_range");
+        assert!(serde_json::from_value::<Coedge>(without_range).is_err());
+
+        let mut without_curve = coedge_json();
+        without_curve["use_curve"]
+            .as_object_mut()
+            .expect("a use-curve object")
+            .remove("curve");
+        assert!(serde_json::from_value::<Coedge>(without_curve).is_err());
+
+        let mut bogus = coedge_json();
+        bogus["use_curve"]["zz_bogus"] = serde_json::json!(1);
+        let error = serde_json::from_value::<Coedge>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+
+        let mut absent = coedge_json();
+        absent
+            .as_object_mut()
+            .expect("a coedge object")
+            .remove("use_curve");
+        assert_eq!(
+            serde_json::from_value::<Coedge>(absent).unwrap().use_curve,
+            None
+        );
     }
 
     #[test]
-    fn vertex_loop_preserves_the_flat_wire_fields() {
+    fn the_vertex_loop_boundary_is_one_nested_tagged_object() {
         let json = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+            "boundary": {
+                "kind": "vertex",
+                "vertex": "test:model:vertex#0"
+            }
         });
         let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
         assert!(matches!(
@@ -1784,16 +1675,19 @@ mod tests {
     }
 
     #[test]
-    fn ring_loop_preserves_the_flat_wire_fields() {
+    fn the_ring_loop_boundary_is_one_nested_tagged_object() {
         let json = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "coedges": ["test:model:coedge#0"],
-            "vertex_uses": [{
-                "vertex": "test:model:vertex#0",
-                "after": "test:model:coedge#0"
-            }]
+            "boundary": {
+                "kind": "ring",
+                "coedges": ["test:model:coedge#0"],
+                "vertex_uses": [{
+                    "vertex": "test:model:vertex#0",
+                    "after": "test:model:coedge#0"
+                }]
+            }
         });
         let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
         assert!(matches!(loop_.boundary, LoopBoundary::Ring(_)));
@@ -1801,25 +1695,47 @@ mod tests {
     }
 
     #[test]
-    fn loop_boundary_rejects_split_wire_forms() {
-        let vertex_only_with_anchor = serde_json::json!({
+    fn a_loop_boundary_carries_no_key_of_the_other_form() {
+        let anchored_vertex = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "vertex_uses": [{
+            "boundary": {
+                "kind": "vertex",
                 "vertex": "test:model:vertex#0",
                 "after": "test:model:coedge#0"
-            }]
+            }
         });
-        assert!(serde_json::from_value::<Loop>(vertex_only_with_anchor).is_err());
+        let error = serde_json::from_value::<Loop>(anchored_vertex)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("after"), "{error}");
 
         let ring_without_anchor = serde_json::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "coedges": ["test:model:coedge#0"],
-            "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+            "boundary": {
+                "kind": "ring",
+                "coedges": ["test:model:coedge#0"],
+                "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+            }
         });
         assert!(serde_json::from_value::<Loop>(ring_without_anchor).is_err());
+
+        let bogus = serde_json::json!({
+            "id": "test:model:loop#0",
+            "face": "test:model:face#0",
+            "boundary_role": "outer",
+            "boundary": {
+                "kind": "ring",
+                "coedges": ["test:model:coedge#0"],
+                "zz_bogus": 1
+            }
+        });
+        let error = serde_json::from_value::<Loop>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
     }
 }

@@ -164,12 +164,15 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "step:data:coedge#29-face-36",
+              "step:data:coedge#30-face-36",
+              "step:data:coedge#31-face-36"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "step:data:coedge#29-face-36",
-            "step:data:coedge#30-face-36",
-            "step:data:coedge#31-face-36"
-          ],
           "face": "step:data:face#36",
           "id": "step:data:loop#32-face-36"
         }

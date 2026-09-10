@@ -111,10 +111,13 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "unspecified",
-          "coedges": [
-            "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0"
-          ],
           "face": "rhino:object:face#record-000000-offset-177.cap-0",
           "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0"
         }

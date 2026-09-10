@@ -462,42 +462,54 @@
       ],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#10:0",
+              "creo:visibgeom:coedge#12:0",
+              "creo:visibgeom:coedge#11:0"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "creo:visibgeom:coedge#10:0",
-            "creo:visibgeom:coedge#12:0",
-            "creo:visibgeom:coedge#11:0"
-          ],
           "face": "creo:visibgeom:face#1",
           "id": "creo:visibgeom:loop#1"
         },
         {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#10:1",
+              "creo:visibgeom:coedge#13:0",
+              "creo:visibgeom:coedge#14:0"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "creo:visibgeom:coedge#10:1",
-            "creo:visibgeom:coedge#13:0",
-            "creo:visibgeom:coedge#14:0"
-          ],
           "face": "creo:visibgeom:face#2",
           "id": "creo:visibgeom:loop#2"
         },
         {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#11:1",
+              "creo:visibgeom:coedge#15:0",
+              "creo:visibgeom:coedge#13:1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "creo:visibgeom:coedge#11:1",
-            "creo:visibgeom:coedge#15:0",
-            "creo:visibgeom:coedge#13:1"
-          ],
           "face": "creo:visibgeom:face#3",
           "id": "creo:visibgeom:loop#3"
         },
         {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#12:1",
+              "creo:visibgeom:coedge#14:1",
+              "creo:visibgeom:coedge#15:1"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "creo:visibgeom:coedge#12:1",
-            "creo:visibgeom:coedge#14:1",
-            "creo:visibgeom:coedge#15:1"
-          ],
           "face": "creo:visibgeom:face#4",
           "id": "creo:visibgeom:loop#4"
         }

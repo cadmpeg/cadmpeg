@@ -439,42 +439,54 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D55:D53:D37:0",
+              "iges:model:coedge#D55:D53:D37:1",
+              "iges:model:coedge#D55:D53:D37:2"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D55:D53:D37:0",
-            "iges:model:coedge#D55:D53:D37:1",
-            "iges:model:coedge#D55:D53:D37:2"
-          ],
           "face": "iges:model:face#D55:D53:D45",
           "id": "iges:model:loop#D55:D53:D37"
         },
         {
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D55:D53:D39:0",
+              "iges:model:coedge#D55:D53:D39:1",
+              "iges:model:coedge#D55:D53:D39:2"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D55:D53:D39:0",
-            "iges:model:coedge#D55:D53:D39:1",
-            "iges:model:coedge#D55:D53:D39:2"
-          ],
           "face": "iges:model:face#D55:D53:D47",
           "id": "iges:model:loop#D55:D53:D39"
         },
         {
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D55:D53:D41:0",
+              "iges:model:coedge#D55:D53:D41:1",
+              "iges:model:coedge#D55:D53:D41:2"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D55:D53:D41:0",
-            "iges:model:coedge#D55:D53:D41:1",
-            "iges:model:coedge#D55:D53:D41:2"
-          ],
           "face": "iges:model:face#D55:D53:D49",
           "id": "iges:model:loop#D55:D53:D41"
         },
         {
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D55:D53:D43:0",
+              "iges:model:coedge#D55:D53:D43:1",
+              "iges:model:coedge#D55:D53:D43:2"
+            ],
+            "kind": "ring"
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D55:D53:D43:0",
-            "iges:model:coedge#D55:D53:D43:1",
-            "iges:model:coedge#D55:D53:D43:2"
-          ],
           "face": "iges:model:face#D55:D53:D51",
           "id": "iges:model:loop#D55:D53:D43"
         }

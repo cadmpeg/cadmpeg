@@ -352,100 +352,112 @@
       "features": [],
       "loops": [
         {
+          "boundary": {
+            "coedges": [
+              "catia:standard:coedge#0:0:0",
+              "catia:standard:coedge#0:0:1",
+              "catia:standard:coedge#0:0:2"
+            ],
+            "kind": "ring",
+            "vertex_uses": [
+              {
+                "after": "catia:standard:coedge#0:0:0",
+                "vertex": "catia:standard:v#2"
+              },
+              {
+                "after": "catia:standard:coedge#0:0:1",
+                "vertex": "catia:standard:v#0"
+              },
+              {
+                "after": "catia:standard:coedge#0:0:2",
+                "vertex": "catia:standard:v#1"
+              }
+            ]
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "catia:standard:coedge#0:0:0",
-            "catia:standard:coedge#0:0:1",
-            "catia:standard:coedge#0:0:2"
-          ],
           "face": "catia:standard:face#0",
-          "id": "catia:standard:loop#0:0",
-          "vertex_uses": [
-            {
-              "after": "catia:standard:coedge#0:0:0",
-              "vertex": "catia:standard:v#2"
-            },
-            {
-              "after": "catia:standard:coedge#0:0:1",
-              "vertex": "catia:standard:v#0"
-            },
-            {
-              "after": "catia:standard:coedge#0:0:2",
-              "vertex": "catia:standard:v#1"
-            }
-          ]
+          "id": "catia:standard:loop#0:0"
         },
         {
+          "boundary": {
+            "coedges": [
+              "catia:standard:coedge#1:0:0",
+              "catia:standard:coedge#1:0:1",
+              "catia:standard:coedge#1:0:2"
+            ],
+            "kind": "ring",
+            "vertex_uses": [
+              {
+                "after": "catia:standard:coedge#1:0:0",
+                "vertex": "catia:standard:v#3"
+              },
+              {
+                "after": "catia:standard:coedge#1:0:1",
+                "vertex": "catia:standard:v#1"
+              },
+              {
+                "after": "catia:standard:coedge#1:0:2",
+                "vertex": "catia:standard:v#0"
+              }
+            ]
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "catia:standard:coedge#1:0:0",
-            "catia:standard:coedge#1:0:1",
-            "catia:standard:coedge#1:0:2"
-          ],
           "face": "catia:standard:face#1",
-          "id": "catia:standard:loop#1:0",
-          "vertex_uses": [
-            {
-              "after": "catia:standard:coedge#1:0:0",
-              "vertex": "catia:standard:v#3"
-            },
-            {
-              "after": "catia:standard:coedge#1:0:1",
-              "vertex": "catia:standard:v#1"
-            },
-            {
-              "after": "catia:standard:coedge#1:0:2",
-              "vertex": "catia:standard:v#0"
-            }
-          ]
+          "id": "catia:standard:loop#1:0"
         },
         {
+          "boundary": {
+            "coedges": [
+              "catia:standard:coedge#2:0:0",
+              "catia:standard:coedge#2:0:1",
+              "catia:standard:coedge#2:0:2"
+            ],
+            "kind": "ring",
+            "vertex_uses": [
+              {
+                "after": "catia:standard:coedge#2:0:0",
+                "vertex": "catia:standard:v#3"
+              },
+              {
+                "after": "catia:standard:coedge#2:0:1",
+                "vertex": "catia:standard:v#2"
+              },
+              {
+                "after": "catia:standard:coedge#2:0:2",
+                "vertex": "catia:standard:v#1"
+              }
+            ]
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "catia:standard:coedge#2:0:0",
-            "catia:standard:coedge#2:0:1",
-            "catia:standard:coedge#2:0:2"
-          ],
           "face": "catia:standard:face#2",
-          "id": "catia:standard:loop#2:0",
-          "vertex_uses": [
-            {
-              "after": "catia:standard:coedge#2:0:0",
-              "vertex": "catia:standard:v#3"
-            },
-            {
-              "after": "catia:standard:coedge#2:0:1",
-              "vertex": "catia:standard:v#2"
-            },
-            {
-              "after": "catia:standard:coedge#2:0:2",
-              "vertex": "catia:standard:v#1"
-            }
-          ]
+          "id": "catia:standard:loop#2:0"
         },
         {
+          "boundary": {
+            "coedges": [
+              "catia:standard:coedge#3:0:0",
+              "catia:standard:coedge#3:0:1",
+              "catia:standard:coedge#3:0:2"
+            ],
+            "kind": "ring",
+            "vertex_uses": [
+              {
+                "after": "catia:standard:coedge#3:0:0",
+                "vertex": "catia:standard:v#3"
+              },
+              {
+                "after": "catia:standard:coedge#3:0:1",
+                "vertex": "catia:standard:v#0"
+              },
+              {
+                "after": "catia:standard:coedge#3:0:2",
+                "vertex": "catia:standard:v#2"
+              }
+            ]
+          },
           "boundary_role": "outer",
-          "coedges": [
-            "catia:standard:coedge#3:0:0",
-            "catia:standard:coedge#3:0:1",
-            "catia:standard:coedge#3:0:2"
-          ],
           "face": "catia:standard:face#3",
-          "id": "catia:standard:loop#3:0",
-          "vertex_uses": [
-            {
-              "after": "catia:standard:coedge#3:0:0",
-              "vertex": "catia:standard:v#3"
-            },
-            {
-              "after": "catia:standard:coedge#3:0:1",
-              "vertex": "catia:standard:v#0"
-            },
-            {
-              "after": "catia:standard:coedge#3:0:2",
-              "vertex": "catia:standard:v#2"
-            }
-          ]
+          "id": "catia:standard:loop#3:0"
         }
       ],
       "occurrences": [],
