@@ -19,7 +19,7 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
 };
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
+    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
@@ -883,16 +883,13 @@ fn offset_support_control_hull_excludes_point(
                         ProceduralSurfaceDefinition::Offset(definition_payload) => {
                             let support = definition_payload.support();
                             let distance = definition_payload.distance();
-                            let support_extension = definition_payload.support_extension();
-                            Some((support, distance, support_extension))
+                            let linear_extension = definition_payload.linear_support_extension();
+                            Some((support, distance, linear_extension))
                         }
                         _ => None,
                     })
-                    .is_some_and(|(support, distance, support_extension)| {
-                        if matches!(
-                            support_extension.as_ref(),
-                            Some(OffsetSupportExtension::Linear)
-                        ) {
+                    .is_some_and(|(support, distance, linear_extension)| {
+                        if linear_extension {
                             return false;
                         }
                         let allowance = allowance + distance.abs();
@@ -967,11 +964,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     };
     let support = definition_payload.support();
     let distance = definition_payload.distance();
-    let support_extension = definition_payload.support_extension();
-    let linear_extension = matches!(
-        support_extension.as_ref(),
-        Some(OffsetSupportExtension::Linear)
-    );
+    let linear_extension = definition_payload.linear_support_extension();
     let domain = surface_parameter_domain_with_index(index, support);
     let derivative_domain = (!linear_extension).then_some(domain).flatten();
     // The target lies on the offset carrier, so its distance from the base
@@ -1160,11 +1153,7 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
     let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         return None;
     };
-    let support_extension = definition_payload.support_extension();
-    let linear_extension = matches!(
-        support_extension.as_ref(),
-        Some(OffsetSupportExtension::Linear)
-    );
+    let linear_extension = definition_payload.linear_support_extension();
     let domain = surface_parameter_domain_with_index(index, surface);
     let derivative_domain = (!linear_extension).then_some(domain).flatten();
     let mut parameters = seed;
@@ -2439,7 +2428,7 @@ mod tests {
                         1.0,
                         None,
                         None,
-                        Some(OffsetSupportExtension::Linear),
+                        true,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy(
                             cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                         ),

@@ -18,8 +18,8 @@ use std::collections::BinaryHeap;
 
 use crate::geometry::{
     knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
-    OffsetSupportExtension, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis, SweepSurfaceLayout,
+    PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    SurfaceGeometry, SurfaceParameterAxis, SweepSurfaceLayout,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -6950,9 +6950,9 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::Offset(definition_payload)) => {
                 let support = definition_payload.support();
                 let distance = definition_payload.distance();
-                let support_extension = definition_payload.support_extension();
+                let linear_extension = definition_payload.linear_support_extension();
                 {
-                    let support = (*support_extension == Some(OffsetSupportExtension::Linear))
+                    let support = linear_extension
                         .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
                         .flatten()
                         .or_else(|| evaluate(index, support, u, v, visiting, budget))?;

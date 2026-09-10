@@ -40,7 +40,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
         -2.0,
         None,
         None,
-        None,
+        false,
         OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
     )
     .unwrap();

@@ -40,8 +40,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    OffsetSupportExtension, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -1000,10 +999,9 @@ fn complete_support_uv_wave(
                     SurfaceGeometry::Procedural { construction, .. } => model_index
                         .procedural_surfaces(construction.as_str())
                         .is_some_and(|procedural| match procedural.definition() {
-                            ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
-                                (matched_payload.support_extension(),),
-                                (Some(OffsetSupportExtension::Linear),)
-                            ),
+                            ProceduralSurfaceDefinition::Offset(matched_payload) => {
+                                matched_payload.linear_support_extension()
+                            }
                             _ => false,
                         }),
                     _ => false,
@@ -1904,13 +1902,13 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
         let first_distance = first_payload.distance();
         let first_u_sense = first_payload.u_sense();
         let first_v_sense = first_payload.v_sense();
-        let first_support_extension = first_payload.support_extension();
+        let first_support_extension = first_payload.linear_support_extension();
         let first_extension = first_payload.extension();
         let second_support = second_payload.support();
         let second_distance = second_payload.distance();
         let second_u_sense = second_payload.u_sense();
         let second_v_sense = second_payload.v_sense();
-        let second_support_extension = second_payload.support_extension();
+        let second_support_extension = second_payload.linear_support_extension();
         let second_extension = second_payload.extension();
         first_distance.to_bits() == second_distance.to_bits()
             && first_u_sense == second_u_sense
