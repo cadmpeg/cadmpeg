@@ -134,7 +134,6 @@ pub(crate) fn exact_surface_trim_operation(
         cell_table_frame_length: u64::try_from(paired.checked_sub(primary)?).ok()?,
         cell_table_paired_class_tag: cell_table_paired_class_tag.try_into().ok()?,
         cell_table_paired_byte_offset: u64::try_from(paired).ok()?,
-        cell_count: cell_count_usize,
         cell_count_offset: u64::try_from(cell_count_offset).ok()?,
         cell_entries,
         trailing_value,
