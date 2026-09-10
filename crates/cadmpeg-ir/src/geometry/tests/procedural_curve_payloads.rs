@@ -44,6 +44,54 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
 }
 
 #[test]
+fn a_distance_law_without_its_parameter_range_has_no_encoding() {
+    use crate::geometry::curve_payloads::OffsetCurveConstruction;
+    let side = OffsetSide::Direction {
+        direction: Vector3::new(0.0, 0.0, 2.0),
+        support: None,
+    };
+    let uniform = ProceduralCurveDefinition::Offset(
+        OffsetCurveConstruction::try_new(
+            source(),
+            -2.0,
+            side.clone(),
+            Some(CurveOffsetRange::Uniform {
+                parameter_range: [0.0, 1.0],
+            }),
+        )
+        .unwrap(),
+    );
+    let wire = serde_json::to_value(&uniform).unwrap();
+    assert_eq!(wire["range"]["kind"], "uniform");
+    assert!(wire["range"].get("distance_law").is_none());
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        uniform
+    );
+
+    let absent = ProceduralCurveDefinition::Offset(
+        OffsetCurveConstruction::try_new(source(), -2.0, side, None).unwrap(),
+    );
+    let absent_wire = serde_json::to_value(&absent).unwrap();
+    assert!(absent_wire.get("range").is_none());
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurveDefinition>(absent_wire).unwrap(),
+        absent
+    );
+
+    let mut law_without_range = wire.clone();
+    law_without_range["range"] = serde_json::json!({"kind": "variable"});
+    assert!(serde_json::from_value::<ProceduralCurveDefinition>(law_without_range).is_err());
+
+    let mut bogus = wire;
+    bogus["range"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<ProceduralCurveDefinition>(bogus)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}
+
+#[test]
 fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
     use crate::geometry::curve_payloads::OffsetCurveConstruction;
     let definition = |side, range| {
@@ -65,7 +113,7 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
         )
         .is_err());
         let mut wire = serde_json::to_value(&valid).unwrap();
-        wire["parameter_range"] = serde_json::json!(range);
+        wire["range"] = serde_json::json!({"kind": "uniform", "parameter_range": range});
         assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
     }
     assert!(definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 2.0)), None).is_err());

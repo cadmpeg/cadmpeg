@@ -305,61 +305,63 @@
           "curve": "f3d:brep:entity#19",
           "definition": {
             "kind": "spring",
-            "context": {
-              "sides": [
+            "layout": {
+              "kind": "context_first",
+              "supports": [
                 {
-                  "surface": "f3d:brep:procedural_curve#19:support0",
-                  "pcurve": {
-                    "geometry": {
-                      "kind": "nurbs",
-                      "degree": 1,
-                      "knots": [
-                        0.0,
-                        0.0,
-                        1.0,
-                        1.0
-                      ],
-                      "control_points": [
-                        {
-                          "u": 0.5,
-                          "v": -2.7063293868263703
-                        },
-                        {
-                          "u": 1.5,
-                          "v": -8.11898816047911
-                        }
-                      ],
-                      "periodic": false
-                    }
-                  }
+                  "kind": "surface",
+                  "value": "f3d:brep:procedural_curve#19:support0"
                 },
                 {
-                  "surface": "f3d:brep:procedural_curve#19:support1",
-                  "pcurve": {
-                    "geometry": {
-                      "kind": "nurbs",
-                      "degree": 1,
-                      "knots": [
-                        0.0,
-                        0.0,
-                        1.0,
-                        1.0
-                      ],
-                      "control_points": [
-                        {
-                          "u": 0.25,
-                          "v": 0.5
-                        },
-                        {
-                          "u": 0.75,
-                          "v": 1.5
-                        }
-                      ],
-                      "periodic": false
-                    }
-                  }
+                  "kind": "surface",
+                  "value": "f3d:brep:procedural_curve#19:support1"
                 }
               ],
+              "first_pcurve": {
+                "kind": "pcurve",
+                "value": {
+                  "kind": "nurbs",
+                  "degree": 1,
+                  "knots": [
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0
+                  ],
+                  "control_points": [
+                    {
+                      "u": 0.5,
+                      "v": -2.7063293868263703
+                    },
+                    {
+                      "u": 1.5,
+                      "v": -8.11898816047911
+                    }
+                  ],
+                  "periodic": false
+                }
+              },
+              "second_pcurve": {
+                "kind": "nurbs",
+                "degree": 1,
+                "knots": [
+                  0.0,
+                  0.0,
+                  1.0,
+                  1.0
+                ],
+                "control_points": [
+                  {
+                    "u": 0.25,
+                    "v": 0.5
+                  },
+                  {
+                    "u": 0.75,
+                    "v": 1.5
+                  }
+                ],
+                "periodic": false
+              },
               "parameter_range": [
                 0.0,
                 1.0
@@ -368,13 +370,9 @@
                 [],
                 [],
                 []
-              ]
+              ],
+              "discontinuity_flag": true
             },
-            "surface_parameter_ranges": [
-              null,
-              null
-            ],
-            "discontinuity_flag": true,
             "direction": -3
           }
         }

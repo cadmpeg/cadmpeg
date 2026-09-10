@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
-use super::spring_layout_wire;
-#[cfg(feature = "schema")]
-use super::SpringLayoutWire;
 use super::{
-    curve_offset_range_wire, default_true, vector_offset_roles_wire, CacheFirstCurveForm,
-    CurveOffsetRange, DeformableCurveData, DeformableCurveSource, IntcurveSupportContext,
-    OffsetSide, ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
+    default_true, vector_offset_roles_wire, CacheFirstCurveForm, CurveOffsetRange,
+    DeformableCurveData, DeformableCurveSource, IntcurveSupportContext, OffsetSide,
+    ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
 };
-#[cfg(feature = "schema")]
-use super::{CurveOffsetRangeWire, OffsetSideWire, VectorOffsetRolesWire};
 use super::{IntcurveSupportSide, ProjectionTail, SpringLayout};
+#[cfg(feature = "schema")]
+use super::{OffsetSideWire, VectorOffsetRolesWire};
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -355,8 +352,7 @@ pub struct OffsetCurveConstruction {
     #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
-    #[serde(flatten, with = "curve_offset_range_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CurveOffsetRangeWire"))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     range: Option<CurveOffsetRange>,
 }
 
@@ -372,8 +368,7 @@ struct OffsetCurveConstructionWire {
     #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
-    #[serde(flatten, with = "curve_offset_range_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CurveOffsetRangeWire"))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     range: Option<CurveOffsetRange>,
 }
 
@@ -853,8 +848,6 @@ impl TryFrom<SilhouetteCurveConstructionWire> for SilhouetteCurveConstruction {
 #[cfg_attr(feature = "schema", schemars(with = "SpringCurvePayloadWire"))]
 #[serde(try_from = "SpringCurvePayloadWire")]
 pub struct SpringCurvePayload {
-    #[serde(flatten, with = "spring_layout_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
     layout: SpringLayout,
 
     direction: i64,
@@ -862,8 +855,6 @@ pub struct SpringCurvePayload {
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SpringCurvePayloadWire {
-    #[serde(flatten, with = "spring_layout_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
     layout: SpringLayout,
 
     direction: i64,

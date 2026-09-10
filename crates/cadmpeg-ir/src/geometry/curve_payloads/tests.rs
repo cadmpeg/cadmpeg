@@ -101,6 +101,6 @@ fn spring_payload_checks_inline_ranges_and_the_shared_context() {
         assert!(spring(range, [0.0, 1.0]).is_err());
         assert!(spring([0.0, 1.0], range).is_err());
     }
-    wire["first_pcurve_parameter_range"] = serde_json::json!([2.0, 1.0]);
+    wire["layout"]["first_pcurve"]["value"] = serde_json::json!([2.0, 1.0]);
     assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }

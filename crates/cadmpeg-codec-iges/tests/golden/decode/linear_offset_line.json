@@ -147,28 +147,31 @@
           "curve": "iges:model:curve#D3",
           "definition": {
             "distance": 1.0,
-            "distance_law": {
-              "basis": "arc_length",
-              "control_range": [
-                0.0,
-                10.0
-              ],
-              "distances": [
-                1.0,
-                3.0
-              ],
-              "kind": "linear"
-            },
             "kind": "offset",
             "normal": {
               "x": 0.0,
               "y": 0.0,
               "z": 1.0
             },
-            "parameter_range": [
-              0.0,
-              10.0
-            ],
+            "range": {
+              "distance_law": {
+                "basis": "arc_length",
+                "control_range": [
+                  0.0,
+                  10.0
+                ],
+                "distances": [
+                  1.0,
+                  3.0
+                ],
+                "kind": "linear"
+              },
+              "kind": "variable",
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
             "source": "iges:model:curve#D1"
           },
           "id": "iges:model:procedural-curve#D3"

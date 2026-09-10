@@ -155,10 +155,13 @@
               "y": 0.0,
               "z": 1.0
             },
-            "parameter_range": [
-              0.0,
-              1.5707963267948966
-            ],
+            "range": {
+              "kind": "uniform",
+              "parameter_range": [
+                0.0,
+                1.5707963267948966
+              ]
+            },
             "source": "iges:model:curve#D1"
           },
           "id": "iges:model:procedural-curve#D3"
