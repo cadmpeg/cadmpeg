@@ -15,7 +15,7 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::document::{reject_non_cadir, resolve_one, ResolveError};
+use super::document::{reject_non_cadir, resolve_one, RecordSelection, ResolveError};
 use super::output::{Output, OutputArgs};
 use super::{print_json, read_input};
 
@@ -28,12 +28,9 @@ pub struct ItemArgs {
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
     /// `query counts --json`.
     pub arena: String,
-    /// Record IDs (exact or unique suffix). Omit for the first record;
-    /// conflicts with `--head`.
-    pub ids: Vec<String>,
-    /// Print the first N records in arena order. Conflicts with explicit IDs.
-    #[arg(long, value_name = "N", conflicts_with = "ids")]
-    pub head: Option<usize>,
+    /// Which records of the arena to print.
+    #[command(flatten)]
+    pub records: RecordSelection,
     /// Record output selection.
     #[command(flatten)]
     pub(crate) output: OutputArgs,
@@ -78,15 +75,6 @@ impl ArenaTarget {
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
         }
     }
-}
-
-/// How many / which records to retain while streaming the arena.
-#[derive(Debug)]
-enum KeepMode<'a> {
-    /// Keep records that exact- or suffix-match any requested ID.
-    Ids(&'a [String]),
-    /// Keep the first N records in arena order.
-    Head(usize),
 }
 
 /// Result of one targeted deserialize of a CADIR document.
@@ -136,15 +124,9 @@ pub fn run(args: &ItemArgs) -> Result<()> {
     let text = std::str::from_utf8(&bytes)
         .with_context(|| format!("{} is not valid UTF-8", args.file.display()))?;
 
-    let mode = if args.ids.is_empty() {
-        KeepMode::Head(args.head.unwrap_or(1))
-    } else {
-        KeepMode::Ids(&args.ids)
-    };
-
     let capture = CaptureSeed {
         target: &target,
-        mode: &mode,
+        mode: &args.records,
     }
     .deserialize(&mut serde_json::Deserializer::from_str(text))
     .with_context(|| format!("parsing the CADIR document {}", args.file.display()))?;
@@ -161,7 +143,7 @@ pub fn run(args: &ItemArgs) -> Result<()> {
         Kept::Ids { records, all_ids } => {
             let dotted = target.dotted();
             let (values, errors) = resolve_ids(
-                &args.ids,
+                requested_ids(&args.records),
                 &records,
                 &all_ids,
                 target_capture.entry_count,
@@ -174,6 +156,14 @@ pub fn run(args: &ItemArgs) -> Result<()> {
                 (Err(err), false) => bail!("{err}\n{}", errors.join("\n")),
             }
         }
+    }
+}
+
+/// Returns the requested IDs, empty when the selection is a head count.
+fn requested_ids(selection: &RecordSelection) -> &[String] {
+    match selection {
+        RecordSelection::Ids(ids) => ids,
+        RecordSelection::Head(_) => &[],
     }
 }
 
@@ -433,7 +423,7 @@ pub(crate) fn field_cell(value: &serde_json::Value) -> String {
 
 struct CaptureSeed<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
 }
 
 impl<'de> DeserializeSeed<'de> for CaptureSeed<'_> {
@@ -449,7 +439,7 @@ impl<'de> DeserializeSeed<'de> for CaptureSeed<'_> {
 
 struct DocumentVisitor<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
 }
 
 impl<'de> Visitor<'de> for DocumentVisitor<'_> {
@@ -491,7 +481,7 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
 
 struct ModelSeed<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -509,7 +499,7 @@ impl<'de> DeserializeSeed<'de> for ModelSeed<'_> {
 
 struct NativeRootSeed<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -527,7 +517,7 @@ impl<'de> DeserializeSeed<'de> for NativeRootSeed<'_> {
 
 struct NativeRootVisitor<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -554,7 +544,7 @@ impl<'de> Visitor<'de> for NativeRootVisitor<'_> {
 struct NativeCodecSeed<'a> {
     codec: &'a str,
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -574,13 +564,13 @@ impl<'de> DeserializeSeed<'de> for NativeCodecSeed<'_> {
 enum ArenasVisitor<'a> {
     Model {
         target: &'a ArenaTarget,
-        mode: &'a KeepMode<'a>,
+        mode: &'a RecordSelection,
         capture: &'a mut Capture,
     },
     Native {
         codec: &'a str,
         target: &'a ArenaTarget,
-        mode: &'a KeepMode<'a>,
+        mode: &'a RecordSelection,
         capture: &'a mut Capture,
     },
 }
@@ -617,7 +607,7 @@ impl<'de> Visitor<'de> for ArenasVisitor<'_> {
 fn visit_arenas<'de, A, F>(
     mut map: A,
     target: &ArenaTarget,
-    mode: &KeepMode<'_>,
+    mode: &RecordSelection,
     capture: &mut Capture,
     make_target: F,
 ) -> Result<(), A::Error>
@@ -641,7 +631,7 @@ where
 struct ArenaValueSeed<'a> {
     dotted: String,
     is_target: bool,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -661,7 +651,7 @@ impl<'de> DeserializeSeed<'de> for ArenaValueSeed<'_> {
 struct ArenaValueVisitor<'a> {
     dotted: String,
     is_target: bool,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -684,8 +674,8 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
         let target = self.capture.target.get_or_insert_with(|| TargetCapture {
             entry_count: 0,
             kept: match self.mode {
-                KeepMode::Head(_) => Kept::Head(Vec::new()),
-                KeepMode::Ids(_) => Kept::Ids {
+                RecordSelection::Head(_) => Kept::Head(Vec::new()),
+                RecordSelection::Ids(_) => Kept::Ids {
                     records: Vec::new(),
                     all_ids: Vec::new(),
                 },
@@ -695,13 +685,13 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             target.entry_count += 1;
             match &mut target.kept {
                 Kept::Head(records) => {
-                    if matches!(self.mode, KeepMode::Head(limit) if records.len() < *limit) {
+                    if matches!(self.mode, RecordSelection::Head(limit) if records.len() < *limit) {
                         records.push(raw);
                     }
                 }
                 Kept::Ids { records, all_ids } => {
                     if let Some(id) = string_id(&raw) {
-                        let matched = matches!(self.mode, KeepMode::Ids(ids) if ids.iter().any(|req| id == *req || id.ends_with(req)));
+                        let matched = matches!(self.mode, RecordSelection::Ids(ids) if ids.iter().any(|req| id == *req || id.ends_with(req)));
                         all_ids.push(id);
                         if matched {
                             records.push(raw);
