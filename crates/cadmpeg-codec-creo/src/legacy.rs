@@ -122,10 +122,7 @@ impl<T> NumericPayload<T> {
 }
 
 /// One typed legacy attribute value in the scoped object tree.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValueRecord<T> {
-    /// Native value identity family.
-    pub kind: ValueKind<T>,
+pub struct ValueRecord<K: LegacyCode> {
     /// Declared attribute name.
     pub name: String,
     /// Scope-local declaration identifier.
@@ -137,13 +134,62 @@ pub struct ValueRecord<T> {
     /// Object-tree nesting depth of the scalar or array header.
     pub depth: u32,
     /// Typed value payload.
-    pub payload: T,
+    pub payload: K::Payload,
     /// Byte offset of the scalar row or array header.
     pub offset: usize,
 }
 
-/// One completely decoded numeric legacy attribute value.
-pub type NumericRecord<T> = ValueRecord<NumericPayload<T>>;
+impl<K: LegacyCode> std::fmt::Debug for ValueRecord<K>
+where
+    K::Payload: std::fmt::Debug,
+{
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ValueRecord")
+            .field("name", &self.name)
+            .field("attribute_id", &self.attribute_id)
+            .field("scope_offset", &self.scope_offset)
+            .field("parent", &self.parent)
+            .field("depth", &self.depth)
+            .field("payload", &self.payload)
+            .field("offset", &self.offset)
+            .finish()
+    }
+}
+
+impl<K: LegacyCode> Clone for ValueRecord<K>
+where
+    K::Payload: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            attribute_id: self.attribute_id,
+            scope_offset: self.scope_offset,
+            parent: self.parent,
+            depth: self.depth,
+            payload: self.payload.clone(),
+            offset: self.offset,
+        }
+    }
+}
+
+impl<K: LegacyCode> PartialEq for ValueRecord<K>
+where
+    K::Payload: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.attribute_id == other.attribute_id
+            && self.scope_offset == other.scope_offset
+            && self.parent == other.parent
+            && self.depth == other.depth
+            && self.payload == other.payload
+            && self.offset == other.offset
+    }
+}
+
+impl<K: LegacyCode> Eq for ValueRecord<K> where K::Payload: Eq {}
 
 /// One run in a type-2 real array.
 #[cfg(test)]
@@ -152,7 +198,7 @@ pub type RealRun = NumericRun<Real>;
 #[cfg(test)]
 pub type RealPayload = NumericPayload<Real>;
 /// One completely decoded legacy type-2 attribute value.
-pub type RealRecord = NumericRecord<Real>;
+pub type RealRecord = ValueRecord<RealCode>;
 /// One run in a type-1 integer array.
 #[cfg(test)]
 pub type IntegerRun = NumericRun<i32>;
@@ -160,12 +206,20 @@ pub type IntegerRun = NumericRun<i32>;
 #[cfg(test)]
 pub type IntegerPayload = NumericPayload<i32>;
 /// One completely decoded legacy type-1 attribute value.
-pub type IntegerRecord = NumericRecord<i32>;
+pub type IntegerRecord = ValueRecord<IntegerCode>;
 /// Complete semantic payload of one unsigned-decimal legacy value.
 #[cfg(test)]
 pub type UnsignedPayload = NumericPayload<u32>;
-/// One completely decoded unsigned-decimal legacy attribute value.
-pub type UnsignedRecord = NumericRecord<u32>;
+/// One completely decoded legacy type-5 attribute value.
+pub type Type5Record = ValueRecord<Type5Code>;
+/// One completely decoded legacy type-6 attribute value.
+pub type Type6Record = ValueRecord<Type6Code>;
+/// One completely decoded legacy type-7 attribute value.
+pub type Type7Record = ValueRecord<Type7Code>;
+/// One completely decoded legacy type-9 attribute value.
+pub type Type9Record = ValueRecord<Type9Code>;
+/// One completely decoded legacy type-11 attribute value.
+pub type Type11Record = ValueRecord<Type11Code>;
 
 /// Structural payload of one legacy type-0 object node.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -383,9 +437,11 @@ impl StringPayload {
 }
 
 /// One decoded legacy byte-string value.
-pub type StringRecord = ValueRecord<StringPayload>;
-/// One decoded legacy scalar byte-string value.
-pub type ScalarStringRecord = ValueRecord<StringValue>;
+pub type StringRecord = ValueRecord<StringCode>;
+/// One decoded legacy type-3 scalar byte-string value.
+pub type Type3Record = ValueRecord<Type3Code>;
+/// One decoded legacy type-4 scalar byte-string value.
+pub type Type4Record = ValueRecord<Type4Code>;
 
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -479,19 +535,19 @@ pub struct Persistence {
     /// Type-10 rows that use an undefined continuation form.
     pub unresolved_string_value_count: usize,
     /// Type-3 nullable byte-string scalars in source order.
-    pub type_3_values: TypedValues<ScalarStringRecord>,
+    pub type_3_values: TypedValues<Type3Record>,
     /// Type-4 byte-string scalars in source order.
-    pub type_4_values: TypedValues<ScalarStringRecord>,
+    pub type_4_values: TypedValues<Type4Record>,
     /// Type-5 unsigned-decimal scalars and arrays in source order.
-    pub type_5_values: TypedValues<UnsignedRecord>,
+    pub type_5_values: TypedValues<Type5Record>,
     /// Type-6 compact-real scalars and arrays in source order.
-    pub type_6_values: TypedValues<RealRecord>,
+    pub type_6_values: TypedValues<Type6Record>,
     /// Type-7 unsigned-decimal scalars and arrays in source order.
-    pub type_7_values: TypedValues<UnsignedRecord>,
+    pub type_7_values: TypedValues<Type7Record>,
     /// Type-9 unsigned-decimal scalars and arrays in source order.
-    pub type_9_values: TypedValues<UnsignedRecord>,
+    pub type_9_values: TypedValues<Type9Record>,
     /// Type-11 unsigned-decimal scalars and arrays in source order.
-    pub type_11_values: TypedValues<UnsignedRecord>,
+    pub type_11_values: TypedValues<Type11Record>,
 }
 
 impl Persistence {
@@ -1018,13 +1074,13 @@ fn string_value(bytes: &[u8]) -> StringValue {
     byte_string_value(bytes, NullToken::RepresentsNull)
 }
 
-fn scalar_string_records(
+fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
     data: &[u8],
     scopes: &[Scope],
-    identity_kind: ValueKind<StringValue>,
+    identity_kind: ValueKind<K>,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
-) -> TypedValues<ScalarStringRecord> {
+) -> TypedValues<ValueRecord<K>> {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
@@ -1050,7 +1106,6 @@ fn scalar_string_records(
                 continue;
             };
             records.push(ValueRecord {
-                kind: identity_kind,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
@@ -1150,7 +1205,6 @@ fn string_records(
                 }
             };
             records.push(ValueRecord {
-                kind: ValueKind::STRING,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
@@ -1164,13 +1218,16 @@ fn string_records(
     (records, incomplete_arrays, unresolved)
 }
 
-fn numeric_records<T>(
+fn numeric_records<K, T>(
     data: &[u8],
     scopes: &[Scope],
-    identity_kind: ValueKind<NumericPayload<T>>,
+    identity_kind: ValueKind<K>,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
-) -> TypedValues<NumericRecord<T>> {
+) -> TypedValues<ValueRecord<K>>
+where
+    K: LegacyCode<Payload = NumericPayload<T>>,
+{
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
@@ -1256,7 +1313,6 @@ fn numeric_records<T>(
                 )
             };
             records.push(ValueRecord {
-                kind: identity_kind,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
@@ -1427,14 +1483,21 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     }
 }
 
-impl<T> ValueRecord<T> {
+impl<K: LegacyCode> ValueRecord<K> {
     /// Native identity derived from the source offset.
     pub fn id(&self) -> String {
-        format!("creo:legacy_ascii:{}#{}", self.kind.as_str(), self.offset)
+        format!(
+            "creo:legacy_ascii:{}#{}",
+            K::CODE.identity_token(),
+            self.offset
+        )
     }
 }
 
-impl<T: Serialize> Serialize for ValueRecord<T> {
+impl<K: LegacyCode> Serialize for ValueRecord<K>
+where
+    K::Payload: Serialize,
+{
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut wire = serializer.serialize_struct("ValueRecord", 8)?;
         wire.serialize_field("id", &self.id())?;
@@ -1471,72 +1534,132 @@ impl Serialize for ObjectRecord {
     }
 }
 
-/// Payload-shape marker whose declaration code distinguishes legacy identity families.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ValueKind<T> {
-    code: LegacyTypeCode,
-    payload: std::marker::PhantomData<fn() -> T>,
+/// A legacy declaration code carried at the type level.
+pub trait LegacyCode: Copy + Eq + std::fmt::Debug {
+    /// The declaration code whose value rows carry this identity.
+    const CODE: LegacyTypeCode;
+    /// The payload shape stored by a value row of this code.
+    type Payload;
 }
 
-impl<T> Copy for ValueKind<T> {}
+macro_rules! legacy_code {
+    ($(#[$doc:meta])* $name:ident, $code:ident, $payload:ty) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct $name;
 
-impl<T> Clone for ValueKind<T> {
+        impl LegacyCode for $name {
+            const CODE: LegacyTypeCode = LegacyTypeCode::$code;
+            type Payload = $payload;
+        }
+    };
+}
+
+legacy_code!(
+    /// The type-1 signed-integer declaration code.
+    IntegerCode, Integer, NumericPayload<i32>
+);
+legacy_code!(
+    /// The type-2 compact-real declaration code.
+    RealCode, Real, NumericPayload<Real>
+);
+legacy_code!(
+    /// The type-3 nullable byte-string declaration code.
+    Type3Code, NullableString, StringValue
+);
+legacy_code!(
+    /// The type-4 byte-string declaration code.
+    Type4Code, ByteString, StringValue
+);
+legacy_code!(
+    /// The type-5 unsigned-decimal declaration code.
+    Type5Code, Unsigned5, NumericPayload<u32>
+);
+legacy_code!(
+    /// The type-6 compact-real declaration code.
+    Type6Code, Real6, NumericPayload<Real>
+);
+legacy_code!(
+    /// The type-7 unsigned-decimal declaration code.
+    Type7Code, Unsigned7, NumericPayload<u32>
+);
+legacy_code!(
+    /// The type-9 unsigned-decimal declaration code.
+    Type9Code, Unsigned9, NumericPayload<u32>
+);
+legacy_code!(
+    /// The type-10 byte-string declaration code.
+    StringCode, String, StringPayload
+);
+legacy_code!(
+    /// The type-11 unsigned-decimal declaration code.
+    Type11Code, Unsigned11, NumericPayload<u32>
+);
+
+/// Identity marker naming one legacy declaration code.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ValueKind<K>(std::marker::PhantomData<fn() -> K>);
+
+impl<K> Copy for ValueKind<K> {}
+
+impl<K> Clone for ValueKind<K> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> ValueKind<T> {
-    fn as_str(self) -> &'static str {
-        self.code.identity_token()
-    }
+impl<K: LegacyCode> ValueKind<K> {
+    const KIND: Self = Self(std::marker::PhantomData);
 
     /// The declaration code whose values carry this identity.
     fn type_code(self) -> LegacyTypeCode {
-        self.code
-    }
-
-    const fn of(code: LegacyTypeCode) -> Self {
-        Self {
-            code,
-            payload: std::marker::PhantomData,
-        }
+        K::CODE
     }
 }
 
-impl ValueKind<NumericPayload<i32>> {
+impl ValueKind<IntegerCode> {
     /// Identity token for integer values.
-    pub const INTEGER: Self = Self::of(LegacyTypeCode::Integer);
+    pub const INTEGER: Self = Self::KIND;
 }
 
-impl ValueKind<NumericPayload<Real>> {
+impl ValueKind<RealCode> {
     /// Identity token for real values.
-    pub const REAL: Self = Self::of(LegacyTypeCode::Real);
+    pub const REAL: Self = Self::KIND;
+}
+
+impl ValueKind<Type6Code> {
     /// Identity token for `type_6` values.
-    pub const TYPE6: Self = Self::of(LegacyTypeCode::Real6);
+    pub const TYPE6: Self = Self::KIND;
 }
 
-impl ValueKind<NumericPayload<u32>> {
+impl ValueKind<Type5Code> {
     /// Identity token for `type_5` values.
-    pub const TYPE5: Self = Self::of(LegacyTypeCode::Unsigned5);
+    pub const TYPE5: Self = Self::KIND;
+}
+
+impl ValueKind<Type7Code> {
     /// Identity token for `type_7` values.
-    pub const TYPE7: Self = Self::of(LegacyTypeCode::Unsigned7);
+    pub const TYPE7: Self = Self::KIND;
+}
+
+impl ValueKind<Type9Code> {
     /// Identity token for `type_9` values.
-    pub const TYPE9: Self = Self::of(LegacyTypeCode::Unsigned9);
+    pub const TYPE9: Self = Self::KIND;
+}
+
+impl ValueKind<Type11Code> {
     /// Identity token for `type_11` values.
-    pub const TYPE11: Self = Self::of(LegacyTypeCode::Unsigned11);
+    pub const TYPE11: Self = Self::KIND;
 }
 
-impl ValueKind<StringPayload> {
-    /// Identity token for string values.
-    pub const STRING: Self = Self::of(LegacyTypeCode::String);
-}
-
-impl ValueKind<StringValue> {
+impl ValueKind<Type3Code> {
     /// Identity token for `type_3` values.
-    pub const TYPE3: Self = Self::of(LegacyTypeCode::NullableString);
+    pub const TYPE3: Self = Self::KIND;
+}
+
+impl ValueKind<Type4Code> {
     /// Identity token for `type_4` values.
-    pub const TYPE4: Self = Self::of(LegacyTypeCode::ByteString);
+    pub const TYPE4: Self = Self::KIND;
 }
 
 #[cfg(test)]
