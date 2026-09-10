@@ -1306,7 +1306,10 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
         serde_json::json!({"kind": "profile_plane"}),
         serde_json::json!({"kind": "unresolved"}),
     ] {
-        assert!(serde_json::from_value::<ExtrudeStart>(wire.clone()).is_ok(), "{wire}");
+        assert!(
+            serde_json::from_value::<ExtrudeStart>(wire.clone()).is_ok(),
+            "{wire}"
+        );
         let mut bogus = wire;
         bogus["zz_bogus"] = serde_json::json!(1);
         let error = serde_json::from_value::<ExtrudeStart>(bogus)
@@ -1315,7 +1318,13 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
-    for kind in ["unresolved", "through_all", "through_next", "to_first", "to_last"] {
+    for kind in [
+        "unresolved",
+        "through_all",
+        "through_next",
+        "to_first",
+        "to_last",
+    ] {
         let bogus = serde_json::json!({"kind": kind, "zz_bogus": 1});
         let error = serde_json::from_value::<LinearTermination>(bogus.clone())
             .unwrap_err()

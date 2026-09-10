@@ -1693,7 +1693,10 @@ mod tests {
         let error = serde_json::from_value::<Face>(wire)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("more than one explicit outer loop"), "{error}");
+        assert!(
+            error.contains("more than one explicit outer loop"),
+            "{error}"
+        );
     }
 
     #[test]

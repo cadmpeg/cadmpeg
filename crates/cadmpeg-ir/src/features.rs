@@ -1249,7 +1249,12 @@ pub enum DimensionDisplay {
 /// Canonical scalar value of a literal design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ParameterValue {
     /// Length in canonical millimeters.
     Length(Length),
@@ -5202,7 +5207,12 @@ selection_field_deserializer!(deserialize_local_value, "value");
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -5323,7 +5333,12 @@ pub enum VertexSelection {
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum FaceSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -6073,7 +6088,12 @@ impl<'de> Deserialize<'de> for HistoricalUnorderedBodySelection {
 /// Body operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -7720,7 +7740,12 @@ impl<'de> Deserialize<'de> for UnprocessedFeature {
 /// Profile consumed by a profile-driven feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ProfileRef {
     /// A profile is required by the identified native owner but its carrier is unresolved.
     Unresolved(String),

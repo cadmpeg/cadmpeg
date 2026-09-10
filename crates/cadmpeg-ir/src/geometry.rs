@@ -5277,10 +5277,7 @@ pub enum CompoundLoftTail {
 
 /// A bounded list of compound-loft scales.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "Vec<CompoundLoftScale>",
-    into = "Vec<CompoundLoftScale>"
-)]
+#[serde(try_from = "Vec<CompoundLoftScale>", into = "Vec<CompoundLoftScale>")]
 pub struct CompoundLoftScales<const CAPACITY: usize>(Vec<CompoundLoftScale>);
 
 #[cfg(feature = "schema")]
@@ -6453,7 +6450,12 @@ pub struct CacheFirstCurveForm {
 /// One support slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum SpringSupport {
     /// Resolved support surface.
     Surface(SurfaceId),
@@ -6464,7 +6466,12 @@ pub enum SpringSupport {
 /// First pcurve slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum SpringPcurve {
     /// Resolved parameter-space curve.
     Pcurve(PcurveGeometry),
