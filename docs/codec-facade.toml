@@ -48,6 +48,7 @@ fuzz = "required"
 id = "nx"
 names = ["NxCodec"]
 hidden = [
+    "Sha256Hex",
     "saved_body_census_evidence",
     "BodyCensusEvaluation",
     "FeatureBoundary",
