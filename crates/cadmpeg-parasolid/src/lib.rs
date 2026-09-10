@@ -204,7 +204,7 @@ pub fn classify_layer(
     carrier: &Carrier,
     instance: LayerInstance,
     verified: &[DialectId],
-) -> DialectMatch {
+) -> ClassifiedLayer {
     let id = schema_row(schema.value());
     let declared = BTreeMap::from([
         (DECLARED_SCHEMA.to_owned(), schema.value().to_owned()),
@@ -216,9 +216,43 @@ pub fn classify_layer(
         DialectMatch::residual(id)
     }
     .with_declared(declared);
-    match instance {
+    let matched = match instance {
         LayerInstance::Sole => matched,
         LayerInstance::Tagged => matched.with_instance(carrier.as_str()),
+    };
+    ClassifiedLayer {
+        matched,
+        carrier: carrier.clone(),
+    }
+}
+
+/// One classified Parasolid layer and the carrier it was read from.
+///
+/// A sole layer carries no instance tag, so the carrier is not recoverable from
+/// the match alone; it is a field here rather than a lookup or a placeholder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassifiedLayer {
+    matched: DialectMatch,
+    carrier: Carrier,
+}
+
+impl ClassifiedLayer {
+    /// The dialect match this layer contributes.
+    #[must_use]
+    pub const fn matched(&self) -> &DialectMatch {
+        &self.matched
+    }
+
+    /// The host location the classified stream was read from.
+    #[must_use]
+    pub const fn carrier(&self) -> &Carrier {
+        &self.carrier
+    }
+
+    /// Consumes the layer, yielding the match alone.
+    #[must_use]
+    pub fn into_matched(self) -> DialectMatch {
+        self.matched
     }
 }
 
@@ -231,7 +265,7 @@ pub fn classify_layer(
 pub fn extra_layers(
     streams: Vec<(OwnedSchemaToken, Carrier)>,
     verified: &[DialectId],
-) -> Vec<DialectMatch> {
+) -> Vec<ClassifiedLayer> {
     let instance = if streams.len() > 1 {
         LayerInstance::Tagged
     } else {
@@ -250,13 +284,13 @@ pub fn extra_layers(
 /// Parasolid collision differently.
 pub fn push_extras(
     layers: &mut DialectLayers,
-    extras: impl IntoIterator<Item = DialectMatch>,
+    extras: impl IntoIterator<Item = ClassifiedLayer>,
 ) -> Vec<String> {
     let mut collisions = Vec::new();
     for layer in extras {
-        let format = layer.format().to_owned();
-        let carrier = layer.instance().unwrap_or("unidentified").to_owned();
-        if layers.insert(layer).is_err() {
+        let format = layer.matched().format().to_owned();
+        let carrier = layer.carrier().clone();
+        if layers.insert(layer.into_matched()).is_err() {
             collisions.push(format!(
                 "the container produced a duplicate {format} dialect layer at carrier {carrier}; \
                  the later classification was omitted"
@@ -372,11 +406,11 @@ mod tests {
                 LayerInstance::Sole,
                 &ALL_ROWS,
             );
-            assert_eq!(matched.dialect().as_str(), expected);
-            assert_eq!(matched.admission(), &Admission::Admitted);
-            assert_eq!(matched.declared()[DECLARED_SCHEMA], schema);
-            assert_eq!(matched.declared()[DECLARED_CARRIER], "stream@12");
-            assert_eq!(matched.instance(), None);
+            assert_eq!(matched.matched().dialect().as_str(), expected);
+            assert_eq!(matched.matched().admission(), &Admission::Admitted);
+            assert_eq!(matched.matched().declared()[DECLARED_SCHEMA], schema);
+            assert_eq!(matched.matched().declared()[DECLARED_CARRIER], "stream@12");
+            assert_eq!(matched.matched().instance(), None);
         }
     }
 
@@ -389,12 +423,19 @@ mod tests {
             &ALL_ROWS,
         );
 
-        assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
-        assert_eq!(matched.admission(), &Admission::Residual);
-        assert_eq!(matched.declared()[DECLARED_SCHEMA], "SCH_TEST_1_9999");
-        assert_eq!(matched.declared()[DECLARED_CARRIER], "block@7:body+3");
-        assert_eq!(matched.instance(), Some("block@7:body+3"));
-        let message = unverified_message(&matched).expect("residual layer explains its recovery");
+        assert_eq!(matched.matched().dialect().as_str(), "parasolid:unknown");
+        assert_eq!(matched.matched().admission(), &Admission::Residual);
+        assert_eq!(
+            matched.matched().declared()[DECLARED_SCHEMA],
+            "SCH_TEST_1_9999"
+        );
+        assert_eq!(
+            matched.matched().declared()[DECLARED_CARRIER],
+            "block@7:body+3"
+        );
+        assert_eq!(matched.matched().instance(), Some("block@7:body+3"));
+        let message =
+            unverified_message(matched.matched()).expect("residual layer explains its recovery");
         assert!(message.contains("SCH_TEST_1_9999"));
         assert!(message.contains("block@7:body+3"));
     }
@@ -408,14 +449,14 @@ mod tests {
             ],
             &ALL_ROWS,
         );
-        assert_eq!(layers[0].instance(), Some("stream@12"));
-        assert_eq!(layers[1].instance(), Some("stream@48"));
+        assert_eq!(layers[0].matched().instance(), Some("stream@12"));
+        assert_eq!(layers[1].matched().instance(), Some("stream@48"));
 
         let one = extra_layers(
             vec![(token("SCH_SW_33103_11000"), carrier("stream@12"))],
             &ALL_ROWS,
         );
-        assert_eq!(one[0].instance(), None);
+        assert_eq!(one[0].matched().instance(), None);
     }
 
     #[test]
@@ -438,7 +479,7 @@ mod tests {
 
         let collisions = push_extras(&mut layers, [first.clone(), later]);
 
-        assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [&first]);
+        assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [first.matched()]);
         assert_eq!(
             collisions,
             [
@@ -463,6 +504,7 @@ mod tests {
                 LayerInstance::Sole,
                 &ALL_ROWS,
             )
+            .matched()
             .dialect()
             .to_string()
         })
@@ -480,9 +522,13 @@ mod tests {
             &[PARASOLID_SCH_SW_33103],
         );
 
-        assert_eq!(matched.dialect().as_str(), "parasolid:format-13006");
-        assert_eq!(matched.admission(), &Admission::Residual);
-        let message = unverified_message(&matched).expect("unverified row explains its admission");
+        assert_eq!(
+            matched.matched().dialect().as_str(),
+            "parasolid:format-13006"
+        );
+        assert_eq!(matched.matched().admission(), &Admission::Residual);
+        let message =
+            unverified_message(matched.matched()).expect("unverified row explains its admission");
         assert!(message.contains("host did not verify"));
         assert!(message.contains("parasolid:format-13006"));
     }
