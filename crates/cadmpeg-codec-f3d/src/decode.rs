@@ -145,11 +145,11 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
                 if let Some(companion) = native
                     .design_parameter_companions
                     .iter()
-                    .find(|companion| companion.id == *native_ref)
+                    .find(|companion| companion.id() == *native_ref)
                 {
                     typed.insert((
                         crate::ids::native_stream(native_ref).unwrap_or(crate::ids::DEFAULT_STREAM),
-                        companion.record_index,
+                        companion.record_index(),
                     ));
                 }
             }
@@ -160,10 +160,12 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
         .iter()
         .filter(|companion| {
             let stream =
-                crate::ids::native_stream(&companion.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            companion.payload_byte_length > 0
-                && dimension_owners.contains(&(stream, companion.owner_record_index))
-                && !typed.contains(&(stream, companion.record_index))
+                crate::ids::native_stream(companion.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+            companion
+                .payload()
+                .is_some_and(|payload| payload.byte_length() > 0)
+                && dimension_owners.contains(&(stream, companion.owner_record_index()))
+                && !typed.contains(&(stream, companion.record_index()))
         })
         .count()
 }
@@ -1295,11 +1297,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             let relation_bearing_companions = native
                 .design_parameter_companions
                 .iter()
-                .filter(|companion| companion.payload_byte_length > 0)
+                .filter(|companion| {
+                    companion
+                        .payload()
+                        .is_some_and(|payload| payload.byte_length() > 0)
+                })
                 .filter_map(|companion| {
                     Some((
-                        crate::ids::native_stream(&companion.id)?.to_owned(),
-                        companion.record_index,
+                        crate::ids::native_stream(companion.id())?.to_owned(),
+                        companion.record_index(),
                     ))
                 })
                 .chain(
@@ -3882,7 +3888,7 @@ fn populate_annotations(
             note(&entity.id, "design_parameter");
         }
         for entity in &native.design_parameter_companions {
-            note(&entity.id, "design_parameter_companion");
+            note(entity.id(), "design_parameter_companion");
         }
         for entity in &native.design_dimension_locus_pairs {
             note(&entity.id, "design_dimension_locus_pair");
@@ -3902,10 +3908,10 @@ fn populate_annotations(
                 .design_parameter_companions
                 .iter()
                 .find_map(|companion| {
-                    (crate::ids::native_stream(&companion.id)
+                    (crate::ids::native_stream(companion.id())
                         == crate::ids::native_stream(&entity.id)
-                        && companion.record_index == entity.governing_companion_record_index)
-                        .then(|| constraints_by_native.get(companion.id.as_str()))
+                        && companion.record_index() == entity.governing_companion_record_index)
+                        .then(|| constraints_by_native.get(companion.id()))
                         .flatten()
                 });
             if let Some(projected) = projected {
@@ -4689,16 +4695,19 @@ fn extend_related_design_records(
                 .map(|bytes| (crate::ids::native_scope(&entry.name), bytes.len()))
         })
         .collect::<Result<_, _>>()?;
-    crate::design::decode::parameters::bind_parameter_companion_payloads(
-        &mut native.design_parameter_companions,
-        &native.design_parameters,
-        &native.design_parameter_owners,
-        &native.design_parameter_scopes,
-        &native.design_entity_headers,
-        &native.design_record_headers,
-        &native.construction_recipes,
-        &stream_lengths,
-    );
+    native.design_parameter_companions =
+        crate::design::decode::parameters::bind_parameter_companion_payloads(
+            std::mem::take(&mut native.design_parameter_companions),
+            &crate::design::decode::parameters::ParameterCompanionInputs {
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                scopes: &native.design_parameter_scopes,
+                entities: &native.design_entity_headers,
+                headers: &native.design_record_headers,
+                recipes: &native.construction_recipes,
+                stream_lengths: &stream_lengths,
+            },
+        );
     native.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
             scan,

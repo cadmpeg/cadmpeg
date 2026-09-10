@@ -828,18 +828,6 @@ impl DesignParameterSource {
             }
         }
     }
-
-    fn translate_discriminator_offset(&mut self, offset: u64) {
-        let discriminator = match self {
-            Self::User {
-                family_discriminator,
-            } => Some(family_discriminator),
-            Self::Owned(source) => source.family_discriminator.as_mut(),
-        };
-        if let Some(discriminator) = discriminator {
-            discriminator.offset += offset;
-        }
-    }
 }
 
 /// One indexed Design parameter or expression record.
@@ -1018,24 +1006,6 @@ impl DesignParameter {
     /// Located nonempty unit token, when present.
     pub fn unit(&self) -> Option<&Located<NonEmptyString>> {
         self.unit.as_ref()
-    }
-
-    /// Checked translation of all parameter locations.
-    pub(crate) fn try_translate_offsets(&mut self, delta: u64) -> Result<(), String> {
-        let evaluated_value_offset = self
-            .evaluated_value_offset
-            .checked_add(delta)
-            .ok_or("evaluated_value_offset translation overflows")?;
-        self.byte_offset += delta;
-        self.source.translate_discriminator_offset(delta);
-        self.expression_offset += delta;
-        self.source_kind_offset += delta;
-        if let Some(unit) = &mut self.unit {
-            unit.offset += delta;
-        }
-        self.name_offset += delta;
-        self.evaluated_value_offset = evaluated_value_offset;
-        Ok(())
     }
 
     #[cfg(test)]
@@ -1433,9 +1403,134 @@ pub struct DesignParameterOwnerWire {
     pub companion_record_index: u32,
 }
 
+/// Owned payload bound to a Design parameter companion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignCompanionPayload {
+    byte_offset: u64,
+    byte_length: u64,
+    owned_recipe_ids: Vec<String>,
+}
+
+impl DesignCompanionPayload {
+    /// The byte interval a companion owns, with the recipes nested in it.
+    #[must_use]
+    pub fn new(byte_offset: u64, byte_length: u64, owned_recipe_ids: Vec<String>) -> Self {
+        Self {
+            byte_offset,
+            byte_length,
+            owned_recipe_ids,
+        }
+    }
+
+    /// First byte owned after the fixed companion prefix.
+    #[must_use]
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Number of bytes owned before the next sibling Design record.
+    #[must_use]
+    pub fn byte_length(&self) -> u64 {
+        self.byte_length
+    }
+
+    /// Construction recipes contained by the owned payload, in byte order.
+    #[must_use]
+    pub fn owned_recipe_ids(&self) -> &[String] {
+        &self.owned_recipe_ids
+    }
+}
+
 /// Fixed prefix of the indexed record paired with a Design parameter owner.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignParameterCompanionWire",
+    into = "DesignParameterCompanionWire"
+)]
 pub struct DesignParameterCompanion {
+    id: String,
+    byte_offset: u64,
+    class_tag: DesignClassTag,
+    record_index: u32,
+    owner_record_index: u32,
+    timestamp_micros: NonZeroU64,
+    timestamp_micros_offset: u64,
+    payload: Option<DesignCompanionPayload>,
+}
+
+impl DesignParameterCompanion {
+    /// A companion prefix whose owned payload has not been bound.
+    #[must_use]
+    pub fn unbound(
+        id: String,
+        byte_offset: u64,
+        class_tag: DesignClassTag,
+        record_index: u32,
+        owner_record_index: u32,
+        timestamp_micros: NonZeroU64,
+        timestamp_micros_offset: u64,
+    ) -> Self {
+        Self {
+            id,
+            byte_offset,
+            class_tag,
+            record_index,
+            owner_record_index,
+            timestamp_micros,
+            timestamp_micros_offset,
+            payload: None,
+        }
+    }
+
+    /// The same companion with its owned payload bound.
+    #[must_use]
+    pub fn bound(self, payload: DesignCompanionPayload) -> Self {
+        Self {
+            payload: Some(payload),
+            ..self
+        }
+    }
+
+    /// Globally unique deterministic identifier for this native record.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Byte offset of the indexed record header in its Design `BulkStream`.
+    #[must_use]
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Source indexed-record identity.
+    #[must_use]
+    pub fn record_index(&self) -> u32 {
+        self.record_index
+    }
+
+    /// Indexed parameter-owner record referenced by this prefix.
+    #[must_use]
+    pub fn owner_record_index(&self) -> u32 {
+        self.owner_record_index
+    }
+
+    /// Byte offset of `timestamp_micros`.
+    #[must_use]
+    pub fn timestamp_micros_offset(&self) -> u64 {
+        self.timestamp_micros_offset
+    }
+
+    /// Owned payload, when the binding pass reached this companion.
+    #[must_use]
+    pub fn payload(&self) -> Option<&DesignCompanionPayload> {
+        self.payload.as_ref()
+    }
+}
+
+/// Serialized form of [`DesignParameterCompanion`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesignParameterCompanionWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
@@ -1455,15 +1550,71 @@ pub struct DesignParameterCompanion {
     /// Byte offset of `timestamp_micros`.
     #[serde(alias = "opaque_value_offset")]
     pub timestamp_micros_offset: u64,
-    /// First byte owned after the fixed companion prefix.
-    #[serde(default)]
-    pub payload_byte_offset: u64,
-    /// Number of bytes owned before the next sibling Design record.
-    #[serde(default)]
-    pub payload_byte_length: u64,
+    /// First byte owned after the fixed companion prefix, when bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_byte_offset: Option<u64>,
+    /// Number of bytes owned before the next sibling Design record, when bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_byte_length: Option<u64>,
     /// Construction recipes contained by the owned payload, in byte order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub owned_recipe_ids: Vec<String>,
+}
+
+impl TryFrom<DesignParameterCompanionWire> for DesignParameterCompanion {
+    type Error = String;
+    fn try_from(wire: DesignParameterCompanionWire) -> Result<Self, Self::Error> {
+        let payload = match (wire.payload_byte_offset, wire.payload_byte_length) {
+            (Some(byte_offset), Some(byte_length)) => Some(DesignCompanionPayload::new(
+                byte_offset,
+                byte_length,
+                wire.owned_recipe_ids,
+            )),
+            (None, None) if wire.owned_recipe_ids.is_empty() => None,
+            (None, None) => {
+                return Err(
+                    "owned_recipe_ids requires payload_byte_offset and payload_byte_length".into(),
+                )
+            }
+            (Some(_), None) => return Err("payload_byte_length is required".into()),
+            (None, Some(_)) => return Err("payload_byte_offset is required".into()),
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            owner_record_index: wire.owner_record_index,
+            timestamp_micros: wire.timestamp_micros,
+            timestamp_micros_offset: wire.timestamp_micros_offset,
+            payload,
+        })
+    }
+}
+
+impl From<DesignParameterCompanion> for DesignParameterCompanionWire {
+    fn from(record: DesignParameterCompanion) -> Self {
+        let (payload_byte_offset, payload_byte_length, owned_recipe_ids) = match record.payload {
+            Some(payload) => (
+                Some(payload.byte_offset),
+                Some(payload.byte_length),
+                payload.owned_recipe_ids,
+            ),
+            None => (None, None, Vec::new()),
+        };
+        Self {
+            id: record.id,
+            byte_offset: record.byte_offset,
+            class_tag: record.class_tag,
+            record_index: record.record_index,
+            owner_record_index: record.owner_record_index,
+            timestamp_micros: record.timestamp_micros,
+            timestamp_micros_offset: record.timestamp_micros_offset,
+            payload_byte_offset,
+            payload_byte_length,
+            owned_recipe_ids,
+        }
+    }
 }
 
 fn deserialize_companion_timestamp<'de, D: Deserializer<'de>>(
@@ -6525,6 +6676,19 @@ impl SketchRelation {
     #[must_use]
     pub fn unknown_constraint_bits(&self) -> u64 {
         constraint_kinds_from_state(self.definition.state()).1
+    }
+
+    /// The single constraint kind `state` selects, when it selects exactly one and no unknown bits.
+    #[must_use]
+    pub fn sole_constraint_kind(&self) -> Option<SketchConstraintKind> {
+        let (kinds, unknown) = constraint_kinds_from_state(self.definition.state());
+        if unknown != 0 {
+            return None;
+        }
+        match kinds.as_slice() {
+            [kind] => Some(*kind),
+            _ => None,
+        }
     }
 
     /// Record indices of the first reference run.

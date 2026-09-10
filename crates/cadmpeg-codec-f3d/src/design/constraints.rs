@@ -164,9 +164,9 @@ pub fn project_sketch_constraints(
                     .copied()
             })
             .collect::<Vec<_>>();
-        let exact = relation.unknown_constraint_bits() == 0
-            && relation.constraint_kinds().len() == 1
-            && semantic_entities.len() == relation.return_members().len();
+        let sole_kind = relation
+            .sole_constraint_kind()
+            .filter(|_| semantic_entities.len() == relation.return_members().len());
         let native_entities = || {
             relation
                 .member_indices()
@@ -180,8 +180,7 @@ pub fn project_sketch_constraints(
                 })
                 .collect()
         };
-        let definition = (if exact {
-            let kind = relation.constraint_kinds()[0];
+        let definition = (if let Some(kind) = sole_kind {
             let loci = if kind == SketchConstraintKind::Coincident {
                 exact_coincident_loci(&semantic_entities)
             } else {
@@ -277,8 +276,7 @@ pub(crate) fn exact_rectangular_pattern(
     use crate::records::SketchPatternDefinition;
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
-    if relation.unknown_constraint_bits() != 0
-        || relation.constraint_kinds().len() != 1
+    if relation.sole_constraint_kind().is_none()
         || entities.len() != relation.return_members().len()
     {
         return None;
@@ -471,9 +469,7 @@ pub(crate) fn exact_text_relation(
     };
     use cadmpeg_ir::transform::Transform;
 
-    if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
-        return None;
-    }
+    relation.sole_constraint_kind()?;
     let pattern = relation.definition.pattern();
     match pattern {
         Some(SketchPatternDefinition::TextFrame { text_reference })
@@ -582,8 +578,7 @@ pub(crate) fn exact_circular_pattern(
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    if relation.unknown_constraint_bits() != 0
-        || relation.constraint_kinds().len() != 1
+    if relation.sole_constraint_kind().is_none()
         || members.len() != relation.members().len()
         || returned.len() != relation.return_members().len()
     {
