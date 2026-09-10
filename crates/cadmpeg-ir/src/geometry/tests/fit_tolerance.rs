@@ -72,8 +72,8 @@ fn law_tail_requires_exactly_its_cache_contract() {
     wire.as_object_mut().unwrap().remove("cache_fit_tolerance");
     assert!(serde_json::from_value::<ProceduralSurface>(wire).is_err());
     for tail in [
-        LawSurfaceTail::Historical,
-        LawSurfaceTail::Optimal,
+        LawSurfaceTail::Historical {},
+        LawSurfaceTail::Optimal {},
         LawSurfaceTail::None {
             parameter_ranges: [[0.0, 1.0]; 2],
             closures: [0; 2],
@@ -124,15 +124,15 @@ fn rejected_surface_tolerance_edits_preserve_the_owner() {
     assert!(surface.set_cache_fit_tolerance(None).is_err());
     assert_eq!(surface, before);
     assert!(surface
-        .replace_definition(law(LawSurfaceTail::Historical))
+        .replace_definition(law(LawSurfaceTail::Historical {}))
         .is_err());
     assert_eq!(surface, before);
     assert!(surface
-        .edit_definition(|definition| *definition = law(LawSurfaceTail::Optimal))
+        .edit_definition(|definition| *definition = law(LawSurfaceTail::Optimal {}))
         .is_err());
     assert_eq!(surface, before);
     surface
-        .try_replace_definition(law(LawSurfaceTail::Optimal), None)
+        .try_replace_definition(law(LawSurfaceTail::Optimal {}), None)
         .unwrap();
     assert_eq!(surface.cache_fit_tolerance(), None);
     let before = surface.clone();

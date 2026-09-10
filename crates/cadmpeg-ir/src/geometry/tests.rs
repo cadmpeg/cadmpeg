@@ -1173,6 +1173,35 @@ fn a_law_surface_full_tail_is_an_empty_struct_variant() {
 }
 
 #[test]
+fn every_payload_free_law_surface_tail_refuses_an_unknown_key() {
+    for kind in ["full", "historical", "optimal"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+    for tail in [
+        crate::geometry::LawSurfaceTail::Historical {},
+        crate::geometry::LawSurfaceTail::Optimal {},
+    ] {
+        let wire = serde_json::to_value(tail.clone()).unwrap();
+        assert_eq!(
+            serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
+            tail
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(crate::geometry::LawSurfaceTail::Historical {}).unwrap(),
+        serde_json::json!({"kind": "historical"})
+    );
+    assert_eq!(
+        serde_json::to_value(crate::geometry::LawSurfaceTail::Optimal {}).unwrap(),
+        serde_json::json!({"kind": "optimal"})
+    );
+}
+
+#[test]
 fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
     use crate::geometry::{SkinSurfaceLayout, SkinSurfaceProfile};
 

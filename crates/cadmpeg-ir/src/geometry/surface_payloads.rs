@@ -1424,8 +1424,8 @@ impl LawSurfacePayload {
                 .flatten()
                 .all(|value| value.is_finite()),
             crate::geometry::LawSurfaceTail::Full {}
-            | crate::geometry::LawSurfaceTail::Historical
-            | crate::geometry::LawSurfaceTail::Optimal => true,
+            | crate::geometry::LawSurfaceTail::Historical {}
+            | crate::geometry::LawSurfaceTail::Optimal {} => true,
         };
         let valid = construction
             .parameter_ranges

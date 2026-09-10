@@ -5606,9 +5606,9 @@ pub enum LawSurfaceTail {
         singularities: [i64; 2],
     },
     /// Selector 3; no mode-specific payload.
-    Historical,
+    Historical {},
     /// Selector 4; no mode-specific payload.
-    Optimal,
+    Optimal {},
 }
 
 /// One native law-expression node.

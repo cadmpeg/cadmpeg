@@ -2394,8 +2394,8 @@ fn encode_native_law_surface(
                 native_enum(bytes, *value);
             }
         }
-        cadmpeg_ir::geometry::LawSurfaceTail::Historical => native_enum(bytes, 3),
-        cadmpeg_ir::geometry::LawSurfaceTail::Optimal => native_enum(bytes, 4),
+        cadmpeg_ir::geometry::LawSurfaceTail::Historical {} => native_enum(bytes, 3),
+        cadmpeg_ir::geometry::LawSurfaceTail::Optimal {} => native_enum(bytes, 4),
     }
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;

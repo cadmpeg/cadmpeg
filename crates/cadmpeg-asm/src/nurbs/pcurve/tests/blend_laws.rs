@@ -236,8 +236,8 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
                 (&construction.tail, selector),
                 (cadmpeg_ir::geometry::LawSurfaceTail::Summary { .. }, 1)
                     | (cadmpeg_ir::geometry::LawSurfaceTail::None { .. }, 2)
-                    | (cadmpeg_ir::geometry::LawSurfaceTail::Historical, 3)
-                    | (cadmpeg_ir::geometry::LawSurfaceTail::Optimal, 4)
+                    | (cadmpeg_ir::geometry::LawSurfaceTail::Historical {}, 3)
+                    | (cadmpeg_ir::geometry::LawSurfaceTail::Optimal {}, 4)
             ));
         }
     }

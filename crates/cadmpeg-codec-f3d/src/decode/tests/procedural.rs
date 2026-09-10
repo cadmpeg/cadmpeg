@@ -855,7 +855,7 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
                 },
                 2,
             ) => true,
-            (LawSurfaceTail::Historical, 3) | (LawSurfaceTail::Optimal, 4) => true,
+            (LawSurfaceTail::Historical {}, 3) | (LawSurfaceTail::Optimal {}, 4) => true,
             _ => false,
         });
         assert_eq!(
