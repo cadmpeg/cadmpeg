@@ -462,11 +462,11 @@ pub struct CatiaConsolidatedCone {
     /// Cone apex.
     pub apex: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: crate::checked::UnitVector3,
+    pub direction_x: crate::checked::RelaxedUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: crate::checked::UnitVector3,
+    pub direction_y: crate::checked::RelaxedUnitVector3,
     /// Cone-axis unit direction.
-    pub axis: crate::checked::UnitVector3,
+    pub axis: crate::checked::RelaxedUnitVector3,
     /// Cone half-angle in radians.
     pub half_angle: f64,
     /// Reference radius of the conical surface, independent of the active chart ranges.
@@ -610,27 +610,27 @@ pub enum CatiaConsolidatedCylinderPayload {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
-        axis: crate::checked::UnitVector3,
+        axis: crate::checked::RelaxedUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: crate::checked::UnitVector3,
+        reference_direction: crate::checked::RelaxedUnitVector3,
     },
     /// Complete three-dimensional frame reconstructed from layout `0x5a`.
     Layout5a {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
-        axis: crate::checked::UnitVector3,
+        axis: crate::checked::RelaxedUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: crate::checked::UnitVector3,
+        reference_direction: crate::checked::RelaxedUnitVector3,
     },
     /// Complete layout-`0x62` frame and its redundant range origin.
     RangeOrigin {
         /// Stored unit vector in the token-defined carrier plane.
         stored_vector: [f64; 2],
         /// Cylinder-axis unit direction.
-        axis: crate::checked::UnitVector3,
+        axis: crate::checked::RelaxedUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: crate::checked::UnitVector3,
+        reference_direction: crate::checked::RelaxedUnitVector3,
         /// Origin of the stored partial circumferential interval.
         range_origin: f64,
     },
@@ -686,13 +686,13 @@ struct CatiaConsolidatedCylinderWire {
 enum CatiaConsolidatedCylinderPayloadWire {
     Resolved {
         frame_token: u8,
-        axis: crate::checked::UnitVector3,
-        reference_direction: crate::checked::UnitVector3,
+        axis: crate::checked::RelaxedUnitVector3,
+        reference_direction: crate::checked::RelaxedUnitVector3,
     },
     RangeOrigin {
         stored_vector: [f64; 2],
-        axis: crate::checked::UnitVector3,
-        reference_direction: crate::checked::UnitVector3,
+        axis: crate::checked::RelaxedUnitVector3,
+        reference_direction: crate::checked::RelaxedUnitVector3,
         range_origin: f64,
     },
 }
@@ -823,9 +823,9 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
     /// Token selecting the serialized frame-vector role.
     pub frame_token: u8,
     /// Cylinder-axis unit direction.
-    pub axis: crate::checked::UnitVector3,
+    pub axis: crate::checked::RelaxedUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: crate::checked::UnitVector3,
+    pub reference_direction: crate::checked::RelaxedUnitVector3,
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
@@ -1129,11 +1129,11 @@ pub struct CatiaConsolidatedSphere {
     /// Sphere centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: crate::checked::UnitVector3,
+    pub direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: crate::checked::UnitVector3,
+    pub direction_y: crate::checked::ExactUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: crate::checked::UnitVector3,
+    pub axis: crate::checked::ExactUnitVector3,
     /// Sphere radius.
     pub radius: crate::checked::PositiveFinite,
     /// Active azimuth interval.
@@ -1152,11 +1152,11 @@ pub struct CatiaConsolidatedTorus {
     /// Torus centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: crate::checked::UnitVector3,
+    pub direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: crate::checked::UnitVector3,
+    pub direction_y: crate::checked::ExactUnitVector3,
     /// Torus-axis unit direction.
-    pub axis: crate::checked::UnitVector3,
+    pub axis: crate::checked::ExactUnitVector3,
     /// Major radius.
     pub major_radius: crate::checked::PositiveFinite,
     /// Minor radius.
@@ -1185,7 +1185,7 @@ pub struct CatiaConsolidatedLineProfile {
     /// Stored line origin.
     pub origin: [f64; 3],
     /// Unit line direction.
-    pub direction: crate::checked::UnitVector3,
+    pub direction: crate::checked::ExactUnitVector3,
     /// Increasing stored parameter interval.
     pub range: crate::checked::OrderedInterval,
 }
@@ -1235,11 +1235,11 @@ pub struct CatiaConsolidatedRevolution {
     /// Axis-frame origin.
     pub origin: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: crate::checked::UnitVector3,
+    pub direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: crate::checked::UnitVector3,
+    pub direction_y: crate::checked::ExactUnitVector3,
     /// Revolution-axis unit direction.
-    pub axis: crate::checked::UnitVector3,
+    pub axis: crate::checked::ExactUnitVector3,
     /// Stored full-turn angular parameter interval.
     pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
