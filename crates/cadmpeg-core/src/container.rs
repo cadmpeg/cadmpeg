@@ -721,6 +721,26 @@ mod tests {
     }
 
     #[test]
+    fn a_framed_span_states_its_own_nonzero_framing_at_the_single_mint() {
+        assert_eq!(super::FramedSpan::new(5, nonzero(5)), None);
+        assert_eq!(super::FramedSpan::new(6, nonzero(5)), None);
+        let span = super::FramedSpan::new(0, nonzero(1)).expect("a payload of 0 in a 1-byte span");
+        assert_eq!(span.payload(), 0);
+        assert_eq!(span.framing(), nonzero(1));
+        // The accessor's type, not a runtime check, states the nonzero-ness.
+        let stored: NonZeroU64 = span.stored();
+        assert_eq!(stored, nonzero(1));
+        assert_eq!(VerbatimSize::declared(0, 0), Some(VerbatimSize::Exact(0)));
+        assert_eq!(VerbatimSize::declared(5, 5), Some(VerbatimSize::Exact(5)));
+        match VerbatimSize::declared(5, 9) {
+            Some(VerbatimSize::Framed(span)) => {
+                assert_eq!((span.payload(), span.stored().get()), (5, 9));
+            }
+            other => panic!("a stored span above its payload is framed, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn a_minted_framed_span_always_exceeds_its_payload() {
         let empty: &[u8] = &[];
         let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MAX)
