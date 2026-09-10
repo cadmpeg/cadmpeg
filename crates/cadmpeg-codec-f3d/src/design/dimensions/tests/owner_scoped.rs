@@ -371,10 +371,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset,
             coordinate_offset: 0,
-            companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
-                incident_curves,
-            },
+            companion: crate::records::SketchPointCompanion { incident_curves },
             record_form: crate::records::SketchPointRecordForm::version11(
                 u64::from(record_index),
                 crate::records::SketchPointClosure::Selector0State0,

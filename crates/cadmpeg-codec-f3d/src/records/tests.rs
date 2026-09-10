@@ -1276,11 +1276,13 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             7,
         ),
         (
-            json!({"kind": "version11", "padded_paired_reference": false}),
+            json!({"kind": "version11", "padded_paired_reference": false,
+                "companion_prefix_present_zero": false}),
             8,
         ),
         (
-            json!({"kind": "version11_inline_typed", "trailing_reference": 3}),
+            json!({"kind": "version11_inline_typed", "trailing_reference": 3,
+                "companion_prefix_present_zero": false}),
             8,
         ),
     ] {
@@ -1289,41 +1291,27 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0
         });
-        base["companion"] = json!({"prefix_present_zero": false, "incident_curves": [],
-            "reference_encoding": if base["record_form"]["kind"].as_str().unwrap().ends_with("inline_typed") { "inline_typed" } else { "same_segment" }});
+        base["companion"] = json!({"incident_curves": []});
         if count > 1 {
             base["persistent_id"] = json!(4);
             base["closure"] = json!({"selector": 0, "state": 0});
         }
         let point: SketchPoint = serde_json::from_value(base.clone()).expect("omitted zero flags");
         assert_eq!(serde_json::to_value(point).unwrap(), base);
-        for reference_encoding in ["same_segment", "inline_typed"] {
-            for prefix_present_zero in [false, true] {
-                let mut wire = base.clone();
-                wire["companion"] = json!({
-                    "prefix_present_zero": prefix_present_zero,
-                    "reference_encoding": reference_encoding,
-                    "incident_curves": [7, 2]
-                });
-                let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
-                let expected_inline = base["record_form"]["kind"]
-                    .as_str()
-                    .unwrap()
-                    .ends_with("inline_typed");
-                if expected_inline != (reference_encoding == "inline_typed") {
-                    let error = decoded.unwrap_err();
-                    assert!(error.to_string().contains("reference_encoding"), "{error}");
-                } else if prefix_present_zero && count != 8 {
-                    let error = decoded.unwrap_err();
-                    assert!(error.to_string().contains("prefix_present_zero"), "{error}");
-                } else {
-                    let point = decoded.expect("companion matches point form");
-                    let companion = point.companion();
-                    assert_eq!(companion.prefix_present_zero, prefix_present_zero);
-                    assert_eq!(companion.incident_curves, [7, 2]);
-                    assert_eq!(serde_json::to_value(point).unwrap(), wire);
-                }
+        for prefix_present_zero in [false, true] {
+            let mut wire = base.clone();
+            wire["companion"] = json!({"incident_curves": [7, 2]});
+            if count == 8 {
+                wire["record_form"]["companion_prefix_present_zero"] = json!(prefix_present_zero);
+            } else if prefix_present_zero {
+                continue;
             }
+            let point =
+                serde_json::from_value::<SketchPoint>(wire.clone()).expect("companion wire");
+            let companion = point.companion();
+            assert_eq!(companion.prefix_present_zero, prefix_present_zero);
+            assert_eq!(companion.incident_curves, [7, 2]);
+            assert_eq!(serde_json::to_value(point).unwrap(), wire);
         }
         for depth in [-7.5, 2.5] {
             let mut wire = base.clone();
@@ -1597,7 +1585,6 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
         byte_offset: 0,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: super::SketchPointRecordForm::version11(
@@ -1645,7 +1632,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 1, "closure": {"selector": 0, "state": 0},
-        "companion": {"prefix_present_zero": false, "reference_encoding": "same_segment", "incident_curves": []}});
+        "companion": {"incident_curves": []}});
     let original: super::SketchPoint = serde_json::from_value(wire.clone()).unwrap();
     assert!(original.companion().incident_curves.is_empty());
     assert_eq!(serde_json::to_value(&original).unwrap(), wire);
@@ -1660,7 +1647,6 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         .to_string()
         .contains("companion"));
     let duplicate = super::SketchPointCompanion {
-        prefix_present_zero: false,
         incident_curves: vec![7, 7],
     };
     let draft = super::SketchPointDraft {

@@ -982,7 +982,6 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         byte_offset: 0,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(

@@ -275,7 +275,6 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             byte_offset: 0,
             coordinate_offset: 89,
             companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
                 incident_curves: Vec::new(),
             },
             record_form: crate::records::SketchPointRecordForm::version11(
