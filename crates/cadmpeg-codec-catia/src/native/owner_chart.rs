@@ -2,6 +2,8 @@
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
 use cadmpeg_ir::products::NonEmptyString;
+
+use crate::checked::PositiveFinite;
 use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
@@ -251,7 +253,7 @@ pub enum CatiaOwnerChartBridge {
         /// Independent terminal control.
         terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
-        construction_radius: f64,
+        construction_radius: PositiveFinite,
     },
     /// Eight-reference A-family production without an assigned object role.
     Extended {
@@ -328,7 +330,7 @@ impl CatiaOwnerChartBridgeWire {
                     terminal_control.as_byte(),
                     0x05,
                 ],
-                construction_radius,
+                construction_radius: construction_radius.get(),
             },
             CatiaOwnerChartBridge::Extended {
                 byte_offset,
@@ -357,9 +359,8 @@ impl CatiaOwnerChartBridgeWire {
                         "owner-chart bridge framing controls do not match carrier".to_owned()
                     );
                 }
-                if !construction_radius.is_finite() || construction_radius <= 0.0 {
-                    return Err("construction_radius must be finite and positive".to_owned());
-                }
+                let construction_radius = PositiveFinite::new(construction_radius)
+                    .ok_or_else(|| "construction_radius must be finite and positive".to_owned())?;
                 let middle_controls = [
                     CatiaOwnerChartMiddleControl::from_byte(controls[2])
                         .ok_or("invalid first owner-chart middle control")?,

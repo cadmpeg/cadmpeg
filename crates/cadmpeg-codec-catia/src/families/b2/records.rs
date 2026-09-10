@@ -314,7 +314,7 @@ pub enum B2OwnerChartBridge {
         /// Independent terminal control.
         terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
-        construction_radius: f64,
+        construction_radius: crate::checked::PositiveFinite,
     },
     /// Eight-reference A-family production without an assigned object role.
     Extended {
@@ -1130,7 +1130,7 @@ fn owner_chart_bridge(
     at += 1;
     if count == 5 {
         let unit_token = *data.get(at)?;
-        let construction_radius = f64_le(data, at + 1)?;
+        let construction_radius = crate::checked::PositiveFinite::new(f64_le(data, at + 1)?)?;
         let middle_controls = [
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
@@ -1138,7 +1138,6 @@ fn owner_chart_bridge(
         let zeros = data.get(at + 11..at + 19)?;
         let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 19)?)?;
         if unit_token != 0x05
-            || construction_radius <= 0.0
             || zeros != [0; 8]
             || data.get(at + 20) != Some(&0x05)
             || at + 21 != frame.end

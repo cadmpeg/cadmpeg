@@ -465,7 +465,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
             .expect("six bridge controls");
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
-        assert_eq!(construction_radius, 1.0);
+        assert_eq!(construction_radius.get(), 1.0);
         assert_eq!(
             chart.parameter_point_offsets().map(|pos| {
                 crate::families::b2::records::b2_parameter_points(&bytes)
