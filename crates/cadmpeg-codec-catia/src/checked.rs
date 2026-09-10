@@ -34,34 +34,55 @@ impl From<PositiveFinite> for f64 {
     }
 }
 
-/// A finite direction whose squared length is one within a stated tolerance.
+/// Squared-length tolerance selected by a unit direction's exponent.
+const fn squared_tolerance(exponent: u32) -> f64 {
+    match exponent {
+        9 => 1.0e-9,
+        12 => 1.0e-12,
+        _ => 0.0,
+    }
+}
+
+/// A finite direction whose squared length is one within `10^-TOLERANCE_EXPONENT`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub struct UnitVector3([f64; 3]);
+pub struct UnitVector3<const TOLERANCE_EXPONENT: u32>([f64; 3]);
 
-impl UnitVector3 {
-    /// Squared-length tolerance of the exactly stored record directions.
-    pub const EXACT_TOLERANCE: f64 = 1.0e-12;
+/// A unit direction stored exactly, to a squared-length tolerance of `1e-12`.
+pub type ExactUnitVector3 = UnitVector3<12>;
 
-    /// Squared-length tolerance of the loosely stored record directions.
-    pub const RELAXED_TOLERANCE: f64 = 1.0e-9;
+/// A unit direction stored loosely, to a squared-length tolerance of `1e-9`.
+pub type RelaxedUnitVector3 = UnitVector3<9>;
 
-    /// Constructs a unit direction whose squared length is one within `tolerance`.
-    pub fn new(value: [f64; 3], tolerance: f64) -> Option<Self> {
+impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
+    /// Squared-length tolerance this direction is held to.
+    pub const TOLERANCE: f64 = squared_tolerance(TOLERANCE_EXPONENT);
+
+    /// Constructs a unit direction whose squared length is one within the tolerance.
+    pub fn new(value: [f64; 3]) -> Option<Self> {
         let squared_length = value
             .iter()
             .map(|component| component * component)
             .sum::<f64>();
         (value.iter().all(|component| component.is_finite())
-            && (squared_length - 1.0).abs() <= tolerance)
+            && (squared_length - 1.0).abs() <= Self::TOLERANCE)
             .then_some(Self(value))
     }
 
-    /// Constructs a unit direction whose length is one within `tolerance`.
-    pub fn from_length(value: [f64; 3], tolerance: f64) -> Option<Self> {
+    /// Constructs a unit direction whose length is one within the tolerance.
+    pub fn from_length(value: [f64; 3]) -> Option<Self> {
         let length = value[0].hypot(value[1]).hypot(value[2]);
-        (value.iter().all(|component| component.is_finite()) && (length - 1.0).abs() <= tolerance)
+        (value.iter().all(|component| component.is_finite())
+            && (length - 1.0).abs() <= Self::TOLERANCE)
             .then_some(Self(value))
+    }
+
+    /// Constructs a unit direction from a `scale`-scaled stored vector whose
+    /// length is `scale` within the tolerance.
+    pub fn from_scaled(stored: [f64; 3], scale: f64) -> Option<Self> {
+        let length = stored[0].hypot(stored[1]).hypot(stored[2]);
+        (length.is_finite() && ((length / scale) - 1.0).abs() <= Self::TOLERANCE)
+            .then(|| Self(stored.map(|component| component / scale)))
     }
 
     /// Returns the direction components.
@@ -70,17 +91,16 @@ impl UnitVector3 {
     }
 }
 
-impl TryFrom<[f64; 3]> for UnitVector3 {
+impl<const TOLERANCE_EXPONENT: u32> TryFrom<[f64; 3]> for UnitVector3<TOLERANCE_EXPONENT> {
     type Error = String;
 
     fn try_from(value: [f64; 3]) -> Result<Self, Self::Error> {
-        Self::new(value, Self::RELAXED_TOLERANCE)
-            .ok_or_else(|| "direction is not a finite unit vector".to_owned())
+        Self::new(value).ok_or_else(|| "direction is not a finite unit vector".to_owned())
     }
 }
 
-impl From<UnitVector3> for [f64; 3] {
-    fn from(value: UnitVector3) -> Self {
+impl<const TOLERANCE_EXPONENT: u32> From<UnitVector3<TOLERANCE_EXPONENT>> for [f64; 3] {
+    fn from(value: UnitVector3<TOLERANCE_EXPONENT>) -> Self {
         value.0
     }
 }
@@ -123,5 +143,33 @@ impl TryFrom<[f64; 2]> for OrderedInterval {
 impl From<OrderedInterval> for [f64; 2] {
     fn from(value: OrderedInterval) -> Self {
         value.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExactUnitVector3, RelaxedUnitVector3};
+
+    #[test]
+    fn exact_directions_reject_the_relaxed_tolerance_band() {
+        let value = [0.0, 0.0, (1.0_f64 + 5.0e-10).sqrt()];
+        assert!(RelaxedUnitVector3::new(value).is_some());
+        assert!(ExactUnitVector3::new(value).is_none());
+        assert!(serde_json::from_value::<ExactUnitVector3>(serde_json::json!(value)).is_err());
+        assert!(serde_json::from_value::<RelaxedUnitVector3>(serde_json::json!(value)).is_ok());
+    }
+
+    #[test]
+    fn scaled_directions_accept_exactly_the_stored_length_ratio() {
+        let radius = 5.0_f64;
+        for factor in [1.0, 1.0 + 9.0e-13, 1.0 - 9.0e-13, 1.0 + 2.0e-12] {
+            let stored = [0.0, 0.0, radius * factor];
+            let length = stored[0].hypot(stored[1]).hypot(stored[2]);
+            let admitted = ((length / radius) - 1.0).abs() <= ExactUnitVector3::TOLERANCE;
+            assert_eq!(
+                ExactUnitVector3::from_scaled(stored, radius).is_some(),
+                admitted
+            );
+        }
     }
 }

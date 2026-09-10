@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
-use crate::checked::{OrderedInterval, PositiveFinite, UnitVector3};
+use crate::checked::{ExactUnitVector3, OrderedInterval, PositiveFinite, RelaxedUnitVector3};
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
 use crate::native::CatiaOwnerNumericTail;
@@ -1908,9 +1908,9 @@ pub struct B2SpatialCircle {
     /// Circle centre.
     pub center: Point3,
     /// Unit circle-plane normal.
-    pub axis: Vector3,
+    pub axis: ExactUnitVector3,
     /// Unit radial reference direction.
-    pub ref_direction: Vector3,
+    pub ref_direction: ExactUnitVector3,
     /// Positive radius in millimetres.
     pub radius: PositiveFinite,
     /// Stored arc-length interval.
@@ -1943,22 +1943,26 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
         return None;
     }
     let center = Point3::new(values[0], values[1], values[2]);
-    let ref_direction = Vector3::new(values[3], values[4], values[5]);
+    let stored_reference = Vector3::new(values[3], values[4], values[5]);
     let transverse = Vector3::new(values[6], values[7], values[8]);
-    let ref_norm = ref_direction.norm();
     let transverse_norm = transverse.norm();
-    let orthogonality = ref_direction.dot(transverse).abs();
-    let axis = ref_direction.cross(transverse).unit()?;
+    let orthogonality = stored_reference.dot(transverse).abs();
+    let stored_axis = stored_reference.cross(transverse).unit()?;
     let radius = values[9];
     let range = [values[10], values[11]];
     if !values.iter().all(|value| value.is_finite())
-        || (ref_norm - 1.0).abs() > EPS_B2_RECORD_EXACT_GEOMETRY
         || (transverse_norm - 1.0).abs() > EPS_B2_RECORD_EXACT_GEOMETRY
         || orthogonality > EPS_B2_RECORD_EXACT_GEOMETRY
         || values[12].to_bits() != 1.0f64.to_bits()
     {
         return None;
     }
+    let ref_direction = ExactUnitVector3::from_length([
+        stored_reference.x,
+        stored_reference.y,
+        stored_reference.z,
+    ])?;
+    let axis = ExactUnitVector3::from_length([stored_axis.x, stored_axis.y, stored_axis.z])?;
     let radius = PositiveFinite::new(radius)?;
     let range = OrderedInterval::new(range)?;
     Some(B2SpatialCircle {
@@ -2071,9 +2075,9 @@ pub struct B2Cylinder {
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder-axis unit direction.
-    pub axis: UnitVector3,
+    pub axis: RelaxedUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: UnitVector3,
+    pub reference_direction: RelaxedUnitVector3,
     /// Cylinder radius.
     pub radius: PositiveFinite,
     /// Arc-length circumferential range.
@@ -2130,11 +2134,11 @@ pub struct B2Cone {
     /// Cone apex.
     pub apex: [f64; 3],
     /// First transverse unit direction.
-    pub t1: UnitVector3,
+    pub t1: RelaxedUnitVector3,
     /// Second transverse unit direction.
-    pub t2: UnitVector3,
+    pub t2: RelaxedUnitVector3,
     /// Cone-axis unit direction.
-    pub axis: UnitVector3,
+    pub axis: RelaxedUnitVector3,
     /// Cone half-angle in radians.
     pub half_angle: f64,
     /// Reference radius of the conical surface, independent of the active chart ranges.
@@ -2161,11 +2165,11 @@ pub struct B2Revolution {
     /// Axis-frame origin.
     pub origin: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: UnitVector3,
+    pub direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: UnitVector3,
+    pub direction_y: ExactUnitVector3,
     /// Revolution-axis direction.
-    pub axis: UnitVector3,
+    pub axis: ExactUnitVector3,
     /// Stored angular parameter interval.
     pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
@@ -2194,7 +2198,7 @@ pub struct B2LineProfile {
     /// Stored line origin.
     pub origin: [f64; 3],
     /// Unit line direction.
-    pub direction: UnitVector3,
+    pub direction: ExactUnitVector3,
     /// Increasing stored parameter interval.
     pub range: OrderedInterval,
 }
@@ -2207,11 +2211,11 @@ pub struct B2Sphere {
     /// Sphere centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: UnitVector3,
+    pub direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: UnitVector3,
+    pub direction_y: ExactUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: UnitVector3,
+    pub axis: ExactUnitVector3,
     /// Sphere radius.
     pub radius: PositiveFinite,
     /// Active azimuth interval.
@@ -2228,11 +2232,11 @@ pub struct B2Torus {
     /// Torus centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: UnitVector3,
+    pub direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: UnitVector3,
+    pub direction_y: ExactUnitVector3,
     /// Torus-axis unit direction.
-    pub axis: UnitVector3,
+    pub axis: ExactUnitVector3,
     /// Major radius.
     pub major_radius: PositiveFinite,
     /// Minor radius.
@@ -2443,7 +2447,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
             t1[2] * t2[0] - t1[0] * t2[2],
             t1[0] * t2[1] - t1[1] * t2[0],
         ];
-        let unit = |value: [f64; 3]| UnitVector3::new(value, UnitVector3::RELAXED_TOLERANCE);
+        let unit = RelaxedUnitVector3::new;
         let (Some(t1), Some(t2), Some(axis)) = (unit(t1), unit(t2), unit(axis)) else {
             continue;
         };
@@ -2539,7 +2543,7 @@ pub(crate) fn b2_revolutions_from_records(
             direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
             direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
-        let unit = |value: [f64; 3]| UnitVector3::new(value, UnitVector3::EXACT_TOLERANCE);
+        let unit = ExactUnitVector3::new;
         let (Some(direction_x), Some(direction_y), Some(axis)) =
             (unit(direction_x), unit(direction_y), unit(axis))
         else {
@@ -2657,7 +2661,7 @@ pub(crate) fn b2_line_profiles_from_records(
             }
             let values = read_f64_array::<9>(data, frame.payload)?;
             let direction: [f64; 3] = values[3..6].try_into().expect("three direction values");
-            let direction = UnitVector3::new(direction, UnitVector3::EXACT_TOLERANCE)?;
+            let direction = ExactUnitVector3::new(direction)?;
             let range = OrderedInterval::new([values[7], values[8]])?;
             (values[6].to_bits() == 1.0_f64.to_bits()).then_some(B2LineProfile {
                 pos: frame.pos,
@@ -2709,9 +2713,9 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
                 direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
             ];
             values.iter().all(|value| value.is_finite()).then_some(())?;
-            let direction_x = UnitVector3::new(direction_x, UnitVector3::EXACT_TOLERANCE)?;
-            let direction_y = UnitVector3::new(direction_y, UnitVector3::EXACT_TOLERANCE)?;
-            let axis = UnitVector3::new(axis, UnitVector3::EXACT_TOLERANCE)?;
+            let direction_x = ExactUnitVector3::new(direction_x)?;
+            let direction_y = ExactUnitVector3::new(direction_y)?;
+            let axis = ExactUnitVector3::new(axis)?;
             let major_radius = PositiveFinite::new(major_radius)?;
             let minor_radius = PositiveFinite::new(minor_radius)?;
             let major_scale = PositiveFinite::new(major_scale)?;
@@ -2788,12 +2792,8 @@ pub(crate) fn b2_spheres_from_records(
                         .to_bits())
             .then_some(())?;
             let radius = PositiveFinite::new(radius)?;
-            let unit_direction = |stored: [f64; 3]| {
-                UnitVector3::from_length(
-                    stored.map(|value| value / radius.get()),
-                    EPS_B2_RECORD_EXACT_GEOMETRY,
-                )
-            };
+            let unit_direction =
+                |stored: [f64; 3]| ExactUnitVector3::from_scaled(stored, radius.get());
             let direction_x = unit_direction(stored_x)?;
             let direction_y = unit_direction(stored_y)?;
             let axis = unit_direction(stored_axis)?;
@@ -2974,11 +2974,12 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: UnitVector3::new([axis.x, axis.y, axis.z], UnitVector3::RELAXED_TOLERANCE)?,
-                reference_direction: UnitVector3::new(
-                    [ref_direction.x, ref_direction.y, ref_direction.z],
-                    UnitVector3::RELAXED_TOLERANCE,
-                )?,
+                axis: RelaxedUnitVector3::new([axis.x, axis.y, axis.z])?,
+                reference_direction: RelaxedUnitVector3::new([
+                    ref_direction.x,
+                    ref_direction.y,
+                    ref_direction.z,
+                ])?,
                 radius,
                 u_range,
                 v_range,
@@ -3007,11 +3008,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: UnitVector3::new([1.0, 0.0, 0.0], UnitVector3::RELAXED_TOLERANCE)?,
-                reference_direction: UnitVector3::new(
-                    [0.0, 1.0, 0.0],
-                    UnitVector3::RELAXED_TOLERANCE,
-                )?,
+                axis: RelaxedUnitVector3::new([1.0, 0.0, 0.0])?,
+                reference_direction: RelaxedUnitVector3::new([0.0, 1.0, 0.0])?,
                 radius,
                 u_range,
                 v_range,
@@ -3042,11 +3040,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: UnitVector3::new([0.0, 1.0, 0.0], UnitVector3::RELAXED_TOLERANCE)?,
-                reference_direction: UnitVector3::new(
-                    [vector[0], 0.0, vector[1]],
-                    UnitVector3::RELAXED_TOLERANCE,
-                )?,
+                axis: RelaxedUnitVector3::new([0.0, 1.0, 0.0])?,
+                reference_direction: RelaxedUnitVector3::new([vector[0], 0.0, vector[1]])?,
                 radius,
                 u_range,
                 v_range,

@@ -601,8 +601,8 @@ pub(crate) fn try_decode_freeform_surfaces(
             geometry: CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     circle.center,
-                    circle.axis,
-                    circle.ref_direction,
+                    cadmpeg_ir::math::Vector3::from(circle.axis.get()),
+                    cadmpeg_ir::math::Vector3::from(circle.ref_direction.get()),
                     circle.radius.get(),
                 )
                 .ok()?,

@@ -559,6 +559,22 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
 }
 
 #[test]
+fn consolidated_revolution_wire_rejects_directions_outside_the_exact_tolerance() {
+    let native = crate::native::CatiaNative::decode(&b2_resolved_revolution_stream());
+    let [revolution] = native.consolidated_revolutions.as_slice() else {
+        panic!("one consolidated revolution carrier")
+    };
+    let mut wire = serde_json::to_value(revolution).expect("serialize CATIA revolution");
+    let off_axis = (1.0_f64 + 5.0e-10).sqrt();
+    wire["axis"] = serde_json::json!([0.0, 0.0, off_axis]);
+    let error = serde_json::from_value::<crate::native::CatiaConsolidatedRevolution>(wire)
+        .expect_err(
+            "an axis outside the exact squared-length tolerance is not a revolution direction",
+        );
+    assert!(error.to_string().contains("unit vector"));
+}
+
+#[test]
 fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     let native = crate::native::CatiaNative::decode(&b2_resolved_revolution_stream());
     let [revolution] = native.consolidated_revolutions.as_slice() else {
@@ -597,11 +613,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native;
-    invalid.consolidated_revolutions[0].axis = crate::checked::UnitVector3::new(
-        [0.0, 0.0, -1.0],
-        crate::checked::UnitVector3::EXACT_TOLERANCE,
-    )
-    .expect("unit axis");
+    invalid.consolidated_revolutions[0].axis =
+        crate::checked::ExactUnitVector3::new([0.0, 0.0, -1.0]).expect("unit axis");
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)

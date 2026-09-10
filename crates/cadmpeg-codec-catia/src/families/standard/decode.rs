@@ -8643,22 +8643,25 @@ impl StandardLinePairConstraint {
     }
 
     fn edge_pairs<'a>(&self, pairs: &'a [Option<[usize; 2]>]) -> Option<StandardLineEdgePairs<'a>> {
-        (pairs.len() == self.edge_roles.len()).then_some(StandardLineEdgePairs { pairs })
+        StandardLineEdgePairs::new(pairs, self.edge_roles.len())
     }
 
     fn is_valid(&self, pairs: &StandardLineEdgePairs<'_>) -> bool {
-        self.edge_roles.iter().zip(pairs.pairs).all(|(role, pair)| {
-            if *role == EdgeLineRole::NotLine {
-                return true;
-            }
-            let Some(pair) = pair else {
-                return true;
-            };
-            let Some(segment) = standard_line_segment(&self.points, *pair) else {
-                return false;
-            };
-            standard_line_segment_is_materializable(segment)
-        })
+        self.edge_roles
+            .iter()
+            .zip(pairs.pairs())
+            .all(|(role, pair)| {
+                if *role == EdgeLineRole::NotLine {
+                    return true;
+                }
+                let Some(pair) = pair else {
+                    return true;
+                };
+                let Some(segment) = standard_line_segment(&self.points, *pair) else {
+                    return false;
+                };
+                standard_line_segment_is_materializable(segment)
+            })
     }
 
     fn is_simple(&self, pairs: &StandardLineEdgePairs<'_>) -> bool {
@@ -8666,7 +8669,7 @@ impl StandardLinePairConstraint {
             return false;
         }
         let mut selected = vec![None; self.edge_roles.len()];
-        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs.pairs).enumerate() {
+        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs.pairs()).enumerate() {
             if *role != EdgeLineRole::Flexible {
                 continue;
             }
@@ -8717,10 +8720,28 @@ impl StandardLinePairConstraint {
     }
 }
 
-/// Endpoint pairs whose length matches the constraint's edge roles.
-struct StandardLineEdgePairs<'a> {
-    pairs: &'a [Option<[usize; 2]>],
+/// Owns the length agreement between a candidate solution and the edge roles
+/// it is validated against; the field is unreachable outside this module.
+mod line_edge_pairs {
+    /// Endpoint pairs whose length matches the constraint's edge roles.
+    pub(super) struct StandardLineEdgePairs<'a> {
+        pairs: &'a [Option<[usize; 2]>],
+    }
+
+    impl<'a> StandardLineEdgePairs<'a> {
+        /// Admits a candidate solution that has one entry per edge role.
+        pub(super) fn new(pairs: &'a [Option<[usize; 2]>], edge_count: usize) -> Option<Self> {
+            (pairs.len() == edge_count).then_some(Self { pairs })
+        }
+
+        /// Returns the candidate entries, one per edge role.
+        pub(super) fn pairs(&self) -> &'a [Option<[usize; 2]>] {
+            self.pairs
+        }
+    }
 }
+
+use line_edge_pairs::StandardLineEdgePairs;
 
 fn ordered_line_pair(
     left_edge: usize,
