@@ -345,7 +345,7 @@ enum HoleKindWire {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<InteriorAngle>,
     },
-    Simple,
+    Simple {},
     Chamfer {
         diameter: PositiveLength,
         angle: InteriorAngle,
@@ -394,7 +394,7 @@ impl From<HoleKind> for HoleKindWire {
                 diameter: pair.first().copied(),
                 angle: pair.second().copied(),
             },
-            HoleKind::Simple => Self::Simple,
+            HoleKind::Simple => Self::Simple {},
             HoleKind::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKind::SimpleDrilled { drill_point_angle } => {
                 Self::SimpleDrilled { drill_point_angle }
@@ -454,7 +454,7 @@ impl TryFrom<HoleKindWire> for HoleKind {
                     )
                 }
             },
-            HoleKindWire::Simple => Self::Simple,
+            HoleKindWire::Simple {} => Self::Simple,
             HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKindWire::SimpleDrilled { drill_point_angle } => {
                 Self::SimpleDrilled { drill_point_angle }
@@ -625,7 +625,7 @@ impl From<HoleProfileFilter> for HoleProfileFilterWire {
 /// Blind-end construction of a drilled hole.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(from = "HoleBottomWire", into = "HoleBottomWire")]
 pub enum HoleBottom {
     /// Flat-bottomed cylindrical end.
     Flat,
@@ -636,6 +636,47 @@ pub enum HoleBottom {
         /// Whether the declared blind depth reaches the tip instead of the shoulder.
         depth_to_tip: bool,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum HoleBottomWire {
+    Flat {},
+    Angled {
+        included_angle: InteriorAngle,
+        depth_to_tip: bool,
+    },
+}
+
+impl From<HoleBottom> for HoleBottomWire {
+    fn from(value: HoleBottom) -> Self {
+        match value {
+            HoleBottom::Flat => Self::Flat {},
+            HoleBottom::Angled {
+                included_angle,
+                depth_to_tip,
+            } => Self::Angled {
+                included_angle,
+                depth_to_tip,
+            },
+        }
+    }
+}
+
+impl From<HoleBottomWire> for HoleBottom {
+    fn from(value: HoleBottomWire) -> Self {
+        match value {
+            HoleBottomWire::Flat {} => Self::Flat,
+            HoleBottomWire::Angled {
+                included_angle,
+                depth_to_tip,
+            } => Self::Angled {
+                included_angle,
+                depth_to_tip,
+            },
+        }
+    }
 }
 
 /// Standard sizing and optional physical-thread construction for a hole.
@@ -836,7 +877,7 @@ pub enum ThreadHand {
 /// Axial extent rule for a hole thread.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(from = "HoleThreadDepthWire", into = "HoleThreadDepthWire")]
 pub enum HoleThreadDepth {
     /// Thread follows the complete hole depth.
     HoleDepth,
@@ -847,6 +888,35 @@ pub enum HoleThreadDepth {
     },
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum HoleThreadDepthWire {
+    HoleDepth {},
+    Blind { depth: PositiveLength },
+    TappedStandard {},
+}
+
+impl From<HoleThreadDepth> for HoleThreadDepthWire {
+    fn from(value: HoleThreadDepth) -> Self {
+        match value {
+            HoleThreadDepth::HoleDepth => Self::HoleDepth {},
+            HoleThreadDepth::Blind { depth } => Self::Blind { depth },
+            HoleThreadDepth::TappedStandard => Self::TappedStandard {},
+        }
+    }
+}
+
+impl From<HoleThreadDepthWire> for HoleThreadDepth {
+    fn from(value: HoleThreadDepthWire) -> Self {
+        match value {
+            HoleThreadDepthWire::HoleDepth {} => Self::HoleDepth,
+            HoleThreadDepthWire::Blind { depth } => Self::Blind { depth },
+            HoleThreadDepthWire::TappedStandard {} => Self::TappedStandard,
+        }
+    }
 }
 
 /// Structural form of a hole entry treatment.

@@ -493,6 +493,33 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
 }
 
 #[test]
+fn unit_hole_wire_variants_reject_an_unknown_key_by_name() {
+    use crate::features::{HoleBottom, HoleKind, HoleThreadDepth};
+
+    fn round_trips_and_rejects_unknown_keys<T>(wire: serde_json::Value)
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug,
+    {
+        let admitted: T = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+
+        let mut unknown = wire;
+        unknown["zz_bogus"] = serde_json::json!(1);
+        let error = serde_json::from_value::<T>(unknown).unwrap_err().to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+    }
+
+    round_trips_and_rejects_unknown_keys::<HoleKind>(serde_json::json!({"kind": "simple"}));
+    round_trips_and_rejects_unknown_keys::<HoleBottom>(serde_json::json!({"kind": "flat"}));
+    round_trips_and_rejects_unknown_keys::<HoleThreadDepth>(
+        serde_json::json!({"kind": "hole_depth"}),
+    );
+    round_trips_and_rejects_unknown_keys::<HoleThreadDepth>(
+        serde_json::json!({"kind": "tapped_standard"}),
+    );
+}
+
+#[test]
 fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
     use crate::features::FeatureDefinition;
 
