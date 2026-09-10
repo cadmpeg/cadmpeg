@@ -10,6 +10,21 @@ use crate::records::{
     LostEdgeReference, SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
+
+/// The before-value carried at the after-record's location, for comparing an
+/// edited record against the record it replaces.
+fn normalized_token<T: Clone>(
+    before: &Option<crate::records::RecordedValue<T>>,
+    after: &Option<crate::records::RecordedValue<T>>,
+) -> Option<crate::records::RecordedValue<T>> {
+    match (before, after) {
+        (Some(before), Some(after)) => Some(crate::records::RecordedValue {
+            value: before.value.clone(),
+            offset: after.offset,
+        }),
+        _ => after.clone(),
+    }
+}
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
@@ -898,22 +913,8 @@ pub(crate) fn validate_material_assignment_edits(
         }
         let mut normalized = after.clone();
         normalized.visual_guid.clone_from(&before.visual_guid);
-        normalized.physical_token =
-            before
-                .physical_token
-                .as_ref()
-                .map(|field| crate::records::RecordedValue {
-                    value: field.value.clone(),
-                    offset: after.physical_token.as_ref().and_then(|field| field.offset),
-                });
-        normalized.visual_preset =
-            before
-                .visual_preset
-                .as_ref()
-                .map(|field| crate::records::RecordedValue {
-                    value: field.value.clone(),
-                    offset: after.visual_preset.as_ref().and_then(|field| field.offset),
-                });
+        normalized.physical_token = normalized_token(&before.physical_token, &after.physical_token);
+        normalized.visual_preset = normalized_token(&before.visual_preset, &after.visual_preset);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
@@ -1485,14 +1486,7 @@ pub(crate) fn validate_design_type_edits(
         let mut normalized = after.clone();
         normalized.entities.clone_from(&before.entities);
         normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid =
-            before
-                .base_type_guid
-                .as_ref()
-                .map(|field| crate::records::RecordedValue {
-                    value: field.value.clone(),
-                    offset: after.base_type_guid.as_ref().and_then(|field| field.offset),
-                });
+        normalized.base_type_guid = normalized_token(&before.base_type_guid, &after.base_type_guid);
         normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
@@ -1565,14 +1559,7 @@ pub(crate) fn validate_design_type_edits(
                 .as_ref()
                 .map_or("", crate::records::DesignRelaxedGuidText::as_str);
             validate_fixed_design_string(id, before_base, after_base)?;
-            strings.push((
-                after_field.offset.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D design type {id} has no base-type-GUID offset"
-                    ))
-                })?,
-                after_base.as_bytes().to_vec(),
-            ));
+            strings.push((after_field.offset, after_base.as_bytes().to_vec()));
         }
         if integers.is_empty() && strings.is_empty() {
             continue;
@@ -2020,13 +2007,16 @@ pub(crate) fn validate_construction_recipe_edits(
             before
                 .design
                 .as_ref()
-                .map(|design| crate::records::ConstructionRecipeDesign {
-                    id: crate::records::RecordedValue {
-                        value: design.id.value.clone(),
-                        offset: after.design.as_ref().and_then(|design| design.id.offset),
+                .zip(after.design.as_ref())
+                .map(
+                    |(design, after_design)| crate::records::ConstructionRecipeDesign {
+                        id: crate::records::RecordedValue {
+                            value: design.id.value.clone(),
+                            offset: after_design.id.offset,
+                        },
+                        selector: design.selector,
                     },
-                    selector: design.selector,
-                });
+                );
         if &normalized != before
             || before.design.as_ref().and_then(|design| design.selector)
                 != after.design.as_ref().and_then(|design| design.selector)
@@ -2068,11 +2058,7 @@ pub(crate) fn validate_construction_recipe_edits(
             })?;
             let after_field = &after_design.id;
             let after_value = after_field.value.as_str();
-            let offset = after_field.offset.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "F3D construction recipe {id} has no writable design-id carrier"
-                ))
-            })?;
+            let offset = after_field.offset;
             if after_value.len() != before_value.len()
                 || !after_value.bytes().all(|byte| byte.is_ascii_alphanumeric())
             {

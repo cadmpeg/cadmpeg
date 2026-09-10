@@ -43,24 +43,20 @@ pub(crate) fn patch_material_assignments(
             "material-assignment visual token",
         )?;
         if let Some(field) = &assignment.physical_token {
-            if let Some(offset) = field.offset {
-                patch_utf16_if_changed(
-                    bytes,
-                    offset,
-                    &field.value,
-                    "material-assignment physical token",
-                )?;
-            }
+            patch_utf16_if_changed(
+                bytes,
+                field.offset,
+                &field.value,
+                "material-assignment physical token",
+            )?;
         }
         if let Some(field) = &assignment.visual_preset {
-            if let Some(offset) = field.offset {
-                patch_utf16_if_changed(
-                    bytes,
-                    offset,
-                    &field.value,
-                    "material-assignment visual preset",
-                )?;
-            }
+            patch_utf16_if_changed(
+                bytes,
+                field.offset,
+                &field.value,
+                "material-assignment visual preset",
+            )?;
         }
     }
     Ok(())

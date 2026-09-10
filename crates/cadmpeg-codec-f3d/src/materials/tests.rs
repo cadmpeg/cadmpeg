@@ -412,7 +412,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     .unwrap();
     assignment.visual_preset = Some(crate::records::RecordedValue {
         value: "Prism-017".into(),
-        offset: None,
+        offset: 0,
     });
     appearance.name = Some("Prism-017".into());
     assert!(

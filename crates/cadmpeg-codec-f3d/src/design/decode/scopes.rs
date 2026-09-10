@@ -8977,30 +8977,45 @@ pub(crate) fn parse_parameter_scope(
     let coil = if family == Some(DesignFeatureFamily::Coil) {
         Some(crate::records::feature::DesignCoilScope {
             coil_operation: coil_discriminators.as_ref().map(|fields| {
-                crate::records::RecordedValue {
+                crate::records::MaybeRecordedValue::Located(crate::records::RecordedValue {
                     value: fields.operation,
-                    offset: Some(fields.operation_offset),
-                }
+                    offset: fields.operation_offset,
+                })
             }),
             coil_extent: coil_discriminators
                 .as_ref()
                 .and_then(|fields| fields.extent),
-            coil_section: coil_discriminators.as_ref().map(|fields| {
-                crate::records::RecordedValue {
-                    value: fields.section,
-                    offset: fields.section_offset,
-                }
-            }),
+            coil_section: coil_discriminators
+                .as_ref()
+                .map(|fields| match fields.section_offset {
+                    Some(offset) => {
+                        crate::records::MaybeRecordedValue::Located(crate::records::RecordedValue {
+                            value: fields.section,
+                            offset,
+                        })
+                    }
+                    None => crate::records::MaybeRecordedValue::Unlocated(fields.section),
+                }),
             coil_section_placement: coil_discriminators.as_ref().map(|fields| {
-                crate::records::RecordedValue {
-                    value: fields.section_placement,
-                    offset: fields.section_placement_offset,
+                match fields.section_placement_offset {
+                    Some(offset) => {
+                        crate::records::MaybeRecordedValue::Located(crate::records::RecordedValue {
+                            value: fields.section_placement,
+                            offset,
+                        })
+                    }
+                    None => crate::records::MaybeRecordedValue::Unlocated(fields.section_placement),
                 }
             }),
             coil_clockwise: coil_discriminators.as_ref().map(|fields| {
-                crate::records::RecordedValue {
-                    value: fields.clockwise,
-                    offset: fields.clockwise_offset,
+                match fields.clockwise_offset {
+                    Some(offset) => {
+                        crate::records::MaybeRecordedValue::Located(crate::records::RecordedValue {
+                            value: fields.clockwise,
+                            offset,
+                        })
+                    }
+                    None => crate::records::MaybeRecordedValue::Unlocated(fields.clockwise),
                 }
             }),
             coil_placement: None,
@@ -9170,7 +9185,7 @@ fn named_parameter_scope_tail_is_valid(
 struct CoilDiscriminators {
     operation: DesignExtrudeOperation,
     operation_offset: u64,
-    extent: Option<crate::records::RecordedValue<DesignCoilExtent>>,
+    extent: Option<crate::records::MaybeRecordedValue<DesignCoilExtent>>,
     section: DesignCoilSection,
     section_offset: Option<u64>,
     section_placement: DesignCoilSectionPlacement,
@@ -9695,10 +9710,12 @@ fn exact_coil_discriminators(
     Some(CoilDiscriminators {
         operation,
         operation_offset: operation_offset as u64,
-        extent: Some(crate::records::RecordedValue {
-            value: extent,
-            offset: Some(extent_offset as u64),
-        }),
+        extent: Some(crate::records::MaybeRecordedValue::Located(
+            crate::records::RecordedValue {
+                value: extent,
+                offset: extent_offset as u64,
+            },
+        )),
         section,
         section_offset: Some(section_offset as u64),
         section_placement,
@@ -9863,10 +9880,7 @@ fn bind_coil_extent_from_parameters(
             scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).coil_extent =
-                Some(crate::records::RecordedValue {
-                    value: extent,
-                    offset: None,
-                });
+                Some(crate::records::MaybeRecordedValue::Unlocated(extent));
         }
     }
 }

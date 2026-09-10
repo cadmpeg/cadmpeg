@@ -35,7 +35,7 @@ fn parameter(
 
         unit: unit.map(|value| crate::records::RecordedValue {
             value: value.to_owned(),
-            offset: Some(70),
+            offset: 70,
         }),
         name: source_kind.into(),
         name_offset: 80,
@@ -55,29 +55,23 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_operation =
-            Some(crate::records::RecordedValue {
-                value: DesignExtrudeOperation::NewBody,
-                offset: None,
-            });
+        slot.get_or_insert_with(Default::default).coil_operation = Some(
+            crate::records::MaybeRecordedValue::Unlocated(DesignExtrudeOperation::NewBody),
+        );
     }
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_extent =
-            Some(crate::records::RecordedValue {
-                value: DesignCoilExtent::RevolutionsHeight,
-                offset: None,
-            });
+        slot.get_or_insert_with(Default::default).coil_extent = Some(
+            crate::records::MaybeRecordedValue::Unlocated(DesignCoilExtent::RevolutionsHeight),
+        );
     }
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_section =
-            Some(crate::records::RecordedValue {
-                value: DesignCoilSection::Circular,
-                offset: None,
-            });
+        slot.get_or_insert_with(Default::default).coil_section = Some(
+            crate::records::MaybeRecordedValue::Unlocated(DesignCoilSection::Circular),
+        );
     }
     {
         let value = Some(DesignCoilSectionPlacement::Inside);
@@ -86,10 +80,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
             scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
-                .coil_section_placement = value.map(|value| crate::records::RecordedValue {
-                value,
-                offset: None,
-            });
+                .coil_section_placement = value.map(crate::records::MaybeRecordedValue::Unlocated);
         }
     }
     {
@@ -99,10 +90,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
             scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).coil_clockwise =
-                value.map(|value| crate::records::RecordedValue {
-                    value,
-                    offset: None,
-                });
+                value.map(crate::records::MaybeRecordedValue::Unlocated);
         }
     }
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)

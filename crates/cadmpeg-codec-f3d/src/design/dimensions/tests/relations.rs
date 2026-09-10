@@ -555,7 +555,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d1".into(),
             name_offset: 80,
@@ -898,7 +898,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "rad".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d4".into(),
             name_offset: 80,

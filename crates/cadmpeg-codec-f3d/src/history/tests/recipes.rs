@@ -979,7 +979,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: "301".into(),
-                offset: None,
+                offset: 0,
             },
             selector: Some(crate::records::ConstructionRecipeSelector {
                 value: 9,

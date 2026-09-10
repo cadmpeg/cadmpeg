@@ -59,7 +59,7 @@ fn generated_source_less_writes_design_type_metastream() {
                         .try_into()
                         .expect("base GUID"),
                 ),
-                offset: None,
+                offset: 0,
             }),
             version: 9,
             version_offset: 0,
@@ -81,7 +81,7 @@ fn generated_source_less_writes_design_type_metastream() {
                         .try_into()
                         .expect("base GUID"),
                 ),
-                offset: None,
+                offset: 0,
             }),
             version: 11,
             version_offset: 0,
@@ -112,7 +112,7 @@ fn generated_source_less_writes_design_type_metastream() {
                     .try_into()
                     .expect("base GUID"),
             ),
-            offset: None,
+            offset: 0,
         });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -186,7 +186,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: format!("{}", 320 + ordinal),
-                offset: None,
+                offset: 0,
             },
             selector: None,
         }),

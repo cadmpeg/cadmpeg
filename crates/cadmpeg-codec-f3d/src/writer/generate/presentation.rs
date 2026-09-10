@@ -404,7 +404,7 @@ mod tests {
                         .try_into()
                         .expect("base GUID"),
                 ),
-                offset: Some(0),
+                offset: 0,
             }),
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
@@ -434,7 +434,7 @@ mod tests {
                         .try_into()
                         .expect("base GUID"),
                 ),
-                offset: Some(0),
+                offset: 0,
             }),
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,

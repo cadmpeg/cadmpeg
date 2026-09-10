@@ -40,8 +40,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(recipe
         .design
         .as_ref()
-        .and_then(|design| design.id.offset)
-        .is_some());
+        .is_some_and(|design| design.id.offset > 0));
     recipe.record_index = 777;
     recipe.design.as_mut().expect("recipe id").id.value = "333".into();
     let member = native
