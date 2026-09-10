@@ -523,16 +523,18 @@ pub(super) fn project(
 
     for curve in &mut ir.model.curves {
         if let Some(source) = &mut curve.source_object {
-            source.color = super::geometry::SourceObjectId::of(source)
-                .and_then(|source| entries.get(&source.sequence()))
+            source.color = sequences
+                .curve(&curve.id)
+                .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
         }
     }
     for surface in &mut ir.model.surfaces {
         if let Some(source) = &mut surface.source_object {
-            source.color = super::geometry::SourceObjectId::of(source)
-                .and_then(|source| entries.get(&source.sequence()))
+            source.color = sequences
+                .surface(&surface.id)
+                .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
         }

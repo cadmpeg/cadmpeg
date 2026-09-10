@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -956,6 +956,8 @@ pub(crate) struct Projection {
     pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) boundary_vertex_derivations: Vec<BoundaryVertexDerivation>,
+    /// The Directory sequence each projected record was decoded from.
+    pub(crate) sequences: SourceSequences,
 }
 
 fn positive_sequence(value: i64) -> Option<u32> {
@@ -1199,9 +1201,9 @@ pub(super) fn admit<T>(
 
 /// The Directory sequence a source-object association names.
 ///
-/// This type owns both directions of the `D{sequence}` object-id spelling, so
-/// no reader recovers the sequence by string surgery over an id namespace it
-/// does not own.
+/// The sole producer of the `D{sequence}` object-id spelling. Nothing reads the
+/// sequence back out of that text: every consumer holds the sequence itself,
+/// through [`SourceSequences`] or through the entry it is projecting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SourceObjectId(u32);
 
@@ -1211,25 +1213,9 @@ impl SourceObjectId {
         Self(sequence)
     }
 
-    /// The Directory sequence.
-    pub(crate) const fn sequence(self) -> u32 {
-        self.0
-    }
-
     /// The object-id text every source association carries.
     pub(crate) fn text(self) -> String {
         format!("D{}", self.0)
-    }
-
-    /// Reads back the sequence this crate wrote into an object id.
-    pub(crate) fn of(association: &SourceObjectAssociation) -> Option<Self> {
-        association
-            .object_id
-            .as_str()
-            .strip_prefix('D')?
-            .parse()
-            .ok()
-            .map(Self)
     }
 }
 
@@ -1237,10 +1223,12 @@ impl SourceObjectId {
 ///
 /// Recorded where the id is minted, so appearance binding reads the sequence
 /// the decoder held rather than parsing it back out of the identity.
-#[derive(Debug, Default)]
-pub(super) struct SourceSequences {
+#[derive(Debug, Default, Clone)]
+pub(crate) struct SourceSequences {
     bodies: BTreeMap<BodyId, u32>,
     faces: BTreeMap<FaceId, u32>,
+    curves: BTreeMap<CurveId, u32>,
+    surfaces: BTreeMap<SurfaceId, u32>,
 }
 
 impl SourceSequences {
@@ -1252,12 +1240,30 @@ impl SourceSequences {
         self.faces.insert(id.clone(), sequence);
     }
 
+    pub(super) fn record_curve(&mut self, id: &CurveId, sequence: u32) {
+        self.curves.insert(id.clone(), sequence);
+    }
+
+    pub(super) fn record_surface(&mut self, id: &SurfaceId, sequence: u32) {
+        self.surfaces.insert(id.clone(), sequence);
+    }
+
     pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
         self.bodies.get(id).copied()
     }
 
     pub(super) fn face(&self, id: &FaceId) -> Option<u32> {
         self.faces.get(id).copied()
+    }
+
+    /// The Directory sequence this curve was decoded from.
+    pub(crate) fn curve(&self, id: &CurveId) -> Option<u32> {
+        self.curves.get(id).copied()
+    }
+
+    /// The Directory sequence this surface was decoded from.
+    pub(crate) fn surface(&self, id: &SurfaceId) -> Option<u32> {
+        self.surfaces.get(id).copied()
     }
 }
 
@@ -1290,6 +1296,7 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
+    let mut sequences = SourceSequences::default();
     let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
         entry.status.use_flag(global_table).is_some_and(|use_flag| {
@@ -1530,6 +1537,7 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Circle(
@@ -1748,6 +1756,7 @@ pub(crate) fn project_geometry(
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
         let curve = crate::ids::curve(&stem);
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Line(
@@ -2134,6 +2143,7 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(nurbs),
@@ -2160,32 +2170,32 @@ pub(crate) fn project_geometry(
     // decode report and the free-geometry shell; every `project` call appends
     // to `ir`; and every `admit_projected_entities` call can early-return on
     // the entity budget.
-    super::conics::project(ir, directory, parameters, global, ctx).merge_into(
+    super::conics::project(ir, directory, parameters, global, ctx, &mut sequences).merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    super::copious::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::copious::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
         &mut free_vertices,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
-    super::splines::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::splines::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
-    super::composite::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::composite::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
-    super::offsets::project(ir, directory, parameters, global, ctx).merge_into(
+    super::offsets::project(ir, directory, parameters, global, ctx, &mut sequences).merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
@@ -2194,15 +2204,22 @@ pub(crate) fn project_geometry(
     // A valid V5 Type 130 constituent is deferred until its exact offset
     // carrier has been projected above. The second composite pass consumes
     // that carrier while retaining each entity's ordered child list.
-    super::composite::project_type_130_children(ir, directory, parameters, global, ctx)?
-        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
+    super::composite::project_type_130_children(
+        ir,
+        directory,
+        parameters,
+        global,
+        ctx,
+        &mut sequences,
+    )?
+    .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(
         ctx,
         ir,
         &mut admitted_entities,
         "iges_geometry_composites_offsets",
     )?;
-    super::analytic_surfaces::project(ir, directory, parameters, global, ctx)
+    super::analytic_surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
@@ -2210,7 +2227,7 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_analytic_surfaces",
     )?;
-    super::surfaces::project(ir, directory, parameters, global, ctx)?
+    super::surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
@@ -2242,7 +2259,6 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_wire_topology",
     )?;
-    let mut sequences = SourceSequences::default();
     let (trimming_projection, trimming_vertex_derivations) =
         super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences);
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
@@ -2305,6 +2321,7 @@ pub(crate) fn project_geometry(
         consumed,
         losses,
         boundary_vertex_derivations,
+        sequences,
     })
 }
 

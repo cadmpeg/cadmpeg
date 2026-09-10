@@ -29,6 +29,7 @@ fn add_bounded_curve(
     end: Point3,
     parameter_range: [f64; 2],
     tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
@@ -61,6 +62,7 @@ fn add_bounded_curve(
             tolerance,
         },
     ]);
+    sequences.record_curve(&curve, entry.sequence);
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry,
@@ -92,6 +94,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> WireProjectionOutcome {
     let records = parameters
         .iter()
@@ -444,14 +447,22 @@ pub(super) fn project(
         } else {
             None
         };
-        let edge =
-            match add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance) {
-                Ok(edge) => edge,
-                Err(error) => {
-                    losses.push(entity_loss(entry, error.to_string()));
-                    continue;
-                }
-            };
+        let edge = match add_bounded_curve(
+            ir,
+            entry,
+            geometry,
+            start,
+            end,
+            parameter_range,
+            tolerance,
+            sequences,
+        ) {
+            Ok(edge) => edge,
+            Err(error) => {
+                losses.push(entity_loss(entry, error.to_string()));
+                continue;
+            }
+        };
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

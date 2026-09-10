@@ -160,6 +160,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<CopiousProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
@@ -428,6 +429,7 @@ pub(super) fn project(
                 tolerance: topology_tolerance,
             });
         }
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(

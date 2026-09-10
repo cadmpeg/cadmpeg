@@ -1277,6 +1277,7 @@ fn project_native_composite(
     entry: &DirectoryEntry,
     child_curves: &[CurveId],
     join_tolerance: f64,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
     if child_curves
         .iter()
@@ -1339,6 +1340,7 @@ fn project_native_composite(
             tolerance: None,
         },
     ]);
+    sequences.record_curve(&curve_id, entry.sequence);
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Composite {
@@ -1375,8 +1377,9 @@ fn project_degraded_composite(
     join_tolerance: f64,
     reason: &str,
     losses: &mut Vec<LossNote>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
-    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance);
+    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance, sequences);
     if edge.is_some() {
         losses.push(degraded_carrier_loss(entry, reason));
     } else {
@@ -1394,8 +1397,9 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    project_with_type_130_policy(ir, directory, parameters, global, ctx, false)
+    project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, false)
 }
 
 pub(super) fn project_type_130_children(
@@ -1404,8 +1408,9 @@ pub(super) fn project_type_130_children(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    project_with_type_130_policy(ir, directory, parameters, global, ctx, true)
+    project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, true)
 }
 
 fn has_type_130_child(
@@ -1443,6 +1448,7 @@ fn project_with_type_130_policy(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
@@ -1638,6 +1644,7 @@ fn project_with_type_130_policy(
                 join_tolerance,
                 "a child has no bounded line or NURBS carrier",
                 &mut losses,
+                sequences,
             ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -1656,6 +1663,7 @@ fn project_with_type_130_policy(
                 join_tolerance,
                 "child endpoints do not join within the Global minimum resolution",
                 &mut losses,
+                sequences,
             ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -1680,6 +1688,7 @@ fn project_with_type_130_policy(
                 join_tolerance,
                 "its start cannot be evaluated",
                 &mut losses,
+                sequences,
             ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -1702,6 +1711,7 @@ fn project_with_type_130_policy(
                 join_tolerance,
                 "its end cannot be evaluated",
                 &mut losses,
+                sequences,
             ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -1740,6 +1750,7 @@ fn project_with_type_130_policy(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve_id, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Nurbs(nurbs),

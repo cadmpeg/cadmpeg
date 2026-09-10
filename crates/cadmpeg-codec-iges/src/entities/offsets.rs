@@ -215,6 +215,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> WireProjectionOutcome {
     let records = parameters
         .iter()
@@ -844,6 +845,7 @@ pub(super) fn project(
                 }
             };
         if offset_source_id != source_id {
+            sequences.record_curve(&offset_source_id, entry.sequence);
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: offset_source_geometry.clone(),
@@ -880,6 +882,7 @@ pub(super) fn project(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve_id, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
