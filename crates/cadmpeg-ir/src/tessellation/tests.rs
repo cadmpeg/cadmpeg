@@ -245,7 +245,13 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
                 Vec::new(),
             )
             .is_err());
-            rejects_wire_field(if corner { "corner_normals" } else { "normals" }, normals);
+            rejects_wire_field(
+                "shading",
+                serde_json::json!({
+                    "kind": if corner { "per_corner" } else { "per_vertex" },
+                    "values": normals,
+                }),
+            );
         }
     }
 }
