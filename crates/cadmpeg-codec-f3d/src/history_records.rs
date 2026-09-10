@@ -152,12 +152,9 @@ pub(crate) enum AsmTopologyCacheKind {
     Released,
 }
 
-impl AsmTopologyCacheKind {
-    // Serde requires `skip_serializing_if` predicates to borrow the field.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub(crate) fn is_absent(&self) -> bool {
-        matches!(self, Self::Absent)
-    }
+/// Whether a serialized field still holds its default.
+pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 impl AsmDeltaState {
@@ -230,7 +227,7 @@ struct AsmDeltaStateWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     entity_versions: Vec<AsmEntityVersion>,
     /// Which form of topology snapshot this state holds.
-    #[serde(default, skip_serializing_if = "AsmTopologyCacheKind::is_absent")]
+    #[serde(default, skip_serializing_if = "is_default")]
     topology_cache: AsmTopologyCacheKind,
     /// Stable `RecordTable` identities emitted by the ordinary B-rep decoder for
     /// this historical state.

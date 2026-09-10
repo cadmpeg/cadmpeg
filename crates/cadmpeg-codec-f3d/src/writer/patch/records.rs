@@ -756,3 +756,58 @@ pub(crate) fn patch_sketch_relations(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::patch_material_assignments;
+    use crate::records::DesignMaterialAssignment;
+
+    const SUFFIX_AT: usize = 0;
+    const ENTITY_ID_AT: usize = 8;
+    const VISUAL_GUID_AT: usize = 18;
+    const PHYSICAL_TOKEN_AT: usize = 90;
+
+    fn utf16(value: &str) -> Vec<u8> {
+        value.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    fn assignment_document(located: bool) -> serde_json::Value {
+        let mut document = serde_json::json!({
+            "id": "material#0",
+            "asm_body_key": 42,
+            "asm_body_key_offset": 200,
+            "entity_suffix_offset": SUFFIX_AT,
+            "entity_id": "0_985",
+            "entity_id_offset": ENTITY_ID_AT,
+            "visual_guid": "11111111-2222-3333-4444-555555555555",
+            "visual_guid_offset": VISUAL_GUID_AT,
+            "physical_token": "Prism-002"
+        });
+        if located {
+            document["physical_token_offset"] = PHYSICAL_TOKEN_AT.into();
+        }
+        document
+    }
+
+    #[test]
+    fn every_admitted_material_physical_token_is_patched_into_the_source_bytes() {
+        let error = serde_json::from_value::<DesignMaterialAssignment>(assignment_document(false))
+            .expect_err("a token the patch cannot write is not admitted")
+            .to_string();
+        assert!(error.contains("physical_token"), "{error}");
+        assert!(error.contains("physical_token_offset"), "{error}");
+
+        let assignment: DesignMaterialAssignment =
+            serde_json::from_value(assignment_document(true)).expect("located material token");
+        let mut bytes = vec![0u8; 128];
+        patch_material_assignments(&mut bytes, std::slice::from_ref(&assignment))
+            .expect("patch material assignment");
+        let token = utf16("Prism-002");
+        assert_eq!(
+            &bytes[PHYSICAL_TOKEN_AT..PHYSICAL_TOKEN_AT + token.len()],
+            &token[..]
+        );
+        assert_eq!(&bytes[ENTITY_ID_AT..VISUAL_GUID_AT], &utf16("0_985")[..]);
+        assert_eq!(&bytes[SUFFIX_AT..SUFFIX_AT + 8], &985u64.to_le_bytes()[..]);
+    }
+}

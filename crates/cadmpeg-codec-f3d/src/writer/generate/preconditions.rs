@@ -849,7 +849,7 @@ pub(crate) fn validate_source_less_design_links(
         for (ordinal, link) in links.iter().enumerate() {
             if link.ordinal != ordinal as u32 {
                 return Err(CodecError::InvalidInput(format!(
-                    "F3D persistent design links for {target:?} require contiguous ordinals and only the final link current"
+                    "F3D persistent design links for {target:?} require contiguous ordinals"
                 )));
             }
         }

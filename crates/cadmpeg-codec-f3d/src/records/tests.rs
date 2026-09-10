@@ -151,6 +151,12 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
         .expect_err("orphan design id offset")
         .to_string();
     assert!(error.contains("design_id_offset"));
+    let wire = format!("{prefix},\"design_id\":\"301\"{suffix}");
+    let error = serde_json::from_str::<crate::records::ConstructionRecipe>(&wire)
+        .expect_err("unlocated design id")
+        .to_string();
+    assert!(error.contains("design_id"));
+    assert!(error.contains("design_id_offset"));
 }
 
 #[test]
@@ -564,6 +570,16 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
         .to_string();
     assert!(error.contains("design_id"));
     assert!(error.contains("design_selector"));
+    for fields in [
+        ",\"design_id\":\"301\"",
+        ",\"design_id\":\"301\",\"design_selector\":{\"value\":2,\"byte_offset\":0}",
+    ] {
+        let wire = format!("{prefix}\"{fields}{suffix}");
+        let error = serde_json::from_str::<crate::records::ConstructionRecipe>(&wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("design_id_offset"), "{error}");
+    }
 }
 
 #[test]

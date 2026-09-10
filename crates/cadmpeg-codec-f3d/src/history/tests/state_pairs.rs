@@ -1670,7 +1670,12 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
     incomplete_revision_history.states[1].topology_cache =
-        crate::history_records::AsmTopologyCache::Absent;
+        crate::history_records::AsmTopologyCache::Retained(
+            incomplete_revision_history.states[1]
+                .topology()
+                .unwrap()
+                .clone(),
+        );
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700,),
         None
@@ -1821,4 +1826,72 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         ]
     );
     assert_eq!(unique_entity_selection_edge(&candidates), Some(17));
+}
+
+#[test]
+fn a_retained_state_beside_a_complete_snapshot_resolves_no_reconstructed_revision() {
+    let topology = |vertices: Vec<i64>| {
+        serde_json::to_value(AsmHistoricalTopology {
+            edges: vec![42],
+            vertices,
+            ..AsmHistoricalTopology::default()
+        })
+        .unwrap()
+    };
+    let document = serde_json::json!({
+        "id": "history",
+        "byte_offset": 0,
+        "projection_finalized": true,
+        "states": [
+            {
+                "id": "state-3",
+                "parent": "history",
+                "byte_offset": 0,
+                "state_id": 3,
+                "version_flag": 1,
+                "state_flag": 0,
+                "node_index": 3,
+                "owner_ref": 0,
+                "bulletin_boards": [{
+                    "id": "board",
+                    "parent": "state-3",
+                    "byte_offset": 0,
+                    "owner_ref": 0,
+                    "number": 2,
+                    "changes": [{
+                        "id": "revision-700-to-42",
+                        "parent": "board",
+                        "byte_offset": 0,
+                        "kind": "update",
+                        "old_ref": 700,
+                        "new_ref": 42
+                    }]
+                }],
+                "records": [],
+                "record_table_complete": true,
+                "topology_cache": "complete",
+                "topology": topology(Vec::new())
+            },
+            {
+                "id": "state-5",
+                "parent": "history",
+                "byte_offset": 0,
+                "state_id": 5,
+                "version_flag": 1,
+                "state_flag": 0,
+                "node_index": 5,
+                "owner_ref": 0,
+                "bulletin_boards": [],
+                "records": [],
+                "topology_cache": "retained",
+                "topology": topology(vec![90])
+            }
+        ]
+    });
+    let history: AsmHistory = serde_json::from_value(document).unwrap();
+    assert!(!history.projection_finalized());
+    assert_eq!(
+        historical_selection_identity_kind(std::slice::from_ref(&history), 700),
+        None
+    );
 }

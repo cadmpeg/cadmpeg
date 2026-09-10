@@ -211,7 +211,7 @@ struct FlatAsmDeltaState<'a> {
     records: EmptyList,
     #[serde(skip_serializing_if = "slice_is_empty")]
     entity_versions: &'a [AsmEntityVersion],
-    #[serde(skip_serializing_if = "AsmTopologyCacheKind::is_absent")]
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
     topology_cache: AsmTopologyCacheKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     topology: Option<&'a AsmHistoricalTopology>,

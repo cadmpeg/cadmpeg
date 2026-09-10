@@ -371,9 +371,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("noncanonical persistent link order must not be rewritten");
-    assert!(error
-        .to_string()
-        .contains("contiguous ordinals and only the final link current"));
+    assert!(error.to_string().contains("contiguous ordinals"));
 }
 
 #[test]

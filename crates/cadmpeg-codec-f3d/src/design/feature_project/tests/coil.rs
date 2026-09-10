@@ -55,9 +55,11 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_operation = Some(
-            crate::records::MaybeRecordedValue::Unlocated(DesignExtrudeOperation::NewBody),
-        );
+        slot.get_or_insert_with(Default::default).coil_operation =
+            Some(crate::records::RecordedValue {
+                value: DesignExtrudeOperation::NewBody,
+                offset: 62,
+            });
     }
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
