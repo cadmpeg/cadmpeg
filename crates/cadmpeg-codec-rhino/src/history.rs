@@ -1064,8 +1064,14 @@ fn extended_geometry_json(
             })
             .ok();
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
-        let polyedge =
-            crate::polyedge::decode(expand, value.class_data_range.clone(), archive).ok()?;
+        let polyedge = crate::polyedge::decode(expand, value.class_data_range.clone(), archive)
+            .map_err(|error| {
+                warnings.push(format!(
+                    "embedded history polyedge at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+            })
+            .ok()?;
         return crate::polyedge::semantic_json(&polyedge);
     } else {
         return None;

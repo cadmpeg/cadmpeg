@@ -14,16 +14,12 @@ use cadmpeg_ir::ids::{format_identity, Identity, UnknownId};
 pub struct IdentityKind(Cow<'static, str>);
 
 impl IdentityKind {
-    /// Builds a kind from a source literal, rejected at compile time by [`kind!`].
+    /// Builds a kind from a literal the [`literal`] module has already checked.
     ///
-    /// Crate-private so `kind!`, whose `static` forces const evaluation, is the
-    /// only door: there is no runtime call site where the assert could fire.
-    pub(crate) const fn from_literal(literal: &'static str) -> Self {
-        assert!(
-            literal_is_valid(literal.as_bytes()),
-            "a STEP identity kind is nonempty and free of ':', '#' and whitespace"
-        );
-        Self(Cow::Borrowed(literal))
+    /// Total: the only way to hold a [`literal::ValidKindLiteral`] is to have
+    /// passed its check, so this constructor has no failure route at all.
+    pub(crate) const fn from_valid(literal: literal::ValidKindLiteral) -> Self {
+        Self(Cow::Borrowed(literal.get()))
     }
 
     /// Builds a kind from file-derived text, or `None` when the text cannot be one.
@@ -41,24 +37,54 @@ impl IdentityKind {
     }
 }
 
-const fn literal_is_valid(bytes: &[u8]) -> bool {
-    if bytes.is_empty() {
-        return false;
-    }
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b':' | b'#' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c => return false,
-            _ => index += 1,
+/// The checked door for source literals used as identity kinds.
+pub(crate) mod literal {
+    /// A source literal proven to be a `<kind>` component.
+    #[derive(Clone, Copy)]
+    pub struct ValidKindLiteral(&'static str);
+
+    impl ValidKindLiteral {
+        /// Checks one source literal, or `None` when it cannot be a kind.
+        pub const fn new(literal: &'static str) -> Option<Self> {
+            if is_valid(literal.as_bytes()) {
+                Some(Self(literal))
+            } else {
+                None
+            }
+        }
+
+        /// The checked literal.
+        pub const fn get(self) -> &'static str {
+            self.0
         }
     }
-    true
+
+    const fn is_valid(bytes: &[u8]) -> bool {
+        if bytes.is_empty() {
+            return false;
+        }
+        let mut index = 0;
+        while index < bytes.len() {
+            match bytes[index] {
+                b':' | b'#' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c => return false,
+                _ => index += 1,
+            }
+        }
+        true
+    }
 }
 
 /// Builds an [`IdentityKind`] from a string literal, checked when the crate compiles.
 macro_rules! kind {
     ($literal:literal) => {{
-        static KIND: $crate::ids::IdentityKind = $crate::ids::IdentityKind::from_literal($literal);
+        static KIND: $crate::ids::IdentityKind = $crate::ids::IdentityKind::from_valid(
+            match $crate::ids::literal::ValidKindLiteral::new($literal) {
+                Some(literal) => literal,
+                None => {
+                    panic!("a STEP identity kind is nonempty and free of ':', '#' and whitespace")
+                }
+            },
+        );
         &KIND
     }};
 }
