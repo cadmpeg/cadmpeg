@@ -657,7 +657,7 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
 }
 
 #[test]
-fn offset_parameter_keeps_the_paired_factor_wire_shape() {
+fn the_offset_parameter_is_one_nested_key_with_an_explicit_sign() {
     use crate::sketches::{
         OffsetParameter, SketchConstraintDefinitionInput, SketchEntityId, SketchOffsetPair,
     };
@@ -676,23 +676,30 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
         }),
     };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["parameter"], "test:test:parameter#offset");
-    assert_eq!(wire["parameter_factor"], -1.0);
+    assert_eq!(
+        wire["parameter"],
+        serde_json::json!({"id": "test:test:parameter#offset", "negated": true})
+    );
+    assert!(wire.get("parameter_factor").is_none());
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
-    let mut invalid_factor = wire.clone();
-    invalid_factor["parameter_factor"] = serde_json::json!(0.0);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(invalid_factor).is_err());
-    let mut split = wire;
-    split.as_object_mut().unwrap().remove("parameter_factor");
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(split).is_err());
+    let mut half = wire.clone();
+    half["parameter"].as_object_mut().unwrap().remove("negated");
+    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(half).is_err());
+
+    let mut bogus = wire;
+    bogus["parameter"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(bogus)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
 }
 
 #[test]
-fn conic_bounds_keep_the_paired_wire_fields() {
+fn the_conic_bounds_are_one_nested_pair_or_absent() {
     use crate::math::Point2;
     use crate::scalar::{Angle, Length};
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
@@ -725,37 +732,33 @@ fn conic_bounds_keep_the_paired_wire_fields() {
 
     for geometry in cases {
         let wire = serde_json::to_value(&geometry).unwrap();
-        let start_field = if matches!(
+        assert!(matches!(
             geometry.definition(),
             SketchGeometryDefinition::Ellipse { .. }
-        ) {
-            "start_angle"
-        } else {
-            "start_parameter"
-        };
-        let end_field = if matches!(
-            geometry.definition(),
-            SketchGeometryDefinition::Ellipse { .. }
-        ) {
-            "end_angle"
-        } else {
-            "end_parameter"
-        };
-        assert_eq!(wire[start_field], -0.5);
-        assert_eq!(wire[end_field], 1.5);
+                | SketchGeometryDefinition::Hyperbola { .. }
+                | SketchGeometryDefinition::Parabola { .. }
+        ));
+        assert_eq!(wire["bounds"], serde_json::json!([-0.5, 1.5]));
+        assert!(wire.get("start_angle").is_none());
+        assert!(wire.get("start_parameter").is_none());
         assert_eq!(
             serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
             geometry
         );
 
-        let mut split = wire;
-        split.as_object_mut().unwrap().remove(end_field);
-        assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+        let mut half = wire.clone();
+        half["bounds"] = serde_json::json!([-0.5]);
+        assert!(serde_json::from_value::<SketchGeometry>(half).is_err());
+
+        let mut absent = wire;
+        absent.as_object_mut().unwrap().remove("bounds");
+        let unbounded = serde_json::from_value::<SketchGeometry>(absent).unwrap();
+        assert_ne!(unbounded, geometry);
     }
 }
 
 #[test]
-fn text_placement_keeps_the_paired_wire_fields() {
+fn the_text_placement_is_one_nested_key_or_absent() {
     use crate::math::Point2;
     use crate::scalar::{Angle, Length};
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition, TextPlacement};
@@ -775,16 +778,29 @@ fn text_placement_keeps_the_paired_wire_fields() {
     })
     .unwrap();
     let wire = serde_json::to_value(&geometry).unwrap();
-    assert_eq!(wire["anchor"], serde_json::json!({ "u": 1.0, "v": 2.0 }));
-    assert_eq!(wire["rotation"], 0.5);
+    assert_eq!(
+        wire["placement"],
+        serde_json::json!({"anchor": {"u": 1.0, "v": 2.0}, "rotation": 0.5})
+    );
+    assert!(wire.get("anchor").is_none());
     assert_eq!(
         serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
         geometry
     );
 
-    let mut split = wire;
-    split.as_object_mut().unwrap().remove("rotation");
-    assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+    let mut half = wire.clone();
+    half["placement"]
+        .as_object_mut()
+        .unwrap()
+        .remove("rotation");
+    assert!(serde_json::from_value::<SketchGeometry>(half).is_err());
+
+    let mut bogus = wire;
+    bogus["placement"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<SketchGeometry>(bogus)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
 }
 
 #[test]
@@ -799,19 +815,26 @@ fn internal_alignment_index_stays_with_bspline_variants() {
         alignment: SketchInternalAlignment::BsplineControlPoint(2),
     };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["alignment"], "bspline_control_point");
-    assert_eq!(wire["index"], 2);
+    assert_eq!(wire["alignment"]["alignment"], "bspline_control_point");
+    assert_eq!(wire["alignment"]["index"], 2);
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
     let mut missing_index = wire.clone();
-    missing_index.as_object_mut().unwrap().remove("index");
+    missing_index["alignment"]
+        .as_object_mut()
+        .unwrap()
+        .remove("index");
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(missing_index).is_err());
+
     let mut extraneous_index = wire;
-    extraneous_index["alignment"] = serde_json::json!("ellipse_focus1");
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(extraneous_index).is_err());
+    extraneous_index["alignment"]["alignment"] = serde_json::json!("ellipse_focus1");
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(extraneous_index)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("index"), "{error}");
 }
 
 #[test]
@@ -1159,19 +1182,19 @@ fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
 
     let wire = serde_json::json!({
         "kind": "text", "text": "A", "font_family": "Arial", "font_weight": 400,
-        "height": 2.0, "width_factor": 1.0, "anchor": {"u": 0.0, "v": 0.0}, "rotation": -1.0
+        "height": 2.0, "width_factor": 1.0,
+        "placement": {"anchor": {"u": 0.0, "v": 0.0}, "rotation": -1.0}
     });
     let geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
-    for field in ["height", "width_factor", "rotation"] {
+    for field in ["height", "width_factor"] {
         let mut invalid = wire.clone();
-        invalid[field] = if field == "rotation" {
-            serde_json::Value::Null
-        } else {
-            serde_json::json!(0.0)
-        };
+        invalid[field] = serde_json::json!(0.0);
         assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
     }
+    let mut invalid_rotation = wire.clone();
+    invalid_rotation["placement"]["rotation"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<SketchGeometry>(invalid_rotation).is_err());
     for field in 0..3 {
         let mut definition = geometry.clone().into_definition();
         let SketchGeometryDefinition::Text {

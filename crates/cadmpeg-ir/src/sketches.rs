@@ -624,8 +624,7 @@ pub enum SketchGeometryDefinition {
         /// Semi-minor radius.
         minor_radius: Length,
         /// Parameter bounds for an arc; absent for a full ellipse.
-        #[serde(flatten, with = "angle_bounds_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "AngleBoundsWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         bounds: Option<[Angle; 2]>,
     },
     /// Full or bounded hyperbola.
@@ -639,8 +638,7 @@ pub enum SketchGeometryDefinition {
         /// Semi-minor radius.
         minor_radius: Length,
         /// Parameter bounds for a branch; absent for the full curve.
-        #[serde(flatten, with = "parameter_bounds_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "ParameterBoundsWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         bounds: Option<[f64; 2]>,
     },
     /// Full or bounded parabola.
@@ -652,8 +650,7 @@ pub enum SketchGeometryDefinition {
         /// Distance from the vertex to the focus.
         focal_length: Length,
         /// Parameter bounds for a branch; absent for the full curve.
-        #[serde(flatten, with = "parameter_bounds_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "ParameterBoundsWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         bounds: Option<[f64; 2]>,
     },
     /// NURBS curve in sketch coordinates.
@@ -677,8 +674,7 @@ pub enum SketchGeometryDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         width_factor: Option<f64>,
         /// Text placement in sketch coordinates, absent when the source stores none.
-        #[serde(flatten, with = "text_placement_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "TextPlacementWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         placement: Option<TextPlacement>,
         /// Horizontal placement about the text anchor, when the source class
         /// carries an alignment enum.
@@ -710,139 +706,14 @@ pub enum SketchGeometryDefinition {
 }
 
 /// Placement of sketch text about one anchor point.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TextPlacement {
     /// Point the text is placed and rotated about, in sketch coordinates.
     pub anchor: Point2,
     /// Counterclockwise rotation from the sketch u axis.
     pub rotation: Angle,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct TextPlacementWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    anchor: Option<Point2>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    rotation: Option<Angle>,
-}
-
-mod text_placement_wire {
-    use super::{TextPlacement, TextPlacementWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<TextPlacement>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        TextPlacementWire {
-            anchor: value.map(|placement| placement.anchor),
-            rotation: value.map(|placement| placement.rotation),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TextPlacement>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = TextPlacementWire::deserialize(deserializer)?;
-        match (wire.anchor, wire.rotation) {
-            (None, None) => Ok(None),
-            (Some(anchor), Some(rotation)) => Ok(Some(TextPlacement { anchor, rotation })),
-            _ => Err(serde::de::Error::custom(
-                "text anchor and rotation must be present together",
-            )),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct AngleBoundsWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    start_angle: Option<Angle>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    end_angle: Option<Angle>,
-}
-
-mod angle_bounds_wire {
-    use super::{Angle, AngleBoundsWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<[Angle; 2]>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let [start_angle, end_angle] =
-            (*value).map_or([None, None], |[start, end]| [Some(start), Some(end)]);
-        AngleBoundsWire {
-            start_angle,
-            end_angle,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[Angle; 2]>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = AngleBoundsWire::deserialize(deserializer)?;
-        match (wire.start_angle, wire.end_angle) {
-            (None, None) => Ok(None),
-            (Some(start), Some(end)) => Ok(Some([start, end])),
-            _ => Err(serde::de::Error::custom(
-                "start_angle and end_angle must be present together",
-            )),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ParameterBoundsWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    start_parameter: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    end_parameter: Option<f64>,
-}
-
-mod parameter_bounds_wire {
-    use super::ParameterBoundsWire;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<[f64; 2]>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let [start_parameter, end_parameter] =
-            value.map_or([None, None], |[start, end]| [Some(start), Some(end)]);
-        ParameterBoundsWire {
-            start_parameter,
-            end_parameter,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[f64; 2]>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ParameterBoundsWire::deserialize(deserializer)?;
-        match (wire.start_parameter, wire.end_parameter) {
-            (None, None) => Ok(None),
-            (Some(start), Some(end)) => Ok(Some([start, end])),
-            _ => Err(serde::de::Error::custom(
-                "start_parameter and end_parameter must be present together",
-            )),
-        }
-    }
 }
 
 /// A sketch whose solved geometry is expressed directly in model space.
@@ -1314,8 +1185,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
         /// Strictly positive operation-level offset magnitude.
         distance: crate::scalar::Length,
         /// Signed driving offset-distance parameter, when dimensional.
-        #[serde(flatten, with = "offset_parameter_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter: Option<OffsetParameter>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
@@ -1679,57 +1549,14 @@ pub struct SketchOffsetPair {
 }
 
 /// Signed use of a driving offset-distance parameter.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct OffsetParameter {
     /// Driving parameter identity.
     pub id: ParameterId,
     /// Whether the stored positive distance is the negation of the parameter.
     pub negated: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct OffsetParameterWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameter: Option<ParameterId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameter_factor: Option<f64>,
-}
-
-mod offset_parameter_wire {
-    use super::{OffsetParameter, OffsetParameterWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<OffsetParameter>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        OffsetParameterWire {
-            parameter: value.as_ref().map(|parameter| parameter.id.clone()),
-            parameter_factor: value
-                .as_ref()
-                .map(|parameter| if parameter.negated { -1.0 } else { 1.0 }),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OffsetParameter>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = OffsetParameterWire::deserialize(deserializer)?;
-        match (wire.parameter, wire.parameter_factor) {
-            (None, None) => Ok(None),
-            (Some(id), Some(1.0)) => Ok(Some(OffsetParameter { id, negated: false })),
-            (Some(id), Some(-1.0)) => Ok(Some(OffsetParameter { id, negated: true })),
-            (Some(_), Some(_)) => Err(serde::de::Error::custom("parameter_factor must be -1 or 1")),
-            _ => Err(serde::de::Error::custom(
-                "offset parameter and parameter_factor must be present together",
-            )),
-        }
-    }
 }
 
 /// One axis of a rectangular sketch pattern.
@@ -2305,7 +2132,12 @@ mod solver_scalar_wire {
 }
 
 /// Meaning of an internal sketch alignment helper relation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    from = "SketchInternalAlignmentWire",
+    into = "SketchInternalAlignmentWire"
+)]
 pub enum SketchInternalAlignment {
     /// Major diameter helper for an ellipse.
     EllipseMajorDiameter,
@@ -2331,83 +2163,61 @@ pub enum SketchInternalAlignment {
     ParabolaFocalAxis,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum SketchInternalAlignmentWireKind {
-    EllipseMajorDiameter,
-    EllipseMinorDiameter,
-    EllipseFocus1,
-    EllipseFocus2,
-    HyperbolaMajor,
-    HyperbolaMinor,
-    HyperbolaFocus,
-    ParabolaFocus,
-    BsplineControlPoint,
-    BsplineKnotPoint,
-    ParabolaFocalAxis,
+#[serde(tag = "alignment", rename_all = "snake_case", deny_unknown_fields)]
+enum SketchInternalAlignmentWire {
+    EllipseMajorDiameter {},
+    EllipseMinorDiameter {},
+    EllipseFocus1 {},
+    EllipseFocus2 {},
+    HyperbolaMajor {},
+    HyperbolaMinor {},
+    HyperbolaFocus {},
+    ParabolaFocus {},
+    BsplineControlPoint { index: u32 },
+    BsplineKnotPoint { index: u32 },
+    ParabolaFocalAxis {},
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SketchInternalAlignmentWire {
-    alignment: SketchInternalAlignmentWireKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    index: Option<u32>,
-}
-
-mod internal_alignment_wire {
-    use super::{
-        SketchInternalAlignment as Alignment, SketchInternalAlignmentWire as Wire,
-        SketchInternalAlignmentWireKind as Kind,
-    };
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes this alignment field by reference.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub fn serialize<S>(value: &Alignment, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (alignment, index) = match *value {
-            Alignment::EllipseMajorDiameter => (Kind::EllipseMajorDiameter, None),
-            Alignment::EllipseMinorDiameter => (Kind::EllipseMinorDiameter, None),
-            Alignment::EllipseFocus1 => (Kind::EllipseFocus1, None),
-            Alignment::EllipseFocus2 => (Kind::EllipseFocus2, None),
-            Alignment::HyperbolaMajor => (Kind::HyperbolaMajor, None),
-            Alignment::HyperbolaMinor => (Kind::HyperbolaMinor, None),
-            Alignment::HyperbolaFocus => (Kind::HyperbolaFocus, None),
-            Alignment::ParabolaFocus => (Kind::ParabolaFocus, None),
-            Alignment::BsplineControlPoint(index) => (Kind::BsplineControlPoint, Some(index)),
-            Alignment::BsplineKnotPoint(index) => (Kind::BsplineKnotPoint, Some(index)),
-            Alignment::ParabolaFocalAxis => (Kind::ParabolaFocalAxis, None),
-        };
-        Wire { alignment, index }.serialize(serializer)
+impl From<SketchInternalAlignmentWire> for SketchInternalAlignment {
+    fn from(wire: SketchInternalAlignmentWire) -> Self {
+        match wire {
+            SketchInternalAlignmentWire::EllipseMajorDiameter {} => Self::EllipseMajorDiameter,
+            SketchInternalAlignmentWire::EllipseMinorDiameter {} => Self::EllipseMinorDiameter,
+            SketchInternalAlignmentWire::EllipseFocus1 {} => Self::EllipseFocus1,
+            SketchInternalAlignmentWire::EllipseFocus2 {} => Self::EllipseFocus2,
+            SketchInternalAlignmentWire::HyperbolaMajor {} => Self::HyperbolaMajor,
+            SketchInternalAlignmentWire::HyperbolaMinor {} => Self::HyperbolaMinor,
+            SketchInternalAlignmentWire::HyperbolaFocus {} => Self::HyperbolaFocus,
+            SketchInternalAlignmentWire::ParabolaFocus {} => Self::ParabolaFocus,
+            SketchInternalAlignmentWire::BsplineControlPoint { index } => {
+                Self::BsplineControlPoint(index)
+            }
+            SketchInternalAlignmentWire::BsplineKnotPoint { index } => {
+                Self::BsplineKnotPoint(index)
+            }
+            SketchInternalAlignmentWire::ParabolaFocalAxis {} => Self::ParabolaFocalAxis,
+        }
     }
+}
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Alignment, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.alignment, wire.index) {
-            (Kind::EllipseMajorDiameter, None) => Ok(Alignment::EllipseMajorDiameter),
-            (Kind::EllipseMinorDiameter, None) => Ok(Alignment::EllipseMinorDiameter),
-            (Kind::EllipseFocus1, None) => Ok(Alignment::EllipseFocus1),
-            (Kind::EllipseFocus2, None) => Ok(Alignment::EllipseFocus2),
-            (Kind::HyperbolaMajor, None) => Ok(Alignment::HyperbolaMajor),
-            (Kind::HyperbolaMinor, None) => Ok(Alignment::HyperbolaMinor),
-            (Kind::HyperbolaFocus, None) => Ok(Alignment::HyperbolaFocus),
-            (Kind::ParabolaFocus, None) => Ok(Alignment::ParabolaFocus),
-            (Kind::BsplineControlPoint, Some(index)) => Ok(Alignment::BsplineControlPoint(index)),
-            (Kind::BsplineKnotPoint, Some(index)) => Ok(Alignment::BsplineKnotPoint(index)),
-            (Kind::ParabolaFocalAxis, None) => Ok(Alignment::ParabolaFocalAxis),
-            (Kind::BsplineControlPoint | Kind::BsplineKnotPoint, None) => Err(
-                serde::de::Error::custom("B-spline internal alignment requires index"),
-            ),
-            (_, Some(_)) => Err(serde::de::Error::custom(
-                "internal alignment index is only valid for B-spline families",
-            )),
+impl From<SketchInternalAlignment> for SketchInternalAlignmentWire {
+    fn from(value: SketchInternalAlignment) -> Self {
+        match value {
+            SketchInternalAlignment::EllipseMajorDiameter => Self::EllipseMajorDiameter {},
+            SketchInternalAlignment::EllipseMinorDiameter => Self::EllipseMinorDiameter {},
+            SketchInternalAlignment::EllipseFocus1 => Self::EllipseFocus1 {},
+            SketchInternalAlignment::EllipseFocus2 => Self::EllipseFocus2 {},
+            SketchInternalAlignment::HyperbolaMajor => Self::HyperbolaMajor {},
+            SketchInternalAlignment::HyperbolaMinor => Self::HyperbolaMinor {},
+            SketchInternalAlignment::HyperbolaFocus => Self::HyperbolaFocus {},
+            SketchInternalAlignment::ParabolaFocus => Self::ParabolaFocus {},
+            SketchInternalAlignment::BsplineControlPoint(index) => {
+                Self::BsplineControlPoint { index }
+            }
+            SketchInternalAlignment::BsplineKnotPoint(index) => Self::BsplineKnotPoint { index },
+            SketchInternalAlignment::ParabolaFocalAxis => Self::ParabolaFocalAxis {},
         }
     }
 }
@@ -2811,8 +2621,7 @@ pub enum SketchConstraintDefinitionInput {
         /// oriented source entity's left normal.
         distance: Length,
         /// Signed driving offset-distance parameter, when dimensional.
-        #[serde(flatten, with = "offset_parameter_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter: Option<OffsetParameter>,
     },
     /// A regular profile entity copied from a projected reference entity.
@@ -3148,8 +2957,6 @@ pub enum SketchConstraintDefinitionInput {
         /// Parent geometry receiving the alignment.
         parent: SketchEntityId,
         /// Exact helper relation family, including its B-spline index when required.
-        #[serde(flatten, with = "internal_alignment_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "SketchInternalAlignmentWire"))]
         alignment: SketchInternalAlignment,
     },
     /// Ordered geometry grouped under a sketch construction handle.
