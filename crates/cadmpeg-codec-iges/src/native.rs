@@ -1155,17 +1155,67 @@ struct NativeUnitsData {
     owners: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// What one product occurrence record is: the assembly root, a nested
+/// occurrence, or one member of an occurrence's definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OccurrenceRole {
+    Root,
+    Nested,
+    Member(String),
+}
+
+impl OccurrenceRole {
+    const fn is_root(&self) -> bool {
+        matches!(self, Self::Root)
+    }
+
+    fn member(&self) -> Option<&str> {
+        match self {
+            Self::Root | Self::Nested => None,
+            Self::Member(member) => Some(member),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct NativeProductOccurrence {
     id: String,
-    root: bool,
+    role: OccurrenceRole,
     source_instance: String,
     definition: String,
-    member: Option<String>,
     neutral_links: Vec<String>,
     instance_path: Vec<String>,
     local_transform: [[f64; 4]; 3],
     world_transform: [[f64; 4]; 3],
+}
+
+impl Serialize for NativeProductOccurrence {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a str,
+            root: bool,
+            source_instance: &'a str,
+            definition: &'a str,
+            member: Option<&'a str>,
+            neutral_links: &'a [String],
+            instance_path: &'a [String],
+            local_transform: [[f64; 4]; 3],
+            world_transform: [[f64; 4]; 3],
+        }
+        Wire {
+            id: &self.id,
+            root: self.role.is_root(),
+            source_instance: &self.source_instance,
+            definition: &self.definition,
+            member: self.role.member(),
+            neutral_links: &self.neutral_links,
+            instance_path: &self.instance_path,
+            local_transform: self.local_transform,
+            world_transform: self.world_transform,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1777,7 +1827,11 @@ impl OccurrenceExpansion<'_, '_> {
             malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
-        let root = path.is_empty();
+        let role = if path.is_empty() {
+            OccurrenceRole::Root
+        } else {
+            OccurrenceRole::Nested
+        };
         path.push(instance_sequence);
         let path_ids = path
             .iter()
@@ -1793,10 +1847,9 @@ impl OccurrenceExpansion<'_, '_> {
         }
         occurrences.push(NativeProductOccurrence {
             id: format!("iges:product:occurrence#{path_key}"),
-            root,
+            role,
             source_instance: format!("iges:entity:directory#{instance_sequence}"),
             definition: format!("iges:entity:directory#{definition_sequence}"),
-            member: None,
             neutral_links: Vec::new(),
             instance_path: path_ids.clone(),
             local_transform: local.rows(),
@@ -1849,10 +1902,9 @@ impl OccurrenceExpansion<'_, '_> {
             };
             occurrences.push(NativeProductOccurrence {
                 id: format!("iges:product:occurrence#{path_key}/D{member}"),
-                root: false,
+                role: OccurrenceRole::Member(format!("iges:entity:directory#{member}")),
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
                 definition: format!("iges:entity:directory#{definition_sequence}"),
-                member: Some(format!("iges:entity:directory#{member}")),
                 neutral_links: self.neutral_links.get(member).cloned().unwrap_or_default(),
                 instance_path: path_ids.clone(),
                 local_transform: member_local.rows(),
