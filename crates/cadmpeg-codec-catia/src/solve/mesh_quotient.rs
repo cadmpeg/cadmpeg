@@ -8772,24 +8772,34 @@ where
     if let Some(ambiguity) = incidence_ambiguity {
         return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(ambiguity));
     }
-    if matches!(pair_solutions, IncidenceSolve::Ambiguous) {
-        return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
-            MeshCandidateAmbiguity::CoordinateRootClosure,
-        ));
-    }
-    if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
-        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(if incidence_exhausted {
-            if complete_preference_rejected.get() {
-                MeshCandidateExhaustion::PreferredSolutionSearch
-            } else {
-                MeshCandidateExhaustion::EndpointResolution
-            }
-        } else if complete_preference_rejected.get() {
+    let exhaustion = |from_endpoint_resolution: bool| {
+        if complete_preference_rejected.get() {
             MeshCandidateExhaustion::PreferredSolutionSearch
+        } else if from_endpoint_resolution {
+            MeshCandidateExhaustion::EndpointResolution
         } else {
             MeshCandidateExhaustion::IncidenceEnumeration
-        }));
-    }
+        }
+    };
+    let incidence_rejection = match pair_solutions {
+        IncidenceSolve::Ambiguous => {
+            return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
+                MeshCandidateAmbiguity::CoordinateRootClosure,
+            ))
+        }
+        IncidenceSolve::Exhausted => {
+            return MeshSolve::Failed(MeshCandidateFailure::Exhausted(exhaustion(
+                incidence_exhausted,
+            )))
+        }
+        _ if incidence_exhausted => {
+            return MeshSolve::Failed(MeshCandidateFailure::Exhausted(exhaustion(true)))
+        }
+        IncidenceSolve::Rejected(rejection) => {
+            MeshEndpointIncidenceRejection::NoAssignment(rejection)
+        }
+        IncidenceSolve::Solved(_) => MeshEndpointIncidenceRejection::BoundaryReconstruction,
+    };
     if let Some((topology, assignment)) = incidence_solution {
         // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
         let (topology, assignment) =
@@ -8797,14 +8807,6 @@ where
                 .unwrap_or((topology, assignment));
         return MeshSolve::Solved((topology, assignment));
     }
-    let incidence_rejection = match pair_solutions {
-        IncidenceSolve::Rejected(rejection) => {
-            MeshEndpointIncidenceRejection::NoAssignment(rejection)
-        }
-        IncidenceSolve::Solved(_) => MeshEndpointIncidenceRejection::BoundaryReconstruction,
-        IncidenceSolve::Ambiguous => unreachable!("ambiguity returned before fallback"),
-        IncidenceSolve::Exhausted => unreachable!("exhaustion returned before fallback"),
-    };
     let fallback = (|| {
         let assignments = mesh_domains
             .into_iter()
