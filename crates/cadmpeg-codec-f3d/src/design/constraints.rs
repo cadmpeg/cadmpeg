@@ -469,9 +469,7 @@ pub(crate) fn exact_text_relation(
     };
     use cadmpeg_ir::transform::Transform;
 
-    if relation.sole_constraint_kind().is_none() {
-        return None;
-    }
+    relation.sole_constraint_kind()?;
     let pattern = relation.definition.pattern();
     match pattern {
         Some(SketchPatternDefinition::TextFrame { text_reference })

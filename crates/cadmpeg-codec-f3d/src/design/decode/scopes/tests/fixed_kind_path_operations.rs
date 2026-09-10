@@ -1006,17 +1006,13 @@ pub(super) fn fixed_kind_path_operations(
         Some((58, 70))
     );
 
-    let mut parameter = parse_design_parameter(&parameter_record(
-        None,
-        "1",
-        "User Parameter",
-        None,
-        "p",
-        1.0,
-    ))
-    .expect("generated parameter");
+    let mut parameter = crate::design::decode::parameters::parse_design_parameter(
+        &parameter_record(None, "1", "User Parameter", None, "p", 1.0),
+    )
+    .expect("generated parameter")
+    .into_record("Design/BulkStream.dat", 65)
+    .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
-    parameter.try_translate_offsets(65).unwrap();
     assert_eq!(
         companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100,),
         Some((58, 65))

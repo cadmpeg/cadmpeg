@@ -828,18 +828,6 @@ impl DesignParameterSource {
             }
         }
     }
-
-    fn translate_discriminator_offset(&mut self, offset: u64) {
-        let discriminator = match self {
-            Self::User {
-                family_discriminator,
-            } => Some(family_discriminator),
-            Self::Owned(source) => source.family_discriminator.as_mut(),
-        };
-        if let Some(discriminator) = discriminator {
-            discriminator.offset += offset;
-        }
-    }
 }
 
 /// One indexed Design parameter or expression record.
@@ -1018,24 +1006,6 @@ impl DesignParameter {
     /// Located nonempty unit token, when present.
     pub fn unit(&self) -> Option<&Located<NonEmptyString>> {
         self.unit.as_ref()
-    }
-
-    /// Checked translation of all parameter locations.
-    pub(crate) fn try_translate_offsets(&mut self, delta: u64) -> Result<(), String> {
-        let evaluated_value_offset = self
-            .evaluated_value_offset
-            .checked_add(delta)
-            .ok_or("evaluated_value_offset translation overflows")?;
-        self.byte_offset += delta;
-        self.source.translate_discriminator_offset(delta);
-        self.expression_offset += delta;
-        self.source_kind_offset += delta;
-        if let Some(unit) = &mut self.unit {
-            unit.offset += delta;
-        }
-        self.name_offset += delta;
-        self.evaluated_value_offset = evaluated_value_offset;
-        Ok(())
     }
 
     #[cfg(test)]
