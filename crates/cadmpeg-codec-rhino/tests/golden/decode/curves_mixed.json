@@ -280,13 +280,15 @@
         {
           "curve": "rhino:object:curve#record-000005-offset-1418",
           "definition": {
-            "component_parameters": [
-              0.0,
-              2.0
-            ],
             "components": [
-              "rhino:object:curve#record-000005-offset-1418.root.component-0",
-              "rhino:object:curve#record-000005-offset-1418.root.component-1"
+              {
+                "component": "rhino:object:curve#record-000005-offset-1418.root.component-0",
+                "parameter": 0.0
+              },
+              {
+                "component": "rhino:object:curve#record-000005-offset-1418.root.component-1",
+                "parameter": 2.0
+              }
             ],
             "kind": "compound",
             "parameters": [
@@ -300,11 +302,11 @@
         {
           "curve": "rhino:object:curve#record-000005-offset-1418.root.component-1",
           "definition": {
-            "component_parameters": [
-              10.0
-            ],
             "components": [
-              "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0"
+              {
+                "component": "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0",
+                "parameter": 10.0
+              }
             ],
             "kind": "compound",
             "parameters": [

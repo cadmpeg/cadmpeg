@@ -755,63 +755,12 @@ impl<'de> Deserialize<'de> for ExactSpline {
 /// One component and its native construction scalar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CompoundComponent<T> {
     /// Scalar paired with this component.
     pub parameter: f64,
     /// Component geometry or its resolved identity.
     pub component: T,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CompoundSurfaceComponentsWire {
-    parameters: Vec<f64>,
-    components: Vec<SurfaceId>,
-}
-
-mod compound_surface_components_wire {
-    use super::{CompoundComponent, CompoundSurfaceComponentsWire, SurfaceId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        components: &[CompoundComponent<SurfaceId>],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        CompoundSurfaceComponentsWire {
-            parameters: components.iter().map(|item| item.parameter).collect(),
-            components: components
-                .iter()
-                .map(|item| item.component.clone())
-                .collect(),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<Vec<CompoundComponent<SurfaceId>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CompoundSurfaceComponentsWire::deserialize(deserializer)?;
-        if wire.parameters.len() != wire.components.len() {
-            return Err(serde::de::Error::custom(
-                "compound surface parameters must match components",
-            ));
-        }
-        Ok(wire
-            .parameters
-            .into_iter()
-            .zip(wire.components)
-            .map(|(parameter, component)| CompoundComponent {
-                parameter,
-                component,
-            })
-            .collect())
-    }
 }
 
 /// A non-empty compound curve with finite construction parameters.
@@ -825,29 +774,16 @@ pub struct CompoundCurveConstruction {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct CompoundCurveConstructionWire {
     parameters: Vec<f64>,
-    component_parameters: Vec<f64>,
-    components: Vec<CurveId>,
+    components: Vec<CompoundComponent<CurveId>>,
 }
 
 impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
     type Error = &'static str;
     fn try_from(wire: CompoundCurveConstructionWire) -> Result<Self, Self::Error> {
-        if wire.component_parameters.len() != wire.components.len() {
-            return Err("compound curve component_parameters must match components");
-        }
-        Self::try_new(
-            wire.parameters,
-            wire.component_parameters
-                .into_iter()
-                .zip(wire.components)
-                .map(|(parameter, component)| CompoundComponent {
-                    parameter,
-                    component,
-                })
-                .collect(),
-        )
+        Self::try_new(wire.parameters, wire.components)
     }
 }
 
@@ -855,12 +791,7 @@ impl Serialize for CompoundCurveConstruction {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         CompoundCurveConstructionWire {
             parameters: self.parameters.clone(),
-            component_parameters: self.components.iter().map(|item| item.parameter).collect(),
-            components: self
-                .components
-                .iter()
-                .map(|item| item.component.clone())
-                .collect(),
+            components: self.components.clone(),
         }
         .serialize(serializer)
     }

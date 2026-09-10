@@ -428,13 +428,15 @@
           "surface": "f3d:brep:entity#9",
           "definition": {
             "kind": "compound",
-            "parameters": [
-              -0.5,
-              1.5
-            ],
             "components": [
-              "f3d:brep:procedural_surface#9:component0",
-              "f3d:brep:procedural_surface#9:component1"
+              {
+                "parameter": -0.5,
+                "component": "f3d:brep:procedural_surface#9:component0"
+              },
+              {
+                "parameter": 1.5,
+                "component": "f3d:brep:procedural_surface#9:component1"
+              }
             ]
           },
           "cache_fit_tolerance": 0.065
