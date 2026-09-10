@@ -952,9 +952,19 @@ fn finish_decode(
         .iter()
         .map(|object| object.definition_values.len())
         .sum::<usize>();
-    let unowned_definition_value_count = definition_value_count
-        .checked_sub(owned_definition_value_count)
-        .expect("owned CATIA definition values are a subset of decoded values");
+    let owned_definition_value_ids = native
+        .design_objects
+        .iter()
+        .flat_map(|object| object.definition_values.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    let unowned_definition_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.definition_value().is_some()
+                && !owned_definition_value_ids.contains(record.id.as_str())
+        })
+        .count();
     let (
         definition_chain_value_count,
         definition_chain_evaluation_count,
@@ -1671,9 +1681,20 @@ fn finish_decode(
         .filter(|object| object.owner_record.is_some())
         .map(|object| object.definition_chain_values.len())
         .sum::<usize>();
-    let unowned_definition_chain_value_count = definition_chain_value_count
-        .checked_sub(structurally_owned_definition_chain_value_count)
-        .expect("owned CATIA definition-chain values are a subset of decoded values");
+    let structurally_owned_definition_chain_value_ids = native
+        .design_objects
+        .iter()
+        .filter(|object| object.owner_record.is_some())
+        .flat_map(|object| object.definition_chain_values.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    let unowned_definition_chain_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.definition_chain_value().is_some()
+                && !structurally_owned_definition_chain_value_ids.contains(record.id.as_str())
+        })
+        .count();
     let unassigned_definition_chain_value_count = native
         .entity_records
         .iter()
@@ -1696,9 +1717,18 @@ fn finish_decode(
             }) && structurally_owned_records.contains(&record.object_record)
         })
         .count();
-    let unowned_definition_chain_evaluation_count = definition_chain_evaluation_count
-        .checked_sub(structurally_owned_definition_chain_evaluation_count)
-        .expect("owned CATIA definition-chain evaluations are a subset of decoded values");
+    let unowned_definition_chain_evaluation_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.definition_chain_value().is_some_and(|value| {
+                matches!(
+                    &value.value,
+                    crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
+                )
+            }) && !structurally_owned_records.contains(&record.object_record)
+        })
+        .count();
     let unassigned_definition_chain_evaluation_count = native
         .entity_records
         .iter()
