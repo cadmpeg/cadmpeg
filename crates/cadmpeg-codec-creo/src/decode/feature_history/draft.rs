@@ -396,7 +396,7 @@ pub(in super::super) fn schema_feature_definition(
                         }
                         (None, true, None, None) => HoleKind::Simple,
                         (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
-                            match cadmpeg_ir::features::split(
+                            match (
                                 dimensions.and_then(|(_, diameter, _)| {
                                     cadmpeg_ir::scalar::PositiveLength::new(diameter)
                                 }),
@@ -404,15 +404,16 @@ pub(in super::super) fn schema_feature_definition(
                                     cadmpeg_ir::scalar::PositiveLength::new(depth)
                                 }),
                             ) {
-                                cadmpeg_ir::features::Split::Both(diameter, depth) => {
+                                (Some(diameter), Some(depth)) => {
                                     HoleKind::Counterbore { diameter, depth }
                                 }
-                                cadmpeg_ir::features::Split::Partial(pair) => {
-                                    HoleKind::PartialCounterbore(pair)
-                                }
-                                cadmpeg_ir::features::Split::Neither => {
-                                    HoleKind::Unresolved(Some(HoleForm::Counterbore))
-                                }
+                                (Some(diameter), None) => HoleKind::PartialCounterbore(
+                                    cadmpeg_ir::features::PartialPair::First(diameter),
+                                ),
+                                (None, Some(depth)) => HoleKind::PartialCounterbore(
+                                    cadmpeg_ir::features::PartialPair::Second(depth),
+                                ),
+                                (None, None) => HoleKind::Unresolved(Some(HoleForm::Counterbore)),
                             }
                         }
                         (_, _, form, _) => HoleKind::Unresolved(form),

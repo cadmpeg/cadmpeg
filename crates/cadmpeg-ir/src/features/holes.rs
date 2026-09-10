@@ -282,27 +282,6 @@ impl<A, B> PartialPair<A, B> {
     }
 }
 
-/// How many of an optional pair of dimensions are present.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Split<A, B> {
-    /// Neither dimension is present.
-    Neither,
-    /// Exactly one dimension is present.
-    Partial(PartialPair<A, B>),
-    /// Both dimensions are present.
-    Both(A, B),
-}
-
-/// Classifies an optional pair of dimensions by how many are present.
-pub fn split<A, B>(first: Option<A>, second: Option<B>) -> Split<A, B> {
-    match (first, second) {
-        (Some(first), Some(second)) => Split::Both(first, second),
-        (Some(first), None) => Split::Partial(PartialPair::First(first)),
-        (None, Some(second)) => Split::Partial(PartialPair::Second(second)),
-        (None, None) => Split::Neither,
-    }
-}
-
 impl HoleKind {
     /// Whether the entry treatment still lacks required construction data.
     #[must_use]
@@ -328,22 +307,32 @@ impl HoleKind {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum PartialCounterboreDimension {
+    Diameter { diameter: PositiveLength },
+    Depth { depth: PositiveLength },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum PartialCountersinkDimension {
+    Diameter { diameter: PositiveLength },
+    Angle { angle: InteriorAngle },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleKindWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         form: Option<HoleForm>,
     },
     PartialCounterbore {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<PositiveLength>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        depth: Option<PositiveLength>,
+        dimension: PartialCounterboreDimension,
     },
     PartialCountersink {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<PositiveLength>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angle: Option<InteriorAngle>,
+        dimension: PartialCountersinkDimension,
     },
     Simple {},
     Chamfer {
@@ -387,12 +376,20 @@ impl From<HoleKind> for HoleKindWire {
         match value {
             HoleKind::Unresolved(form) => Self::Unresolved { form },
             HoleKind::PartialCounterbore(pair) => Self::PartialCounterbore {
-                diameter: pair.first().copied(),
-                depth: pair.second().copied(),
+                dimension: match pair {
+                    PartialPair::First(diameter) => {
+                        PartialCounterboreDimension::Diameter { diameter }
+                    }
+                    PartialPair::Second(depth) => PartialCounterboreDimension::Depth { depth },
+                },
             },
             HoleKind::PartialCountersink(pair) => Self::PartialCountersink {
-                diameter: pair.first().copied(),
-                angle: pair.second().copied(),
+                dimension: match pair {
+                    PartialPair::First(diameter) => {
+                        PartialCountersinkDimension::Diameter { diameter }
+                    }
+                    PartialPair::Second(angle) => PartialCountersinkDimension::Angle { angle },
+                },
             },
             HoleKind::Simple => Self::Simple {},
             HoleKind::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
@@ -430,30 +427,22 @@ impl TryFrom<HoleKindWire> for HoleKind {
     fn try_from(value: HoleKindWire) -> Result<Self, Self::Error> {
         Ok(match value {
             HoleKindWire::Unresolved { form } => Self::Unresolved(form),
-            HoleKindWire::PartialCounterbore { diameter, depth } => match split(diameter, depth) {
-                Split::Partial(pair) => Self::PartialCounterbore(pair),
-                Split::Neither => {
-                    return Err("partial_counterbore carries no dimension".to_string())
-                }
-                Split::Both(..) => {
-                    return Err(
-                        "partial_counterbore carries both dimensions; spell it counterbore"
-                            .to_string(),
-                    )
-                }
-            },
-            HoleKindWire::PartialCountersink { diameter, angle } => match split(diameter, angle) {
-                Split::Partial(pair) => Self::PartialCountersink(pair),
-                Split::Neither => {
-                    return Err("partial_countersink carries no dimension".to_string())
-                }
-                Split::Both(..) => {
-                    return Err(
-                        "partial_countersink carries both dimensions; spell it countersink"
-                            .to_string(),
-                    )
-                }
-            },
+            HoleKindWire::PartialCounterbore { dimension } => {
+                Self::PartialCounterbore(match dimension {
+                    PartialCounterboreDimension::Diameter { diameter } => {
+                        PartialPair::First(diameter)
+                    }
+                    PartialCounterboreDimension::Depth { depth } => PartialPair::Second(depth),
+                })
+            }
+            HoleKindWire::PartialCountersink { dimension } => {
+                Self::PartialCountersink(match dimension {
+                    PartialCountersinkDimension::Diameter { diameter } => {
+                        PartialPair::First(diameter)
+                    }
+                    PartialCountersinkDimension::Angle { angle } => PartialPair::Second(angle),
+                })
+            }
             HoleKindWire::Simple {} => Self::Simple,
             HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKindWire::SimpleDrilled { drill_point_angle } => {
