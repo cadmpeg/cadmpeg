@@ -4725,11 +4725,16 @@ fn attach_standard_topology(
                     None,
                     &preferred_budget,
                     |pairs| {
-                        endpoint_pairs_on_selected_faces(pairs) && line_constraint.is_valid(pairs)
+                        endpoint_pairs_on_selected_faces(pairs)
+                            && line_constraint
+                                .edge_pairs(pairs)
+                                .is_some_and(|pairs| line_constraint.is_valid(&pairs))
                     },
                     |pairs| {
                         endpoint_pairs_on_selected_faces(pairs)
-                            && line_constraint.is_simple(pairs)
+                            && line_constraint
+                                .edge_pairs(pairs)
+                                .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                             && standard_circle_pair_solution_is_simple(
                                 ir,
                                 bindings,
@@ -4773,11 +4778,15 @@ fn attach_standard_topology(
                         &fallback_budget,
                         |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
-                                && line_constraint.is_simple(pairs)
+                                && line_constraint
+                                    .edge_pairs(pairs)
+                                    .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                         },
                         |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
-                                && line_constraint.is_simple(pairs)
+                                && line_constraint
+                                    .edge_pairs(pairs)
+                                    .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                         },
                     );
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
@@ -8632,8 +8641,12 @@ impl StandardLinePairConstraint {
             .map(|role| *role == EdgeLineRole::Flexible)
     }
 
-    fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
-        self.edge_roles.iter().zip(pairs).all(|(role, pair)| {
+    fn edge_pairs<'a>(&self, pairs: &'a [Option<[usize; 2]>]) -> Option<StandardLineEdgePairs<'a>> {
+        (pairs.len() == self.edge_roles.len()).then_some(StandardLineEdgePairs { pairs })
+    }
+
+    fn is_valid(&self, pairs: &StandardLineEdgePairs<'_>) -> bool {
+        self.edge_roles.iter().zip(pairs.pairs).all(|(role, pair)| {
             if *role == EdgeLineRole::NotLine {
                 return true;
             }
@@ -8647,12 +8660,12 @@ impl StandardLinePairConstraint {
         })
     }
 
-    fn is_simple(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+    fn is_simple(&self, pairs: &StandardLineEdgePairs<'_>) -> bool {
         if !self.is_valid(pairs) {
             return false;
         }
         let mut selected = vec![None; self.edge_roles.len()];
-        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs).enumerate() {
+        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs.pairs).enumerate() {
             if *role != EdgeLineRole::Flexible {
                 continue;
             }
@@ -8701,6 +8714,11 @@ impl StandardLinePairConstraint {
         }
         true
     }
+}
+
+/// Endpoint pairs whose length matches the constraint's edge roles.
+struct StandardLineEdgePairs<'a> {
+    pairs: &'a [Option<[usize; 2]>],
 }
 
 fn ordered_line_pair(
@@ -8841,7 +8859,10 @@ pub(crate) fn standard_line_pair_solution_is_simple_cached(
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    StandardLinePairConstraint::new(points, supports, endpoint_options).is_simple(pairs)
+    let constraint = StandardLinePairConstraint::new(points, supports, endpoint_options);
+    constraint
+        .edge_pairs(pairs)
+        .is_some_and(|pairs| constraint.is_simple(&pairs))
 }
 
 fn circle_endpoint_range_choices(
