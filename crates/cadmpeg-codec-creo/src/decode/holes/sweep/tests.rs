@@ -86,6 +86,7 @@ fn circular_sweep_requires_an_exact_materialized_surface_roster() {
 
     let mut extra = table;
     extra.entries.push(crate::feature::dummy_table_entry(54));
+    extra.surface_ids.insert(54);
     assert!(!super::has_exact_materialized_surface_roster(
         &extra,
         [46, 51]
