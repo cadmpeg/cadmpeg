@@ -76,7 +76,11 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = transfer_design_features(
+        &mut ir,
+        &native,
+        &crate::decode::ModelingGraphScope::Unscoped,
+    );
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
@@ -217,7 +221,11 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = transfer_design_features(
+        &mut ir,
+        &native,
+        &crate::decode::ModelingGraphScope::Unscoped,
+    );
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
@@ -360,7 +368,11 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = transfer_design_features(
+        &mut ir,
+        &native,
+        &crate::decode::ModelingGraphScope::Unscoped,
+    );
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),

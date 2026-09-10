@@ -182,9 +182,11 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                         && direction.z == 1.0
                 })
     ));
-    assert!(!result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51")));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+        == "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; \
+            set dropped"
+    }));
     assert!(result
         .ir()
         .model

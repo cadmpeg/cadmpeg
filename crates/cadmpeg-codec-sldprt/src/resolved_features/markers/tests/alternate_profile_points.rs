@@ -36,7 +36,7 @@ fn legacy_geometry_locus_alternate_point_records_decode() {
         );
         assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
         assert_eq!(
-            sketch_input_entities(&payload, "lane")[0].kind,
+            sketch_input_entities(&payload, "lane")[0].kind(),
             SketchInputKind::Point
         );
     }
@@ -48,7 +48,7 @@ fn legacy_geometry_locus_alternate_point_records_decode() {
     profile_vertex[130..134].copy_from_slice(&4u32.to_le_bytes());
     assert_eq!(marker_coordinates(&profile_vertex, 0), Some([-1.5, 0.75]));
     assert_eq!(
-        sketch_input_entities(&profile_vertex, "lane")[0].kind,
+        sketch_input_entities(&profile_vertex, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -61,7 +61,7 @@ fn legacy_geometry_locus_alternate_point_records_decode() {
     identity_variant[134..138].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(marker_coordinates(&identity_variant, 0), Some([3.0, 4.0]));
     assert_eq!(
-        sketch_input_entities(&identity_variant, "lane")[0].kind,
+        sketch_input_entities(&identity_variant, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -81,14 +81,14 @@ fn legacy_geometry_locus_alternate_point_records_decode() {
         Some(([5.0, 6.0], [(0x8148, 0), (0x814c, 4)]))
     );
     assert_eq!(
-        sketch_input_entities(&linked, "lane")[0].kind,
+        sketch_input_entities(&linked, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
     linked[102] = 1;
     assert_eq!(marker_coordinates(&linked, 0), None);
     assert_eq!(
-        sketch_input_entities(&linked, "lane")[0].kind,
+        sketch_input_entities(&linked, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
@@ -103,7 +103,7 @@ fn legacy_geometry_locus_alternate_point_records_decode() {
     line_handle[166..170].copy_from_slice(&12u32.to_le_bytes());
     assert_eq!(marker_coordinates(&line_handle, 0), Some([7.0, 8.0]));
     assert_eq!(
-        sketch_input_entities(&line_handle, "lane")[0].kind,
+        sketch_input_entities(&line_handle, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -118,7 +118,7 @@ fn legacy_geometry_locus_alternate_point_records_decode() {
     arc_handle[165..169].copy_from_slice(&13u32.to_le_bytes());
     assert_eq!(marker_coordinates(&arc_handle, 0), Some([9.0, 10.0]));
     assert_eq!(
-        sketch_input_entities(&arc_handle, "lane")[0].kind,
+        sketch_input_entities(&arc_handle, "lane")[0].kind(),
         SketchInputKind::Point
     );
 

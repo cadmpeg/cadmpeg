@@ -101,23 +101,22 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 7,
-        table_class_id: 29,
-        entries: vec![
+    let table = crate::feature::FeatureEntityTable::new(
+        7,
+        29,
+        vec![
             entry(29, 204, None),
             entry(30, 203, None),
             entry(31, 200, Some(11)),
             entry(32, 200, Some(13)),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([29, 30, 32]);
     let row = |id| crate::surface::SurfaceRow {
         id,

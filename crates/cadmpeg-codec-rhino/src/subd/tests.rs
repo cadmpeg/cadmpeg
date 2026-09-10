@@ -2,6 +2,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::*;
+use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::report::Severity;
@@ -122,7 +123,7 @@ fn rotate_symmetry_accepts_nan_padding_and_prototype_omission() {
             &mut reader,
             ArchiveVersion::V5,
             &mut Vec::new(),
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .expect("rotate symmetry");
         assert_eq!(reader.remaining(), 0);
@@ -138,7 +139,7 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("unknown symmetry type is recoverable");
     assert_eq!(reader.remaining(), 0);
@@ -151,7 +152,7 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("unknown symmetry coordinate system is recoverable");
     assert_eq!(reader.remaining(), 0);

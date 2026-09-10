@@ -73,7 +73,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
 
             unit: unit.map(|value| crate::records::RecordedValue {
                 value: value.to_owned(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: source_kind.into(),
             name_offset: 80,

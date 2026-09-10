@@ -517,7 +517,7 @@ pub(crate) fn neutral_history_id(native_id: &str, kind: &str) -> String {
 pub(crate) fn transfer_design_features(
     ir: &mut CadIr,
     native: &CatiaNative,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
 ) -> DesignFeatureTransfer {
     let records = native
         .object_graphs
@@ -546,7 +546,7 @@ pub(crate) fn transfer_design_features(
     for object in native
         .design_objects
         .iter()
-        .filter(|object| graph_scope.is_none_or(|scope| scope.contains(object.parent.as_str())))
+        .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
         let plane_candidate = principal_plane_candidate(object, &records);
         let sketch_owner = sketch_candidate(object, &records);

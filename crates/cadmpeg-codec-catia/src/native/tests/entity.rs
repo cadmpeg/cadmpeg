@@ -966,7 +966,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         &mut relation_ir,
         &native,
         &mut Annotations::default(),
-        None,
+        &crate::decode::ModelingGraphScope::Unscoped,
     )
     .expect("valid exactness fields");
     assert_eq!(relation_transfer.definition_chain_parameter_count, 1);

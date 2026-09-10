@@ -207,9 +207,9 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         constructed_marker.links = None;
         constructed_marker
     };
-    let markers = HashMap::from([(marker.id.as_str(), &marker)]);
+    let markers = HashMap::from([(marker.id(), &marker)]);
     let loci = HashMap::from([(
-        marker.id.clone(),
+        marker.id().to_string(),
         vec![SketchLocus::Entity(line.id().clone())],
     )]);
     let relation = FeatureInputRelationInstance {
@@ -231,7 +231,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::E1,
             entity_index: 0,
-            entity_ref: Some(marker.id.clone()),
+            entity_ref: Some(marker.id().to_string()),
         }],
     };
     let parameter = DesignParameter {
@@ -314,7 +314,7 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
@@ -564,7 +564,7 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "second-curve-marker".into(),
@@ -623,7 +623,7 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
@@ -692,7 +692,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 1]);
     relation.operands[0].entity_ref = Some("first-marker".into());
@@ -825,7 +825,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "first-marker".into(),
@@ -1050,7 +1050,7 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
         })
         .unwrap(),
     )
-    .with_native_ref(Some(first_marker.id.clone()));
+    .with_native_ref(Some(first_marker.id().to_string()));
     let second = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         sketch.clone(),
@@ -1059,11 +1059,11 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
         })
         .unwrap(),
     )
-    .with_native_ref(Some(second_marker.id.clone()));
+    .with_native_ref(Some(second_marker.id().to_string()));
     let markers = [first_marker, second_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(
         FeatureInputRelationFamily::PointPointVerticalDistance,
@@ -1108,7 +1108,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         0,
         vec![SketchInputLink {
             local_id: 0,
-            entity_ref: arc_marker.id.clone(),
+            entity_ref: arc_marker.id().to_string(),
         }],
     );
     let point = SketchEntity::new(
@@ -1119,7 +1119,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         })
         .unwrap(),
     )
-    .with_native_ref(Some(point_marker.id.clone()));
+    .with_native_ref(Some(point_marker.id().to_string()));
     let arc = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
         sketch.clone(),
@@ -1134,7 +1134,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
     let markers = [point_marker, arc_marker, wrapper_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "arc-marker".into(),
@@ -1180,11 +1180,11 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         vec![
             SketchInputLink {
                 local_id: 0,
-                entity_ref: first_marker.id.clone(),
+                entity_ref: first_marker.id().to_string(),
             },
             SketchInputLink {
                 local_id: 1,
-                entity_ref: second_marker.id.clone(),
+                entity_ref: second_marker.id().to_string(),
             },
         ],
     );
@@ -1196,7 +1196,7 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         })
         .unwrap(),
     )
-    .with_native_ref(Some(point_marker.id.clone()));
+    .with_native_ref(Some(point_marker.id().to_string()));
     let first_arc = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-arc-entity").unwrap(),
         sketch.clone(),
@@ -1222,7 +1222,7 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
     let markers = [point_marker, first_marker, second_marker, wrapper_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
@@ -1296,7 +1296,7 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let markers = [point_marker, line_marker, line_start, line_end];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
 
@@ -1390,7 +1390,7 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [0, 1]);
     let entities = vec![
@@ -1533,12 +1533,12 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
     );
 
     let known_marker = marker("known-marker", 0, 10, SketchInputKind::LineOrCircle, None);
-    let markers_by_id = HashMap::from([(known_marker.id.as_str(), &known_marker)]);
+    let markers_by_id = HashMap::from([(known_marker.id(), &known_marker)]);
     let loci_by_marker = HashMap::from([(
-        known_marker.id.clone(),
+        known_marker.id().to_string(),
         vec![SketchLocus::Entity(first.id().clone())],
     )]);
-    relation.operands[0].entity_ref = Some(known_marker.id.clone());
+    relation.operands[0].entity_ref = Some(known_marker.id().to_string());
     assert!(matches!(
         typed_relation_definition(
             &relation,
@@ -1596,7 +1596,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     let markers = [first_marker, second_marker, first_start, first_end];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "second-marker".into(),
@@ -1759,7 +1759,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
     let markers = [known_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "known-marker".into(),

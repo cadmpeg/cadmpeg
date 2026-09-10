@@ -94,30 +94,30 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     endpoint_b = endpoint_b.with_test_position(endpoint_b.ordinal(), 83);
     let mut relation_line = marker("relation-line", None);
     relation_line = relation_line.with_test_position(relation_line.ordinal(), 84);
-    relation_line.kind = SketchInputKind::Arc;
+    relation_line.reclassify(SketchInputKind::Arc);
     let mut support_handle = marker("support-handle", None);
     support_handle = support_handle.with_test_position(support_handle.ordinal(), 85);
     support_handle.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 3,
-            entity_ref: relation_line.id.clone(),
+            entity_ref: relation_line.id().to_string(),
         }],
     );
     let mut qualified_curve = marker("qualified-curve", Some([0.0045, 0.0025]));
-    qualified_curve.id = "sldprt:feature-input:sketch-entity#qualified-curve".into();
+    qualified_curve.set_test_id("sldprt:feature-input:sketch-entity#qualified-curve");
     qualified_curve = qualified_curve.with_test_position(qualified_curve.ordinal(), 86);
-    qualified_curve.kind = SketchInputKind::LineOrCircle;
+    qualified_curve.reclassify(SketchInputKind::LineOrCircle);
     relation_line.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 1,
-                entity_ref: endpoint_a.id.clone(),
+                entity_ref: endpoint_a.id().to_string(),
             },
             SketchInputLink {
                 local_id: 2,
-                entity_ref: qualified_curve.id.clone(),
+                entity_ref: qualified_curve.id().to_string(),
             },
         ],
     );
@@ -125,34 +125,34 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     coincident_point = coincident_point.with_test_position(coincident_point.ordinal(), 87);
     let mut self_linked_curve = marker("self-linked-curve", Some([0.006, 0.005]));
     self_linked_curve = self_linked_curve.with_test_position(self_linked_curve.ordinal(), 88);
-    self_linked_curve.kind = SketchInputKind::Arc;
+    self_linked_curve.reclassify(SketchInputKind::Arc);
     self_linked_curve.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 8,
-                entity_ref: self_linked_curve.id.clone(),
+                entity_ref: self_linked_curve.id().to_string(),
             },
             SketchInputLink {
                 local_id: 9,
-                entity_ref: endpoint_b.id.clone(),
+                entity_ref: endpoint_b.id().to_string(),
             },
         ],
     );
     let mut forward_linked_curve = marker("forward-linked-curve", Some([0.009, 0.009]));
     forward_linked_curve =
         forward_linked_curve.with_test_position(forward_linked_curve.ordinal(), 89);
-    forward_linked_curve.kind = SketchInputKind::Arc;
+    forward_linked_curve.reclassify(SketchInputKind::Arc);
     forward_linked_curve.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 10,
-                entity_ref: endpoint_a.id.clone(),
+                entity_ref: endpoint_a.id().to_string(),
             },
             SketchInputLink {
                 local_id: 11,
-                entity_ref: endpoint_b.id.clone(),
+                entity_ref: endpoint_b.id().to_string(),
             },
         ],
     );
@@ -211,7 +211,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     reference_ref: "reference".into(),
                     kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
                     entity_index: 0,
-                    entity_ref: Some(relation_point.id.clone()),
+                    entity_ref: Some(relation_point.id().to_string()),
                 }],
             },
             FeatureInputRelationInstance {
@@ -234,14 +234,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         reference_ref: "qualified-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 16,
-                        entity_ref: Some(qualified_curve.id.clone()),
+                        entity_ref: Some(qualified_curve.id().to_string()),
                     },
                     FeatureInputOperand {
                         offset: 96,
                         reference_ref: "point-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 17,
-                        entity_ref: Some(relation_point.id.clone()),
+                        entity_ref: Some(relation_point.id().to_string()),
                     },
                 ],
             },
@@ -264,7 +264,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     reference_ref: "line-reference".into(),
                     kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                     entity_index: 0,
-                    entity_ref: Some(support_handle.id.clone()),
+                    entity_ref: Some(support_handle.id().to_string()),
                 }],
             },
             FeatureInputRelationInstance {
@@ -287,14 +287,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         reference_ref: "coincident-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 18,
-                        entity_ref: Some(coincident_point.id.clone()),
+                        entity_ref: Some(coincident_point.id().to_string()),
                     },
                     FeatureInputOperand {
                         offset: 99,
                         reference_ref: "coincident-pair-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 17,
-                        entity_ref: Some(relation_point.id.clone()),
+                        entity_ref: Some(relation_point.id().to_string()),
                     },
                 ],
             },
@@ -318,14 +318,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         reference_ref: "self-linked-curve-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 18,
-                        entity_ref: Some(self_linked_curve.id.clone()),
+                        entity_ref: Some(self_linked_curve.id().to_string()),
                     },
                     FeatureInputOperand {
                         offset: 102,
                         reference_ref: "support-curve-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 19,
-                        entity_ref: Some(support_handle.id.clone()),
+                        entity_ref: Some(support_handle.id().to_string()),
                     },
                 ],
             },
@@ -349,14 +349,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         reference_ref: "forward-linked-curve-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 20,
-                        entity_ref: Some(forward_linked_curve.id.clone()),
+                        entity_ref: Some(forward_linked_curve.id().to_string()),
                     },
                     FeatureInputOperand {
                         offset: 105,
                         reference_ref: "forward-support-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 21,
-                        entity_ref: Some(support_handle.id.clone()),
+                        entity_ref: Some(support_handle.id().to_string()),
                     },
                 ],
             },
@@ -445,7 +445,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_point_locus(
@@ -517,7 +517,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             .unwrap(),
         )
         .with_construction(true)
-        .with_native_ref(Some(point_marker.id.clone())),
+        .with_native_ref(Some(point_marker.id().to_string())),
     );
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -546,7 +546,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
                 reference_ref: "reference".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
-                entity_ref: Some(point_marker.id.clone()),
+                entity_ref: Some(point_marker.id().to_string()),
             }],
         }],
         body_selections: Vec::new(),
@@ -565,14 +565,14 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
 
     assert!(entities.iter().any(|entity| {
-        entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+        entity.native_ref.as_deref() == Some(point_marker.id())
             && matches!(
                 *entity.geometry.definition(),
                 SketchGeometryDefinition::Circle { .. }
             )
     }));
     assert!(entities.iter().any(|entity| {
-        entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+        entity.native_ref.as_deref() == Some(point_marker.id())
             && matches!(*entity.geometry.definition(),
                 SketchGeometryDefinition::Point { position } if position == Point2::new(6.0, 5.0)
             )
@@ -587,7 +587,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .iter()
         .find(|entity| {
             entity.construction
-                && entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+                && entity.native_ref.as_deref() == Some(point_marker.id())
                 && matches!(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Point { .. }
@@ -595,26 +595,26 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         })
         .expect("relation point");
     assert_eq!(
-        loci[point_marker.id.as_str()],
+        loci[point_marker.id()],
         vec![SketchLocus::Center(
             SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()
         )]
     );
     assert_eq!(
-        loci[&super::qualified_point_marker_key(&point_marker.id)],
+        loci[&super::qualified_point_marker_key(point_marker.id())],
         vec![SketchLocus::Entity(point_entity.id().clone())]
     );
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_entities(&point_marker.id, &markers, &loci),
+        marker_entities(point_marker.id(), &markers, &loci),
         vec![SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()]
     );
     assert_eq!(
-        marker_point_locus(&point_marker.id, &markers, &loci),
+        marker_point_locus(point_marker.id(), &markers, &loci),
         Some(SketchLocus::Entity(point_entity.id().clone()))
     );
 }
@@ -678,14 +678,14 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
                 reference_ref: "first-reference".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
-                entity_ref: Some(first_marker.id.clone()),
+                entity_ref: Some(first_marker.id().to_string()),
             },
             FeatureInputOperand {
                 offset: 5,
                 reference_ref: "second-reference".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 1,
-                entity_ref: Some(second_marker.id.clone()),
+                entity_ref: Some(second_marker.id().to_string()),
             },
         ],
     };

@@ -270,7 +270,7 @@ pub(crate) struct StreamHeader {
     /// Human-readable stream description.
     pub(crate) description: String,
     /// `SCH_<modeller>_<schema>_<format>` schema token.
-    pub(crate) schema: String,
+    pub(crate) schema: cadmpeg_parasolid::OwnedSchemaToken,
     /// Byte offset where the class-definition record body begins.
     pub(crate) body_offset: usize,
 }
@@ -297,7 +297,7 @@ pub(crate) fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
         payload.get(desc_end..window_end)?,
     )?;
     let schema_end = desc_end + token.end();
-    let schema = token.value().to_owned();
+    let schema = cadmpeg_parasolid::OwnedSchemaToken::from(token);
 
     Some(StreamHeader {
         description,
@@ -327,7 +327,7 @@ pub(crate) fn mesh_polyline_from_header(
     payload: &[u8],
     header: &StreamHeader,
 ) -> Option<Vec<Point3>> {
-    let schema = header.schema.to_ascii_lowercase();
+    let schema = header.schema.value().to_ascii_lowercase();
     if !schema.ends_with("_13006") {
         return None;
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino object-record identity and framing.
 
+use crate::loss::Diagnostics;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
@@ -110,6 +111,39 @@ impl AttributeUserdataDescriptor {
 }
 
 /// Raw object attributes decoded from an object-attributes chunk.
+/// Which source an object's display color is taken from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ColorSource {
+    Layer,
+    Object,
+    Material,
+    Parent,
+    /// A selector outside the documented set, retained as written.
+    Invalid(u8),
+}
+
+impl ColorSource {
+    pub(crate) fn parse(raw: u8) -> Self {
+        match raw {
+            0 => Self::Layer,
+            1 => Self::Object,
+            2 => Self::Material,
+            3 => Self::Parent,
+            other => Self::Invalid(other),
+        }
+    }
+
+    pub(crate) fn as_byte(self) -> u8 {
+        match self {
+            Self::Layer => 0,
+            Self::Object => 1,
+            Self::Material => 2,
+            Self::Parent => 3,
+            Self::Invalid(raw) => raw,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ObjectAttributes {
@@ -135,8 +169,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) obsolete_scale: f64,
     /// Raw visibility.
     pub(crate) visible: bool,
-    /// Raw color source selector.
-    pub(crate) color_source: u8,
+    /// Color source selector.
+    pub(crate) color_source: ColorSource,
     /// Raw linetype source selector.
     pub(crate) linetype_source: u8,
     /// Raw material source selector.
@@ -316,9 +350,9 @@ pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
     /// Unknown bounded trailer child ranges.
     pub(crate) unknown_trailer: Vec<Range<usize>>,
     /// Checksum warning messages.
-    pub(crate) checksum_warnings: Vec<String>,
+    pub(crate) checksum_warnings: Diagnostics,
     /// Object-local attribute and identity warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// A scanned object record: framed contents, or a degraded outer range.
@@ -439,7 +473,7 @@ pub(crate) fn parse_class_wrapper(
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<ClassDescriptor, FramingError> {
     parse_class_wrapper_with_userdata(bytes, body, archive, warnings)
         .map(|(descriptor, _)| descriptor)
@@ -450,7 +484,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
     let wrapper = chunk_at(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
@@ -469,7 +503,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         ));
     }
     if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
-        warnings.push(note);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
     let class_uuid = Uuid::from_wire(
         bytes[uuid_chunk.body().start..uuid_chunk.body().start + class_uuid_body::CRC32]
@@ -538,7 +572,7 @@ pub(crate) fn parse_userdata(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<UserdataDescriptor, FramingError> {
     let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
@@ -553,7 +587,7 @@ pub(crate) fn parse_userdata(
         let payload = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
-            warnings.push(note);
+            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
         return Ok(UserdataDescriptor::Known(ClassUserdata {
             range: wrapper.range(),
@@ -577,7 +611,7 @@ pub(crate) fn parse_userdata(
     let header = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
     if let Some(note) = checksum_warning(bytes, &header)? {
-        warnings.push(note);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
     let mut header_reader = BoundedReader::new(bytes, header.body().start, header.body().end)?;
     let class_uuid = uuid(&mut header_reader)?;
@@ -619,7 +653,7 @@ pub(crate) fn parse_userdata(
     if let Some(note) =
         checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
     {
-        warnings.push(note);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
     Ok(UserdataDescriptor::Known(ClassUserdata {
         range: wrapper.range(),
@@ -885,7 +919,7 @@ pub(crate) fn parse_attributes(
     source_range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<ObjectAttributes, FramingError> {
     let mut reader = crate::chunks::BoundedReader::new(bytes, body_range.start, body_range.end)?;
     let version = {
@@ -912,7 +946,7 @@ pub(crate) fn parse_attributes(
         let obsolete_scale = reader.f64()?;
         let wire_density = reader.i32()?;
         let object_mode = reader.u8()?;
-        let color_source = reader.u8()?;
+        let color_source = ColorSource::parse(reader.u8()?);
         let linetype_source = reader.u8()?;
         let material_source = reader.u8()?;
         let name = settings::utf16(&mut reader)?;
@@ -1068,7 +1102,7 @@ pub(crate) fn parse_attributes(
         obsolete_thickness: 0.0,
         obsolete_scale: 1.0,
         visible: true,
-        color_source: 0,
+        color_source: ColorSource::Layer,
         linetype_source: 0,
         material_source: 0,
         plot_color_source: 0,
@@ -1165,7 +1199,9 @@ pub(crate) fn parse_attributes(
                 attributes.visible = reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
-            AttributeItem::ColorSource => attributes.color_source = reader.u8()?,
+            AttributeItem::ColorSource => {
+                attributes.color_source = ColorSource::parse(reader.u8()?);
+            }
             AttributeItem::PlotColorSource => attributes.plot_color_source = reader.u8()?,
             AttributeItem::PlotWeightSource => attributes.plot_weight_source = reader.u8()?,
             AttributeItem::MaterialSource => attributes.material_source = reader.u8()?,
@@ -1312,7 +1348,7 @@ pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Vec<AttributeUserdataDescriptor> {
     let mut result = Vec::new();
     let mut offset = range.start;
@@ -1377,7 +1413,7 @@ pub(crate) fn apply_attribute_userdata(
     attributes: &mut ObjectAttributes,
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) {
     let modern_custom_mesh = parse_per_object_mesh_userdata(bytes, descriptors, archive, warnings);
     let obsolete_custom_mesh =
@@ -1391,7 +1427,7 @@ fn parse_obsolete_custom_mesh_userdata(
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Option<settings::MeshParameters> {
     let descriptor = descriptors
         .iter()
@@ -1431,7 +1467,7 @@ fn parse_per_object_mesh_userdata(
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Option<settings::MeshParameters> {
     let descriptor = descriptors
         .iter()
@@ -1499,7 +1535,7 @@ fn parse_per_object_mesh_userdata(
 fn resolve_identity(
     descriptor: &ObjectDescriptor<()>,
     layers: &HashMap<i32, &crate::settings::LayerRecord>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
 ) -> SourceIdentity {
@@ -1518,27 +1554,28 @@ fn resolve_identity(
     let name = attributes.map_or_else(String::new, |value| value.name.clone());
     let object_mode = attributes.map_or(0, |value| value.object_mode);
     let definition_member = object_mode & 0x0f == IDEF_OBJECT_MODE;
-    let color_selector = attributes.map_or(0, |value| value.color_source);
+    let color_selector = attributes.map_or(ColorSource::Layer, |value| value.color_source);
     let color = match color_selector {
-        0 => layer.map(|value| value.color),
-        1 => object_color,
-        2 => {
+        ColorSource::Layer => layer.map(|value| value.color),
+        ColorSource::Object => object_color,
+        ColorSource::Material => {
             warnings.push(format!(
                 "object {object_id} material color remains unresolved"
             ));
             None
         }
-        3 if definition_member => {
+        ColorSource::Parent if definition_member => {
             warnings.push(format!(
                 "object {object_id} parent color remains unresolved"
             ));
             None
         }
-        3 => layer.map(|value| value.color),
-        _ => {
-            warnings.push(format!(
-                "object {object_id} has invalid color source {color_selector}"
-            ));
+        ColorSource::Parent => layer.map(|value| value.color),
+        ColorSource::Invalid(raw) => {
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::EnumerationValueDegraded,
+                format!("object {object_id} has invalid color source {raw}"),
+            );
             None
         }
     };
@@ -1581,9 +1618,9 @@ pub(crate) fn parse_object_record(
     record: &Record,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    global_warnings: &mut Vec<String>,
+    global_warnings: &mut Diagnostics,
 ) -> Result<ObjectRecord<()>, FramingError> {
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if record.typecode != 0x2000_8070 || record.is_short() {
         return Err(FramingError::structural(
             record.range.start,
@@ -1613,7 +1650,7 @@ pub(crate) fn parse_object_record(
         ));
     }
     if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
-        warnings.push(note);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
     let class_uuid = Uuid::from_wire(
         bytes[uuid_chunk.body().clone()]
@@ -1689,7 +1726,7 @@ pub(crate) fn parse_object_record(
                     .cloned()
                     .collect::<Vec<_>>();
                 if let Some(note) = checksum_warning_excluding(bytes, &item, &children)? {
-                    warnings.push(note);
+                    warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
                 }
                 history = Some(descriptor);
                 phase = 3;
@@ -1741,7 +1778,7 @@ pub(crate) fn parse_object_record(
             .into_iter()
             .collect::<Vec<_>>();
         if let Some(note) = checksum_warning_excluding(bytes, item, &children)? {
-            warnings.push(note);
+            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
     }
     let attributes_userdata = attributes_userdata_body_range
@@ -1772,7 +1809,7 @@ pub(crate) fn parse_object_record(
             global_warnings.extend(warnings.iter().cloned());
             warnings
         },
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     }))
 }
 
@@ -1791,7 +1828,7 @@ pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> O
 pub(crate) fn resolve_identities(
     objects: Vec<ObjectRecord<()>>,
     metadata: &DocumentMetadata,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Vec<ObjectRecord> {
     let mut seen_ids = HashSet::new();
     let mut layers = HashMap::with_capacity(metadata.layers.len());
@@ -1804,7 +1841,7 @@ pub(crate) fn resolve_identities(
         .map(|(index, object)| match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
             ObjectRecord::Framed(mut object) => {
-                let mut local_warnings = Vec::new();
+                let mut local_warnings = Diagnostics::new();
                 let identity =
                     resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids);
                 warnings.extend(local_warnings.iter().cloned());

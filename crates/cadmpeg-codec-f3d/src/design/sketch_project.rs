@@ -96,8 +96,7 @@ fn text_frame_curve_records(
                 return None;
             };
             let scope = native_stream(&relation.id)?.to_owned();
-            if relation.unknown_constraint_bits() != 0
-                || relation.constraint_kinds().len() != 1
+            if relation.sole_constraint_kind().is_none()
                 || relation
                     .members()
                     .first()
@@ -774,9 +773,7 @@ pub fn project_spatial_sketch_constraints(
     let mut constraints = relations
         .iter()
         .filter_map(|relation| {
-            if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
-                return None;
-            }
+            let sole_kind = relation.sole_constraint_kind()?;
             let scope = native_stream(&relation.id)?;
             let (sketch, placement) = sketches.get(&(scope, relation.owner_reference))?;
             // The second relation run is the semantic member order. The first
@@ -799,7 +796,7 @@ pub fn project_spatial_sketch_constraints(
             if distinct.len() != members.len() {
                 return None;
             }
-            let definition = match relation.constraint_kinds()[0] {
+            let definition = match sole_kind {
                 SketchConstraintKind::Coincident => {
                     let [first, second] = semantic_entities.as_slice() else {
                         return None;
@@ -917,7 +914,7 @@ pub fn project_spatial_sketch_constraints(
                         entity: line.id().clone(),
                     }
                 }
-                SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical => {
+                kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
                     let [entity] = semantic_entities.as_slice() else {
                         return None;
                     };
@@ -926,19 +923,12 @@ pub fn project_spatial_sketch_constraints(
                     else {
                         return None;
                     };
-                    let direction = match relation.constraint_kinds()[0] {
-                        SketchConstraintKind::Horizontal => Vector3::new(
-                            placement.transform()[0][0],
-                            placement.transform()[1][0],
-                            placement.transform()[2][0],
-                        ),
-                        SketchConstraintKind::Vertical => Vector3::new(
-                            placement.transform()[0][1],
-                            placement.transform()[1][1],
-                            placement.transform()[2][1],
-                        ),
-                        _ => unreachable!(),
-                    };
+                    let column = usize::from(kind == SketchConstraintKind::Vertical);
+                    let direction = Vector3::new(
+                        placement.transform()[0][column],
+                        placement.transform()[1][column],
+                        placement.transform()[2][column],
+                    );
                     let line = end.vector_from(start);
                     let cross = line.cross(direction);
                     if line.norm() <= EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12

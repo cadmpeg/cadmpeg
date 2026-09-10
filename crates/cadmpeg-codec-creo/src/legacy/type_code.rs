@@ -34,6 +34,26 @@ pub(crate) enum LegacyTypeCode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct UnknownTypeCode(u8);
 
+impl LegacyTypeCode {
+    /// The identity token that names this grammar in a value record id.
+    pub(crate) const fn identity_token(self) -> &'static str {
+        match self {
+            Self::Object => "object",
+            Self::Integer => "integer",
+            Self::Real => "real",
+            Self::NullableString => "type_3",
+            Self::ByteString => "type_4",
+            Self::Unsigned5 => "type_5",
+            Self::Real6 => "type_6",
+            Self::Unsigned7 => "type_7",
+            Self::Unsigned9 => "type_9",
+            Self::String => "string",
+            Self::Unsigned11 => "type_11",
+            Self::Other(_) => "other",
+        }
+    }
+}
+
 impl From<u8> for LegacyTypeCode {
     fn from(code: u8) -> Self {
         match code {

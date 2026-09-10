@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Curve-on-surface construction decoding.
 
+use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
@@ -19,14 +20,14 @@ pub(crate) struct CurveOnSurface {
     pub(crate) parameter_curve: DecodedCurve,
     pub(crate) model_curve: Option<DecodedCurve>,
     pub(crate) surface: DecodedSurface,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 fn class(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<crate::objects::ClassDescriptor, GeometryError> {
     let start = reader.position();
     let wrapper = chunk_at(data, start, reader.end(), archive, false)?;
@@ -43,7 +44,7 @@ pub(crate) fn decode(
     depth: usize,
 ) -> Result<CurveOnSurface, GeometryError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let c2 = class(data, &mut reader, archive, &mut warnings)?;
     let decoded =
         crate::curves::decode_inner_2d(data, c2.class_uuid, c2.class_data_range, archive, depth)?;

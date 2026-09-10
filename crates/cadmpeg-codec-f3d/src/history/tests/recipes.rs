@@ -212,7 +212,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "f3d:history:state#4".into(),
             parent: "f3d:history".into(),
@@ -355,7 +354,6 @@ fn feature_input_topology_projects_historical_vertices() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "f3d:history:state#4".into(),
             parent: "f3d:history".into(),
@@ -785,7 +783,6 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![current, previous],
     };
 
@@ -979,7 +976,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: "301".into(),
-                offset: None,
+                offset: 0,
             },
             selector: Some(crate::records::ConstructionRecipeSelector {
                 value: 9,
@@ -996,7 +993,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
 
         design_reference: 9,
         ordinal: 0,
-        is_current: true,
     };
     assert_eq!(
         super::super::body_recipe_link_candidate(
@@ -1100,7 +1096,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: true,
         states: Vec::new(),
     };
     let move_inputs = super::super::FeatureBodySelectionInputs {

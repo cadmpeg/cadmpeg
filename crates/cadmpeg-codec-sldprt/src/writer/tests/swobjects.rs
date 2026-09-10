@@ -525,19 +525,23 @@ fn encoder_writes_source_less_line_sketches() {
     let marker_relations = marker_lane
         .sketch_entities
         .iter()
-        .filter(|marker| matches!(marker.kind, crate::records::SketchInputKind::Relation(_)))
+        .filter(|marker| matches!(marker.kind(), crate::records::SketchInputKind::Relation(_)))
         .collect::<Vec<_>>();
     assert_eq!(marker_relations.len(), 3);
     assert!(marker_relations
         .iter()
         .all(|marker| marker.links().len() == 2
-            && marker.links.as_ref().map(|links| links.selector) == Some(0)));
+            && marker
+                .links
+                .as_ref()
+                .map(crate::records::SketchInputLinks::selector)
+                == Some(0)));
     assert!(marker_relations
         .iter()
         .all(|marker| marker.links().iter().all(|link| marker_lane
             .sketch_entities
             .iter()
-            .any(|candidate| candidate.id == link.entity_ref
+            .any(|candidate| candidate.id() == link.entity_ref
                 && candidate.local_id() == Some(u32::from(link.local_id))))));
     assert_eq!(decoded.ir().model.sketches.len(), 1);
     assert_eq!(decoded.ir().model.sketches[0].profiles.len(), 1);

@@ -14,6 +14,7 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
+use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -136,7 +137,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     let [first_record, second_record] = records.as_slice() else {
         return;
     };
-    let record_refs = [first_record.id.as_str(), second_record.id.as_str()];
+    let record_refs = [first_record.id(), second_record.id()];
     let curve_entities = entities
         .iter()
         .filter(|entity| {
@@ -224,7 +225,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
                 return None;
             };
             Some((
-                record.id.clone(),
+                record.id(),
                 (*center_ref).clone(),
                 *center,
                 endpoint_refs.clone(),
@@ -306,7 +307,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
 
     let Some(first_entity) = entities
         .iter_mut()
-        .find(|entity| entity.native_ref.as_deref() == Some(first.0.as_str()))
+        .find(|entity| entity.native_ref.as_deref() == Some(first.0))
     else {
         return;
     };
@@ -316,7 +317,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     let sketch = first_entity.sketch.clone();
     let Some(second_entity) = entities
         .iter_mut()
-        .find(|entity| entity.native_ref.as_deref() == Some(second.0.as_str()))
+        .find(|entity| entity.native_ref.as_deref() == Some(second.0))
     else {
         return;
     };
@@ -559,7 +560,7 @@ pub(super) fn resolve_slot_marker_arcs(
         .filter(|marker| {
             marker.coordinates_m.is_none()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
         })
@@ -577,7 +578,7 @@ pub(super) fn resolve_slot_marker_arcs(
     };
     if cycle
         .iter()
-        .map(|marker| marker.id.as_str())
+        .map(|marker| marker.id())
         .collect::<HashSet<_>>()
         .len()
         != 4
@@ -590,14 +591,14 @@ pub(super) fn resolve_slot_marker_arcs(
         .filter(|marker| {
             marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
     let Some(center_refs) = center_indices
-        .map(|index| points.get(index).map(|point| point.id.as_str()))
+        .map(|index| points.get(index).map(|point| point.id()))
         .into_iter()
         .collect::<Option<Vec<_>>>()
     else {
@@ -613,7 +614,7 @@ pub(super) fn resolve_slot_marker_arcs(
         .collect::<HashMap<_, _>>();
     let Some(cycle_entities) = cycle
         .iter()
-        .map(|marker| by_native_ref.get(marker.id.as_str()).copied())
+        .map(|marker| by_native_ref.get(marker.id()).copied())
         .collect::<Option<Vec<_>>>()
     else {
         return;
@@ -1282,7 +1283,7 @@ pub(super) fn sketch_plane_frames(
                     .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?
                     .id
                     .clone(),
-                feature.source_id.as_deref()?.parse::<u32>().ok()?,
+                feature.source_value()?,
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -1349,7 +1350,9 @@ pub(super) fn lane_sketch_plane_frames(
     let mut frames = sketch_plane_frames(features, histories);
     let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     for native in histories.iter().flat_map(|history| &history.features) {
-        let Some(source) = feature_object_name(native, lane).and_then(|name| name.object_id) else {
+        let Some(source) = feature_object_name(native, lane)
+            .and_then(|name| name.object_id.and_then(ObjectId::value))
+        else {
             continue;
         };
         let Some(feature) = features
@@ -1482,7 +1485,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         .filter_map(|marker| {
             let offset = usize::try_from(marker.offset()).ok()?;
             if let Some(endpoints) = legacy_extended_rectangle_line_endpoints(payload, offset) {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some(
+                return (marker.kind() == SketchInputKind::LineOrCircle).then_some(
                     RectangleLineRecord::Indexed {
                         endpoints,
                         space: EndpointSpace::Roster,
@@ -1491,7 +1494,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             }
             if let Some(endpoints) = current_compact_rectangle_line_endpoints(payload, offset) {
                 return matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
                 .then_some(RectangleLineRecord::Indexed {
@@ -1500,7 +1503,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 });
             }
             if let Some(endpoints) = compact_legacy_rectangle_line_endpoints(payload, offset) {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some(
+                return (marker.kind() == SketchInputKind::LineOrCircle).then_some(
                     RectangleLineRecord::Indexed {
                         endpoints,
                         space: EndpointSpace::Object,
@@ -1510,7 +1513,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             if let Some(endpoints) = compact_legacy_curve_endpoint_indices(payload, offset)
                 .or_else(|| compact_legacy_code_one_line_endpoint_indices(payload, offset))
             {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some(
+                return (marker.kind() == SketchInputKind::LineOrCircle).then_some(
                     RectangleLineRecord::Indexed {
                         endpoints,
                         space: EndpointSpace::Object,
@@ -1525,7 +1528,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                     .is_none_or(|endpoint| {
                         endpoint.coordinates_m.is_none()
                             || !matches!(
-                                endpoint.kind,
+                                endpoint.kind(),
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                     })
@@ -1533,7 +1536,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 return None;
             }
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
             .then_some(RectangleLineRecord::CurrentWide {
@@ -1624,7 +1627,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                         marker.object_index() == Some(*vertex)
                             && marker.coordinates_m.is_some()
                             && matches!(
-                                marker.kind,
+                                marker.kind(),
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                     });
@@ -1633,7 +1636,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 }
             };
             (matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) && marker.coordinates_m.is_some())
             .then_some((*vertex, marker.coordinates_m?))
@@ -1878,7 +1881,7 @@ pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
     marker: &SketchInputEntity,
 ) -> Option<[f64; 2]> {
     let offset = usize::try_from(marker.offset()).ok()?;
-    if marker.kind != SketchInputKind::LineOrCircle
+    if marker.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])

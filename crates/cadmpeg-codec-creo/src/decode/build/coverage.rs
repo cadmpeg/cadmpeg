@@ -887,9 +887,12 @@ pub(in super::super) struct LegacyNumericCoverage {
     pub(super) elements: usize,
 }
 
-pub(in super::super) fn legacy_numeric_coverage<T>(
-    records: &[crate::legacy::NumericRecord<T>],
-) -> LegacyNumericCoverage {
+pub(in super::super) fn legacy_numeric_coverage<K, T>(
+    records: &[crate::legacy::ValueRecord<K>],
+) -> LegacyNumericCoverage
+where
+    K: crate::legacy::LegacyCode<Payload = crate::legacy::NumericPayload<T>>,
+{
     let mut counts = LegacyNumericCoverage::default();
     for record in records {
         match record.payload {

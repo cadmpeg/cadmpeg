@@ -120,7 +120,7 @@ struct JointRecordWire {
     id: String,
     object: String,
     kind: String,
-    references: Vec<LinkTarget>,
+    references: Vec<Option<LinkTarget>>,
     placements: Vec<[[f64; 4]; 4]>,
     offsets: Vec<[[f64; 4]; 4]>,
     parameters: BTreeMap<String, String>,
@@ -130,19 +130,10 @@ impl From<JointRecord> for JointRecordWire {
     fn from(value: JointRecord) -> Self {
         let kind = value.kind().to_owned();
         let references = match &value.body {
-            JointBody::Grounded { reference, .. } => {
-                vec![reference
-                    .clone()
-                    .unwrap_or_else(LinkTarget::empty_link_target)]
-            }
+            JointBody::Grounded { reference, .. } => vec![reference.clone()],
             JointBody::Pair { connectors, .. } => connectors
                 .iter()
-                .map(|connector| {
-                    connector
-                        .reference
-                        .clone()
-                        .unwrap_or_else(LinkTarget::empty_link_target)
-                })
+                .map(|connector| connector.reference.clone())
                 .collect(),
         };
         let placements = value.placements();
@@ -170,7 +161,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
                 return Err("grounded joint cannot carry offsets".to_owned());
             }
             let mut references = wire.references.into_iter();
-            let reference = references.next().and_then(LinkTarget::into_optional);
+            let reference = references.next().flatten();
             if references.next().is_some() {
                 return Err("grounded joint must carry at most one reference".to_owned());
             }
@@ -186,8 +177,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
             let [first_offset, second_offset] = <[_; 2]>::try_from(wire.offsets)
                 .map_err(|_| "paired joint must carry two offsets".to_owned())?;
             let mut references = wire.references.into_iter();
-            let first_reference = references.next().and_then(LinkTarget::into_optional);
-            let second_reference = references.next().and_then(LinkTarget::into_optional);
+            let first_reference = references.next().flatten();
+            let second_reference = references.next().flatten();
             if references.next().is_some() {
                 return Err("paired joint carries more than two references".to_owned());
             }
@@ -269,7 +260,7 @@ mod tests {
     fn missing_first_reference_keeps_second_wire_position() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
         let wire = serde_json::json!({"id":"joint", "object":"object", "kind":"Fixed",
-            "references":[{"document":null,"document_attribute":null,"object":"","subelements":[]}, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
+            "references":[null, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
             "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
         let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
         let JointBody::Pair { connectors, .. } = &record.body else {

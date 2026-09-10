@@ -265,16 +265,31 @@ fn hole_construction_preserves_tangent_and_input_reference_wire() {
 
 #[test]
 fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
-    for (field, value) in [
-        ("coil_operation", "\"cut\""),
-        ("coil_extent", "\"spiral\""),
-        ("coil_section", "\"circular\""),
-        ("coil_section_placement", "\"inside\""),
-        ("coil_clockwise", "false"),
+    for (field, value, unlocated_is_legal) in [
+        ("coil_operation", "\"cut\"", false),
+        ("coil_extent", "\"spiral\"", true),
+        ("coil_section", "\"circular\"", true),
+        ("coil_section_placement", "\"inside\"", true),
+        ("coil_clockwise", "false", true),
     ] {
+        let unlocated = format!("{{\"{field}\":{value}}}");
+        if unlocated_is_legal {
+            let parsed: crate::records::feature::DesignCoilScope =
+                serde_json::from_str(&unlocated).expect("dialect-fixed Coil field");
+            assert_eq!(
+                serde_json::to_string(&parsed).expect("Coil wire"),
+                unlocated
+            );
+        } else {
+            let error =
+                serde_json::from_str::<crate::records::feature::DesignCoilScope>(&unlocated)
+                    .expect_err("value without offset")
+                    .to_string();
+            assert!(error.contains(field), "{error}");
+            assert!(error.contains(&format!("{field}_offset")), "{error}");
+        }
         for wire in [
             "{}".to_owned(),
-            format!("{{\"{field}\":{value}}}"),
             format!("{{\"{field}\":{value},\"{field}_offset\":0}}"),
             format!("{{\"{field}\":{value},\"{field}_offset\":30}}"),
         ] {
@@ -1737,7 +1752,7 @@ fn rectangular_pattern_sidecar_preserves_signed_spans() {
 }
 
 #[test]
-fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
+fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
     let entry = serde_json::json!({"record_index": 4, "record_reference_offset": 0,
         "ordinal": 1, "ordinal_offset": 0});
     let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
@@ -1749,7 +1764,7 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
         ], "cell_table_record_index": 4, "cell_table_byte_offset": 0,
         "cell_table_class_tag": "325", "cell_table_frame_length": 0,
         "cell_table_paired_class_tag": "257", "cell_table_paired_byte_offset": 0,
-        "cell_count": 1, "cell_count_offset": 0, "cell_entries": [entry],
+        "cell_count_offset": 0, "cell_entries": [entry],
         "trailing_value": 1, "trailing_value_offset": 0, "trailing_zero_offset": 0});
     let record: super::DesignSurfaceTrimOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), wire);
@@ -1761,9 +1776,6 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
             serde_json::from_value::<super::DesignSurfaceTrimOperation>(invalid_chain).is_err()
         );
     }
-    wire["cell_count"] = 2.into();
-    assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire.clone()).is_err());
-    wire["cell_count"] = 0.into();
     wire["cell_entries"] = serde_json::json!([]);
     assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire).is_err());
 }

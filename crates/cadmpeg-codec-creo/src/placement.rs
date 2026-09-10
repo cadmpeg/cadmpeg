@@ -480,8 +480,8 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
     let [first, second, rest @ ..] = table.entries.as_slice() else {
         return false;
     };
-    if first.class_id != 204
-        || second.class_id != 203
+    if first.class_id() != 204
+        || second.class_id() != 203
         || rest.is_empty()
         || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
@@ -862,7 +862,7 @@ fn generated_cap_pair_plane_equation(
     let [first, second, ..] = table.entries.as_slice() else {
         return None;
     };
-    if [first.class_id, second.class_id] != [204, 203] {
+    if [first.class_id(), second.class_id()] != [204, 203] {
         return None;
     }
     let first = plane_equation(
@@ -966,7 +966,7 @@ fn zero_offset_standard_section_plane_equation(
             table
                 .entries
                 .iter()
-                .map(|entry| entry.class_id)
+                .map(crate::feature::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
         })
         .collect::<Vec<_>>();
@@ -1024,7 +1024,7 @@ fn circular_profile_aligned_origin(
             table
                 .entries
                 .iter()
-                .map(|entry| entry.class_id)
+                .map(crate::feature::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
         })
         .collect::<Vec<_>>();

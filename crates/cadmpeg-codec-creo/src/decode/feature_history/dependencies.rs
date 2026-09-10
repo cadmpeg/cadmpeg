@@ -98,7 +98,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
         .flat_map(|table| &table.entries)
         .filter(|entry| owned_entities.contains(&entry.entity_id))
         .filter_map(|entry| {
-            let row = crate::surface::unique_surface_row(surface_rows, entry.class_id)?;
+            let row = crate::surface::unique_surface_row(surface_rows, entry.class_id())?;
             (row.feature_id != feature_id).then_some(row.feature_id)
         })
         .fold(Vec::new(), |mut dependencies, dependency| {
@@ -145,7 +145,7 @@ fn feature_entity_producers(
             table
                 .entries
                 .iter()
-                .any(|entry| entry.class_id == 200 && entry.entity_id == entity_id)
+                .any(|entry| entry.class_id() == 200 && entry.entity_id == entity_id)
                 .then_some(owner)
         })
         .fold(Vec::new(), |mut producers, producer| {
@@ -166,7 +166,7 @@ pub(in super::super) fn preceding_feature_entity_producers(
         .map(|table| (table.feature_id, table))
         .flat_map(|(owner, table)| {
             table.entries.iter().filter_map(move |entry| {
-                (entry.class_id == 200
+                (entry.class_id() == 200
                     && entry.entity_id == entity_id
                     && entry.offset < consumer_offset)
                     .then_some(owner)

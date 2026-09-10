@@ -152,26 +152,27 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let mut native = sldprt_native(decoded.ir());
     let entities = &mut native.feature_input_lanes[0].sketch_entities;
     let owner = entities[0].feature_ref.clone();
-    let point_id = entities[1].id.clone();
-    let second_point_id = entities[2].id.clone();
+    let point_id = entities[1].id().to_string();
+    let second_point_id = entities[2].id().to_string();
     entities[1].feature_ref = owner.clone();
     entities[1] = entities[1].with_test_identity(entities[1].object_index(), Some(7));
-    entities[1].kind = crate::records::SketchInputKind::Point;
+    entities[1].reclassify(crate::records::SketchInputKind::Point);
     entities[2].feature_ref = owner;
     entities[2] = entities[2].with_test_identity(entities[2].object_index(), Some(8));
-    entities[2].kind = crate::records::SketchInputKind::ConstrainedPoint;
-    entities[0].kind =
-        crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Midpoint);
+    entities[2].reclassify(crate::records::SketchInputKind::ConstrainedPoint);
+    entities[0].reclassify(crate::records::SketchInputKind::Relation(
+        crate::records::SketchRelationKind::Midpoint,
+    ));
     entities[0].links = crate::records::SketchInputLinks::new(
         0,
         vec![
             crate::records::SketchInputLink {
                 local_id: 7,
-                entity_ref: point_id,
+                entity_ref: point_id.clone(),
             },
             crate::records::SketchInputLink {
                 local_id: 8,
-                entity_ref: second_point_id,
+                entity_ref: second_point_id.clone(),
             },
         ],
     );
@@ -326,7 +327,9 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut native = sldprt_native(decoded.ir());
-    let wrong_target = native.feature_input_lanes[0].sketch_entities[0].id.clone();
+    let wrong_target = native.feature_input_lanes[0].sketch_entities[0]
+        .id()
+        .to_string();
     native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
 
@@ -413,10 +416,26 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         .unwrap();
     let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
     for (field, value, message) in [
-        ("ordinal", serde_json::json!(3), "ordinal"),
-        ("offset", serde_json::json!(u64::MAX), "offset"),
-        ("object_index", serde_json::json!(77), "object index"),
-        ("local_id", serde_json::json!(77), "local object id"),
+        (
+            "ordinal",
+            serde_json::json!(3),
+            "SolidWorks feature-input lane expects entity ordinal",
+        ),
+        (
+            "offset",
+            serde_json::json!(u64::MAX),
+            "sketch entity offset is not a marker in native_payload",
+        ),
+        (
+            "object_index",
+            serde_json::json!(77),
+            "SolidWorks feature-input object index does not match its native payload",
+        ),
+        (
+            "local_id",
+            serde_json::json!(77),
+            "SolidWorks feature-input local object id does not match its native payload",
+        ),
     ] {
         let mut wire = original.clone();
         wire["sketch_input_entities"][0][field] = value;
@@ -424,12 +443,21 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(error.to_string().contains(message), "{field}: {error}");
     }
-    for field in ["ordinal", "offset"] {
+    for (field, message) in [
+        (
+            "ordinal",
+            "SolidWorks feature-input lane expects entity ordinal",
+        ),
+        (
+            "offset",
+            "SolidWorks feature-input object index does not match its native payload",
+        ),
+    ] {
         let mut wire = original.clone();
         wire["sketch_input_entities"][1][field] = wire["sketch_input_entities"][0][field].clone();
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
         let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
-        assert!(error.to_string().contains(field), "{field}: {error}");
+        assert!(error.to_string().contains(message), "{field}: {error}");
     }
 }
 

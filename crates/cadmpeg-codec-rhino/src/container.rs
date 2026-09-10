@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino 3DM container scanning and summary construction.
 
+use crate::loss::Diagnostics;
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
@@ -214,7 +215,7 @@ pub(crate) struct Scan<'a> {
     /// Validated EOF descriptor.
     pub(crate) eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
     /// Typed metadata decoded from property, setting, and layer records.
     pub(crate) metadata: crate::settings::DocumentMetadata,
 }
@@ -863,11 +864,11 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             "first post-header chunk is not a long comment".to_string(),
         ));
     }
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if let Some(note) =
         checksum_warning(data, comment.typecode, comment_offset, data.len(), archive)?
     {
-        warnings.push(note);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
     let mut tables = Vec::new();
     let mut offset = comment.range.end;
@@ -1005,7 +1006,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 chunk.body().end,
                 archive,
             )? {
-                warnings.push(note);
+                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
@@ -1049,7 +1050,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         if let Some(note) =
             checksum_warning(data, chunk.typecode, offset, chunk.next_offset(), archive)?
         {
-            warnings.push(note);
+            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(data, &records, archive, chunk.typecode);
@@ -1099,7 +1100,7 @@ pub(crate) fn scan_with_test_record_limit(
 /// Build the format-neutral container summary.
 pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
-    let mut storage_notes: Vec<String> = Vec::new();
+    let mut storage_notes = Diagnostics::new();
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
         attributes.insert("offset".to_string(), table.range.start.to_string());
@@ -1149,8 +1150,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         });
     }
     let mut notes = vec![scan.version_note()];
-    notes.extend(storage_notes);
-    notes.extend(scan.warnings.iter().cloned());
+    notes.extend(storage_notes.messages().map(str::to_owned));
+    notes.extend(scan.warnings.messages().map(str::to_owned));
     notes.extend(
         scan.definitions
             .diagnostics
@@ -1241,7 +1242,7 @@ fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
 /// Build an empty current-version IR and a container-only report.
 pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     let mut notes = vec![scan.version_note()];
-    notes.extend(scan.warnings.iter().cloned());
+    notes.extend(scan.warnings.messages().map(str::to_owned));
     notes.extend(
         scan.definitions
             .diagnostics
@@ -1251,7 +1252,9 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     let mut losses: Vec<_> = scan
         .warnings
         .iter()
-        .map(|message| crate::loss::RhinoLossCode::ContainerScanDiagnostic.note(message.clone()))
+        .map(|message| {
+            crate::loss::RhinoLossCode::ContainerScanDiagnostic.note(message.message.clone())
+        })
         .collect();
     losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
         crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded

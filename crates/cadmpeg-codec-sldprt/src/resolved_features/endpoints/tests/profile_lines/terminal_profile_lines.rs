@@ -59,7 +59,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -74,7 +74,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -92,7 +92,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -107,7 +107,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -116,7 +116,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -134,7 +134,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     assert_eq!(
         coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );

@@ -20,7 +20,7 @@ use crate::history::literals::{
 
 pub(crate) fn project_rib(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {
     let profile = feature.properties.get("Profile").map(|profile| {
         cadmpeg_ir::features::PlanarProfileRef::native(
@@ -73,7 +73,7 @@ pub(crate) fn project_rib(
 
 pub(crate) fn project_loft(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
     let sections = feature.properties.get("Profiles").map_or_else(
         || Some(Vec::new()),
@@ -127,7 +127,7 @@ pub(crate) fn project_loft(
 
 pub(crate) fn resolve_native_refs(
     value: &str,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> Option<Vec<String>> {
     value
         .split(',')
@@ -145,7 +145,7 @@ pub(crate) fn resolve_native_refs(
 
 pub(crate) fn project_sweep(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
     let native_ref = |source: &String| {
         native_by_source
@@ -258,7 +258,7 @@ pub(crate) fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
 
 pub(crate) fn project_revolve(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {
     let ordered_angle = |ordinal| {
         feature

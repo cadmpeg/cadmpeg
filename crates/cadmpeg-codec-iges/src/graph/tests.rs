@@ -140,8 +140,8 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
     assert_eq!(
         messages,
         [
-            "IGES Directory Entry D1 Parameter pointer 3 has Dangling resolution; expected type-124-transformation",
-            "IGES Directory Entry D1 Parameter pointer -3 has Dangling resolution; expected type-310-form-0-font-definition",
+            "IGES Directory Entry D1 Parameter pointer 3 has dangling resolution; expected type-124-transformation",
+            "IGES Directory Entry D1 Parameter pointer -3 has dangling resolution; expected type-310-form-0-font-definition",
         ]
     );
 }
@@ -247,10 +247,13 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
         .collect::<Vec<_>>();
     assert_eq!(cycle_losses.len(), 2);
     assert_eq!(
-        cycle_losses.iter().map(|loss| loss.message.as_str()).collect::<Vec<_>>(),
+        cycle_losses
+            .iter()
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>(),
         [
-            "IGES Directory Entry D1 Transform pointer 3 has Cyclic(3) resolution; expected type-124",
-            "IGES Directory Entry D3 Transform pointer 1 has Cyclic(1) resolution; expected type-124",
+            "IGES Directory Entry D1 Transform pointer 3 has cyclic resolution; expected type-124",
+            "IGES Directory Entry D3 Transform pointer 1 has cyclic resolution; expected type-124",
         ],
     );
 }

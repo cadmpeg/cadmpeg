@@ -69,10 +69,18 @@ fn native_input_parser(
         })
         .collect::<Vec<_>>();
     let parser = clap::builder::PossibleValuesParser::new(pairs.iter().map(|(name, _)| *name));
-    let by_name = pairs
-        .into_iter()
-        .collect::<std::collections::BTreeMap<_, _>>();
-    parser.map(move |name| by_name[name.as_str()])
+    parser.try_map(move |name| {
+        pairs
+            .iter()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|(_, native)| *native)
+            .ok_or_else(|| {
+                clap::Error::raw(
+                    clap::error::ErrorKind::InvalidValue,
+                    format!("`{name}` is not a native input format\n"),
+                )
+            })
+    })
 }
 
 impl clap::Args for InspectArgs {
@@ -575,7 +583,7 @@ fn hex(args: &HexArgs) -> Result<()> {
 
 fn read(args: &ReadArgs) -> Result<()> {
     let endian = args.endian;
-    let width = args.ty.width() as u64;
+    let width = args.ty.width().get() as u64;
     let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
         return Ok(());
@@ -600,10 +608,9 @@ fn read(args: &ReadArgs) -> Result<()> {
             );
         }
         file.seek(SeekFrom::Start(offset))?;
-        let mut buffer = [0u8; 8];
-        let slot = &mut buffer[..width as usize];
-        file.read_exact(slot)?;
-        let value = args.ty.read(slot, endian);
+        let mut buffer = [0u8; ScalarType::MAX_WIDTH];
+        file.read_exact(&mut buffer[..width as usize])?;
+        let value = args.ty.window_of(&buffer).read(endian);
         println!(
             "0x{offset:08x}  {name:<6}  {:<24}  {}",
             value.decimal(),
@@ -690,7 +697,7 @@ fn structure(args: &StructArgs) -> Result<()> {
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
-    let record_size = layout.size() as u64;
+    let record_size = layout.size().get() as u64;
     let span = record_size
         .checked_mul(args.count)
         .and_then(|total| args.offset.checked_add(total))
@@ -706,19 +713,21 @@ fn structure(args: &StructArgs) -> Result<()> {
     }
     let bytes = read_window(file_path, args.offset, span - args.offset)?;
     let name_width = layout.names().map(str::len).max().unwrap_or(1);
-    for index in 0..args.count {
-        let start = (index * record_size) as usize;
-        let record = &bytes[start..start + layout.size()];
-        let base = args.offset + index * record_size;
+    for (index, record) in layout.split(&bytes).enumerate() {
+        let base = args.offset + index as u64 * record_size;
         println!("record {index} @ 0x{base:08x} ({record_size} bytes)");
-        for field in layout.decode(record) {
-            let at = base + field.offset as u64;
+        for field in record.fields() {
+            let at = base + field.offset() as u64;
+            let decimal = match field.value() {
+                layout::DecodedValue::Scalar { value, .. } => value.decimal(),
+                layout::DecodedValue::Bytes(_) => String::new(),
+            };
             println!(
                 "  0x{at:08x}  {:<name_width$}  {:<8}  {:<24}  {}",
-                field.name,
-                field.type_name,
-                field.decimal.as_deref().unwrap_or(""),
-                field.hex
+                field.name(),
+                field.type_name(),
+                decimal,
+                field.hex()
             );
         }
     }
@@ -802,9 +811,9 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
     for run in &summary.runs()[..shown] {
         println!(
             "  0x{:08x}..0x{:08x}  {} bytes",
-            run.start,
+            run.start(),
             run.end(),
-            run.len
+            run.len()
         );
     }
     if shown < summary.runs().len() {

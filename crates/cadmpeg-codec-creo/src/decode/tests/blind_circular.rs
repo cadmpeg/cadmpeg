@@ -40,11 +40,9 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(43, 204, None),
@@ -52,12 +50,13 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(49, 200, Some(4)),
         entry(51, 200, None),
     ];
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 40,
-        table_class_id: 29,
+    let table = crate::feature::FeatureEntityTable::new(
+        40,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([46, 51]);
     let row = |feature_id, id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -119,12 +118,13 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(151, 200, None),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 41,
-            table_class_id: 29,
-            entries: reversed_entries,
-            offset: 0,
-        }
+        crate::feature::FeatureEntityTable::new(
+            41,
+            29,
+            reversed_entries,
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([143, 151]),
     );
     scan.surfaces.rows.extend([
@@ -177,11 +177,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         &scan.surfaces.rows,
     ));
 
-    for entry in &mut scan.features.entity_tables[0].entries {
-        if entry.entity_id == 51 {
-            entry.is_surface = false;
-        }
-    }
+    scan.features.entity_tables[0].unmark_surface_id(51);
     assert!(single_cap_circular_sweep_geometry(&scan, 40).is_none());
     assert!(!section_entity_is_generated_profile(
         true,
@@ -247,11 +243,9 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(828, 204, None),
@@ -260,12 +254,13 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         entry(836, 200, None),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 825,
-            table_class_id: 29,
+        crate::feature::FeatureEntityTable::new(
+            825,
+            29,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([828, 831, 836]),
     );
 
@@ -303,11 +298,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         })
     );
 
-    for entry in &mut scan.features.entity_tables[0].entries {
-        if entry.entity_id == 831 {
-            entry.is_surface = false;
-        }
-    }
+    scan.features.entity_tables[0].unmark_surface_id(831);
     assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
@@ -317,23 +308,22 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
-    let mut table = crate::feature::FeatureEntityTable {
-        feature_id: 107,
-        table_class_id: 29,
-        entries: vec![
+    let mut table = crate::feature::FeatureEntityTable::new(
+        107,
+        29,
+        vec![
             entry(109, 204, None),
             entry(112, 203, None),
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([117]);
     let row = crate::surface::SurfaceRow {
         id: 117,
@@ -388,15 +378,15 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.table_class_id = 29;
-    table.entries[3].class_id = 201;
-    table.entries[3].payload = crate::feature::EntryPayload::Plain;
+    table.entries[3].payload = crate::feature::EntryPayload::Plain {
+        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[3].class_id = 200;
     table.entries[3].payload = crate::feature::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(
@@ -406,10 +396,10 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
 
-    let mut extended = crate::feature::FeatureEntityTable {
-        feature_id: 107,
-        table_class_id: 29,
-        entries: vec![
+    let mut extended = crate::feature::FeatureEntityTable::new(
+        107,
+        29,
+        vec![
             entry(109, 204, None),
             entry(112, 203, None),
             entry(120, 204, None),
@@ -417,8 +407,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([109, 117]);
     for (index, entry) in extended.entries.iter_mut().enumerate() {
         entry.offset = index;
@@ -687,7 +678,6 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             scalar_tokens: replay_frame.slots.clone(),
             opaque_spans: Vec::new(),
             scalar_frames: vec![replay_frame.clone()],
-            terminal_scalar_frame: Some(replay_frame),
             carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::TorusOrSphere,
             ),
@@ -890,7 +880,6 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                             slots: std::iter::once(second).chain(extent).collect(),
                         },
                     ],
-                    terminal_scalar_frame: None,
                     carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                         crate::surface::SurfaceKind::Cylinder,
                     ),
@@ -1412,7 +1401,6 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
                 scalar_tokens: Vec::new(),
                 opaque_spans: Vec::new(),
                 scalar_frames: Vec::new(),
-                terminal_scalar_frame: None,
                 carrier: positional_cylinder_frame.map_or(
                     crate::surface::SurfaceParameterCarrier::Unresolved(
                         crate::surface::SurfaceKind::Cylinder,
@@ -1467,7 +1455,6 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
                 frame: crate::surface::PositionalCylinderFrame::new(

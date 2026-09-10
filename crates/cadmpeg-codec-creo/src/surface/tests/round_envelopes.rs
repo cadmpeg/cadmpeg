@@ -23,7 +23,6 @@ fn decodes_structurally_delimited_type24_round_edge_envelope() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Cylinder,
         ),
@@ -70,7 +69,6 @@ fn round_edge_envelope_accepts_model_reference_shell() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Cylinder,
         ),
@@ -106,7 +104,6 @@ fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Cylinder,
         ),

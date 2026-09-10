@@ -34,7 +34,7 @@ pub(crate) fn transfer_native_sketch_entities(
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
 ) -> HashSet<String> {
     let object_records = unique_object_records(native);
     let entity_records = unique_entity_records(native);
@@ -43,7 +43,7 @@ pub(crate) fn transfer_native_sketch_entities(
     for object in native
         .design_objects
         .iter()
-        .filter(|object| graph_scope.is_none_or(|scope| scope.contains(object.parent.as_str())))
+        .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
         let Some(owner_record) = object.owner_record.as_deref() else {
             continue;
@@ -71,7 +71,7 @@ pub(crate) fn transfer_native_sketch_entities(
         let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
             continue;
         };
-        if graph_scope.is_some_and(|scope| !scope.contains(sketch_object.parent.as_str())) {
+        if !graph_scope.contains(sketch_object.parent.as_str()) {
             continue;
         }
         let Some(owner_record_id) = sketch_object.owner_record.as_deref() else {
@@ -154,7 +154,7 @@ pub(crate) fn transfer_native_sketch_constraints(
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
     let object_records = unique_object_records(native);
     let entity_records = unique_entity_records(native);
@@ -163,7 +163,7 @@ pub(crate) fn transfer_native_sketch_constraints(
     for object in native
         .design_objects
         .iter()
-        .filter(|object| graph_scope.is_none_or(|scope| scope.contains(object.parent.as_str())))
+        .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
         let Some(owner_record) = object.owner_record.as_deref() else {
             continue;
@@ -191,7 +191,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
             continue;
         };
-        if graph_scope.is_some_and(|scope| !scope.contains(sketch_object.parent.as_str())) {
+        if !graph_scope.contains(sketch_object.parent.as_str()) {
             continue;
         }
         let Some(owner_record_id) = sketch_object.owner_record.as_deref() else {
@@ -610,7 +610,7 @@ pub(crate) fn transfer_constraint_ranges(
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
     let indexes = ConstraintIndexes::new(native, ir);
     let mut transferred = HashSet::new();
@@ -727,9 +727,9 @@ fn constraint_binding(
     range: &CatiaConstraintRange,
     indexes: &ConstraintIndexes<'_>,
     feature_transfer: &DesignFeatureTransfer,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Option<ConstraintBinding> {
-    if graph_scope.is_some_and(|scope| !scope.contains(range_entity.object_graph.as_str())) {
+    if !graph_scope.contains(range_entity.object_graph.as_str()) {
         return None;
     }
 
@@ -1004,7 +1004,14 @@ mod tests {
         }
     }
 
-    fn fixture(storage: bool) -> (CadIr, CatiaNative, DesignFeatureTransfer, HashSet<String>) {
+    fn fixture(
+        storage: bool,
+    ) -> (
+        CadIr,
+        CatiaNative,
+        DesignFeatureTransfer,
+        crate::decode::ModelingGraphScope,
+    ) {
         let mut range_entity = entity_record("catia:outer:entity-record#range", "range-record", 10);
         range_entity.value_production = Some(
             crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(
@@ -1136,13 +1143,18 @@ mod tests {
             ir,
             native,
             feature_transfer,
-            HashSet::from(["graph".to_string()]),
+            crate::decode::ModelingGraphScope::Scoped("graph".to_string()),
         )
     }
 
     fn native_sketch_fixture(
         geometry_class: &str,
-    ) -> (CadIr, CatiaNative, DesignFeatureTransfer, HashSet<String>) {
+    ) -> (
+        CadIr,
+        CatiaNative,
+        DesignFeatureTransfer,
+        crate::decode::ModelingGraphScope,
+    ) {
         let mut sketch_owner = object_record(
             "sketch-owner-record",
             Some("parent-object"),
@@ -1243,12 +1255,16 @@ mod tests {
             ir,
             native,
             feature_transfer,
-            HashSet::from(["graph".to_string()]),
+            crate::decode::ModelingGraphScope::Scoped("graph".to_string()),
         )
     }
 
-    fn native_sketch_constraint_fixture(
-    ) -> (CadIr, CatiaNative, DesignFeatureTransfer, HashSet<String>) {
+    fn native_sketch_constraint_fixture() -> (
+        CadIr,
+        CatiaNative,
+        DesignFeatureTransfer,
+        crate::decode::ModelingGraphScope,
+    ) {
         let (ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
         let constraint_owner_record = object_record(
             "constraint-owner-record",
@@ -1366,7 +1382,7 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
 
         let transferred =
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
+            transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
         assert_eq!(transferred.len(), 1);
         assert!(transferred.contains("catia:outer:object-record#geometry-field"));
         assert_eq!(ir.model.sketch_entities.len(), 1);
@@ -1391,8 +1407,7 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
 
         assert!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope))
-                .is_empty()
+            transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope).is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -1423,8 +1438,7 @@ mod tests {
             .push(second_field_id.to_string());
 
         assert!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope))
-                .is_empty()
+            transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope).is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -1432,19 +1446,16 @@ mod tests {
     #[test]
     fn refuses_constraint_relations_with_duplicate_sketch_entity_references() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
+        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
         assert!(!ir.model.sketch_entities.is_empty());
         let duplicates = ir.model.sketch_entities.clone();
         ir.model.sketch_entities.extend(duplicates.clone());
         ir.model.sketch_entities.extend(duplicates);
-        assert!(transfer_native_sketch_constraints(
-            &mut ir,
-            &native,
-            &transfer,
-            Some(&graph_scope)
-        )
-        .expect("valid sketch constraint transfer")
-        .is_empty());
+        assert!(
+            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
+                .expect("valid sketch constraint transfer")
+                .is_empty()
+        );
         assert!(ir.model.sketch_constraints.is_empty());
     }
 
@@ -1452,9 +1463,9 @@ mod tests {
     fn transfers_a_source_closed_native_sketch_constraint_relation() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
 
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
+        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
         assert_eq!(
-            transfer_native_sketch_constraints(&mut ir, &native, &transfer, Some(&graph_scope))
+            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
                 .expect("valid sketch constraint transfer"),
             HashSet::from(["catia:outer:object-record#constraint-field".to_string()])
         );
@@ -1573,15 +1584,12 @@ mod tests {
             .references
             .clear();
 
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
-        assert!(transfer_native_sketch_constraints(
-            &mut ir,
-            &native,
-            &transfer,
-            Some(&graph_scope)
-        )
-        .expect("valid sketch constraint transfer")
-        .is_empty());
+        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
+        assert!(
+            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
+                .expect("valid sketch constraint transfer")
+                .is_empty()
+        );
         assert!(ir.model.sketch_constraints.is_empty());
     }
 
@@ -1596,15 +1604,12 @@ mod tests {
             .references
             .retain(|reference| reference.target() != Some("constraint-owner-record"));
 
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
-        assert!(transfer_native_sketch_constraints(
-            &mut ir,
-            &native,
-            &transfer,
-            Some(&graph_scope)
-        )
-        .expect("valid sketch constraint transfer")
-        .is_empty());
+        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
+        assert!(
+            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
+                .expect("valid sketch constraint transfer")
+                .is_empty()
+        );
         assert!(ir.model.sketch_constraints.is_empty());
     }
 
@@ -1613,7 +1618,7 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
                 .expect("valid sketch constraint transfer"),
             HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
@@ -1683,7 +1688,7 @@ mod tests {
             incoming_storage_references: Vec::new(),
         });
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
             .expect("valid sketch constraint transfer");
 
         assert!(ir.model.parameters.is_empty());
@@ -1715,7 +1720,7 @@ mod tests {
             .with_native_ref(Some("source-record".to_string())),
         );
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
             .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
@@ -1745,7 +1750,7 @@ mod tests {
             );
         }
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
             .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
@@ -1773,7 +1778,7 @@ mod tests {
             .with_native_ref(Some("source-record".to_string())),
         );
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
             .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
@@ -1789,7 +1794,7 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(true);
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
                 .expect("valid sketch constraint transfer"),
             HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
@@ -1807,7 +1812,7 @@ mod tests {
             .push(range.incoming_references[0].clone());
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
                 .expect("valid sketch constraint transfer"),
             HashSet::new()
         );
@@ -1826,7 +1831,7 @@ mod tests {
         );
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
                 .expect("valid sketch constraint transfer"),
             HashSet::new()
         );

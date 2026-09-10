@@ -757,7 +757,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
     crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
         &mut ir,
         &graph,
-        "nx:s0",
+        &crate::decode::ids::IdScope::stream(0),
         target_index + 1,
         0,
         source_stream.clone(),
@@ -772,7 +772,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .iter()
         .any(|pcurve| pcurve.id.as_str().contains("intersection-pcurve-completed")));
     let source = crate::decode::support_uv::IntersectionCompletionSource {
-        prefix: "nx:s0".into(),
+        scope: crate::decode::ids::IdScope::stream(0),
         graph: &graph,
         source_stream,
         coedge_start: 0,

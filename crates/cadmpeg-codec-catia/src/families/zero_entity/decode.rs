@@ -656,7 +656,7 @@ pub(crate) fn try_decode_zero_entity(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    preserve_raw_payload(
+    let payload_index = preserve_raw_payload(
         &mut unknowns,
         &mut annotations,
         scan,
@@ -855,7 +855,7 @@ pub(crate) fn try_decode_zero_entity(
         .ok()?
     };
 
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
+    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let mut coverage: cadmpeg_ir::Coverage = [
         (
             crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,

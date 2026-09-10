@@ -247,14 +247,18 @@ impl TryFrom<String> for ClassId {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err("class_id must contain 32 hexadecimal digits".into());
+        if value.len() != 32
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err("class_id must contain 32 lowercase hexadecimal digits".into());
         }
         let mut bytes = [0; 16];
         for (byte, digits) in bytes.iter_mut().zip(value.as_bytes().chunks_exact(2)) {
             let digit = |value: u8| match value {
                 b'0'..=b'9' => value - b'0',
-                _ => value.to_ascii_lowercase() - b'a' + 10,
+                _ => value - b'a' + 10,
             };
             *byte = digit(digits[0]) * 16 + digit(digits[1]);
         }
@@ -2838,5 +2842,15 @@ mod tests {
         assert_eq!(parsed.name, "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
         assert_eq!(parsed.class_id, ClassId([0xab; 16]));
+    }
+
+    #[test]
+    fn class_id_admits_only_the_canonical_lowercase_spelling() {
+        let lower = "ab".repeat(16);
+        assert_eq!(
+            String::from(ClassId::try_from(lower.clone()).expect("lowercase class id")),
+            lower
+        );
+        assert!(ClassId::try_from("AB".repeat(16)).is_err());
     }
 }

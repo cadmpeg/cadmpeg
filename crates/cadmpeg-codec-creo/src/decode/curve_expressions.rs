@@ -13,7 +13,7 @@ use cadmpeg_ir::{
         DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
         FeatureId as IrFeatureId, FeatureSourceContent, ParameterId, ParameterValue,
     },
-    scalar::{Angle, Length},
+    scalar::Length,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -72,7 +72,7 @@ pub(crate) fn curve_expression_helix_definition(
         .all(|value| value.is_finite())
         .then_some(())?;
     let origin = Point3::new(slots[9], slots[10], slots[11]);
-    let (sin, cos) = helix.start_angle.sin_cos();
+    let (sin, cos) = helix.start_angle.get().sin_cos();
     let major_direction = Vector3::new(
         u.x * cos + v.x * sin,
         u.y * cos + v.y * sin,
@@ -94,26 +94,26 @@ pub(crate) fn curve_expression_helix_definition(
     };
     Some(ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-            [0.0, helix.revolutions * std::f64::consts::TAU],
+            [0.0, helix.revolutions.get() * std::f64::consts::TAU],
             Point3::new(
                 origin.x + axis.x * helix.z_start,
                 origin.y + axis.y * helix.z_start,
                 origin.z + axis.z * helix.z_start,
             ),
             Vector3::new(
-                major_direction.x * helix.radius,
-                major_direction.y * helix.radius,
-                major_direction.z * helix.radius,
+                major_direction.x * helix.radius.get(),
+                major_direction.y * helix.radius.get(),
+                major_direction.z * helix.radius.get(),
             ),
             Vector3::new(
-                minor_direction.x * helix.radius,
-                minor_direction.y * helix.radius,
-                minor_direction.z * helix.radius,
+                minor_direction.x * helix.radius.get(),
+                minor_direction.y * helix.radius.get(),
+                minor_direction.z * helix.radius.get(),
             ),
             Vector3::new(
-                axis.x * helix.height / helix.revolutions,
-                axis.y * helix.height / helix.revolutions,
-                axis.z * helix.height / helix.revolutions,
+                axis.x * helix.height / helix.revolutions.get(),
+                axis.y * helix.height / helix.revolutions.get(),
+                axis.z * helix.height / helix.revolutions.get(),
             ),
             0.0,
             axis,
@@ -138,10 +138,10 @@ fn curve_expression_helix_feature_definition(
     Some(IrFeatureDefinition::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(*center)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(helix.radius)?,
+        radius: helix.radius,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions: cadmpeg_ir::scalar::PositiveReal::new(helix.revolutions)?,
-        start_angle: Angle::new(helix.start_angle)?,
+        revolutions: helix.revolutions,
+        start_angle: helix.start_angle,
         clockwise: helix.clockwise,
         segment_turns: None,
         construction_style: None,
@@ -197,23 +197,24 @@ pub(crate) fn curve_expression_parameter_order(
     }
     let mut ordinals = alloc_filled(
         dependencies.len(),
-        u32::MAX,
+        None::<u32>,
         "creo curve-expression parameter ordinals",
     )
     .ok()?;
     for ordinal in 0..dependencies.len() {
-        let index = (0..dependencies.len())
-            .find(|&candidate| {
-                ordinals[candidate] == u32::MAX
-                    && dependencies[candidate].iter().all(|dependency| {
-                        cyclic_edges.contains(&(candidate, *dependency))
-                            || ordinals[*dependency] != u32::MAX
-                    })
-            })
-            .expect("removing cyclic edges leaves an acyclic assignment graph");
-        ordinals[index] = ordinal as u32;
+        let index = (0..dependencies.len()).find(|&candidate| {
+            ordinals[candidate].is_none()
+                && dependencies[candidate].iter().all(|dependency| {
+                    cyclic_edges.contains(&(candidate, *dependency))
+                        || ordinals[*dependency].is_some()
+                })
+        })?;
+        ordinals[index] = Some(ordinal as u32);
     }
-    Some((ordinals, cyclic_edges))
+    Some((
+        ordinals.into_iter().collect::<Option<Vec<u32>>>()?,
+        cyclic_edges,
+    ))
 }
 
 pub(crate) fn curve_expression_parameter_names(
@@ -555,9 +556,9 @@ pub(crate) fn transfer_curve_expression_features(
                         record,
                     ))?,
                     axial_rise: Length::new(helix.height)?,
-                    pitch: Length::new(helix.height / helix.revolutions)?,
-                    revolutions: cadmpeg_ir::scalar::PositiveReal::new(helix.revolutions)?,
-                    start_angle: Angle::new(helix.start_angle)?,
+                    pitch: Length::new(helix.height / helix.revolutions.get())?,
+                    revolutions: helix.revolutions,
+                    start_angle: helix.start_angle,
                     clockwise: helix.clockwise,
                 })
             })

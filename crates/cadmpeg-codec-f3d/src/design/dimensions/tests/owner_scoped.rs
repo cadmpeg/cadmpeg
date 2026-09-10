@@ -371,10 +371,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset,
             coordinate_offset: 0,
-            companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
-                incident_curves,
-            },
+            companion: crate::records::SketchPointCompanion { incident_curves },
             record_form: crate::records::SketchPointRecordForm::version11(
                 u64::from(record_index),
                 crate::records::SketchPointClosure::Selector0State0,
@@ -410,7 +407,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let mut parameter = parse_design_parameter(&parameter_record(
+    let parameter = crate::design::decode::parameters::parse_design_parameter(&parameter_record(
         Some(1),
         "135 deg",
         "Angular Dimension-2",
@@ -418,8 +415,9 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         "d1",
         3.0 * std::f64::consts::FRAC_PI_4,
     ))
-    .expect("angular parameter");
-    parameter.try_translate_offsets(100).unwrap();
+    .expect("angular parameter")
+    .into_record("Design/BulkStream.dat", 100)
+    .expect("located parameter");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 

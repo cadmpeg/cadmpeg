@@ -9,7 +9,6 @@ use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +29,7 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
-    let curve = CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
+    let curve = crate::ids::curve(&crate::ids::Stem::directory(sequence));
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -286,11 +285,10 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1).filter(|sequence| {
-            ir.model.curves.iter().any(|curve| {
-                curve.id
-                    == CurveId::mint(format!("iges:model:curve#D{sequence}"))
-                        .expect("identity grammar")
-            })
+            ir.model
+                .curves
+                .iter()
+                .any(|curve| curve.id == crate::ids::curve(&crate::ids::Stem::directory(*sequence)))
         }) else {
             losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
             continue;

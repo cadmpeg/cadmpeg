@@ -98,7 +98,10 @@ pub(crate) fn transfer_neutral(
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
         validate_text_carriers(&owned, &schema)?;
-        let target = |link: &crate::native::LinkTarget| {
+        let target = |link: &Option<crate::native::LinkTarget>| {
+            let Some(link) = link.as_ref() else {
+                return Ok(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
+            };
             let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
                     document: document.to_owned(),
@@ -1049,7 +1052,10 @@ pub(crate) mod tests {
             .expect("dimension");
         assert_eq!(dimension.text, ["12.5 mm"]);
         assert_eq!(
-            dimension.references["References2D"][0].subelements(),
+            dimension.references["References2D"][0]
+                .as_ref()
+                .expect("reference")
+                .subelements(),
             ["Edge1"]
         );
         let note = annotations
@@ -1062,11 +1068,20 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#Dimension"))
             .expect("drawing dimension");
         assert_eq!(
-            drawing_dimension.relationships["BaseView"][0].object(),
+            drawing_dimension.relationships["BaseView"][0]
+                .as_ref()
+                .expect("relationship")
+                .object(),
             Some("fcstd:native:object#View")
         );
         assert_eq!(drawing_dimension.sources.len(), 2);
-        assert_eq!(drawing_dimension.sources[1].subelements(), ["Edge2"]);
+        assert_eq!(
+            drawing_dimension.sources[1]
+                .as_ref()
+                .expect("source")
+                .subelements(),
+            ["Edge2"]
+        );
         let neutral_dimension = result
             .ir()
             .model

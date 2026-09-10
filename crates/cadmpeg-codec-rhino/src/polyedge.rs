@@ -2,6 +2,7 @@
 //! Persistent polyedge-reference construction decoding.
 #![deny(clippy::disallowed_methods)]
 
+use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -246,8 +247,12 @@ pub(crate) fn decode(
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
-        let class =
-            parse_class_wrapper(data, start..wrapper.next_offset(), archive, &mut Vec::new())?;
+        let class = parse_class_wrapper(
+            data,
+            start..wrapper.next_offset(),
+            archive,
+            &mut Diagnostics::new(),
+        )?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,

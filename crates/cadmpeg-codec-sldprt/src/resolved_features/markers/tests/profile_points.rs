@@ -129,7 +129,7 @@ fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
     let [entity] = entities.as_slice() else {
         panic!("expected one sketch marker");
     };
-    assert_eq!(entity.kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entity.kind(), SketchInputKind::LineOrCircle);
     assert_eq!(entity.coordinates_m, Some([0.022_224_980_75, 0.0]));
     assert_eq!(entity.object_index(), Some(11));
     assert_eq!(entity.local_id(), Some(7));
@@ -179,7 +179,7 @@ fn shifted_geometry_handle_children_are_points() {
         let [entity] = entities.as_slice() else {
             panic!("expected one sketch marker");
         };
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
         assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
 
         payload[offset + sentinel] = 0;
@@ -218,14 +218,14 @@ fn extended_linked_profile_vertex_decodes_as_a_point() {
     assert!(super::linked_profile_vertex(&payload, offset));
     assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
     payload[offset + 102] = 1;
     assert!(!super::linked_profile_vertex(&payload, offset));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 }
@@ -259,14 +259,14 @@ fn compact_linked_profile_vertex_decodes_legacy_and_extended_markers() {
     assert!(super::compact_linked_profile_vertex(&payload, offset));
     assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
     payload[offset + 88..offset + 90].copy_from_slice(&4u16.to_le_bytes());
     assert!(!super::compact_linked_profile_vertex(&payload, offset));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
@@ -274,7 +274,7 @@ fn compact_linked_profile_vertex_decodes_legacy_and_extended_markers() {
     payload[offset + 86..offset + 90].copy_from_slice(&[0x01, 0x83, 0x00, 0x00]);
     assert!(super::compact_linked_profile_vertex(&payload, offset));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -283,7 +283,7 @@ fn compact_linked_profile_vertex_decodes_legacy_and_extended_markers() {
     payload[offset + 146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     assert!(super::compact_linked_profile_vertex(&payload, offset));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 }
@@ -396,7 +396,7 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
     );
     assert_eq!(marker_coordinates(&payload, 0), Some([2.0, 3.0]));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -431,7 +431,7 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
     );
     assert_eq!(marker_coordinates(&corner, 0), Some([17.0, 17.0]));
     assert_eq!(
-        sketch_input_entities(&corner, "lane")[0].kind,
+        sketch_input_entities(&corner, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -458,7 +458,7 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     assert_eq!(
-        sketch_input_entities(&packed, "lane")[0].kind,
+        sketch_input_entities(&packed, "lane")[0].kind(),
         SketchInputKind::Arc
     );
     packed[48] = 0x12;
@@ -518,7 +518,7 @@ fn geometry_locus_inline_arcs_decode_direct_and_opposite_corner_centers() {
         );
         assert_eq!(marker_coordinates(&payload, 0), Some(center));
         assert_eq!(
-            sketch_input_entities(&payload, "lane")[0].kind,
+            sketch_input_entities(&payload, "lane")[0].kind(),
             SketchInputKind::Arc
         );
 
@@ -553,7 +553,7 @@ fn geometry_locus_inline_arcs_decode_direct_and_opposite_corner_centers() {
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     assert_eq!(
-        sketch_input_entities(&compact, "lane")[0].kind,
+        sketch_input_entities(&compact, "lane")[0].kind(),
         SketchInputKind::Arc
     );
     compact[130..134].fill(0);
@@ -587,7 +587,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     );
     assert_eq!(marker_coordinates(&payload, 0), Some([0.045, -0.0225]));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -614,7 +614,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
         Some([0.045, -0.0225])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
@@ -626,7 +626,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
         Some([0.045, -0.0225])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
@@ -648,7 +648,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
         Some([0.045, -0.0225])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -719,7 +719,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
         Some([0.045, -0.0225])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     let mut padded_handle = payload.clone();
@@ -796,7 +796,7 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
         Some([0.352, 0.005])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
@@ -805,7 +805,7 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
         Some([0.352, 0.005])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
@@ -819,7 +819,7 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
         Some([0.352, 0.005])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -861,7 +861,7 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
         Some([0.8, 0.0125])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[86..88].copy_from_slice(&0x8121u16.to_le_bytes());
@@ -888,7 +888,7 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
         Some([0.8, 0.0125])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[56..58].copy_from_slice(&[0x1e, 0x00]);
@@ -923,7 +923,7 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
         Some([0.8, 0.0125])
     );
     assert_eq!(
-        sketch_input_entities(&continuation, "lane")[0].kind,
+        sketch_input_entities(&continuation, "lane")[0].kind(),
         SketchInputKind::Point
     );
     continuation[142..146].copy_from_slice(&2u32.to_le_bytes());
@@ -1069,7 +1069,7 @@ fn extended_four_link_profile_point_decodes_coordinates() {
     );
     assert_eq!(marker_coordinates(&payload, 0), Some([0.125, -0.25]));
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([0.125, -0.25]));
 
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
@@ -1110,7 +1110,7 @@ fn compact_legacy_linked_profile_point_decodes_inline_coordinates() {
         Some([0.004, 0.006])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[42] = 0x1a;
@@ -1159,7 +1159,7 @@ fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_lay
         Some([0.03, 0.005])
     );
     let entity = &sketch_input_entities(&point, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([0.03, 0.005]));
     assert_eq!(entity.local_id(), Some(10));
     assert_eq!(entity.state_value, None);
@@ -1213,7 +1213,7 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
         Some([0.052, -0.01])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[17..21].fill(0);
@@ -1231,7 +1231,7 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
         Some([0.052, -0.01])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
@@ -1266,7 +1266,7 @@ fn legacy_140_profile_point_variant_decodes_link_state_and_shifted_trailers() {
         Some([0.125, -0.25])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -1326,7 +1326,7 @@ fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
     assert!((coordinates[0] - 0.125).abs() < EPS_POINT_COORDINATE);
     assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     let coordinates = entity
         .coordinates_m
         .expect("the shifted point should remain coordinate-bearing");
@@ -1379,7 +1379,7 @@ fn extended_scaled_incidence_profile_point_decodes_coordinates() {
         Some([0.052, -0.01])
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([0.052, -0.01]));
 
     payload[76..78].copy_from_slice(&8u16.to_le_bytes());
@@ -1422,7 +1422,7 @@ fn packed_legacy_linked_profile_point_decodes_inline_coordinates() {
         Some([0.0021, 0.0])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[80..82].copy_from_slice(&2u16.to_le_bytes());
@@ -1469,7 +1469,7 @@ fn extended_profile_point_forms_decode_as_points() {
         Some([0.435, 0.0075])
     );
     assert_eq!(
-        sketch_input_entities(&declaration, "lane")[0].kind,
+        sketch_input_entities(&declaration, "lane")[0].kind(),
         SketchInputKind::Point
     );
     declaration[76..78].copy_from_slice(&3u16.to_le_bytes());
@@ -1479,7 +1479,7 @@ fn extended_profile_point_forms_decode_as_points() {
         Some([0.435, 0.0075])
     );
     assert_eq!(
-        sketch_input_entities(&declaration, "lane")[0].kind,
+        sketch_input_entities(&declaration, "lane")[0].kind(),
         SketchInputKind::Point
     );
     declaration[96..98].copy_from_slice(&1u16.to_le_bytes());
@@ -1505,7 +1505,7 @@ fn extended_profile_point_forms_decode_as_points() {
         Some([0.435, 0.0075])
     );
     assert_eq!(
-        sketch_input_entities(&compact_declaration, "lane")[0].kind,
+        sketch_input_entities(&compact_declaration, "lane")[0].kind(),
         SketchInputKind::Point
     );
     compact_declaration[96..98].fill(0);
@@ -1565,7 +1565,7 @@ fn extended_profile_point_forms_decode_as_points() {
         Some([0.435, 0.0075])
     );
     assert_eq!(
-        sketch_input_entities(&compact_declaration, "lane")[0].kind,
+        sketch_input_entities(&compact_declaration, "lane")[0].kind(),
         SketchInputKind::Point
     );
     compact_declaration[96..98].copy_from_slice(&11u16.to_le_bytes());
@@ -1593,7 +1593,7 @@ fn extended_profile_point_forms_decode_as_points() {
         Some([0.435, 0.0075])
     );
     assert_eq!(
-        sketch_input_entities(&linked, "lane")[0].kind,
+        sketch_input_entities(&linked, "lane")[0].kind(),
         SketchInputKind::Point
     );
     linked[92..94].copy_from_slice(&4u16.to_le_bytes());
@@ -1633,7 +1633,7 @@ fn terminal_extended_profile_point_decodes_inline_coordinates() {
         Some([-0.19, 0.0])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -1671,7 +1671,7 @@ fn current_geometry_locus_profile_vertex_decodes_as_a_point() {
 
     assert!(current_geometry_locus_profile_vertex(&payload, 0));
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
     payload[132..136].fill(0);
     assert!(!current_geometry_locus_profile_vertex(&payload, 0));
@@ -1699,7 +1699,7 @@ fn extended_geometry_locus_single_link_record_decodes_as_a_point() {
 
     assert!(extended_geometry_locus_single_link_point(&payload, 0));
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([0.0, 0.019]));
 
     payload[128..132].copy_from_slice(&1u32.to_le_bytes());
@@ -1733,7 +1733,7 @@ fn current_compact_geometry_locus_profile_point_decodes_inline_coordinates() {
         Some([-1.125, 0.542])
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
     payload[82..84].fill(0);
     assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
@@ -1763,7 +1763,7 @@ fn legacy_compact_geometry_locus_point_decodes_inline_coordinates() {
         Some([-1.125, 0.542])
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
     payload[130..134].fill(0);
     assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
@@ -1791,7 +1791,7 @@ fn legacy_geometry_locus_value_two_point_decodes_inline_coordinates() {
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(marker_coordinates(&payload, 0), Some([-1.125, 0.542]));
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
     payload[74..78].fill(0);
     assert!(!geometry_locus_profile_vertex(&payload, 0));
@@ -1817,19 +1817,19 @@ fn geometry_locus_profile_vertex_decodes_compact_marker_bands() {
 
     assert!(geometry_locus_profile_vertex(&payload, 0));
     let entity = &sketch_input_entities(&payload, "lane")[0];
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([-0.04, 0.0045]));
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[134..].copy_from_slice(SKETCH_MARKER);
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -1849,7 +1849,7 @@ fn geometry_locus_profile_vertex_decodes_compact_marker_bands() {
     payload[130..134].copy_from_slice(&13u32.to_le_bytes());
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[130..134].fill(0);
@@ -1864,7 +1864,7 @@ fn geometry_locus_profile_vertex_decodes_compact_marker_bands() {
     payload[134..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[130..134].copy_from_slice(&3u32.to_le_bytes());
@@ -1881,7 +1881,7 @@ fn geometry_locus_profile_vertex_decodes_compact_marker_bands() {
     payload[138..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[128..132].copy_from_slice(&3u32.to_le_bytes());

@@ -407,7 +407,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         extended_wide_horizontal_relation_endpoint_indices(payload, offset).is_some();
     if curve.coordinates_m.is_some()
         || (!matches!(
-            curve.kind,
+            curve.kind(),
             SketchInputKind::LineOrCircle | SketchInputKind::Arc
         ) && !selected_construction
             && !boundary_relation)
@@ -435,14 +435,15 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     if let Some((endpoints, _)) = current_wide_arc_direct_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
-    if curve.kind == SketchInputKind::Arc && extended_indexed_arc_uses_point_roster(payload, offset)
+    if curve.kind() == SketchInputKind::Arc
+        && extended_indexed_arc_uses_point_roster(payload, offset)
     {
         let endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
         if endpoints.len() == 2 {
             return endpoints;
         }
     }
-    if curve.kind == SketchInputKind::LineOrCircle
+    if curve.kind() == SketchInputKind::LineOrCircle
         && (extended_marker84_line_uses_point_roster(payload, offset)
             || extended_compact_84_profile_line_uses_point_roster(payload, offset)
             || legacy_compact_84_profile_line_uses_point_roster(payload, offset)
@@ -463,7 +464,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                     marker.offset() == offset
                         && marker.coordinates_m.is_some()
                         && matches!(
-                            marker.kind,
+                            marker.kind(),
                             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                         )
                 })
@@ -495,7 +496,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             .filter(|marker| {
                 marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
             })
@@ -514,7 +515,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             .filter_map(|index| owned.get(index).copied())
             .filter(|marker| marker.coordinates_m.is_some())
             .collect::<Vec<_>>();
-        if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
+        if endpoints.len() == 2 && endpoints[0].id() != endpoints[1].id() {
             return endpoints;
         }
     }
@@ -533,7 +534,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                         let mut points = markers.iter().copied().filter(|marker| {
                             owned(marker)
                                 && matches!(
-                                    marker.kind,
+                                    marker.kind(),
                                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                                 )
                         });
@@ -543,7 +544,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                                 let mut geometry = markers.iter().copied().filter(|marker| {
                                     owned(marker)
                                         && matches!(
-                                            marker.kind,
+                                            marker.kind(),
                                             SketchInputKind::LineOrCircle | SketchInputKind::Arc
                                         )
                                 });
@@ -557,7 +558,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                             owned(marker)
                                 && (selected_construction
                                     || matches!(
-                                        marker.kind,
+                                        marker.kind(),
                                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                                     ))
                         });
@@ -666,7 +667,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                 let endpoint = *owned.get(index)?;
                 (endpoint.coordinates_m.is_some()
                     && matches!(
-                        endpoint.kind,
+                        endpoint.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
                 .then_some(endpoint)
@@ -676,7 +677,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             return endpoints;
         }
     }
-    if curve.kind == SketchInputKind::LineOrCircle
+    if curve.kind() == SketchInputKind::LineOrCircle
         && extended_state_one_84_profile_line_uses_point_roster(payload, offset)
     {
         let endpoints =
@@ -703,7 +704,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                     && marker.coordinates_m.is_some()
                     && (selected_construction
                         || matches!(
-                            marker.kind,
+                            marker.kind(),
                             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                         ))
             });
@@ -760,7 +761,7 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
         owned.get(index).copied().filter(|marker| {
             marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -769,7 +770,7 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
         })
     });
     match endpoints {
-        [Some(first), Some(second)] if first.id != second.id => vec![first, second],
+        [Some(first), Some(second)] if first.id() != second.id() => vec![first, second],
         _ => Vec::new(),
     }
 }
@@ -892,7 +893,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && if id == 0 {
@@ -905,7 +906,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
         candidates.next().is_none().then_some(candidate)
     };
     match (endpoint_by_object(first), endpoint_by_object(second)) {
-        (Some(first), Some(second)) if first.id != second.id => vec![first, second],
+        (Some(first), Some(second)) if first.id() != second.id() => vec![first, second],
         _ => {
             if compact_indexed_curve_record_end(payload, offset)
                 == Some(CompactIndexedCurveRecordEnd::Terminal116)
@@ -917,7 +918,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                         marker.feature_ref == curve.feature_ref
                             && marker.coordinates_m.is_some()
                             && matches!(
-                                marker.kind,
+                                marker.kind(),
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                     })
@@ -928,7 +929,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                     owned.get(index).copied()
                 };
                 if let (Some(first), Some(second)) = (endpoint(first), endpoint(second)) {
-                    if first.id != second.id {
+                    if first.id() != second.id() {
                         return vec![first, second];
                     }
                 }
@@ -947,7 +948,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                         .filter(|marker| {
                             marker.coordinates_m.is_some()
                                 && matches!(
-                                    marker.kind,
+                                    marker.kind(),
                                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                                 )
                         })
@@ -956,7 +957,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                     endpoint_by_roster_index(first),
                     endpoint_by_roster_index(second),
                 ) {
-                    (Some(first), Some(second)) if first.id != second.id => vec![first, second],
+                    (Some(first), Some(second)) if first.id() != second.id() => vec![first, second],
                     _ => Vec::new(),
                 }
             } else {
@@ -995,7 +996,7 @@ pub(super) fn legacy_compact_direct_endpoint_markers<'a>(
                     && marker.object_index() == Some(index)
                     && marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
             });
@@ -1035,7 +1036,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
                     && marker.object_index() == Some(index)
                     && marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
             });
@@ -1050,7 +1051,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
         let candidates = markers
             .iter()
             .filter(|marker| {
-                marker.feature_ref == curve.feature_ref && marker.kind == SketchInputKind::Arc
+                marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
             })
             .filter_map(|marker| marker.coordinates_m)
             .map(|[u, v]| Point2::new(u, v))
@@ -1093,7 +1094,7 @@ pub(super) fn wide_direct_line_endpoint_markers<'a>(
                 && marker.object_index() == (id != 0).then_some(id)
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         });
@@ -1104,7 +1105,7 @@ pub(super) fn wide_direct_line_endpoint_markers<'a>(
     let [Some(first), Some(second)] = endpoints else {
         return None;
     };
-    (first.id != second.id).then_some([first, second])
+    (first.id() != second.id()).then_some([first, second])
 }
 
 pub(super) fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
@@ -1199,7 +1200,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
                     && (complete_entity_roster
                         || marker.coordinates_m.is_some()
                             && matches!(
-                                marker.kind,
+                                marker.kind(),
                                 SketchInputKind::Point
                                     | SketchInputKind::ConstrainedPoint
                                     | SketchInputKind::LineOrCircle
@@ -1218,7 +1219,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
             coordinates.get(index).copied().filter(|marker| {
                 marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
@@ -1231,7 +1232,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         else {
             return None;
         };
-        (first.id != second.id).then_some([first, second])
+        (first.id() != second.id()).then_some([first, second])
     };
     let fallback = (current_complete_roster
         && matches!(marker_native_code(payload, offset), Some(1 | 2))
@@ -1259,10 +1260,9 @@ fn distinct_marker_pairs<'a>(
 ) -> Vec<[&'a SketchInputEntity; 2]> {
     let mut distinct: Vec<[&'a SketchInputEntity; 2]> = Vec::new();
     for candidate in candidates.into_iter().flatten() {
-        if !distinct
-            .iter()
-            .any(|existing| existing[0].id == candidate[0].id && existing[1].id == candidate[1].id)
-        {
+        if !distinct.iter().any(|existing| {
+            existing[0].id() == candidate[0].id() && existing[1].id() == candidate[1].id()
+        }) {
             distinct.push(candidate);
         }
     }
@@ -1283,7 +1283,7 @@ fn resolve_indexed_marker_candidates<'a>(
             let [first, second] = candidate.as_slice() else {
                 return None;
             };
-            (first.id != second.id).then_some([*first, *second])
+            (first.id() != second.id()).then_some([*first, *second])
         })
         .collect::<Vec<_>>();
     let Some(first) = pairs.first().copied() else {
@@ -1298,9 +1298,9 @@ fn resolve_indexed_marker_candidates<'a>(
     }
     pairs.sort_unstable_by(|left, right| {
         left[0]
-            .id
-            .cmp(&right[0].id)
-            .then_with(|| left[1].id.cmp(&right[1].id))
+            .id()
+            .cmp(right[0].id())
+            .then_with(|| left[1].id().cmp(right[1].id()))
     });
     (pairs[0].to_vec(), false)
 }
@@ -1333,7 +1333,7 @@ fn compact_complete_marker_roster_pair<'a>(
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
-        curve.kind,
+        curve.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) || !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
@@ -1389,7 +1389,7 @@ fn compact_complete_marker_roster_endpoints<'a>(
             .all(|marker| {
                 marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
@@ -1467,7 +1467,7 @@ fn legacy_relation_continuation_marker_pair<'a>(
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
-        curve.kind,
+        curve.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) || !legacy_relation_continuation_body(payload, offset)
     {
@@ -1515,7 +1515,7 @@ fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
         .filter_map(|index| owned.get(index).copied())
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point
                     | SketchInputKind::ConstrainedPoint
                     | SketchInputKind::LineOrCircle
@@ -1523,7 +1523,7 @@ fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
             )
         })
         .collect::<Vec<_>>();
-    if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
+    if endpoints.len() == 2 && endpoints[0].id() != endpoints[1].id() {
         endpoints
     } else {
         Vec::new()
@@ -1548,7 +1548,7 @@ fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -1564,7 +1564,7 @@ fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
     .into_iter()
     .filter_map(|index| owned.get(usize::from(index?)).copied())
     .collect::<Vec<_>>();
-    if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
+    if endpoints.len() == 2 && endpoints[0].id() != endpoints[1].id() {
         endpoints
     } else {
         Vec::new()
@@ -1588,7 +1588,7 @@ fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
     };
     let [first, second] = [endpoint(endpoint_offset), endpoint(endpoint_offset + 2)];
     match (first, second) {
-        (Some(first), Some(second)) if first.id != second.id => Some(vec![first, second]),
+        (Some(first), Some(second)) if first.id() != second.id() => Some(vec![first, second]),
         _ => None,
     }
 }
@@ -1605,7 +1605,7 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
             marker.feature_ref == owner.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -1692,7 +1692,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    if curve.kind != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
+    if curve.kind() != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
         return None;
     }
     let mut direct_points = Vec::new();
@@ -1702,7 +1702,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
         if linked.feature_ref != curve.feature_ref {
             return None;
         }
-        match linked.kind {
+        match linked.kind() {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 if linked.coordinates_m.is_some() =>
             {
@@ -1724,7 +1724,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     let mut candidates = markers.iter().copied().filter_map(|relation| {
         if relation.feature_ref != curve.feature_ref
             || relation.object_index() != Some(object_index)
-            || relation.kind
+            || relation.kind()
                 != SketchInputKind::Relation(crate::records::SketchRelationKind::Radius)
         {
             return None;
@@ -1739,7 +1739,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
                 .filter(|marker| {
                     marker.coordinates_m.is_some()
                         && matches!(
-                            marker.kind,
+                            marker.kind(),
                             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                         )
                 })
@@ -1747,7 +1747,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
         let [Some(first), Some(second)] = pair else {
             return None;
         };
-        (first.id != second.id && (first.id == direct.id || second.id == direct.id))
+        (first.id() != second.id() && (first.id() == direct.id() || second.id() == direct.id()))
             .then_some((relation, [first, second]))
     });
     let (relation, pair) = candidates.next()?;
@@ -1756,7 +1756,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     }
     if direct_radius_relations
         .first()
-        .is_some_and(|direct_relation| direct_relation.id != relation.id)
+        .is_some_and(|direct_relation| direct_relation.id() != relation.id())
     {
         return None;
     }
@@ -1838,23 +1838,23 @@ pub(super) fn inferred_point_coordinates_by_index(
     });
 
     let mut constraints = Vec::new();
-    for scalar in lane.scalars.iter().filter(|scalar| {
-        scalar.feature_ref.as_deref() == Some(feature)
+    for (scalar, [first, second]) in lane.scalars.iter().filter_map(|scalar| {
+        let [first, second] = scalar.operands.as_slice() else {
+            return None;
+        };
+        (scalar.feature_ref.as_deref() == Some(feature)
             && scalar.role == FeatureInputScalarRole::Driving
             && scalar.value.is_finite()
             && scalar.value >= 0.0
-            && scalar.operands.len() == 2
-            && scalar.operands.iter().all(|operand| {
+            && [first, second].iter().all(|operand| {
                 matches!(
                     operand.kind,
                     FeatureInputOperandKind::Native(tag)
                         if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value())
                 )
-            })
+            }))
+        .then_some((scalar, [first, second]))
     }) {
-        let [first, second] = scalar.operands.as_slice() else {
-            unreachable!("scalar operand cardinality was filtered above");
-        };
         let endpoints = [
             u32::from(first.entity_index),
             u32::from(second.entity_index),
@@ -1997,7 +1997,7 @@ pub(super) fn implicit_coordinate_roster_curve_endpoints(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -2043,7 +2043,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -2074,21 +2074,21 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             coordinate_roster_curve_endpoint_markers(payload, candidate, markers).len() != 2
         })
         .collect::<Vec<_>>();
-    if !matches!(unresolved.as_slice(), [candidate] if candidate.id == curve.id) {
+    if !matches!(unresolved.as_slice(), [candidate] if candidate.id() == curve.id()) {
         return None;
     }
     let markers_by_id = markers
         .iter()
         .copied()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let mut degrees = HashMap::<&str, (usize, [f64; 2], u64)>::new();
     let mut edge_count = 0usize;
     for sibling in markers.iter().copied().filter(|sibling| {
         sibling.feature_ref == curve.feature_ref
-            && sibling.id != curve.id
+            && sibling.id() != curve.id()
             && matches!(
-                sibling.kind,
+                sibling.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
             && usize::try_from(sibling.offset())
@@ -2105,14 +2105,13 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             continue;
         };
         let coordinates = [first_coordinates, second_coordinates];
-        if first.id == second.id || coordinates[0] == coordinates[1] {
+        if first.id() == second.id() || coordinates[0] == coordinates[1] {
             continue;
         }
         for (endpoint, coordinates) in [(*first, coordinates[0]), (*second, coordinates[1])] {
-            let entry =
-                degrees
-                    .entry(endpoint.id.as_str())
-                    .or_insert((0, coordinates, endpoint.offset()));
+            let entry = degrees
+                .entry(endpoint.id())
+                .or_insert((0, coordinates, endpoint.offset()));
             if entry.1 != coordinates {
                 return None;
             }
@@ -2189,7 +2188,7 @@ pub(super) fn extended_declared_inline_line_endpoints(
             && marker.object_index() == Some(index)
             && marker.coordinates_m.is_some()
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
     });
@@ -2237,7 +2236,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
             && marker.object_index() == Some(external_index)
             && marker.coordinates_m.is_some()
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
     });
@@ -2260,11 +2259,11 @@ pub(super) fn extended_identity_inline_line_endpoints(
     let identity = View::u32_le_at(payload, offset + 130)?;
     let mut candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref == curve.feature_ref
-            && marker.id != curve.id
+            && marker.id() != curve.id()
             && marker.object_index() == Some(identity)
             && marker.coordinates_m.is_some()
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point
                     | SketchInputKind::ConstrainedPoint
                     | SketchInputKind::LineOrCircle
@@ -2342,10 +2341,10 @@ pub(super) fn coordinate_roster_arc_center(
         return None;
     }
     if let Some((endpoints, center)) = current_wide_arc_direct_markers(payload, curve, markers) {
-        let matches = (resolved_endpoints[0].id == endpoints[0].id
-            && resolved_endpoints[1].id == endpoints[1].id)
-            || (resolved_endpoints[0].id == endpoints[1].id
-                && resolved_endpoints[1].id == endpoints[0].id);
+        let matches = (resolved_endpoints[0].id() == endpoints[0].id()
+            && resolved_endpoints[1].id() == endpoints[1].id())
+            || (resolved_endpoints[0].id() == endpoints[1].id()
+                && resolved_endpoints[1].id() == endpoints[0].id());
         if matches {
             return Some(center);
         }
@@ -2377,7 +2376,7 @@ pub(super) fn coordinate_roster_arc_center(
                     && marker.coordinates_m.is_some()
                     && (include_relations
                         || matches!(
-                            marker.kind,
+                            marker.kind(),
                             SketchInputKind::Point
                                 | SketchInputKind::ConstrainedPoint
                                 | SketchInputKind::LineOrCircle
@@ -2394,10 +2393,10 @@ pub(super) fn coordinate_roster_arc_center(
         first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
     };
     let endpoint_pair_matches = |roster_endpoints: [&SketchInputEntity; 2]| {
-        (resolved_endpoints[0].id == roster_endpoints[0].id
-            && resolved_endpoints[1].id == roster_endpoints[1].id)
-            || (resolved_endpoints[0].id == roster_endpoints[1].id
-                && resolved_endpoints[1].id == roster_endpoints[0].id)
+        (resolved_endpoints[0].id() == roster_endpoints[0].id()
+            && resolved_endpoints[1].id() == roster_endpoints[1].id())
+            || (resolved_endpoints[0].id() == roster_endpoints[1].id()
+                && resolved_endpoints[1].id() == roster_endpoints[0].id())
     };
     let same_center = |left: [f64; 2], right: [f64; 2]| {
         same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
@@ -2466,10 +2465,10 @@ pub(super) fn legacy_marker104_arc_center(
         .copied()
         .filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.id != endpoints[0].id
-                && marker.id != endpoints[1].id
+                && marker.id() != endpoints[0].id()
+                && marker.id() != endpoints[1].id()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -2520,10 +2519,10 @@ pub(super) fn legacy_compact_diameter_arc_center(
         .copied()
         .filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.id != endpoints[0].id
-                && marker.id != endpoints[1].id
+                && marker.id() != endpoints[0].id()
+                && marker.id() != endpoints[1].id()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -2578,7 +2577,7 @@ pub(super) fn coordinate_circle_radius(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -2679,7 +2678,7 @@ pub(super) fn legacy_coordinate_circle_radius(
         marker.feature_ref == circle.feature_ref
             && marker.offset() == circle.offset() + 162
             && marker.object_index() == Some(radial_index)
-            && marker.kind == SketchInputKind::Point
+            && marker.kind() == SketchInputKind::Point
             && marker.coordinates_m.is_some()
     });
     let radial = radial_points.next()?;
@@ -2745,7 +2744,7 @@ pub(super) fn coordinate_roster_full_circle(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -2763,7 +2762,7 @@ pub(super) fn extended_geometry_full_circle(
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset()).ok()?;
-    if circle.kind != SketchInputKind::LineOrCircle
+    if circle.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -2821,7 +2820,7 @@ pub(super) fn extended_geometry_full_circle(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -2950,7 +2949,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
         );
     let indexed_terminal =
         standard_indexed_terminal || extended_geometry_116_indexed_arc(payload, offset);
-    if circle.kind != SketchInputKind::Arc
+    if circle.kind() != SketchInputKind::Arc
         || !(extended_layout || legacy_layout || current_profile_layout)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -2978,7 +2977,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
                 marker.feature_ref == circle.feature_ref
                     && marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
@@ -3009,7 +3008,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -3028,7 +3027,7 @@ pub(super) fn current_profile_circle_dimension(
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset()).ok()?;
-    if circle.kind != SketchInputKind::LineOrCircle
+    if circle.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(profile_circle_dim::NATIVE_KIND_VALUE)
         || payload.get(
@@ -3098,7 +3097,7 @@ pub(super) fn current_profile_circle_dimension(
             marker.feature_ref.as_ref() == Some(feature_ref)
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -3120,10 +3119,10 @@ pub(super) fn compact_profile_full_circle(
     let offset = usize::try_from(circle.offset()).ok()?;
     let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
     let kind = marker_native_code(payload, offset)?;
-    let supported_kind = if kind == 1 && circle.kind == SketchInputKind::LineOrCircle {
+    let supported_kind = if kind == 1 && circle.kind() == SketchInputKind::LineOrCircle {
         prefix == LEGACY_EXTENDED_SKETCH_MARKER || prefix == SKETCH_MARKER
     } else {
-        prefix == SKETCH_MARKER && kind == 2 && circle.kind == SketchInputKind::Arc
+        prefix == SKETCH_MARKER && kind == 2 && circle.kind() == SketchInputKind::Arc
     };
     if !supported_kind
         || payload.get(
@@ -3182,7 +3181,7 @@ pub(super) fn compact_profile_full_circle(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -3226,7 +3225,7 @@ pub(super) fn compact_legacy_terminal_diameter_circle(
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset()).ok()?;
-    if circle.kind != SketchInputKind::LineOrCircle
+    if circle.kind() != SketchInputKind::LineOrCircle
         || !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(1)
         || payload.get(offset + diam_circ::GEOMETRY_LOCUS..offset + diam_circ::STATE)
@@ -3274,7 +3273,7 @@ pub(super) fn compact_legacy_profile_full_circle(
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset()).ok()?;
-    if circle.kind != SketchInputKind::LineOrCircle
+    if circle.kind() != SketchInputKind::LineOrCircle
         || !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(1)
         || payload.get(offset + 19..offset + 23) != Some(&[0x04, 0x00, 0x02, 0x00])
@@ -3322,7 +3321,7 @@ pub(super) fn compact_legacy_profile_full_circle(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -3359,7 +3358,7 @@ pub(super) fn legacy_profile_radial_circle(
         && sketch_marker_prefix_at(payload, offset.checked_add(112)?);
     let terminal_end = payload.get(offset + 104..offset + 128) == Some(&[0; 24])
         && !sketch_marker_prefix_at(payload, offset.saturating_add(112));
-    if circle.kind != SketchInputKind::LineOrCircle
+    if circle.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -3398,7 +3397,7 @@ pub(super) fn legacy_profile_radial_circle(
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -3446,10 +3445,10 @@ pub(super) fn wide_coordinate_roster_full_circle(
     let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
     let supported_kind = prefix == LEGACY_SKETCH_MARKER
         && marker_native_code(payload, offset) == Some(1)
-        && circle.kind == SketchInputKind::LineOrCircle
+        && circle.kind() == SketchInputKind::LineOrCircle
         || prefix == LEGACY_EXTENDED_SKETCH_MARKER
             && marker_native_code(payload, offset) == Some(2)
-            && circle.kind == SketchInputKind::LineOrCircle;
+            && circle.kind() == SketchInputKind::LineOrCircle;
     if !supported_kind
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -3484,7 +3483,7 @@ pub(super) fn wide_coordinate_roster_full_circle(
                 && marker.coordinates_m.is_some()
                 && (terminal
                     || matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
@@ -3596,7 +3595,7 @@ pub(super) fn coordinate_ellipse_axes(
                 && marker.offset() > ellipse.offset()
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -6044,7 +6043,7 @@ fn legacy_compact_92_profile_object_endpoint_markers<'a>(
                 && marker.object_index() == Some(object_index)
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -6055,7 +6054,7 @@ fn legacy_compact_92_profile_object_endpoint_markers<'a>(
         candidates.next().is_none().then_some(marker)
     };
     let [first, second] = [endpoint(64)?, endpoint(66)?];
-    (first.id != second.id).then_some(vec![first, second])
+    (first.id() != second.id()).then_some(vec![first, second])
 }
 
 fn legacy_compact_92_profile_line(payload: &[u8], offset: usize) -> bool {
@@ -6193,7 +6192,7 @@ pub(super) fn relation_reference_curve_record(
     markers: &[&SketchInputEntity],
 ) -> bool {
     if !matches!(
-        curve.kind,
+        curve.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) {
         return false;
@@ -6204,8 +6203,8 @@ pub(super) fn relation_reference_curve_record(
     if legacy_relation_continuation_body(payload, offset) {
         return legacy_relation_continuation_marker_pair(payload, curve, markers).is_some_and(
             |[first, second]| {
-                matches!(first.kind, SketchInputKind::Relation(_))
-                    || matches!(second.kind, SketchInputKind::Relation(_))
+                matches!(first.kind(), SketchInputKind::Relation(_))
+                    || matches!(second.kind(), SketchInputKind::Relation(_))
             },
         );
     }
@@ -6220,7 +6219,7 @@ pub(super) fn relation_reference_curve_record(
                 let relations = candidates
                     .iter()
                     .copied()
-                    .filter(|marker| matches!(marker.kind, SketchInputKind::Relation(_)))
+                    .filter(|marker| matches!(marker.kind(), SketchInputKind::Relation(_)))
                     .collect::<Vec<_>>();
                 if relations.len() == 1 {
                     return relations.into_iter().next();
@@ -6230,7 +6229,7 @@ pub(super) fn relation_reference_curve_record(
                     .copied()
                     .filter(|marker| {
                         matches!(
-                            marker.kind,
+                            marker.kind(),
                             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                         )
                     })
@@ -6241,8 +6240,8 @@ pub(super) fn relation_reference_curve_record(
                 (candidates.len() == 1).then(|| candidates[0])
             };
             if let (Some(first), Some(second)) = (resolve(first_id), resolve(second_id)) {
-                if matches!(first.kind, SketchInputKind::Relation(_))
-                    || matches!(second.kind, SketchInputKind::Relation(_))
+                if matches!(first.kind(), SketchInputKind::Relation(_))
+                    || matches!(second.kind(), SketchInputKind::Relation(_))
                 {
                     return true;
                 }
@@ -6256,8 +6255,8 @@ pub(super) fn relation_reference_curve_record(
     let [[first, second]] = candidates.as_slice() else {
         return false;
     };
-    matches!(first.kind, SketchInputKind::Relation(_))
-        || matches!(second.kind, SketchInputKind::Relation(_))
+    matches!(first.kind(), SketchInputKind::Relation(_))
+        || matches!(second.kind(), SketchInputKind::Relation(_))
 }
 
 fn legacy_compact_selected_axis_body(payload: &[u8], offset: usize) -> bool {

@@ -22,7 +22,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
                     source_offset: 1000,
                 },
             ],
-            "00".repeat(32),
+            crate::native::hex::Sha256Hex::digest(b"00"),
         )
         .unwrap(),
     };

@@ -129,7 +129,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first-arc", "second-arc"]
     );
@@ -144,7 +144,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
     assert_eq!(
         roster_curve_endpoint_markers(&alternate_header, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first-arc", "second-arc"]
     );

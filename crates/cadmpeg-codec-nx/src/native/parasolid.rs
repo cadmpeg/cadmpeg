@@ -664,7 +664,7 @@ pub struct ParasolidDeltasBodyRevision {
     /// Prefix and state-tail lengths with a representable total.
     pub lengths: RevisionLengths,
     /// SHA-256 of the exact bounded state-tail bytes.
-    pub state_tail_sha256: String,
+    pub state_tail_sha256: crate::native::hex::Sha256Hex,
     /// BODY tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -681,7 +681,7 @@ pub struct ParasolidDeltasTransmitHeader {
     /// Exact header byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact header bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
 }
 
 /// Null references at the boundary of a Parasolid deltas stream.
@@ -729,7 +729,7 @@ pub struct ParasolidDeltasTaggedReferenceLane {
     /// Exact reference-lane byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact reference-lane bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First byte of the first tagged reference.
     pub inflated_offset: u64,
 }
@@ -749,7 +749,7 @@ pub struct ParasolidDeltasReferenceTypeMap {
     /// Exact map byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact map bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First map byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -783,7 +783,7 @@ pub struct ParasolidDeltasReferenceStatePacket {
     /// Exact packet byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First packet byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -800,7 +800,7 @@ pub struct ParasolidDeltasSchemaReferencePreamble {
     /// Exact preamble byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact preamble bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First preamble byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -819,7 +819,7 @@ pub struct ParasolidDeltasReferenceMarkerPacket {
     /// Exact packet byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First packet byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -837,7 +837,7 @@ pub struct ParasolidDeltasType150StatePacket {
     /// Exact packet byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First packet byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -855,7 +855,7 @@ pub struct ParasolidDeltasInlineSchemaDeclaration {
     /// Exact declaration byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact declaration bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First declaration byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -872,7 +872,7 @@ pub struct ParasolidDeltasInlineBodyState {
     /// Exact state byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact state bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First state byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -887,7 +887,7 @@ pub struct ParasolidDeltasResidualSpan {
     /// Exact residual byte length.
     pub byte_len: u64,
     /// SHA-256 of the residual bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// First residual byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -987,7 +987,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 stream_ordinal: stream_ordinal as u32,
                 state: header.state,
                 byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                sha256: crate::native::hex::Sha256Hex::digest(bytes),
             });
         }
         if let Some(trailer) = census.terminal_null_references {
@@ -1043,7 +1043,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     &stream.inflated[revision.offset..revision.prefix_end],
                     state_tail,
                 ),
-                state_tail_sha256: cadmpeg_ir::hash::sha256_hex(state_tail),
+                state_tail_sha256: crate::native::hex::Sha256Hex::digest(state_tail),
                 inflated_offset: revision.offset as u64,
             });
         }
@@ -1074,7 +1074,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal as u32,
                     references: lane.references,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: lane.offset as u64,
                 });
         }
@@ -1091,7 +1091,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     entries: map.entries,
                     target_kind: map.target_kind,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: map.offset as u64,
                 });
         }
@@ -1108,7 +1108,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     frames: packet.frames,
                     terminal: packet.terminal,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: packet.offset as u64,
                 });
         }
@@ -1124,7 +1124,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal as u32,
                     state: preamble.state,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: preamble.offset as u64,
                 });
         }
@@ -1141,7 +1141,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     reference: packet.reference,
                     marker: packet.marker,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: packet.offset as u64,
                 });
         }
@@ -1157,7 +1157,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal as u32,
                     state: packet.state,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: packet.offset as u64,
                 });
         }
@@ -1173,7 +1173,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal as u32,
                     fields: declaration.fields,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: declaration.offset as u64,
                 });
         }
@@ -1189,7 +1189,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal as u32,
                     fields: state.fields,
                     byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: state.offset as u64,
                 });
         }
@@ -1252,7 +1252,7 @@ fn push_deltas_residual_span(
         id: format!("nx:s{stream_ordinal}:deltas-residual#{start}"),
         stream_ordinal: stream_ordinal as u32,
         byte_len: residual.len() as u64,
-        sha256: cadmpeg_ir::hash::sha256_hex(residual),
+        sha256: crate::native::hex::Sha256Hex::digest(residual),
         inflated_offset: start as u64,
     });
 }
@@ -3533,7 +3533,10 @@ mod tests {
             inflated,
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
-                schema: Some(schema.to_string()),
+                schema: Some(
+                    cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+                        .expect("the fixture text is a schema token"),
+                ),
             },
         }
     }
@@ -3796,7 +3799,7 @@ mod tests {
         assert_eq!(events.body_revisions[0].lengths.total(), 36);
         assert_eq!(
             events.body_revisions[0].state_tail_sha256,
-            cadmpeg_ir::hash::sha256_hex(&revision_state_tail)
+            crate::native::hex::Sha256Hex::digest(&revision_state_tail)
         );
         assert_eq!(
             events.body_revisions[0].inflated_offset + events.body_revisions[0].lengths.prefix(),
@@ -3823,7 +3826,7 @@ mod tests {
         assert_eq!(events.residual_spans[0].byte_len, 3);
         assert_eq!(
             events.residual_spans[0].sha256,
-            cadmpeg_ir::hash::sha256_hex(&[0xaa, 0xbb, 0xcc])
+            crate::native::hex::Sha256Hex::digest(&[0xaa, 0xbb, 0xcc])
         );
         assert_eq!(
             events.residual_spans[1].inflated_offset,
@@ -3910,7 +3913,7 @@ mod tests {
         assert_eq!(lane.inflated_offset, lane_offset as u64);
         assert_eq!(
             lane.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[lane_offset..lane_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[lane_offset..lane_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].inflated_offset, 0);
@@ -3942,7 +3945,10 @@ mod tests {
             inflated: bytes.clone(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype: crate::parasolid::ParasolidSubtype::Deltas,
-                schema: Some("SCH_3501171_35102_13006".to_string()),
+                schema: Some(
+                    cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006")
+                        .expect("the fixture text is a schema token"),
+                ),
             },
         }];
 
@@ -3957,7 +3963,7 @@ mod tests {
         assert_eq!(header.byte_len, header_end as u64);
         assert_eq!(
             header.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[..header_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[..header_end])
         );
         assert_eq!(events.residual_spans.len(), 1);
         assert_eq!(events.residual_spans[0].inflated_offset, header_end as u64);
@@ -3988,7 +3994,9 @@ mod tests {
         assert_eq!(trailer.inflated_offset, trailer_offset as u64);
         assert_eq!(
             serde_json::to_value(trailer).unwrap()["sha256"],
-            cadmpeg_ir::hash::sha256_hex(&bytes[trailer_offset..])
+            serde_json::json!(
+                crate::native::hex::Sha256Hex::digest(&bytes[trailer_offset..]).as_str()
+            )
         );
         assert_eq!(events.residual_spans.len(), 1);
         assert_eq!(events.residual_spans[0].inflated_offset, 0);
@@ -4030,7 +4038,7 @@ mod tests {
         assert_eq!(map.inflated_offset, map_offset as u64);
         assert_eq!(
             map.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[map_offset..map_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[map_offset..map_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -4086,7 +4094,7 @@ mod tests {
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(
             packet.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -4152,7 +4160,7 @@ mod tests {
         assert_eq!(preamble.byte_len, (preamble_end - preamble_offset) as u64);
         assert_eq!(
             preamble.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[preamble_offset..preamble_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[preamble_offset..preamble_end])
         );
     }
 
@@ -4186,7 +4194,7 @@ mod tests {
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(
             packet.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -4243,7 +4251,7 @@ mod tests {
         assert_eq!(declaration.inflated_offset, declaration_offset as u64);
         assert_eq!(
             declaration.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[declaration_offset..declaration_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[declaration_offset..declaration_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -4852,7 +4860,7 @@ mod tests {
         assert_eq!(packet.byte_len, (packet_end - packet_offset) as u64);
         assert_eq!(
             packet.sha256,
-            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+            crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);

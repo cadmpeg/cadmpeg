@@ -560,7 +560,6 @@
             "class_tag": "257",
             "declared_reference_count": 2,
             "entity_id": "0_277",
-            "entity_suffix": 277,
             "module": "MSketch",
             "optional_slot_present": true,
             "record_reference": 584,
@@ -579,7 +578,6 @@
             "byte_offset": 95,
             "class_tag": "256",
             "entity_id": "0_985",
-            "entity_suffix": 985,
             "module": "Body",
             "optional_slot_present": false,
             "reference_indices": [],
@@ -601,7 +599,6 @@
             "asm_body_key_offset": 25,
             "entity_id": "0_985",
             "entity_id_offset": 120,
-            "entity_suffix": 985,
             "entity_suffix_offset": 33,
             "physical_token": "PrismMaterial-018",
             "physical_token_offset": 373,
@@ -1260,9 +1257,7 @@
               "state": 1
             },
             "companion": {
-              "incident_curves": [],
-              "prefix_present_zero": false,
-              "reference_encoding": "same_segment"
+              "incident_curves": []
             },
             "coordinate_offset": 89,
             "coordinates": {
@@ -1274,6 +1269,7 @@
             "paired_reference": 101,
             "persistent_id": 500,
             "record_form": {
+              "companion_prefix_present_zero": false,
               "kind": "version11",
               "padded_paired_reference": false
             },
@@ -1288,9 +1284,7 @@
               "state": 1
             },
             "companion": {
-              "incident_curves": [],
-              "prefix_present_zero": false,
-              "reference_encoding": "same_segment"
+              "incident_curves": []
             },
             "coordinate_offset": 89,
             "coordinates": {
@@ -1302,6 +1296,7 @@
             "paired_reference": 201,
             "persistent_id": 501,
             "record_form": {
+              "companion_prefix_present_zero": false,
               "kind": "version11",
               "padded_paired_reference": false
             },
@@ -1316,9 +1311,7 @@
               "state": 1
             },
             "companion": {
-              "incident_curves": [],
-              "prefix_present_zero": false,
-              "reference_encoding": "same_segment"
+              "incident_curves": []
             },
             "coordinate_offset": 89,
             "coordinates": {
@@ -1330,6 +1323,7 @@
             "paired_reference": 301,
             "persistent_id": 502,
             "record_form": {
+              "companion_prefix_present_zero": false,
               "kind": "version11",
               "padded_paired_reference": false
             },
@@ -1344,9 +1338,7 @@
               "state": 1
             },
             "companion": {
-              "incident_curves": [],
-              "prefix_present_zero": false,
-              "reference_encoding": "same_segment"
+              "incident_curves": []
             },
             "coordinate_offset": 89,
             "coordinates": {
@@ -1358,6 +1350,7 @@
             "paired_reference": 401,
             "persistent_id": 503,
             "record_form": {
+              "companion_prefix_present_zero": false,
               "kind": "version11",
               "padded_paired_reference": false
             },
@@ -1372,9 +1365,7 @@
               "state": 1
             },
             "companion": {
-              "incident_curves": [],
-              "prefix_present_zero": false,
-              "reference_encoding": "same_segment"
+              "incident_curves": []
             },
             "coordinate_offset": 141,
             "coordinates": {
@@ -1387,6 +1378,7 @@
             "paired_reference": 701,
             "persistent_id": 600,
             "record_form": {
+              "companion_prefix_present_zero": false,
               "kind": "version11",
               "padded_paired_reference": false
             },

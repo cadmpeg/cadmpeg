@@ -463,35 +463,33 @@ fn resolves_generated_section_from_declared_cap_pair() {
             payload: crate::feature::entry_payload(class_id, None, None, None),
 
             entity_id,
-            class_id,
             prefixed: false,
             offset: usize::try_from(entity_id).expect("fixture id fits usize"),
             end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
-            is_surface: false,
         }
     });
     let entity_tables = [
-        FeatureEntityTable {
-            feature_id: 40,
-            table_class_id: 80,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        FeatureEntityTable::new(
+            40,
+            80,
+            vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 700,
-                class_id: 7,
                 payload: crate::feature::entry_payload(7, None, None, None),
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
-                is_surface: false,
             }],
-            offset: 50,
-        }
+            &std::collections::BTreeSet::new(),
+            50,
+        )
         .with_surface_ids([]),
-        FeatureEntityTable {
-            feature_id: 40,
-            table_class_id: 80,
-            entries: entries.to_vec(),
-            offset: 70,
-        }
+        FeatureEntityTable::new(
+            40,
+            80,
+            entries.to_vec(),
+            &std::collections::BTreeSet::new(),
+            70,
+        )
         .with_surface_ids([43, 92]),
     ];
 
@@ -983,7 +981,6 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
                 frame: PositionalCylinderFrame::new(
@@ -1007,19 +1004,18 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     ];
     let entry = |entity_id, source_entity_id, offset| FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset,
         end_offset: offset + 1,
-        is_surface: false,
     };
-    let tables = [FeatureEntityTable {
-        feature_id: 40,
-        table_class_id: 2,
-        entries: vec![entry(819, 252, 300), entry(822, 255, 310)],
-        offset: 290,
-    }
+    let tables = [FeatureEntityTable::new(
+        40,
+        2,
+        vec![entry(819, 252, 300), entry(822, 255, 310)],
+        &std::collections::BTreeSet::new(),
+        290,
+    )
     .with_surface_ids([819, 822])];
     let sources = PlacementSources {
         datums: &[],
@@ -1088,17 +1084,19 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         generated_cylinder_section_transform(&definition, &divergent_sources, &tables).is_none()
     );
     let mut wrong_class = tables.clone();
-    wrong_class[0].entries[0].class_id = 201;
-    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain;
+    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain {
+        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
-    if let Some(entry) = non_surface[0]
+    let last_surface_id = non_surface[0]
         .entries
-        .iter_mut()
+        .iter()
         .rev()
-        .find(|entry| entry.is_surface)
-    {
-        entry.is_surface = false;
+        .map(|entry| entry.entity_id)
+        .find(|id| non_surface[0].surface_ids().contains(id));
+    if let Some(id) = last_surface_id {
+        non_surface[0].unmark_surface_id(id);
     }
     assert!(generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none());
 }
@@ -1202,16 +1200,14 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,
-        is_surface: false,
     };
-    let tables = [FeatureEntityTable {
-        feature_id: 10,
-        table_class_id: 79,
-        entries: vec![
+    let tables = [FeatureEntityTable::new(
+        10,
+        79,
+        vec![
             entry(13, 204, None),
             entry(18, 203, None),
             entry(23, 200, Some(4)),
@@ -1219,8 +1215,9 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
             entry(27, 200, Some(6)),
             entry(29, 200, Some(7)),
         ],
-        offset: 200,
-    }
+        &std::collections::BTreeSet::new(),
+        200,
+    )
     .with_surface_ids([13, 18, 23, 25, 27, 29])];
     let sources = PlacementSources {
         datums: &[],

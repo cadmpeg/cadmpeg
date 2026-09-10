@@ -742,7 +742,10 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         attributes.insert("family".to_string(), b.family.label().to_string());
         attributes.insert("sha256".to_string(), sha256_hex(&b.payload));
         if let Some(stream) = b.ps_streams.first() {
-            attributes.insert("parasolid_schema".to_string(), stream.header.schema.clone());
+            attributes.insert(
+                "parasolid_schema".to_string(),
+                stream.header.schema.value().to_owned(),
+            );
             attributes.insert(
                 "parasolid_description".to_string(),
                 stream.header.description.clone(),

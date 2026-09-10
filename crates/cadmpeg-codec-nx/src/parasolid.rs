@@ -100,7 +100,7 @@ pub enum StreamBody {
         /// Record subtype.
         subtype: ParasolidSubtype,
         /// Schema token.
-        schema: Option<String>,
+        schema: Option<cadmpeg_parasolid::OwnedSchemaToken>,
     },
     /// Non-Parasolid payload.
     Preview,
@@ -153,9 +153,9 @@ impl Stream {
     }
 
     /// Parasolid schema token.
-    pub fn schema(&self) -> Option<&str> {
+    pub fn schema_token(&self) -> Option<&cadmpeg_parasolid::OwnedSchemaToken> {
         match &self.body {
-            StreamBody::Parasolid { schema, .. } => schema.as_deref(),
+            StreamBody::Parasolid { schema, .. } => schema.as_ref(),
             StreamBody::Preview => None,
         }
     }
@@ -877,7 +877,8 @@ fn classify(inflated: &[u8]) -> StreamBody {
     };
     StreamBody::Parasolid {
         subtype,
-        schema: cadmpeg_parasolid::find_schema_token(window).map(|token| token.value().to_owned()),
+        schema: cadmpeg_parasolid::find_schema_token(window)
+            .map(cadmpeg_parasolid::OwnedSchemaToken::from),
     }
 }
 

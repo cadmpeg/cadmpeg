@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// Complete interpolation data selected from a legacy spline grid.
+/// A complete bicubic interpolation grid: points, ordered parameters,
+/// boundary derivatives and corner mixed derivatives that agree in length.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct LegacySpline {
+pub(crate) struct InterpolationGrid {
     points: Vec<[f64; 3]>,
     u_parameters: Vec<f64>,
     v_parameters: Vec<f64>,
@@ -11,9 +12,35 @@ pub(crate) struct LegacySpline {
     mixed_derivatives: [[f64; 3]; 4],
 }
 
-impl LegacySpline {
+impl InterpolationGrid {
+    /// Admits a grid whose point and boundary-derivative counts agree with
+    /// the parameter counts.
+    pub(crate) fn try_new(
+        points: Vec<[f64; 3]>,
+        u_parameters: Vec<f64>,
+        v_parameters: Vec<f64>,
+        u_derivatives: Vec<[f64; 3]>,
+        v_derivatives: Vec<[f64; 3]>,
+        mixed_derivatives: [[f64; 3]; 4],
+    ) -> Option<Self> {
+        let u_count = u_parameters.len();
+        let v_count = v_parameters.len();
+        (points.len() == u_count.checked_mul(v_count)?
+            && u_derivatives.len() == v_count.checked_mul(2)?
+            && v_derivatives.len() == u_count.checked_mul(2)?)
+        .then_some(())?;
+        Some(Self {
+            points,
+            u_parameters,
+            v_parameters,
+            u_derivatives,
+            v_derivatives,
+            mixed_derivatives,
+        })
+    }
+
     /// Admits complete finite source grids and selects boundary derivatives.
-    pub(crate) fn from_grid(
+    pub(crate) fn from_full_tangent_grid(
         points: Vec<[f64; 3]>,
         u_parameters: Vec<f64>,
         v_parameters: Vec<f64>,
@@ -60,14 +87,14 @@ impl LegacySpline {
             mixed_derivatives[upper_u],
             mixed_derivatives[upper_u + upper_v],
         ];
-        Some(Self {
+        Self::try_new(
             points,
             u_parameters,
             v_parameters,
             u_derivatives,
             v_derivatives,
             mixed_derivatives,
-        })
+        )
     }
 
     /// Interpolation points in u-major order.
@@ -119,7 +146,7 @@ mod tests {
             ];
             grids[missing].pop();
             let [points, u_tangents, v_tangents, mixed] = grids;
-            assert!(LegacySpline::from_grid(
+            assert!(InterpolationGrid::from_full_tangent_grid(
                 points,
                 u.clone(),
                 v.clone(),
@@ -129,7 +156,7 @@ mod tests {
             )
             .is_none());
         }
-        assert!(LegacySpline::from_grid(
+        assert!(InterpolationGrid::from_full_tangent_grid(
             points.clone(),
             vec![0.0, 1.0, 0.5],
             v,
@@ -138,5 +165,51 @@ mod tests {
             &points
         )
         .is_none());
+    }
+
+    #[test]
+    fn grid_admission_rejects_disagreeing_lengths() {
+        let points = vec![[0.0; 3]; 6];
+        let u = vec![0.0, 0.5, 1.0];
+        let v = vec![0.0, 1.0];
+        let u_derivatives = vec![[0.0; 3]; 4];
+        let v_derivatives = vec![[0.0; 3]; 6];
+        assert!(InterpolationGrid::try_new(
+            points.clone(),
+            u.clone(),
+            v.clone(),
+            u_derivatives.clone(),
+            v_derivatives.clone(),
+            [[0.0; 3]; 4],
+        )
+        .is_some());
+        for grid in [
+            InterpolationGrid::try_new(
+                vec![[0.0; 3]; 5],
+                u.clone(),
+                v.clone(),
+                u_derivatives.clone(),
+                v_derivatives.clone(),
+                [[0.0; 3]; 4],
+            ),
+            InterpolationGrid::try_new(
+                points.clone(),
+                u.clone(),
+                v.clone(),
+                vec![[0.0; 3]; 3],
+                v_derivatives,
+                [[0.0; 3]; 4],
+            ),
+            InterpolationGrid::try_new(
+                points,
+                u,
+                v,
+                u_derivatives,
+                vec![[0.0; 3]; 5],
+                [[0.0; 3]; 4],
+            ),
+        ] {
+            assert!(grid.is_none());
+        }
     }
 }

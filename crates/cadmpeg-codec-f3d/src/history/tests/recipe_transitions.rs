@@ -131,7 +131,6 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(
                 2,
@@ -335,7 +334,6 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(2, AsmHistoricalTopology::default(), Some(transition)),
             state(
@@ -832,7 +830,6 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(
                 2,

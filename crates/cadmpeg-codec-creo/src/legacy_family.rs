@@ -243,9 +243,9 @@ impl<'a> Index<'a> {
     }
 }
 
-fn add_value_index<'a, T>(
-    index: &mut BTreeMap<(usize, &'a str), Vec<&'a legacy::ValueRecord<T>>>,
-    records: &'a [legacy::ValueRecord<T>],
+fn add_value_index<'a, K: legacy::LegacyCode>(
+    index: &mut BTreeMap<(usize, &'a str), Vec<&'a legacy::ValueRecord<K>>>,
+    records: &'a [legacy::ValueRecord<K>],
 ) {
     for record in records {
         if let Some(parent) = record.parent {
@@ -257,9 +257,9 @@ fn add_value_index<'a, T>(
     }
 }
 
-fn add_typed_field_names<'a, T>(
+fn add_typed_field_names<'a, K: legacy::LegacyCode>(
     index: &mut BTreeMap<usize, Vec<&'a str>>,
-    records: &'a [legacy::ValueRecord<T>],
+    records: &'a [legacy::ValueRecord<K>],
 ) {
     for record in records {
         if !record.name.starts_with("value(") {
@@ -593,7 +593,6 @@ mod tests {
 
     fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -606,7 +605,6 @@ mod tests {
 
     fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -621,7 +619,6 @@ mod tests {
 
     fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::STRING,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,

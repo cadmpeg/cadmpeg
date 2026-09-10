@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Modern Rhino dimension payload decoding.
 
+use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
@@ -302,7 +303,7 @@ pub(crate) fn annotation(
         if overrides.bool()? {
             override_present = true;
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             parse_class_wrapper(
                 data,
                 overrides.position()..wrapper.next_offset(),

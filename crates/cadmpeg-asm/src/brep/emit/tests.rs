@@ -171,12 +171,12 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             (
                 0.125f64,
                 Some(1.25),
-                crate::brep::records::EvaluatedToleranceSlot::Evaluated,
+                crate::brep::records::EvaluatedToleranceSlot::Evaluated { trailing: None },
             ),
             (
                 -1.0,
                 None,
-                crate::brep::records::EvaluatedToleranceSlot::Unset,
+                crate::brep::records::EvaluatedToleranceSlot::Unset { trailing: None },
             ),
         ] {
             let mut bytes = b"\x0d\x07tvertex".to_vec();
@@ -385,7 +385,7 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
     assert_ne!(evaluated_wire, absent_wire);
     assert_eq!(
         serde_value::to_value(crate::brep::records::EvaluatedToleranceSlot::Absent).unwrap(),
-        serde_value::to_value("absent").unwrap()
+        serde_value::to_value(std::collections::BTreeMap::from([("slot", "absent")])).unwrap()
     );
 }
 

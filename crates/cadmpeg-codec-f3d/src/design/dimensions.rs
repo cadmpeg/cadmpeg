@@ -999,8 +999,8 @@ fn project_all_dimension_constraints(
         .filter_map(|companion| {
             Some((
                 (
-                    native_stream(&companion.id)?.to_owned(),
-                    companion.record_index,
+                    native_stream(companion.id())?.to_owned(),
+                    companion.record_index(),
                 ),
                 companion,
             ))
@@ -1118,7 +1118,7 @@ fn project_all_dimension_constraints(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(companion.id.clone()),
+                native_ref: Some(companion.id().to_owned()),
             })
         },
     ));
@@ -1135,10 +1135,10 @@ fn project_all_dimension_constraints(
         recipe_records,
     );
     constraints.extend(companions.iter().filter_map(|companion| {
-        let scope = native_stream(&companion.id)?;
-        let key = (scope.to_owned(), companion.record_index);
+        let scope = native_stream(companion.id())?;
+        let key = (scope.to_owned(), companion.record_index());
         let owner = owners_by_companion.get(&key)?;
-        let (parameter, parameter_id) = parameter_for(scope, companion.record_index)?;
+        let (parameter, parameter_id) = parameter_for(scope, companion.record_index())?;
         if parameter.kind() != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
             || container_only_payload_companions.contains(&key)
@@ -1152,7 +1152,7 @@ fn project_all_dimension_constraints(
             .iter()
             .filter(|group| {
                 native_stream(&group.id) == Some(scope)
-                    && group.companion_record_index == companion.record_index
+                    && group.companion_record_index == companion.record_index()
             })
             .filter_map(|group| {
                 let Definition::Parallel { first, second } =
@@ -1260,7 +1260,11 @@ fn project_all_dimension_constraints(
         let exact_definition = presentation_definition
             .or(parallel_axis_angle)
             .or(owner_scoped_definition);
-        if exact_definition.is_none() && companion.payload_byte_length == 0 {
+        if exact_definition.is_none()
+            && companion
+                .payload()
+                .is_none_or(|payload| payload.byte_length() == 0)
+        {
             return None;
         }
         let definition = exact_definition.or_else(|| {
@@ -1277,8 +1281,8 @@ fn project_all_dimension_constraints(
                         name: crate::design::literals::nonempty("companion_payload"),
                         role: None,
                     }),
-                    object_index: Some(companion.record_index),
-                    native_ref: Some(companion.id.clone()),
+                    object_index: Some(companion.record_index()),
+                    native_ref: Some(companion.id().to_owned()),
                 }],
             })
         })?;
@@ -1296,7 +1300,7 @@ fn project_all_dimension_constraints(
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some(companion.id.clone()),
+            native_ref: Some(companion.id().to_owned()),
         })
     }));
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
@@ -2738,7 +2742,7 @@ pub fn project_spatial_dimension_constraints(
         .iter()
         .filter_map(|companion| {
             Some((
-                (native_stream(&companion.id)?, companion.record_index),
+                (native_stream(companion.id())?, companion.record_index()),
                 companion,
             ))
         })
@@ -2768,7 +2772,10 @@ pub fn project_spatial_dimension_constraints(
                         native_kind: crate::design::literals::nonempty("dimension_companion"),
                         field: Some(NativeOperandField {
                             name: crate::design::literals::nonempty(
-                                if companion.payload_byte_length == 0 {
+                                if companion
+                                    .payload()
+                                    .is_none_or(|payload| payload.byte_length() == 0)
+                                {
                                     "companion"
                                 } else {
                                     "companion_payload"
@@ -2776,13 +2783,13 @@ pub fn project_spatial_dimension_constraints(
                             ),
                             role: None,
                         }),
-                        object_index: Some(companion.record_index),
-                        native_ref: Some(companion.id.clone()),
+                        object_index: Some(companion.record_index()),
+                        native_ref: Some(companion.id().to_owned()),
                     }],
                 },
             )
             .ok()?,
-            native_ref: Some(companion.id.clone()),
+            native_ref: Some(companion.id().to_owned()),
         })
     }));
     projected

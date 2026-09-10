@@ -1,6 +1,8 @@
 //! Tests for the `operations` module.
 
 use super::*;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
@@ -14,7 +16,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: source.parse().expect("required invariant"),
         name: id.into(),
         kind: "Split Line".into(),
@@ -59,7 +61,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 ordinal: 0,
                 offset: 20,
                 value: "split".into(),
-                object_id: Some(40),
+                object_id: ObjectId::from_value(40),
             },
             FeatureInputName {
                 id: "next-name".into(),
@@ -67,7 +69,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 ordinal: 1,
                 offset: 150,
                 value: "next".into(),
-                object_id: Some(50),
+                object_id: ObjectId::from_value(50),
             },
         ],
         scalars: Vec::new(),
@@ -114,7 +116,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
 
     let mut duplicate_sketch = history.features[1].clone();
     duplicate_sketch.id = "duplicate-sketch".into();
-    duplicate_sketch.source_id = Some("20".into());
+    duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
     enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
@@ -165,7 +167,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         ordinal: 0,
         offset: name_offset as u64,
         value: value.into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     };
     let mut lane = lane;
     lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
@@ -349,7 +351,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 ordinal: 0,
                 offset: name_offset as u64,
                 value: "Feature".into(),
-                object_id: Some(1),
+                object_id: ObjectId::from_value(1),
             },
         )
     };
@@ -410,7 +412,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         ordinal: 0,
         offset: name_offset as u64,
         value: "Feature".into(),
-        object_id: Some(1),
+        object_id: ObjectId::from_value(1),
     };
 
     assert_eq!(
@@ -542,7 +544,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("1".into()),
+        source_id: FeatureSource::from_value(1),
         ordinal: 0,
         name: id.into(),
         kind: "operation".into(),
@@ -637,7 +639,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ordinal: 0,
             offset: 52,
             value: "native-extrude".into(),
-            object_id: Some(1),
+            object_id: ObjectId::from_value(1),
         }],
         scalars: Vec::new(),
         relation_bindings: Vec::new(),

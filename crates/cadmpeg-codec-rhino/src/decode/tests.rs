@@ -2,6 +2,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::*;
+use crate::loss::Diagnostics;
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -18,7 +19,7 @@ fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
 }
 
 fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
-    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new())
+    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), crate::loss::Diagnostics::new())
 }
 
 #[test]
@@ -42,7 +43,10 @@ fn rejected_expansion_discards_every_report_bucket() {
         .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss"));
     report.rollback(checkpoint);
 
-    assert_eq!(report.phase_warnings, ["existing warning"]);
+    assert_eq!(
+        report.phase_warnings.messages().collect::<Vec<_>>(),
+        ["existing warning"]
+    );
     assert_eq!(report.phase_losses.len(), 1);
     assert_eq!(report.phase_losses[0].message, "existing parse-phase loss");
     assert_eq!(report.typed_losses.len(), 1);
@@ -103,6 +107,25 @@ fn body_instance_transform_composes_before_existing_body_transform() {
     );
 }
 
+/// The region fixture resolved the way validation resolves it.
+fn region_resolved(raw: &crate::brep::RawBrep) -> crate::brep::ResolvedBrep {
+    crate::brep::ResolvedBrep {
+        faces: vec![crate::brep::ResolvedFace {
+            surface: 0,
+            loops: Vec::new(),
+        }],
+        face_sides: raw
+            .face_sides
+            .iter()
+            .map(|side| crate::brep::ResolvedFaceSide {
+                face: usize::try_from(side.face).expect("face position"),
+                region: usize::try_from(side.region).ok(),
+            })
+            .collect(),
+        ..crate::brep::ResolvedBrep::default()
+    }
+}
+
 fn region_raw(
     face_sides: Vec<crate::brep::RawBrepFaceSide>,
     regions: Vec<crate::brep::RawBrepRegion>,
@@ -142,7 +165,7 @@ fn region_raw(
         },
         render_meshes: Vec::new(),
         analysis_meshes: Vec::new(),
-        is_solid: None,
+        is_solid: crate::brep::RawSolidFlag::Unstamped,
         face_sides,
         regions,
         source_range: 0..0,
@@ -272,13 +295,13 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .enumerate()
         .map(|(index, vertices)| crate::brep::RawBrepTrim {
             index: i32::try_from(index).expect("index"),
-            curve: i32::try_from(index).expect("index"),
+            curve: Some(i32::try_from(index).expect("index")),
             proxy_domain: interval,
-            edge: i32::try_from(index).expect("index"),
+            edge: Some(i32::try_from(index).expect("index")),
             vertices,
             reversed_3d: false,
-            trim_type: 1,
-            iso: 0,
+            trim_type: crate::brep::RawTrimKind::Boundary,
+            iso: crate::brep::RawTrimIso::None,
             loop_index: 0,
             tolerances: [0.02, 0.03],
             domain: interval,
@@ -320,7 +343,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             loops: vec![crate::brep::RawBrepLoop {
                 index: 0,
                 trims: vec![0, 1, 2],
-                loop_type: 1,
+                loop_type: crate::brep::RawLoopKind::Outer,
                 face: 0,
                 source_range: 0..0,
             }],
@@ -340,7 +363,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            is_solid: Some(3),
+            is_solid: crate::brep::RawSolidFlag::OutOfRange(3),
             face_sides: Vec::new(),
             regions: Vec::new(),
             source_range: 0..0,
@@ -707,14 +730,19 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
         domain: crate::settings::Interval([100.0, 200.0]),
         source_range: 0..0,
     };
+    let resolved = crate::brep::ResolvedEdge {
+        curve: 0,
+        vertices: [0, 1],
+        trims: Vec::new(),
+    };
     assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
-    assert_eq!(edge_vertices(&edge), [0, 1]);
+    assert_eq!(edge_vertices(&edge, &resolved), [0, 1]);
     let reversed = crate::brep::RawBrepEdge {
         proxy_reversed: true,
         ..edge
     };
     assert_eq!(edge_param_range(&reversed), [3.0, 7.0]);
-    assert_eq!(edge_vertices(&reversed), [1, 0]);
+    assert_eq!(edge_vertices(&reversed, &resolved), [1, 0]);
 }
 
 #[test]
@@ -767,7 +795,8 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
         ],
         vec![region(0), region(1)],
     );
-    let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
+    let grouping =
+        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
     assert_eq!(
@@ -809,7 +838,8 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
         ],
         vec![region(0), region(1), region(1)],
     );
-    let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
+    let grouping =
+        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
     assert!(grouping.fallback);
     assert_eq!(
         grouping
@@ -837,7 +867,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             (20.0, decoded_nurbs(line_nurbs(-2.0, 2.0, false))),
         ],
         end_parameter: 40.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
     assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
@@ -854,12 +884,12 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             (1.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
         ],
         end_parameter: 2.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(5.0, nested)],
         end_parameter: 9.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
@@ -887,7 +917,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (1.0, decoded_nurbs(quadratic)),
         ],
         end_parameter: 2.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0)
         .expect("degree elevation")
@@ -951,7 +981,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
         cap_u_axes: [Vector3::new(1.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)],
         caps,
         meshes: Vec::new(),
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     }
 }
 
@@ -1286,24 +1316,6 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
         .any(|loss| loss.severity == Severity::Error));
 }
 
-#[test]
-fn redundant_field_diagnostics_use_the_typed_repair_loss() {
-    assert!(redundant_field_diagnostic(
-        "redundant mesh channel count mismatch"
-    ));
-    assert!(redundant_field_diagnostic(
-        "rhino:object:curve#1: redundant point-cloud color count mismatch"
-    ));
-    assert!(!redundant_field_diagnostic("mesh channel count mismatch"));
-    assert_eq!(
-        RhinoLossCode::RedundantFieldRepaired
-            .note("repair")
-            .code
-            .local_code(),
-        "container.redundant-field-repaired"
-    );
-}
-
 /// The body-kind and B-rep domain charges reach the report as typed codes.
 ///
 /// Both are produced as typed losses at their parse sites. This asserts the
@@ -1447,4 +1459,22 @@ fn class_report_preserves_nil_class_source_selection() {
             );
         });
     }
+}
+
+/// A dropped Brep display-mesh cache slot carries the mesh-cache code itself.
+#[test]
+fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
+    let mut staged = BrepDraft::default();
+    staged.mesh_cache_slot_dropped("render", 2, &"payload is truncated");
+    assert_eq!(
+        staged
+            .warnings
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            Some(RhinoLossCode::BrepMeshCacheDegraded),
+            "invalid render mesh cache slot 2: payload is truncated"
+        )]
+    );
 }

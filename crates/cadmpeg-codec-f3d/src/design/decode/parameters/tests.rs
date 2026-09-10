@@ -11,8 +11,9 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter, parse_legacy_parameter_owner_68,
-    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    decode_parameters, parse_design_parameter_record as parse_design_parameter,
+    parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88, parse_parameter_companion,
+    parse_parameter_owner,
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -865,7 +866,10 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     assert_eq!(parsed.record_index, 46);
     assert_eq!(parsed.owner_record_index, 44);
     assert_eq!(parsed.timestamp_micros.get(), 1_678_000_000_000_000);
-    assert_eq!(parsed.timestamp_micros_offset, 42);
+    assert_eq!(
+        parsed.timestamp_micros_offset,
+        crate::design::decode::parameters::FrameRelative(42)
+    );
 
     prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
     assert_eq!(
@@ -943,7 +947,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "cm".into(),
-                offset: Some(280),
+                offset: 280,
             }),
             name: "distance".into(),
             name_offset: 300,
@@ -1020,7 +1024,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d1".into(),
             name_offset: 80,
@@ -1044,18 +1048,15 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         companion_record_index: 22,
     })
     .unwrap();
-    let mut companion = DesignParameterCompanion {
-        id: format!("{stream}:design-parameter-companion#22"),
-        byte_offset: 10,
-        class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        record_index: 22,
-        owner_record_index: 21,
-        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
-        timestamp_micros_offset: 50,
-        payload_byte_offset: 0,
-        payload_byte_length: 0,
-        owned_recipe_ids: Vec::new(),
-    };
+    let companion = DesignParameterCompanion::unbound(
+        format!("{stream}:design-parameter-companion#22"),
+        10,
+        crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        22,
+        21,
+        std::num::NonZeroU64::new(1).unwrap(),
+        50,
+    );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
         byte_offset,
@@ -1067,21 +1068,24 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     };
     let recipes = [recipe(31, 100), recipe(30, 80)];
 
-    super::bind_parameter_companion_payloads(
-        std::slice::from_mut(&mut companion),
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        &[],
-        &[],
-        &[],
-        &recipes,
-        &std::collections::HashMap::from([(stream.to_owned(), 200)]),
+    let bound = super::bind_parameter_companion_payloads(
+        vec![companion],
+        &super::ParameterCompanionInputs {
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            scopes: &[],
+            entities: &[],
+            headers: &[],
+            recipes: &recipes,
+            stream_lengths: &std::collections::HashMap::from([(stream.to_owned(), 200)]),
+        },
     );
 
-    assert_eq!(companion.payload_byte_offset, 68);
-    assert_eq!(companion.payload_byte_length, 132);
+    let payload = bound[0].payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 68);
+    assert_eq!(payload.byte_length(), 132);
     assert_eq!(
-        companion.owned_recipe_ids,
+        payload.owned_recipe_ids(),
         [
             format!("{stream}:construction-recipe#30"),
             format!("{stream}:construction-recipe#31"),
@@ -1174,4 +1178,23 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
             );
         }
     }
+}
+
+#[test]
+fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
+    use crate::design::decode::parameters::FrameRelative;
+
+    assert_eq!(FrameRelative(1).absolute(u64::MAX), None);
+
+    let payload = parameter_record(None, "1", "User Parameter", None, "p", 1.0);
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    assert!(super::parse_design_parameter(&payload)
+        .expect("parsed parameter")
+        .into_record(stream, u64::MAX)
+        .is_none());
+
+    let parsed = super::parse_design_parameter(&payload).expect("parsed parameter");
+    let error = super::locate_design_parameter(parsed, stream, usize::MAX)
+        .expect_err("a frame at the end of the address space cannot be located");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }

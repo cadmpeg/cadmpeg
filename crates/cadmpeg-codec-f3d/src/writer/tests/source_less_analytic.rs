@@ -351,8 +351,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
-            trailing_field: Some(0),
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
+                trailing: Some(0),
+            },
         }];
         native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -624,8 +625,9 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 vertex: tolerant_vertex,
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
-                trailing_field: vertex_trailing,
-                evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated,
+                evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
+                    trailing: vertex_trailing,
+                },
             }];
             native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -653,7 +655,9 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             edge_trailing
         );
         assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_vertex_tails[0].trailing_field,
+            f3d_native(round_trip.ir()).tolerant_vertex_tails[0]
+                .evaluated_slot
+                .trailing(),
             vertex_trailing
         );
     }
@@ -682,8 +686,9 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
-            trailing_field: Some(0),
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset {
+                trailing: Some(0),
+            },
         }];
     }
     let mut encoded = Vec::new();
@@ -709,7 +714,7 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
     let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
     assert_eq!(
         tail.evaluated_slot,
-        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset
+        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset { trailing: Some(0) }
     );
     assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
 }
@@ -736,7 +741,6 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
-            trailing_field: None,
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent,
         }];
     }
@@ -765,7 +769,7 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
         tail.evaluated_slot,
         cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent
     );
-    assert_eq!(tail.trailing_field, None);
+    assert_eq!(tail.evaluated_slot.trailing(), None);
     assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
 }
 
@@ -860,7 +864,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(110),
+                offset: 110,
             }),
             name: "HalfWidth".into(),
             name_offset: 120,
@@ -888,7 +892,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(110),
+                offset: 110,
             }),
             name: "Width".into(),
             name_offset: 120,

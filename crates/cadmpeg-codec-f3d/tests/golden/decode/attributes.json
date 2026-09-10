@@ -508,7 +508,6 @@
             "design_id": "311",
             "design_reference": 6,
             "entity_kind": 3,
-            "is_current": false,
             "ordinal": 0,
             "target": {
               "id": "f3d:brep:entity#1",
@@ -520,7 +519,6 @@
             "design_id": "322",
             "design_reference": 7,
             "entity_kind": 3,
-            "is_current": true,
             "ordinal": 1,
             "target": {
               "id": "f3d:brep:entity#1",

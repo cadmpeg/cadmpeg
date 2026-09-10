@@ -567,23 +567,22 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 942,
-            table_class_id: 29,
-            entries: vec![
+        crate::feature::FeatureEntityTable::new(
+            942,
+            29,
+            vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32, 33]),
     );
     let row = |id| crate::surface::SurfaceRow {
@@ -678,23 +677,22 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         ),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
-        is_surface: false,
     };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 17,
-        table_class_id: 80,
-        entries: vec![
+    let table = crate::feature::FeatureEntityTable::new(
+        17,
+        80,
+        vec![
             entry(101, 214, Some(11)),
             entry(201, 210, Some(101)),
             entry(102, 214, Some(12)),
             entry(202, 210, Some(102)),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([201, 202]);
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
@@ -718,12 +716,17 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 
     let mut conflicting = table.clone();
     conflicting.entries[3].payload = crate::feature::EntryPayload::Related {
+        class: crate::feature::RelatedClass::Class210,
         entity: 101,
         state: crate::feature::RelatedState::Zero,
     };
     assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
     let mut wrong_predecessor_class = table.clone();
-    wrong_predecessor_class.entries[0].class_id = 219;
+    wrong_predecessor_class.entries[0].payload = crate::feature::EntryPayload::Related {
+        class: crate::feature::RelatedClass::Class219,
+        entity: 11,
+        state: crate::feature::RelatedState::Zero,
+    };
     wrong_predecessor_class
         .entries
         .push(entry(999, 214, Some(888)));
@@ -743,19 +746,18 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         payload: crate::feature::entry_payload(class_id, None, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
-        is_surface: false,
     };
     let table = |entries: Vec<crate::feature::FeatureEntityTableEntry>, surface_ids| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 225,
-            table_class_id: 29,
+        crate::feature::FeatureEntityTable::new(
+            225,
+            29,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids(surface_ids)
     };
     let row = |id, kind: crate::surface::SurfaceKind, feature_id| crate::surface::SurfaceRow {
@@ -799,20 +801,19 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
 
 #[test]
 fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 225,
-        table_class_id: 64,
-        entries: vec![crate::feature::FeatureEntityTableEntry {
+    let table = crate::feature::FeatureEntityTable::new(
+        225,
+        64,
+        vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 226,
-            class_id: 209,
             payload: crate::feature::entry_payload(209, None, None, None),
             prefixed: true,
             offset: 0,
             end_offset: 0,
-            is_surface: false,
         }],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([226]);
     for (kind, owner) in [
         (crate::surface::SurfaceKind::Cylinder, 225),
@@ -1052,11 +1053,9 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(31, 204, None),
@@ -1065,12 +1064,13 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     ];
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 7,
-            table_class_id: 29,
+        crate::feature::FeatureEntityTable::new(
+            7,
+            29,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32]),
     );
     let row = |id| crate::surface::SurfaceRow {
@@ -1128,19 +1128,18 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 144,
+        crate::feature::FeatureEntityTable::new(
+            144,
             table_class_id,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids((table_class_id == 29).then_some(145))
     };
     let tables = vec![
@@ -1188,19 +1187,18 @@ fn new_sheet_output_requires_an_owned_output_surface() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 144,
+        crate::feature::FeatureEntityTable::new(
+            144,
             table_class_id,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids((table_class_id == 29).then_some(145))
     };
     let tables = vec![

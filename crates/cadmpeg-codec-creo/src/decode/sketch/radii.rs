@@ -251,10 +251,7 @@ pub(crate) fn resolved_section_radii(
                 invalid_scalar_radius_ids.extend(radius_ids);
                 continue;
             }
-            for pair in radius_ids.windows(2) {
-                let [first, second] = pair else {
-                    unreachable!();
-                };
+            for (first, second) in radius_ids.iter().zip(radius_ids.iter().skip(1)) {
                 adjacency.entry(*first).or_default().insert(*second);
                 adjacency.entry(*second).or_default().insert(*first);
             }

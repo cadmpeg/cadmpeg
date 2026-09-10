@@ -64,6 +64,8 @@ pub struct Scan<'a> {
     pub entries: Vec<ContainerEntry>,
     /// Persistence metadata.
     pub document: DocumentFacts,
+    /// Declared persistence schema version, owned by the source declaration.
+    pub schema_version: String,
     /// Exact physical archive partition.
     pub ledger: Vec<ArchiveSpan>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
@@ -86,7 +88,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         .get("Document.xml")
         .map(|view| view.window())
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
-    let document = parse_document(document_bytes)?;
+    let (document, schema_version) = parse_document(document_bytes)?;
     let ledger = archive
         .physical_ledger()?
         .into_iter()
@@ -104,6 +106,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
     Ok(Scan {
         entries: archive.container_entries(classify),
         document,
+        schema_version,
         ledger,
         data,
     })
@@ -111,7 +114,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 
 /// Summarize one scan.
 pub fn summarize(scan: &Scan) -> ContainerSummary {
-    let matched = crate::dialect::FcstdDialect::classify(&scan.document);
+    let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()
         .collect();
@@ -127,7 +130,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
 /// Notes shared by inspect and decode without reclassifying host identity.
 pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
     let mut notes = vec![
-        format!("SchemaVersion={}", scan.document.schema_version),
+        format!("SchemaVersion={}", scan.schema_version),
         format!("FileVersion={}", scan.document.file_version.as_str()),
         format!("document root={}", scan.document.root_name),
         format!("document kind={}", scan.document.document_kind().as_str()),
@@ -209,7 +212,7 @@ fn unique_section<'a, 'input>(
     }
 }
 
-pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
+pub(crate) fn parse_document(bytes: &[u8]) -> Result<(DocumentFacts, String), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -252,14 +255,13 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
         .collect::<Vec<_>>();
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
-        schema_version,
         file_version,
         program_version: canonical_attribute(root, "ProgramVersion", "programVersion")?,
         root_name: root.tag_name().name().into(),
         object_count,
         domains,
     };
-    Ok(document)
+    Ok((document, schema_version))
 }
 
 pub(crate) fn logical_ledger(

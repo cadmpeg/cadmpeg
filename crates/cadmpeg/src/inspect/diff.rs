@@ -7,19 +7,44 @@
 //! fields. An inserted byte shifts everything after it and shows up as one long
 //! run, which is itself the signal that the files are not positional variants.
 
+use std::num::NonZeroU64;
+
 /// A maximal span of differing bytes, after gap coalescing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiffRun {
-    /// Offset of the first differing byte in the run.
-    pub start: u64,
-    /// Number of bytes the run covers, including coalesced equal bytes.
-    pub len: u64,
+    start: u64,
+    len: NonZeroU64,
 }
 
 impl DiffRun {
+    /// Returns a run covering the single byte at `start`.
+    pub const fn single(start: u64) -> Self {
+        Self {
+            start,
+            len: NonZeroU64::MIN,
+        }
+    }
+
+    /// Returns the offset of the first differing byte in the run.
+    pub const fn start(self) -> u64 {
+        self.start
+    }
+
+    /// Returns the number of bytes the run covers, including coalesced equal bytes.
+    pub const fn len(self) -> NonZeroU64 {
+        self.len
+    }
+
     /// Returns the exclusive end offset of the run.
     pub const fn end(self) -> u64 {
-        self.start + self.len
+        self.start + self.len.get()
+    }
+
+    /// Grows the run so that it covers the byte at `offset`, and does nothing
+    /// for an offset the run already covers.
+    fn extend_to(&mut self, offset: u64) {
+        let covered = NonZeroU64::MIN.saturating_add(offset.saturating_sub(self.start));
+        self.len = self.len.max(covered);
     }
 }
 
@@ -89,13 +114,8 @@ pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
         differing += 1;
         let offset = offset as u64;
         match runs.last_mut() {
-            Some(last) if offset <= last.end().saturating_add(gap) => {
-                last.len = offset - last.start + 1;
-            }
-            _ => runs.push(DiffRun {
-                start: offset,
-                len: 1,
-            }),
+            Some(last) if offset <= last.end().saturating_add(gap) => last.extend_to(offset),
+            _ => runs.push(DiffRun::single(offset)),
         }
     }
     DiffSummary {
@@ -109,6 +129,12 @@ pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run(start: u64, len: u64) -> DiffRun {
+        let mut run = DiffRun::single(start);
+        run.extend_to(start + len - 1);
+        run
+    }
 
     #[test]
     fn identical_inputs_produce_no_runs() {
@@ -135,10 +161,7 @@ mod tests {
         let summary = compare(b"abcde", b"aXcYe", 0);
         assert_eq!(summary.first(), Some(1));
         assert_eq!(summary.differing, 2);
-        assert_eq!(
-            summary.runs,
-            [DiffRun { start: 1, len: 1 }, DiffRun { start: 3, len: 1 },]
-        );
+        assert_eq!(summary.runs, [DiffRun::single(1), DiffRun::single(3),]);
     }
 
     #[test]
@@ -146,22 +169,19 @@ mod tests {
         // Differ at 1 and 3, so one equal byte lies between them.
         let summary = compare(b"abcde", b"aXcYe", 1);
         assert_eq!(summary.differing, 2);
-        assert_eq!(summary.runs, [DiffRun { start: 1, len: 3 }]);
+        assert_eq!(summary.runs, [run(1, 3)]);
 
         // Differ at 0 and 4, so three equal bytes lie between them.
         let wide = compare(b"abcde", b"XbcdY", 1);
-        assert_eq!(
-            wide.runs,
-            [DiffRun { start: 0, len: 1 }, DiffRun { start: 4, len: 1 },]
-        );
+        assert_eq!(wide.runs, [DiffRun::single(0), DiffRun::single(4),]);
         let merged = compare(b"abcde", b"XbcdY", 3);
-        assert_eq!(merged.runs, [DiffRun { start: 0, len: 5 }]);
+        assert_eq!(merged.runs, [run(0, 5)]);
     }
 
     #[test]
     fn a_run_of_adjacent_differences_merges_at_any_gap() {
         let summary = compare(&[0, 0, 0, 0], &[0, 1, 2, 3], 0);
-        assert_eq!(summary.runs, [DiffRun { start: 1, len: 3 }]);
+        assert_eq!(summary.runs, [run(1, 3)]);
         assert_eq!(summary.differing, 3);
     }
 

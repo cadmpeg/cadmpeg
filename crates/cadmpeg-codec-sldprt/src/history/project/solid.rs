@@ -22,8 +22,8 @@ use crate::history::literals::{
 
 pub(crate) fn project_extrude(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
-    features_by_source: &HashMap<&str, &Feature>,
+    native_by_source: &HashMap<String, &str>,
+    features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
 ) -> Option<FeatureDefinition> {
     let source_dimensions = feature
         .content
@@ -57,11 +57,11 @@ pub(crate) fn project_extrude(
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_dimensions.len() == 1;
     let history_profile = history_profile_extrusion
         .then(|| {
-            let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
+            let source = feature.source_id?.value().map_or(-1i64, i64::from);
             features_by_source
                 .iter()
                 .filter_map(|(candidate_source, candidate)| {
-                    let candidate_source = candidate_source.parse::<i64>().ok()?;
+                    let candidate_source = candidate_source.value().map_or(-1i64, i64::from);
                     (candidate_source < source
                         && classify(candidate) == Some(FeatureClass::Sketch)
                         && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
@@ -235,7 +235,7 @@ pub(crate) fn project_extrude(
 
 pub(crate) fn project_hole(
     feature: &Feature,
-    features_by_source: &HashMap<&str, &Feature>,
+    features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Option<FeatureDefinition> {
     let profile = hole_profile_construction(feature, features_by_source, history_features);
@@ -389,7 +389,7 @@ pub(crate) fn project_hole(
 
 pub(crate) fn threaded_hole_major_diameter(
     feature: &Feature,
-    features_by_source: &HashMap<&str, &Feature>,
+    features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Option<f64> {
     if classify(feature) != Some(FeatureClass::Hole) {
@@ -425,7 +425,7 @@ fn hole_form(kind: HoleKind) -> HoleConstruction {
 
 pub(crate) fn hole_profile_construction(
     feature: &Feature,
-    features_by_source: &HashMap<&str, &Feature>,
+    features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Option<HoleProfileConstruction> {
     let children = feature.properties.get("DissectableChildren")?;
@@ -434,13 +434,16 @@ pub(crate) fn hole_profile_construction(
         .map(str::trim)
         .filter(|source| !source.is_empty())
         .filter_map(|source| {
-            features_by_source.get(source).copied().or_else(|| {
-                let mut profiles = history_features
-                    .iter()
-                    .filter(|candidate| candidate.id == source);
-                let profile = profiles.next()?;
-                profiles.next().is_none().then_some(profile)
-            })
+            crate::records::FeatureSource::try_from(source)
+                .ok()
+                .and_then(|source| features_by_source.get(&source).copied())
+                .or_else(|| {
+                    let mut profiles = history_features
+                        .iter()
+                        .filter(|candidate| candidate.id == source);
+                    let profile = profiles.next()?;
+                    profiles.next().is_none().then_some(profile)
+                })
         })
         .filter(|profile| classify(profile) == Some(FeatureClass::Sketch))
         .filter_map(hole_sketch_construction)

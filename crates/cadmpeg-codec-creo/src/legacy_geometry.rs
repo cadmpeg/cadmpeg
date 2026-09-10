@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
-pub(crate) mod spline;
-
 use std::collections::BTreeMap;
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
@@ -70,7 +68,7 @@ pub(crate) enum LegacySurfaceGeometry {
         radius: f64,
     },
     /// A complete bicubic interpolation surface carrier.
-    Spline(spline::LegacySpline),
+    Spline(crate::interpolation_grid::InterpolationGrid),
 }
 
 /// The legacy namespace that owns one analytic surface carrier.
@@ -483,7 +481,7 @@ fn surface_carrier(
             let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
             let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
             let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
-            let spline = spline::LegacySpline::from_grid(
+            let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
                 points,
                 u_parameters,
                 v_parameters,
@@ -834,7 +832,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             })
             .collect();
         ValueRecord {
-            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -990,7 +987,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         )];
         if with_angle {
             real_values.push(ValueRecord {
-                kind: crate::legacy::ValueKind::REAL,
                 name: "half_angle".to_string(),
                 attribute_id: 0,
                 scope_offset: 0,
@@ -1018,7 +1014,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     fn real_scalar(parent: &str, name: &str, value: f64, offset: usize) -> RealRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1196,7 +1191,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| vector(f64::from(value)))
             .collect::<Vec<_>>();
 
-        let spline = super::spline::LegacySpline::from_grid(
+        let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
             points,
             u_parameters.to_vec(),
             v_parameters.to_vec(),
@@ -1327,7 +1322,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1345,7 +1339,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| Real::from_bits(value.to_bits()));
         let runs = values.map(|value| RealRun { count: 1, value }).collect();
         ValueRecord {
-            kind: crate::legacy::ValueKind::REAL,
             name: "crv_pnt_arr".to_string(),
             attribute_id: 0,
             scope_offset: 0,

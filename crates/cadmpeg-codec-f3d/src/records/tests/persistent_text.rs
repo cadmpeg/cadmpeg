@@ -18,7 +18,6 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
             design_id,
             design_reference: 1,
             ordinal: 0,
-            is_current: true,
         };
         let wire = serde_json::to_value(&link).unwrap();
         assert_eq!(wire["design_id"], text);

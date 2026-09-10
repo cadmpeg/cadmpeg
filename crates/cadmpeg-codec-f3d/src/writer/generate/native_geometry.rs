@@ -5312,7 +5312,10 @@ pub(crate) fn native_procedural_curve(
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
-                unreachable!("procedural curve variant returned from its native writer")
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D procedural curve {} has no native helix grammar",
+                    procedural.id
+                )))
             }
         };
     native_curve_base(bytes, "intcurve")?;

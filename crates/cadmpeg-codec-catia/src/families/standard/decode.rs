@@ -625,8 +625,8 @@ fn refine_consolidated_analytic_surfaces(
                 let radius = cylinder_surface.radius();
                 exactly_one(cylinders.iter().filter_map(|cylinder| {
                     (same_point(*origin, cylinder.origin)
-                        && same_axis(*axis, cylinder.axis)
-                        && radius.to_bits() == quantized(cylinder.radius).to_bits())
+                        && same_axis(*axis, cylinder.axis.get())
+                        && radius.to_bits() == quantized(cylinder.radius.get()).to_bits())
                     .then_some((cylinder.surface_geometry()?, cylinder.pos))
                 }))
             }
@@ -642,16 +642,16 @@ fn refine_consolidated_analytic_surfaces(
                 let half_angle = cone_surface.half_angle();
                 exactly_one(cones.iter().filter(|cone| {
                     same_point(*origin, cone.apex)
-                        && same_axis(*axis, cone.axis)
+                        && same_axis(*axis, cone.axis.get())
                         && half_angle.to_bits() == quantized(cone.half_angle).to_bits()
                 }))
                 .and_then(|cone| {
                     Some((
                         SurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::ConeSurface::try_new(
-                                Point3::new(cone.apex[0], cone.apex[1], cone.apex[2]),
-                                Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
-                                Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
+                                Point3::from(cone.apex),
+                                Vector3::from(cone.axis.get()),
+                                Vector3::from(cone.t1.get()),
                                 0.0,
                                 1.0,
                                 cone.half_angle,
@@ -667,7 +667,7 @@ fn refine_consolidated_analytic_surfaces(
                 let radius = sphere_surface.radius();
                 exactly_one(spheres.iter().filter(|sphere| {
                     same_point(*center, sphere.center)
-                        && radius.to_bits() == quantized(sphere.radius).to_bits()
+                        && radius.to_bits() == quantized(sphere.radius.get()).to_bits()
                 }))
                 .and_then(|sphere| {
                     Some((
@@ -683,9 +683,9 @@ fn refine_consolidated_analytic_surfaces(
                 let minor_radius = torus_surface.minor_radius();
                 exactly_one(tori.iter().filter(|torus| {
                     same_point(*center, torus.center)
-                        && same_axis(*axis, torus.axis)
-                        && major_radius.to_bits() == quantized(torus.major_radius).to_bits()
-                        && minor_radius.to_bits() == quantized(torus.minor_radius).to_bits()
+                        && same_axis(*axis, torus.axis.get())
+                        && major_radius.to_bits() == quantized(torus.major_radius.get()).to_bits()
+                        && minor_radius.to_bits() == quantized(torus.minor_radius.get()).to_bits()
                 }))
                 .and_then(|torus| {
                     Some((
@@ -1801,7 +1801,7 @@ fn try_decode_standard_population(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    preserve_raw_payload(
+    let payload_index = preserve_raw_payload(
         &mut unknowns,
         &mut annotations,
         scan,
@@ -2178,7 +2178,7 @@ fn try_decode_standard_population(
         &owner_binding_budget,
     )
     .ok()?;
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
+    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
 
     let mut report = build_geometry_report(
@@ -4725,11 +4725,16 @@ fn attach_standard_topology(
                     None,
                     &preferred_budget,
                     |pairs| {
-                        endpoint_pairs_on_selected_faces(pairs) && line_constraint.is_valid(pairs)
+                        endpoint_pairs_on_selected_faces(pairs)
+                            && line_constraint
+                                .edge_pairs(pairs)
+                                .is_some_and(|pairs| line_constraint.is_valid(&pairs))
                     },
                     |pairs| {
                         endpoint_pairs_on_selected_faces(pairs)
-                            && line_constraint.is_simple(pairs)
+                            && line_constraint
+                                .edge_pairs(pairs)
+                                .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                             && standard_circle_pair_solution_is_simple(
                                 ir,
                                 bindings,
@@ -4773,11 +4778,15 @@ fn attach_standard_topology(
                         &fallback_budget,
                         |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
-                                && line_constraint.is_simple(pairs)
+                                && line_constraint
+                                    .edge_pairs(pairs)
+                                    .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                         },
                         |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
-                                && line_constraint.is_simple(pairs)
+                                && line_constraint
+                                    .edge_pairs(pairs)
+                                    .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                         },
                     );
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
@@ -6825,29 +6834,30 @@ fn invariant_face_carrier_bindings(
 }
 
 fn owner_matches_a5_carrier(
-    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    tail: &crate::native::CatiaOwnerNumericTail,
     surface: &NurbsSurface,
 ) -> bool {
     let Some(domain) = nurbs_surface_parameter_domain(surface) else {
         return false;
     };
     if (0..2).any(|axis| {
-        tail.lower[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-            || tail.upper[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+        tail.lower()[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            || tail.upper()[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
     }) {
         return false;
     }
-    [tail.lower[0], tail.upper[0]].into_iter().all(|u| {
-        [tail.lower[1], tail.upper[1]].into_iter().all(|v| {
+    [tail.lower()[0], tail.upper()[0]].into_iter().all(|u| {
+        [tail.lower()[1], tail.upper()[1]].into_iter().all(|v| {
             cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_some_and(|point| {
                 [point.x, point.y, point.z]
                     .into_iter()
                     .enumerate()
                     .all(|(axis, value)| {
                         value
-                            >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                            >= f64::from(tail.bounds()[axis][0])
+                                - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
                             && value
-                                <= f64::from(tail.bounds[axis][1])
+                                <= f64::from(tail.bounds()[axis][1])
                                     + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
                     })
             })
@@ -6857,7 +6867,7 @@ fn owner_matches_a5_carrier(
 
 fn owner_contains_face_bounds(
     reference_encoding: crate::families::b2::records::B2OwnerReferenceEncoding,
-    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    tail: &crate::native::CatiaOwnerNumericTail,
     bounds: crate::families::standard::records::StandardFaceBounds,
 ) -> bool {
     if reference_encoding != crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact {
@@ -6866,8 +6876,8 @@ fn owner_contains_face_bounds(
     (0..3).all(|axis| {
         let lower = bounds.aabb_center[axis] - bounds.aabb_half_extents[axis];
         let upper = bounds.aabb_center[axis] + bounds.aabb_half_extents[axis];
-        lower >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-            && upper <= f64::from(tail.bounds[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+        lower >= f64::from(tail.bounds()[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            && upper <= f64::from(tail.bounds()[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
     })
 }
 
@@ -8632,27 +8642,34 @@ impl StandardLinePairConstraint {
             .map(|role| *role == EdgeLineRole::Flexible)
     }
 
-    fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
-        self.edge_roles.iter().zip(pairs).all(|(role, pair)| {
-            if *role == EdgeLineRole::NotLine {
-                return true;
-            }
-            let Some(pair) = pair else {
-                return true;
-            };
-            let Some(segment) = standard_line_segment(&self.points, *pair) else {
-                return false;
-            };
-            standard_line_segment_is_materializable(segment)
-        })
+    fn edge_pairs<'a>(&self, pairs: &'a [Option<[usize; 2]>]) -> Option<StandardLineEdgePairs<'a>> {
+        StandardLineEdgePairs::new(pairs, self.edge_roles.len())
     }
 
-    fn is_simple(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+    fn is_valid(&self, pairs: &StandardLineEdgePairs<'_>) -> bool {
+        self.edge_roles
+            .iter()
+            .zip(pairs.pairs())
+            .all(|(role, pair)| {
+                if *role == EdgeLineRole::NotLine {
+                    return true;
+                }
+                let Some(pair) = pair else {
+                    return true;
+                };
+                let Some(segment) = standard_line_segment(&self.points, *pair) else {
+                    return false;
+                };
+                standard_line_segment_is_materializable(segment)
+            })
+    }
+
+    fn is_simple(&self, pairs: &StandardLineEdgePairs<'_>) -> bool {
         if !self.is_valid(pairs) {
             return false;
         }
         let mut selected = vec![None; self.edge_roles.len()];
-        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs).enumerate() {
+        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs.pairs()).enumerate() {
             if *role != EdgeLineRole::Flexible {
                 continue;
             }
@@ -8702,6 +8719,29 @@ impl StandardLinePairConstraint {
         true
     }
 }
+
+/// Owns the length agreement between a candidate solution and the edge roles
+/// it is validated against; the field is unreachable outside this module.
+mod line_edge_pairs {
+    /// Endpoint pairs whose length matches the constraint's edge roles.
+    pub(super) struct StandardLineEdgePairs<'a> {
+        pairs: &'a [Option<[usize; 2]>],
+    }
+
+    impl<'a> StandardLineEdgePairs<'a> {
+        /// Admits a candidate solution that has one entry per edge role.
+        pub(super) fn new(pairs: &'a [Option<[usize; 2]>], edge_count: usize) -> Option<Self> {
+            (pairs.len() == edge_count).then_some(Self { pairs })
+        }
+
+        /// Returns the candidate entries, one per edge role.
+        pub(super) fn pairs(&self) -> &'a [Option<[usize; 2]>] {
+            self.pairs
+        }
+    }
+}
+
+use line_edge_pairs::StandardLineEdgePairs;
 
 fn ordered_line_pair(
     left_edge: usize,
@@ -8841,7 +8881,10 @@ pub(crate) fn standard_line_pair_solution_is_simple_cached(
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    StandardLinePairConstraint::new(points, supports, endpoint_options).is_simple(pairs)
+    let constraint = StandardLinePairConstraint::new(points, supports, endpoint_options);
+    constraint
+        .edge_pairs(pairs)
+        .is_some_and(|pairs| constraint.is_simple(&pairs))
 }
 
 fn circle_endpoint_range_choices(
