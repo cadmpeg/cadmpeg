@@ -1710,11 +1710,11 @@ fn plane_face_draft(
     } else {
         None
     };
-    let body_id = crate::ids::body(&stem);
+    let body_id = crate::ids::body(stem);
     sequences.record_body(&body_id, source_sequence);
-    let region_id = crate::ids::region(&stem);
-    let shell_id = crate::ids::shell(&stem);
-    let face_id = crate::ids::face(&stem);
+    let region_id = crate::ids::region(stem);
+    let shell_id = crate::ids::shell(stem);
+    let face_id = crate::ids::face(stem);
     sequences.record_face(&face_id, source_sequence);
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::with_capacity(boundary_edges.len());
