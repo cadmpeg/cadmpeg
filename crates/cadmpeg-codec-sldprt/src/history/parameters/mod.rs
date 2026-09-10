@@ -762,6 +762,7 @@ pub(crate) fn expression_identifier_is_syntax(
 }
 
 /// An expression whose quoted identifier is never closed.
+#[derive(Debug)]
 pub(crate) struct UnclosedQuote;
 
 /// One identifier token of the expression it borrows from.
@@ -773,12 +774,13 @@ pub(crate) struct ExpressionIdentifier<'a> {
 }
 
 impl<'a> ExpressionIdentifier<'a> {
-    /// The token spanning `start..end`, which must be a quoted run of at least two quotes.
+    /// The token spanning `start..end`, which must be a quoted run around a nonempty name.
     fn quoted(expression: &'a str, start: usize, end: usize) -> Option<Self> {
         let raw = expression.get(start..end)?;
         let raw = raw
             .strip_prefix('"')
-            .and_then(|raw| raw.strip_suffix('"'))?;
+            .and_then(|raw| raw.strip_suffix('"'))
+            .filter(|raw| !raw.is_empty())?;
         let value = if raw.contains("\"\"") {
             std::borrow::Cow::Owned(raw.replace("\"\"", "\""))
         } else {
