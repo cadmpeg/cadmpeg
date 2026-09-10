@@ -260,15 +260,15 @@ pub(in super::super) fn new_sheet_output_surface_id(
     let generated = unique_table(29)?;
     (owner.source_entity_id() == Some(feature_id)
         && output.entity_id == owner.entity_id
-        && generated.surface_ids().contains(&output.class_id)
+        && generated.surface_ids().contains(&output.class_id())
         && generated
             .entries
             .iter()
-            .any(|entry| entry.entity_id == output.class_id && entry.class_id == 200))
+            .any(|entry| entry.entity_id == output.class_id() && entry.class_id() == 200))
     .then_some(())?;
     let mut surfaces = surface_rows
         .iter()
-        .filter(|row| row.id == output.class_id && row.feature_id == feature_id);
+        .filter(|row| row.id == output.class_id() && row.feature_id == feature_id);
     let surface = surfaces.next()?;
     surfaces.next().is_none().then_some(surface.id)
 }
@@ -529,7 +529,7 @@ pub(in super::super) fn feature_parameters(
             insert_feature_parameter(
                 &mut parameters,
                 &format!("generated_entity.{}.entry_class", entry.entity_id),
-                entry.class_id.to_string(),
+                entry.class_id().to_string(),
             );
         }
     }

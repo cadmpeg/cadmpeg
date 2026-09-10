@@ -6,7 +6,6 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,

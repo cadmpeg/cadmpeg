@@ -91,7 +91,7 @@ pub(crate) fn feature_surface_replay_associations(
         let visible_ids = table
             .entries
             .iter()
-            .take_while(|entry| entry.class_id == 254)
+            .take_while(|entry| entry.class_id() == 254)
             .map(|entry| entry.entity_id)
             .collect::<Vec<_>>();
         if visible_ids.is_empty() {
@@ -109,7 +109,10 @@ pub(crate) fn feature_surface_replay_associations(
         let mut cursor = 0;
         while cursor + visible_rows.len() <= replay_entries.len() {
             let candidate_entries = &replay_entries[cursor..cursor + visible_rows.len()];
-            if candidate_entries.iter().any(|entry| entry.class_id != 214) {
+            if candidate_entries
+                .iter()
+                .any(|entry| entry.class_id() != 214)
+            {
                 cursor += 1;
                 continue;
             }

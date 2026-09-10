@@ -122,8 +122,8 @@ pub fn compact_simple_hole_cylinder_id(
                     let [class_204, class_203] = pair else {
                         unreachable!("two-entry window")
                     };
-                    (class_204.class_id == 204
-                        && class_203.class_id == 203
+                    (class_204.class_id() == 204
+                        && class_203.class_id() == 203
                         && class_204.source_entity_id().is_none()
                         && class_203.source_entity_id().is_none())
                     .then_some(())?;
@@ -178,7 +178,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .iter()
                 .enumerate()
                 .filter(|(_, candidate)| {
-                    candidate.class_id == 200
+                    candidate.class_id() == 200
                         && candidate.source_entity_id().is_none()
                         && table.surface_ids().contains(&candidate.entity_id)
                         && rows
@@ -315,10 +315,10 @@ pub fn single_cap_circular_sweep_geometry<'a>(
         _ => return None,
     };
     if [
-        first_cap.class_id,
-        second_cap.class_id,
-        profile_id.class_id,
-        cylinder_id.class_id,
+        first_cap.class_id(),
+        second_cap.class_id(),
+        profile_id.class_id(),
+        cylinder_id.class_id(),
     ] != [204, 203, 200, 200]
         || profile_id.source_entity_id().is_none()
         || cylinder_id.source_entity_id().is_some()
@@ -445,10 +445,10 @@ pub fn two_cap_circular_sweep_geometry<'a>(
             cylinder_entry.entity_id,
         ]
         || [
-            first_plane_entry.class_id,
-            second_plane_entry.class_id,
-            profile_entry.class_id,
-            cylinder_entry.class_id,
+            first_plane_entry.class_id(),
+            second_plane_entry.class_id(),
+            profile_entry.class_id(),
+            cylinder_entry.class_id(),
         ] != [204, 203, 200, 200]
         || first_plane_entry.source_entity_id().is_some()
         || second_plane_entry.source_entity_id().is_some()

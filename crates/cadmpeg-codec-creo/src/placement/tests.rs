@@ -463,7 +463,6 @@ fn resolves_generated_section_from_declared_cap_pair() {
             payload: crate::feature::entry_payload(class_id, None, None, None),
 
             entity_id,
-            class_id,
             prefixed: false,
             offset: usize::try_from(entity_id).expect("fixture id fits usize"),
             end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
@@ -476,7 +475,6 @@ fn resolves_generated_section_from_declared_cap_pair() {
             table_class_id: 80,
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 700,
-                class_id: 7,
                 payload: crate::feature::entry_payload(7, None, None, None),
                 prefixed: false,
                 offset: 60,
@@ -1006,7 +1004,6 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     ];
     let entry = |entity_id, source_entity_id, offset| FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset,
@@ -1087,8 +1084,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         generated_cylinder_section_transform(&definition, &divergent_sources, &tables).is_none()
     );
     let mut wrong_class = tables.clone();
-    wrong_class[0].entries[0].class_id = 201;
-    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain;
+    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain { class: 201 };
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
     if let Some(entry) = non_surface[0]
@@ -1201,7 +1197,6 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,

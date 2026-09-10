@@ -375,7 +375,7 @@ pub fn counterbore_cylinder_sources(
 ) -> Option<Vec<Vec<u32>>> {
     let table = counterbore_entity_table(scan, feature_id)?;
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
-    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+    for entry in table.entries.iter().filter(|entry| entry.class_id() == 200) {
         if !table.surface_ids().contains(&entry.entity_id) {
             continue;
         }

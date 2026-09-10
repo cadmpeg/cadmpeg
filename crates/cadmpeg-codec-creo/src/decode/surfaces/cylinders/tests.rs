@@ -791,7 +791,6 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         });
     let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset: entity_id as usize,

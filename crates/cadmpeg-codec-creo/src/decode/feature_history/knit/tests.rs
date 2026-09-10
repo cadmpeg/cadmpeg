@@ -9,7 +9,6 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
             table_class_id: 29,
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 226,
-                class_id: 209,
                 payload: crate::feature::entry_payload(209, None, None, None),
                 prefixed: true,
                 offset: 0,
@@ -55,7 +54,6 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
         ),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,

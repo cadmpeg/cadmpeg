@@ -818,7 +818,7 @@ pub(super) fn feature_entity_table_records(
                 .iter()
                 .map(|entry| CreoFeatureEntityTableEntryRecord {
                     entity_id: entry.entity_id,
-                    class_id: entry.class_id,
+                    class_id: entry.class_id(),
                     source_entity_id: entry.source_entity_id(),
                     related_entity_id: entry.related_entity_id(),
                     related_entity_state: entry.related_entity_state(),

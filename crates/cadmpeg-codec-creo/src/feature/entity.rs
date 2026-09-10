@@ -61,8 +61,7 @@ impl FeatureEntityTable {
 pub(crate) fn dummy_table_entry(entity_id: u32, is_surface: bool) -> FeatureEntityTableEntry {
     FeatureEntityTableEntry {
         entity_id,
-        class_id: 0,
-        payload: EntryPayload::Plain,
+        payload: EntryPayload::Plain { class: 0 },
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -76,9 +75,49 @@ pub enum EntryPayload {
     /// Class `200` source-section identifier, present when the compact id parsed.
     Source { entity: Option<u32> },
     /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
-    Related { entity: u32, state: RelatedState },
+    Related {
+        /// The related class that owns the pair.
+        class: RelatedClass,
+        entity: u32,
+        state: RelatedState,
+    },
     /// Any other class, or a related class whose pair did not parse.
-    Plain,
+    Plain {
+        /// The positional entry class.
+        class: u32,
+    },
+}
+
+/// A generated-entity class that carries a related entity and its state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelatedClass {
+    Class210,
+    Class214,
+    Class219,
+    Class2017,
+}
+
+impl RelatedClass {
+    /// The related class for a positional entry class, when it is one.
+    pub(crate) fn from_class_id(class_id: u32) -> Option<Self> {
+        match class_id {
+            210 => Some(Self::Class210),
+            214 => Some(Self::Class214),
+            219 => Some(Self::Class219),
+            2017 => Some(Self::Class2017),
+            _ => None,
+        }
+    }
+
+    /// The positional entry class.
+    pub fn class_id(self) -> u32 {
+        match self {
+            Self::Class210 => 210,
+            Self::Class214 => 214,
+            Self::Class219 => 219,
+            Self::Class2017 => 2017,
+        }
+    }
 }
 
 /// One-byte state following a related entity identifier.
@@ -113,18 +152,22 @@ pub(crate) fn entry_payload(
     related_entity_id: Option<u32>,
     related_entity_state: Option<u8>,
 ) -> EntryPayload {
-    match class_id {
-        200 => EntryPayload::Source {
+    match (class_id, RelatedClass::from_class_id(class_id)) {
+        (200, _) => EntryPayload::Source {
             entity: source_entity_id,
         },
-        210 | 214 | 219 | 2017 => match (
+        (_, Some(class)) => match (
             related_entity_id,
             related_entity_state.and_then(RelatedState::from_byte),
         ) {
-            (Some(entity), Some(state)) => EntryPayload::Related { entity, state },
-            _ => EntryPayload::Plain,
+            (Some(entity), Some(state)) => EntryPayload::Related {
+                class,
+                entity,
+                state,
+            },
+            _ => EntryPayload::Plain { class: class_id },
         },
-        _ => EntryPayload::Plain,
+        _ => EntryPayload::Plain { class: class_id },
     }
 }
 
@@ -133,9 +176,7 @@ pub(crate) fn entry_payload(
 pub struct FeatureEntityTableEntry {
     /// Entity identifier at the start of the record body.
     pub entity_id: u32,
-    /// Positional entry class following the entity identifier.
-    pub class_id: u32,
-    /// Payload owned by `class_id`.
+    /// Payload of the positional entry class following the entity identifier.
     pub payload: EntryPayload,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
@@ -150,6 +191,15 @@ pub struct FeatureEntityTableEntry {
 }
 
 impl FeatureEntityTableEntry {
+    /// The positional entry class following the entity identifier.
+    pub fn class_id(&self) -> u32 {
+        match self.payload {
+            EntryPayload::Source { .. } => 200,
+            EntryPayload::Related { class, .. } => class.class_id(),
+            EntryPayload::Plain { class } => class,
+        }
+    }
+
     pub fn source_entity_id(&self) -> Option<u32> {
         match self.payload {
             EntryPayload::Source { entity } => entity,
@@ -283,6 +333,7 @@ pub(crate) fn read_entries(
                 .flatten()
                 .map(|(class_id, _)| (class_id, after))
         })?;
+        let related_class = RelatedClass::from_class_id(class_id);
         let (entry_payload, body_start) = if class_id == 200 {
             match psb::reference_id(payload, after_class) {
                 Ok((order, after_order)) => (
@@ -293,20 +344,27 @@ pub(crate) fn read_entries(
                 ),
                 Err(_) => (EntryPayload::Source { entity: None }, after_class),
             }
-        } else if matches!(class_id, 210 | 214 | 219 | 2017) {
+        } else if let Some(class) = related_class {
             psb::reference_id(payload, after_class)
                 .ok()
                 .and_then(|(entity, after_related)| {
-                    let state = match (class_id, payload.get(after_related)) {
-                        (210 | 214 | 219 | 2017, Some(&0)) => RelatedState::Zero,
-                        (2017, Some(&1)) => RelatedState::One,
+                    let state = match (class, payload.get(after_related)) {
+                        (_, Some(&0)) => RelatedState::Zero,
+                        (RelatedClass::Class2017, Some(&1)) => RelatedState::One,
                         _ => return None,
                     };
-                    Some((EntryPayload::Related { entity, state }, after_related))
+                    Some((
+                        EntryPayload::Related {
+                            class,
+                            entity,
+                            state,
+                        },
+                        after_related,
+                    ))
                 })
-                .unwrap_or((EntryPayload::Plain, after_class))
+                .unwrap_or((EntryPayload::Plain { class: class_id }, after_class))
         } else {
-            (EntryPayload::Plain, after_class)
+            (EntryPayload::Plain { class: class_id }, after_class)
         };
         let terminal_state = match entry_payload {
             EntryPayload::Source { .. } => payload
@@ -314,7 +372,7 @@ pub(crate) fn read_entries(
                 .copied()
                 .filter(|state| matches!(state, 0 | 1)),
             EntryPayload::Related { state, .. } => Some(state.as_u8()),
-            EntryPayload::Plain => None,
+            EntryPayload::Plain { .. } => None,
         };
         let terminal_table_separator = (index + 1 == count
             && terminal_state.is_some()
@@ -333,7 +391,6 @@ pub(crate) fn read_entries(
         };
         entries.push(FeatureEntityTableEntry {
             entity_id: id,
-            class_id,
             payload: entry_payload,
             prefixed,
             is_surface: false,

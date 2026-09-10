@@ -173,7 +173,6 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
             table_class_id: 29,
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 20,
-                class_id: 200,
                 payload: crate::feature::entry_payload(200, Some(7), None, None),
                 prefixed: false,
                 offset: 0,
