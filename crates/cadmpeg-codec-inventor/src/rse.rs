@@ -41,11 +41,22 @@ impl StorageBand {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SegmentToken(String);
 
+/// Which of the two `RSe` streams a segment name introduces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SegmentPrefix {
+    Metadata,
+    Bulk,
+}
+
 impl SegmentToken {
-    fn parse(name: &str) -> Option<(char, Self)> {
+    fn parse(name: &str) -> Option<(SegmentPrefix, Self)> {
         let (prefix, token) = name.split_at_checked(1)?;
-        let prefix = prefix.chars().next()?;
-        if !matches!(prefix, 'M' | 'B') || token.is_empty() {
+        let prefix = match prefix.chars().next()? {
+            'M' => SegmentPrefix::Metadata,
+            'B' => SegmentPrefix::Bulk,
+            _ => return None,
+        };
+        if token.is_empty() {
             return None;
         }
         Some((prefix, Self(token.into())))
@@ -370,13 +381,12 @@ impl<'a> RseInventory<'a> {
                 continue;
             };
             match prefix {
-                'M' => {
+                SegmentPrefix::Metadata => {
                     metadata.insert(token, stream.id());
                 }
-                'B' => {
+                SegmentPrefix::Bulk => {
                     bulk.insert(token, stream.id());
                 }
-                _ => unreachable!("validated segment prefix"),
             }
         }
         databases.sort_by_key(|(band, _)| *band);
