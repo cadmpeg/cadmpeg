@@ -1176,7 +1176,7 @@ pub(crate) fn var_blend_spl_sur(
                             shape_prefix,
                             fit_tolerance,
                         },
-                        None => VariableBlendCache::Stale,
+                        None => VariableBlendCache::Stale {},
                     }
                 }
                 cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {

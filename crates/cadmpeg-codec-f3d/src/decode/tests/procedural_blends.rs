@@ -523,7 +523,7 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
     stale_procedural.definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.cache.shape_prefix() == 0
             && matches!(
                 construction.cache,
-                cadmpeg_ir::geometry::VariableBlendCache::Stale
+                cadmpeg_ir::geometry::VariableBlendCache::Stale {}
             ))));
     assert!(!cadmpeg_ir::validate_neutral(stale.ir(), Vec::new())
         .findings

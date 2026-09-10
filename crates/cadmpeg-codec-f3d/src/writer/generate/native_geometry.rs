@@ -6119,7 +6119,7 @@ fn native_variable_blend_revision_tail_head(
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
         }
-        cadmpeg_ir::geometry::VariableBlendCache::Stale => {
+        cadmpeg_ir::geometry::VariableBlendCache::Stale {} => {
             return Err(CodecError::Malformed(
                 "variable blend requires a native cache-fit tolerance".into(),
             ));

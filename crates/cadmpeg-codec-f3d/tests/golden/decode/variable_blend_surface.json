@@ -698,8 +698,11 @@
               "shape_parameter": 0.125,
               "shape_length": 6.0,
               "shape_tail": 12,
-              "shape_prefix": 11,
-              "tail_enum": 0,
+              "cache": {
+                "kind": "current",
+                "shape_prefix": 11,
+                "fit_tolerance": 0.04
+              },
               "discontinuities": [
                 [
                   0.125
@@ -734,8 +737,7 @@
               ],
               "post_curve": "f3d:brep:procedural_surface#9:variable_post"
             }
-          },
-          "cache_fit_tolerance": 0.04
+          }
         }
       ],
       "procedural_curves": [],

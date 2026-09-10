@@ -287,7 +287,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
             };
             let mut construction = definition_payload.construction().clone();
 
-            construction.cache = crate::geometry::VariableBlendCache::Stale;
+            construction.cache = crate::geometry::VariableBlendCache::Stale {};
             *definition_payload =
                 crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                     construction,

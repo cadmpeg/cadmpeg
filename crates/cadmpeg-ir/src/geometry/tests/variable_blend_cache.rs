@@ -6,35 +6,41 @@ use std::num::NonZeroI64;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct CacheWire {
-    #[serde(flatten, with = "crate::geometry::variable_blend_cache_wire")]
     cache: VariableBlendCache,
 }
 
 #[test]
-fn variable_blend_cache_preserves_native_prefix_and_flat_wire() {
+fn the_variable_blend_cache_is_one_tagged_object_carrying_its_own_tolerance() {
     for prefix in [-3, 1, 11] {
         let cache = VariableBlendCache::Current {
             shape_prefix: NonZeroI64::new(prefix).unwrap(),
             fit_tolerance: crate::geometry::FitTolerance::try_new(0.125).unwrap(),
         };
-        let mut wire = serde_json::to_value(CacheWire {
+        let wire = serde_json::to_value(CacheWire {
             cache: cache.clone(),
         })
         .unwrap();
-        assert_eq!(wire, json!({ "shape_prefix": prefix, "tail_enum": 0 }));
-        // ProceduralSurface owns the outer tolerance and injects it on read.
-        wire["cache_fit_tolerance"] = json!(0.125);
+        assert_eq!(
+            wire,
+            json!({"cache": {
+                "kind": "current",
+                "shape_prefix": prefix,
+                "fit_tolerance": 0.125
+            }})
+        );
         assert_eq!(
             serde_json::from_value::<CacheWire>(wire).unwrap().cache,
             cache
         );
     }
+
     let stale = CacheWire {
-        cache: VariableBlendCache::Stale,
+        cache: VariableBlendCache::Stale {},
     };
     let wire = serde_json::to_value(&stale).unwrap();
-    assert_eq!(wire, json!({ "shape_prefix": 0, "tail_enum": 0 }));
+    assert_eq!(wire, json!({"cache": {"kind": "stale"}}));
     assert_eq!(serde_json::from_value::<CacheWire>(wire).unwrap(), stale);
+
     for prefix in [-1, 0, 11] {
         let cache = CacheWire {
             cache: VariableBlendCache::Parameterization {
@@ -43,22 +49,39 @@ fn variable_blend_cache_preserves_native_prefix_and_flat_wire() {
             },
         };
         let wire = serde_json::to_value(&cache).unwrap();
-        assert_eq!(wire["shape_prefix"], prefix);
-        assert_eq!(wire["tail_enum"], 2);
+        assert_eq!(wire["cache"]["kind"], "parameterization");
+        assert_eq!(wire["cache"]["shape_prefix"], prefix);
         assert_eq!(serde_json::from_value::<CacheWire>(wire).unwrap(), cache);
     }
 }
 
 #[test]
-fn variable_blend_cache_rejects_contradictory_legacy_fields() {
+fn a_variable_blend_cache_carries_no_key_of_another_form() {
     for wire in [
-        json!({"shape_prefix": 0, "tail_enum": 0, "cache_fit_tolerance": 0.125}),
-        json!({"shape_prefix": 1, "tail_enum": 0}),
-        json!({"shape_prefix": -1, "tail_enum": 0}),
-        json!({"shape_prefix": 1, "tail_enum": 2}),
-        json!({"shape_prefix": 0, "tail_enum": 0, "tail_parameterization": RevisionSurfaceParameterization::default()}),
-        json!({"shape_prefix": 0, "tail_enum": 2, "tail_parameterization": RevisionSurfaceParameterization::default(), "cache_fit_tolerance": 0.125}),
+        json!({"cache": {"kind": "stale", "fit_tolerance": 0.125}}),
+        json!({"cache": {"kind": "current", "shape_prefix": 1}}),
+        json!({"cache": {"kind": "current", "shape_prefix": 0, "fit_tolerance": 0.125}}),
+        json!({"cache": {"kind": "parameterization", "shape_prefix": 1}}),
+        json!({"cache": {
+            "kind": "stale",
+            "parameterization": RevisionSurfaceParameterization::default()
+        }}),
+        json!({"cache": {
+            "kind": "parameterization",
+            "shape_prefix": 0,
+            "parameterization": RevisionSurfaceParameterization::default(),
+            "fit_tolerance": 0.125
+        }}),
     ] {
-        assert!(serde_json::from_value::<CacheWire>(wire).is_err());
+        assert!(
+            serde_json::from_value::<CacheWire>(wire.clone()).is_err(),
+            "{wire}"
+        );
     }
+
+    let bogus = json!({"cache": {"kind": "stale", "zz_bogus": 1}});
+    let error = serde_json::from_value::<CacheWire>(bogus)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
 }

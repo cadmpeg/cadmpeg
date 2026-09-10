@@ -669,7 +669,10 @@
                 0.2
               ],
               "tail": 17,
-              "tail_enum": 0,
+              "cache": {
+                "kind": "solved_cache",
+                "fit_tolerance": 0.04
+              },
               "discontinuities": [
                 [
                   0.25
@@ -695,8 +698,7 @@
                 13
               ]
             }
-          },
-          "cache_fit_tolerance": 0.04
+          }
         }
       ],
       "procedural_curves": [],

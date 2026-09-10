@@ -565,7 +565,7 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
             matches!(
                 construction.cache,
                 cadmpeg_ir::geometry::VariableBlendCache::Parameterization { .. }
-                    | cadmpeg_ir::geometry::VariableBlendCache::Stale
+                    | cadmpeg_ir::geometry::VariableBlendCache::Stale {}
             )
         }
         _ => false,
