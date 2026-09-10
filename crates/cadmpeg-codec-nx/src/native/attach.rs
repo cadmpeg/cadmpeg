@@ -6315,7 +6315,7 @@ fn non_boolean_feature_definition_with_parameters(
                 matches!(
                     &template_kind,
                     HoleKind::Unresolved(Some(HoleForm::Counterbore))
-                        | HoleKind::PartialCounterbore { .. }
+                        | HoleKind::PartialCounterbore(..)
                 ),
             ) {
                 (Some(dimensions), true) => HoleKind::Counterbore {

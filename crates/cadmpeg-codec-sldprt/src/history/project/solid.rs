@@ -311,12 +311,22 @@ pub(crate) fn project_hole(
                     drill_point_angle,
                 },
             )),
-            (diameter, depth) => hole_form(HoleKind::PartialCounterbore { diameter, depth }),
+            (diameter, depth) => hole_form(
+                cadmpeg_ir::features::PartialPair::new(diameter, depth).map_or(
+                    HoleKind::Unresolved(Some(cadmpeg_ir::features::HoleForm::Counterbore)),
+                    HoleKind::PartialCounterbore,
+                ),
+            ),
         }
     } else if has_countersink {
         match (countersink_diameter, countersink_angle) {
             (Some(diameter), Some(angle)) => hole_form(HoleKind::Countersink { diameter, angle }),
-            (diameter, angle) => hole_form(HoleKind::PartialCountersink { diameter, angle }),
+            (diameter, angle) => hole_form(
+                cadmpeg_ir::features::PartialPair::new(diameter, angle).map_or(
+                    HoleKind::Unresolved(Some(cadmpeg_ir::features::HoleForm::Countersink)),
+                    HoleKind::PartialCountersink,
+                ),
+            ),
         }
     } else if let Some(thread) = thread {
         thread
