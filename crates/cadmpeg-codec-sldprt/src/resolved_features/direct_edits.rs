@@ -6,7 +6,9 @@ use super::axes::{
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
+#[cfg(test)]
 use crate::records::FeatureSource;
+#[cfg(test)]
 use crate::records::ObjectId;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;

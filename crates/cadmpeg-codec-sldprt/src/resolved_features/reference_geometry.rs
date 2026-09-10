@@ -97,7 +97,7 @@ pub(crate) fn enrich_history_reference_planes(
             history
                 .features
                 .iter()
-                .filter_map(|feature| feature.source_value())
+                .filter_map(crate::records::Feature::source_value)
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
@@ -118,7 +118,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .features
                 .iter()
                 .filter(|feature| classify(feature) == Some(FeatureClass::ReferencePlane))
-                .filter_map(|feature| feature.source_value())
+                .filter_map(crate::records::Feature::source_value)
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
@@ -338,8 +338,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .filter_map(move |(feature_index, feature)| {
                     let reference = feature
                         .source_id
-                        .map(String::from)
-                        .unwrap_or_else(|| feature.id.clone());
+                        .map_or_else(|| feature.id.clone(), String::from);
                     Some((
                         reference,
                         (history_index, feature_index),
@@ -356,8 +355,7 @@ pub(crate) fn enrich_history_reference_planes(
         (
             feature
                 .source_id
-                .map(String::from)
-                .unwrap_or_else(|| feature.id.clone()),
+                .map_or_else(|| feature.id.clone(), String::from),
             *index,
             *frame,
         )
@@ -1565,7 +1563,7 @@ pub(crate) fn enrich_history_reference_axes(
     let known_sources = histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_value())
+        .filter_map(crate::records::Feature::source_value)
         .collect::<HashSet<_>>();
     for lane in lanes {
         let mut starts =

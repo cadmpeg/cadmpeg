@@ -18,6 +18,7 @@ use super::reference_geometry::enrich_history_reference_planes;
 use super::terminations::is_extrusion_end_spec_owner;
 #[cfg(test)]
 use crate::records::FeatureInputClass;
+#[cfg(test)]
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 #[cfg(test)]

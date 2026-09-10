@@ -390,8 +390,7 @@ pub(crate) fn enrich_history_hole_constructions(
                             feature_index,
                             profile
                                 .source_id
-                                .map(String::from)
-                                .unwrap_or_else(|| profile.id.clone()),
+                                .map_or_else(|| profile.id.clone(), String::from),
                             rank,
                         )
                     })
@@ -448,14 +447,13 @@ pub(crate) fn enrich_history_hole_constructions(
                     .features
                     .iter()
                     .filter(|candidate| classify(candidate) == Some(FeatureClass::Hole))
-                    .filter_map(|candidate| candidate.source_value())
+                    .filter_map(crate::records::Feature::source_value)
                     .filter(|candidate| *candidate > source)
                     .min()?;
                 let mut profiles = history.features.iter().filter(|candidate| {
                     let identity = candidate
                         .source_id
-                        .map(String::from)
-                        .unwrap_or_else(|| candidate.id.clone());
+                        .map_or_else(|| candidate.id.clone(), String::from);
                     !claimed_profiles.contains(identity.as_str())
                         && candidate
                             .source_value()
@@ -469,8 +467,7 @@ pub(crate) fn enrich_history_hole_constructions(
                         feature_index,
                         profile
                             .source_id
-                            .map(String::from)
-                            .unwrap_or_else(|| profile.id.clone()),
+                            .map_or_else(|| profile.id.clone(), String::from),
                     )
                 })
             })
