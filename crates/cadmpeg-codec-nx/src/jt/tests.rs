@@ -248,7 +248,51 @@ fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
         Some(18.333_334)
     );
     assert_eq!(super::dequantize_uniform(4, [10.0, 20.0], 2), None);
-    assert_eq!(super::dequantize_uniform(-1, [4.0, 4.0], 32), Some(4.0));
+    assert_eq!(
+        super::dequantize_uniform(u32::MAX, [4.0, 4.0], 32),
+        Some(4.0)
+    );
+}
+
+#[test]
+fn jt_quantized_coordinates_reject_negative_codes_at_thirty_two_bits() {
+    let mut code = Vec::new();
+    let mut push = |value: u32, width: u8| {
+        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+    push(0, 1);
+    push(6, 6);
+    push(6, 6);
+    push(0b11_1111, 6);
+    push(0, 6);
+    for _ in 0..4 {
+        push(0, 1);
+    }
+    let mut word = 0u32;
+    for bit in &code {
+        word = (word << 1) | u32::from(*bit);
+    }
+    word <<= 32 - code.len();
+    let mut packet = 4_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&word.to_le_bytes());
+    let mut array = Vec::new();
+    for _ in 0..3 {
+        array.extend_from_slice(&packet);
+    }
+    array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+
+    assert!(super::decode_vertex_coordinates(&array, 4, [[4.0, 4.0]; 3], [32; 3]).is_none());
+}
+
+#[test]
+fn jt_hsv_colors_with_a_wrapped_hue_stay_in_the_sextant_table() {
+    let color = super::hsv_to_rgb(-1.0e-45, 1.0, 1.0).expect("finite hsv color");
+    assert!(color.iter().all(|value| value.is_finite()));
+    assert!((color[0] - 1.0).abs() < 1.0e-6);
+    assert!(color[1].abs() < 1.0e-6);
+    assert!(color[2].abs() < 1.0e-6);
 }
 
 #[test]
@@ -290,13 +334,25 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 
 #[test]
 fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
-    let normal = super::deering_normal(1, 7, 8191, 0, 13).unwrap();
+    let bits = super::NormalBits::new(13).expect("thirteen-bit codes");
+    let normal = super::deering_normal(
+        super::Sextant::from_index(1).expect("sextant one"),
+        super::Octant::new(7).expect("octant seven"),
+        super::NormalCode::new(8191, bits).expect("theta code"),
+        super::NormalCode::new(0, bits).expect("psi code"),
+    )
+    .unwrap();
     assert!(normal[0].abs() < 1e-3);
     assert!(normal[1].abs() < 1.0e-6);
     assert!((normal[2] - 1.0).abs() < 1.0e-6);
-    assert!(super::deering_normal(6, 7, 0, 0, 13).is_none());
-    assert!(super::deering_normal(0, 8, 0, 0, 13).is_none());
-    assert!(super::deering_normal(0, 7, 8192, 0, 13).is_none());
+    assert!(super::Sextant::from_index(6).is_none());
+    assert!(super::Sextant::from_index(-1).is_none());
+    assert!(super::Octant::new(8).is_none());
+    assert!(super::Octant::new(-1).is_none());
+    assert!(super::NormalCode::new(8192, bits).is_none());
+    assert!(super::NormalCode::new(-1, bits).is_none());
+    assert!(super::NormalBits::new(0).is_none());
+    assert!(super::NormalBits::new(14).is_none());
 }
 
 #[test]
