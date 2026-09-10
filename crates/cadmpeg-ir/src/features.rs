@@ -1075,6 +1075,7 @@ impl JsonSchema for DesignConfiguration {
 /// Configuration-local evaluation state for one construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ConfigurationFeatureState {
     /// Whether evaluation produced bodies or was suppressed.
     pub evaluation: ConfigurationEvaluation,
@@ -1248,7 +1249,7 @@ pub enum DimensionDisplay {
 /// Canonical scalar value of a literal design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ParameterValue {
     /// Length in canonical millimeters.
     Length(Length),
@@ -5201,7 +5202,7 @@ selection_field_deserializer!(deserialize_local_value, "value");
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -5322,7 +5323,7 @@ pub enum VertexSelection {
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FaceSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -6072,7 +6073,7 @@ impl<'de> Deserialize<'de> for HistoricalUnorderedBodySelection {
 /// Body operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -6232,15 +6233,14 @@ pub struct AxisAngle {
 }
 
 /// Start condition of a linear extrusion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrudeStart {
     /// Native start condition is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Begin on the profile's own plane.
-    #[default]
-    ProfilePlane,
+    ProfilePlane {},
     /// Begin on a plane parallel to the profile plane at a signed offset.
     OffsetProfilePlane {
         /// Signed offset along the profile normal in canonical millimeters.
@@ -6260,23 +6260,23 @@ pub enum ExtrudeStart {
 /// plane is stated by the owning feature's extent type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LinearTermination {
     /// Native termination is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Fixed travel distance.
     Blind {
         /// Fixed travel distance.
         length: NonZeroLength,
     },
     /// Extends through all material.
-    ThroughAll,
+    ThroughAll {},
     /// Extends until it exits the next material region.
-    ThroughNext,
+    ThroughNext {},
     /// Extends until the first encountered model face.
-    ToFirst,
+    ToFirst {},
     /// Extends until the last encountered model face.
-    ToLast,
+    ToLast {},
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
@@ -6308,18 +6308,18 @@ pub enum LinearTermination {
 /// plane is stated by the owning revolution extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AngularTermination {
     /// Native termination is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Extends through all material.
-    ThroughAll,
+    ThroughAll {},
     /// Extends until it exits the next material region.
-    ThroughNext,
+    ThroughNext {},
     /// Extends until the first encountered model face.
-    ToFirst,
+    ToFirst {},
     /// Extends until the last encountered model face.
-    ToLast,
+    ToLast {},
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
@@ -6357,6 +6357,7 @@ pub enum AngularTermination {
 /// travel; an absent draft leaves the side walls parallel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ExtrudeSide {
     /// Where this side's travel terminates.
     pub termination: LinearTermination,
@@ -6365,10 +6366,16 @@ pub struct ExtrudeSide {
     pub draft: Option<SlopeAngle>,
 }
 
+impl Default for ExtrudeStart {
+    fn default() -> Self {
+        Self::ProfilePlane {}
+    }
+}
+
 /// Extrusion sidedness around the profile plane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrudeExtent {
     /// Travel on the oriented side only.
     OneSided {
@@ -7713,7 +7720,7 @@ impl<'de> Deserialize<'de> for UnprocessedFeature {
 /// Profile consumed by a profile-driven feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProfileRef {
     /// A profile is required by the identified native owner but its carrier is unresolved.
     Unresolved(String),

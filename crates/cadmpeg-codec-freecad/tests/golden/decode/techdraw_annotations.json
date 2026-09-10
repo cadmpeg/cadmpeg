@@ -724,7 +724,10 @@
                 "subelements": [
                   "Edge1"
                 ],
-                "target": "fcstd:model:drawing#View:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#View:entity"
+                }
               }
             ]
           },
@@ -754,7 +757,9 @@
           "relationships": {
             "Owner": [
               {
-                "is_null": true
+                "target": {
+                  "kind": "null"
+                }
               }
             ]
           },
@@ -775,21 +780,36 @@
           "relationships": {
             "Template": [
               {
-                "target": "fcstd:model:drawing#Template:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Template:entity"
+                }
               }
             ],
             "Views": [
               {
-                "target": "fcstd:model:drawing#View:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#View:entity"
+                }
               },
               {
-                "target": "fcstd:model:drawing#Dimension:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Dimension:entity"
+                }
               },
               {
-                "target": "fcstd:model:drawing#Note:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Note:entity"
+                }
               },
               {
-                "target": "fcstd:model:drawing#Symbol:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Symbol:entity"
+                }
               }
             ]
           },
@@ -819,7 +839,9 @@
           "relationships": {
             "Owner": [
               {
-                "is_null": true
+                "target": {
+                  "kind": "null"
+                }
               }
             ]
           },
@@ -866,7 +888,10 @@
           "relationships": {
             "Source": [
               {
-                "target": "fcstd:native:object#Model"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:native:object#Model"
+                }
               }
             ]
           },
@@ -1814,7 +1839,10 @@
                 "subelements": [
                   "Edge1"
                 ],
-                "target": "fcstd:model:drawing#View:entity"
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#View:entity"
+                }
               }
             ]
           },
@@ -1857,7 +1885,9 @@
           "references": {
             "Owner": [
               {
-                "is_null": true
+                "target": {
+                  "kind": "null"
+                }
               }
             ]
           },
@@ -1895,7 +1925,9 @@
           "references": {
             "Owner": [
               {
-                "is_null": true
+                "target": {
+                  "kind": "null"
+                }
               }
             ]
           },

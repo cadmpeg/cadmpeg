@@ -223,6 +223,7 @@ impl Grammar {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum AdmissionWire {
     Admitted,
     Unverified { using: DialectId },

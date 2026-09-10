@@ -264,7 +264,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 direction_reversed_offset: 1040,
                 solid_operation: true,
                 solid_operation_offset: 1041,
-                start: DesignExtrudeStart::ProfilePlane,
+                start: DesignExtrudeStart::ProfilePlane {},
                 start_offset: 1042,
             });
     }
@@ -1549,7 +1549,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
                 direction_reversed_offset: 1038,
                 solid_operation: true,
                 solid_operation_offset: 1039,
-                start: DesignExtrudeStart::ProfilePlane,
+                start: DesignExtrudeStart::ProfilePlane {},
                 start_offset: 1040,
             });
     }

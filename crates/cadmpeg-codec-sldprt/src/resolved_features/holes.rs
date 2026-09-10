@@ -861,7 +861,7 @@ fn profiled_hole_construction_with_evidence(
                         if profile_translation(&edges, 2).is_some() {
                             return Some(ProfiledHoleConstruction {
                                 diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
-                                extent: LinearTermination::ThroughAll,
+                                extent: LinearTermination::ThroughAll {},
                                 kind: HoleKind::Counterdrill {
                                     diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
                                         cadmpeg_ir::scalar::PositiveLength::new(*recess_diameter)?,
@@ -972,7 +972,7 @@ fn profiled_hole_construction_with_evidence(
                                         length: cadmpeg_ir::scalar::NonZeroLength::new(*depth)?,
                                     }
                                 } else {
-                                    LinearTermination::ThroughAll
+                                    LinearTermination::ThroughAll {}
                                 };
                                 (
                                     HoleKind::Counterbore {
@@ -1056,7 +1056,7 @@ fn profiled_hole_construction_with_evidence(
                     if profile_matches {
                         return Some(ProfiledHoleConstruction {
                             diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
-                            extent: LinearTermination::ThroughAll,
+                            extent: LinearTermination::ThroughAll {},
                             kind: HoleKind::Countersink {
                                 diameter: cadmpeg_ir::scalar::PositiveLength::new(*entry_diameter)?,
                                 angle: cadmpeg_ir::scalar::InteriorAngle::new(*sink_angle)?,
@@ -1126,7 +1126,7 @@ pub(crate) fn project_profiled_hole_constructions(
         diameter.is_none()
             || extent
                 .as_ref()
-                .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
+                .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
             || matches!(
                 construction,
                 cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
@@ -3363,7 +3363,7 @@ pub(crate) fn project_topological_hole_constructions(
                 || (diameter.is_some()
                     && extent
                         .as_ref()
-                        .is_some_and(|extent| !matches!(extent, LinearTermination::Unresolved)))
+                        .is_some_and(|extent| !matches!(extent, LinearTermination::Unresolved {})))
             {
                 break 'feature_edit;
             }
@@ -3430,7 +3430,7 @@ pub(crate) fn project_topological_hole_constructions(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             if extent
                 .as_ref()
-                .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
+                .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
             {
                 *extent = Some(LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(*depth).ok_or_else(|| {

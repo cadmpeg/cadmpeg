@@ -1209,3 +1209,18 @@ fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
         .to_string();
     assert!(error.contains("inner_count"), "{error}");
 }
+
+#[test]
+fn the_shared_math_carriers_reject_an_unknown_key_by_name() {
+    let vector = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0, "zz_bogus": 1});
+    let error = serde_json::from_value::<crate::math::Vector3>(vector)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+
+    let point = serde_json::json!({"u": 1.0, "v": 2.0, "zz_bogus": 1});
+    let error = serde_json::from_value::<crate::math::Point2>(point)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}

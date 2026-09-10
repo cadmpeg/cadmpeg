@@ -1609,7 +1609,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
                 },
             },
             op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

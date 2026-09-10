@@ -30,7 +30,7 @@ pub(crate) fn hole_feature_is_incomplete(
     let finite_direction = |vector: cadmpeg_ir::features::FeatureDirection3| {
         vector.norm() > EPS_NONZERO_HOLE_DIRECTION
     };
-    let axis_is_direction_invariant = matches!(extent, Some(LinearTermination::ThroughAll))
+    let axis_is_direction_invariant = matches!(extent, Some(LinearTermination::ThroughAll {}))
         && exit_kind.is_none_or(|exit| exit == kind);
     let placements_complete = placements.is_some_and(|placements| {
         !placements.is_empty()
@@ -115,13 +115,13 @@ pub(crate) fn extrude_extent_is_incomplete(
 
 pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
     match start {
-        ExtrudeStart::Unresolved => true,
+        ExtrudeStart::Unresolved {} => true,
         ExtrudeStart::FromFace { face, offset } => {
             face_selection_is_incomplete(face)
                 || offset.is_some_and(|offset| !offset.get().is_finite())
         }
         ExtrudeStart::OffsetProfilePlane { offset } => !offset.get().is_finite(),
-        ExtrudeStart::ProfilePlane => false,
+        ExtrudeStart::ProfilePlane {} => false,
     }
 }
 
@@ -163,7 +163,7 @@ pub(crate) fn revolve_feature_is_incomplete(
 
 pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool {
     match termination {
-        LinearTermination::Unresolved => true,
+        LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, offset } => {
             face_selection_is_incomplete(face)
                 || offset.is_some_and(|offset| !offset.get().is_finite())
@@ -184,10 +184,10 @@ pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool
         LinearTermination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         LinearTermination::ToShape { target } => face_selection_is_incomplete(target),
         LinearTermination::Blind { .. } => false,
-        LinearTermination::ThroughAll
-        | LinearTermination::ThroughNext
-        | LinearTermination::ToFirst
-        | LinearTermination::ToLast => false,
+        LinearTermination::ThroughAll {}
+        | LinearTermination::ThroughNext {}
+        | LinearTermination::ToFirst {}
+        | LinearTermination::ToLast {} => false,
     }
 }
 
@@ -205,7 +205,7 @@ pub(crate) fn termination_dependency_is_incomplete(
 
 fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
     match termination {
-        AngularTermination::Unresolved => true,
+        AngularTermination::Unresolved {} => true,
         AngularTermination::ToFace { face, offset } => {
             face_selection_is_incomplete(face)
                 || offset.is_some_and(|offset| !offset.get().is_finite())
@@ -226,10 +226,10 @@ fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
         AngularTermination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         AngularTermination::ToShape { target } => face_selection_is_incomplete(target),
         AngularTermination::Angle { .. } => false,
-        AngularTermination::ThroughAll
-        | AngularTermination::ThroughNext
-        | AngularTermination::ToFirst
-        | AngularTermination::ToLast => false,
+        AngularTermination::ThroughAll {}
+        | AngularTermination::ThroughNext {}
+        | AngularTermination::ToFirst {}
+        | AngularTermination::ToLast {} => false,
     }
 }
 

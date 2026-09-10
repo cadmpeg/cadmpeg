@@ -1158,12 +1158,12 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     draft: None,
                 },
             },
             op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
+            start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

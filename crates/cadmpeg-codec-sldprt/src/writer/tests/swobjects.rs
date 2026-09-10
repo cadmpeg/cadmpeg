@@ -166,7 +166,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Unresolved("native:missing-owner".into()),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -474,7 +474,7 @@ fn encoder_writes_source_less_line_sketches() {
                     .unwrap(),
                     source: None,
                 },
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {

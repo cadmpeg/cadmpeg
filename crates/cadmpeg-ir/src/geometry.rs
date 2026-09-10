@@ -3196,6 +3196,7 @@ pub enum TaperSurfaceKind {
 /// One scalar row in native loft subdata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LoftSubdataRow {
     /// Leading ordered scalar pair.
     pub parameters: [f64; 2],
@@ -3304,6 +3305,7 @@ impl LoftSubdata {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LoftSubdataWire {
     type_code: i64,
     row_count: i64,
@@ -4431,7 +4433,7 @@ pub enum VariableBlendValuePayload {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum VariableBlendPayloadWire<F, T, N, P> {
     TwoEnds {
         parameters: [f64; 2],
@@ -4471,6 +4473,7 @@ enum VariableBlendPayloadWire<F, T, N, P> {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct VariableBlendValueWire {
     name: String,
     modern_flag: bool,
@@ -6450,7 +6453,7 @@ pub struct CacheFirstCurveForm {
 /// One support slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpringSupport {
     /// Resolved support surface.
     Surface(SurfaceId),
@@ -6461,7 +6464,7 @@ pub enum SpringSupport {
 /// First pcurve slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpringPcurve {
     /// Resolved parameter-space curve.
     Pcurve(PcurveGeometry),
@@ -7633,7 +7636,7 @@ impl From<CurveOffsetCoordinate> for u8 {
 /// Variable signed distance law for a planar curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveOffsetDistanceLaw {
     /// Linear interpolation between two distance controls.
     Linear {

@@ -447,7 +447,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 },
             },
@@ -493,7 +493,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 },
             },
@@ -521,7 +521,7 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 },
             },

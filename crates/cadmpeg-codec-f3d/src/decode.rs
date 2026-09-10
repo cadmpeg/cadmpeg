@@ -440,7 +440,7 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
     use cadmpeg_ir::features::{LinearTermination, VertexSelection};
 
     match termination {
-        LinearTermination::Unresolved => false,
+        LinearTermination::Unresolved {} => false,
         LinearTermination::ToFace { face, .. }
         | LinearTermination::OffsetFromFace { face, .. }
         | LinearTermination::ToShape { target: face } => face_selection_is_resolved(face),
@@ -449,10 +449,10 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         LinearTermination::Blind { .. }
-        | LinearTermination::ThroughAll
-        | LinearTermination::ThroughNext
-        | LinearTermination::ToFirst
-        | LinearTermination::ToLast => true,
+        | LinearTermination::ThroughAll {}
+        | LinearTermination::ThroughNext {}
+        | LinearTermination::ToFirst {}
+        | LinearTermination::ToLast {} => true,
     }
 }
 
@@ -460,7 +460,7 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
     use cadmpeg_ir::features::{AngularTermination, VertexSelection};
 
     match termination {
-        AngularTermination::Unresolved => false,
+        AngularTermination::Unresolved {} => false,
         AngularTermination::ToFace { face, .. }
         | AngularTermination::OffsetFromFace { face, .. }
         | AngularTermination::ToShape { target: face } => face_selection_is_resolved(face),
@@ -469,10 +469,10 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         AngularTermination::Angle { angle } => angle.get().is_finite(),
-        AngularTermination::ThroughAll
-        | AngularTermination::ThroughNext
-        | AngularTermination::ToFirst
-        | AngularTermination::ToLast => true,
+        AngularTermination::ThroughAll {}
+        | AngularTermination::ThroughNext {}
+        | AngularTermination::ToFirst {}
+        | AngularTermination::ToLast {} => true,
     }
 }
 
@@ -547,9 +547,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart};
 
             let start_is_resolved = match start {
-                ExtrudeStart::Unresolved => false,
+                ExtrudeStart::Unresolved {} => false,
                 ExtrudeStart::FromFace { face, .. } => face_selection_is_resolved(face),
-                ExtrudeStart::ProfilePlane | ExtrudeStart::OffsetProfilePlane { .. } => true,
+                ExtrudeStart::ProfilePlane {} | ExtrudeStart::OffsetProfilePlane { .. } => true,
             };
             let extent_is_resolved = match extent {
                 ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {

@@ -1017,27 +1017,27 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         )
     };
     let incomplete_linear_termination = |termination: &LinearTermination| match termination {
-        LinearTermination::Unresolved => true,
+        LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, .. }
         | LinearTermination::OffsetFromFace { face, .. }
         | LinearTermination::ToShape { target: face } => incomplete_face_selection(face),
         LinearTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
         LinearTermination::Blind { .. }
-        | LinearTermination::ThroughAll
-        | LinearTermination::ThroughNext
-        | LinearTermination::ToFirst
-        | LinearTermination::ToLast => false,
+        | LinearTermination::ThroughAll {}
+        | LinearTermination::ThroughNext {}
+        | LinearTermination::ToFirst {}
+        | LinearTermination::ToLast {} => false,
     };
     let incomplete_angular_termination = |termination: &AngularTermination| match termination {
-        AngularTermination::Unresolved => true,
+        AngularTermination::Unresolved {} => true,
         AngularTermination::ToFace { face, .. }
         | AngularTermination::OffsetFromFace { face, .. }
         | AngularTermination::ToShape { target: face } => incomplete_face_selection(face),
         AngularTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
-        AngularTermination::ThroughAll
-        | AngularTermination::ThroughNext
-        | AngularTermination::ToFirst
-        | AngularTermination::ToLast
+        AngularTermination::ThroughAll {}
+        | AngularTermination::ThroughNext {}
+        | AngularTermination::ToFirst {}
+        | AngularTermination::ToLast {}
         | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
@@ -1196,11 +1196,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 incomplete_profile(profile)
                     || matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Unresolved {})
                     || match start {
-                        cadmpeg_ir::features::ExtrudeStart::Unresolved => true,
+                        cadmpeg_ir::features::ExtrudeStart::Unresolved {} => true,
                         cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {
                             incomplete_face_selection(face)
                         }
-                        cadmpeg_ir::features::ExtrudeStart::ProfilePlane
+                        cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
                         | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => false,
                     }
                     || matches!(
@@ -3909,7 +3909,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         }
         let incomplete = shape.diameter().is_none()
             || extent.as_ref().is_none_or(|extent| {
-                matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
+                matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved {})
             })
             || matches!(
                 shape.construction(),
@@ -3918,7 +3918,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             );
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
-                !matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
+                !matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved {})
             })
             && !matches!(
                 &resolved_construction,

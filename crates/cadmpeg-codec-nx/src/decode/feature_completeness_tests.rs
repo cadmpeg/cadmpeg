@@ -38,7 +38,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length::new(5.0).unwrap()),
-        Some(&LinearTermination::ThroughAll),
+        Some(&LinearTermination::ThroughAll {}),
     ));
     assert!(!hole_feature_is_incomplete(
         None,
@@ -46,7 +46,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length::new(5.0).unwrap()),
-        Some(&LinearTermination::ThroughAll),
+        Some(&LinearTermination::ThroughAll {}),
     ));
     let axis = HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
@@ -58,7 +58,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(std::slice::from_ref(&axis)),
         (&HoleKind::Simple, None),
         Some(Length::new(5.0).unwrap()),
-        Some(&LinearTermination::ThroughAll),
+        Some(&LinearTermination::ThroughAll {}),
     ));
     for (placements, exit, extent) in [
         (
@@ -74,12 +74,12 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
                 diameter: cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
                 angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
             }),
-            LinearTermination::ThroughAll,
+            LinearTermination::ThroughAll {},
         ),
         (
             vec![directed.clone(), directed.clone()],
             None,
-            LinearTermination::ThroughAll,
+            LinearTermination::ThroughAll {},
         ),
     ] {
         assert!(hole_feature_is_incomplete(
@@ -97,7 +97,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         None,
         (&HoleKind::Simple, None),
         Some(Length::new(5.0).unwrap()),
-        Some(&LinearTermination::ThroughAll),
+        Some(&LinearTermination::ThroughAll {}),
     ));
     assert!(hole_feature_is_incomplete(
         None,
@@ -105,7 +105,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length::new(5.0).unwrap()),
-        Some(&LinearTermination::Unresolved),
+        Some(&LinearTermination::Unresolved {}),
     ));
     assert!(hole_feature_is_incomplete(
         None,
@@ -118,7 +118,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             ))),
         ),
         Some(Length::new(5.0).unwrap()),
-        Some(&LinearTermination::ThroughAll),
+        Some(&LinearTermination::ThroughAll {}),
     ));
     assert!(hole_feature_is_incomplete(
         None,
@@ -126,7 +126,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length::ZERO),
-        Some(&LinearTermination::ThroughAll),
+        Some(&LinearTermination::ThroughAll {}),
     ));
 
     for kind in [
@@ -164,7 +164,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             Some(std::slice::from_ref(&directed)),
             (&kind, None),
             Some(Length::new(5.0).unwrap()),
-            Some(&LinearTermination::ThroughAll),
+            Some(&LinearTermination::ThroughAll {}),
         ));
     }
 }
@@ -260,13 +260,13 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
             first: side(LinearTermination::Blind {
                 length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap(),
             }),
-            second: side(LinearTermination::ThroughAll),
+            second: side(LinearTermination::ThroughAll {}),
         },
         &[],
     ));
     assert!(extrude_extent_is_incomplete(
         &ExtrudeExtent::Symmetric {
-            side: side(LinearTermination::Unresolved),
+            side: side(LinearTermination::Unresolved {}),
         },
         &[],
     ));
@@ -751,7 +751,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     };
     let complete = definition(
         ExtrudeDirection::ProfileNormal {},
-        ExtrudeStart::ProfilePlane,
+        ExtrudeStart::ProfilePlane {},
         Some(true),
     );
     ir.model.features.push(Feature {
@@ -777,17 +777,17 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     for incomplete in [
         definition(
             ExtrudeDirection::Unresolved {},
-            ExtrudeStart::ProfilePlane,
+            ExtrudeStart::ProfilePlane {},
             Some(true),
         ),
         definition(
             ExtrudeDirection::ProfileNormal {},
-            ExtrudeStart::Unresolved,
+            ExtrudeStart::Unresolved {},
             Some(true),
         ),
         definition(
             ExtrudeDirection::ProfileNormal {},
-            ExtrudeStart::ProfilePlane,
+            ExtrudeStart::ProfilePlane {},
             None,
         ),
     ] {
@@ -1044,7 +1044,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
             Some(std::slice::from_ref(&placement)),
             (&HoleKind::Simple, None),
             Some(Length::new(1.0).unwrap()),
-            Some(&LinearTermination::ThroughAll),
+            Some(&LinearTermination::ThroughAll {}),
         )
     };
 

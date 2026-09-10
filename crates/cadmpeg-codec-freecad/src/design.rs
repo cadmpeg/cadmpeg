@@ -3353,10 +3353,10 @@ fn revolution_definition(
                 }
             }
             1 => RevolveExtent::OneSided {
-                termination: AngularTermination::ThroughAll,
+                termination: AngularTermination::ThroughAll {},
             },
             2 => RevolveExtent::OneSided {
-                termination: AngularTermination::ToFirst,
+                termination: AngularTermination::ToFirst {},
             },
             3 => RevolveExtent::OneSided {
                 termination: AngularTermination::ToFace {
@@ -3865,7 +3865,7 @@ fn extrusion_definition(
                 vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 source: Some(direction_source),
             },
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             extent,
             op: BooleanOp::NewBody,
             solid: Some(bool_selector(properties, "Solid", false)?),
@@ -3900,9 +3900,9 @@ fn extrusion_definition(
                     scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,
                 )?,
             }),
-            1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll),
-            1 => Some(LinearTermination::ToLast),
-            2 => Some(LinearTermination::ToFirst),
+            1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll {}),
+            1 => Some(LinearTermination::ToLast {}),
+            2 => Some(LinearTermination::ToFirst {}),
             3 => Some(LinearTermination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(
                     singular_operand(properties, &face_name)?.id.clone(),
@@ -4033,7 +4033,7 @@ fn extrusion_definition(
     Some(FeatureDefinition::Extrude {
         profile,
         direction,
-        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
         extent,
         op: if kind.contains("Pocket") {
             BooleanOp::Cut
@@ -5107,7 +5107,7 @@ fn hole_definition(
         0 => LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(positive("Depth")?)?,
         },
-        1 => LinearTermination::ThroughAll,
+        1 => LinearTermination::ThroughAll {},
         _ => return None,
     };
     let bottom = match enumeration_selector(properties, "DrillPoint", 1)? {

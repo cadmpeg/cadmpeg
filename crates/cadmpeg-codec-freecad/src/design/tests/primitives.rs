@@ -838,7 +838,7 @@ fn transfers_non_default_revolution_branches() {
         } if construction.axis().is_some_and(|axis| axis.direction.y == 1.0
             && axis.origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::ToFirst
+                    termination: AngularTermination::ToFirst {}
                 }))
     ));
     assert!(matches!(
@@ -873,7 +873,7 @@ fn transfers_non_default_revolution_branches() {
             construction,
             op: BooleanOp::Cut
         } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
-            termination: AngularTermination::ThroughAll
+            termination: AngularTermination::ThroughAll {}
         }))
     ));
     assert!(matches!(

@@ -664,7 +664,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let extrude = |direction, termination| FeatureDefinition::Extrude {
         profile: profile.clone(),
         direction,
-        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
         extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination,
@@ -914,7 +914,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
         )
         .unwrap(),
 
-        extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+        extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
