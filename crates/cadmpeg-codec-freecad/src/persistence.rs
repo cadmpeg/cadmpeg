@@ -406,7 +406,7 @@ fn parse_document(
         let crate::native::PropertyBody::Persisted { links, .. } = &mut property.body else {
             continue;
         };
-        for link in links {
+        for link in links.iter_mut().flatten() {
             if let Some(target) = link.object() {
                 if declared_names.contains(target) {
                     link.set_object(
@@ -600,7 +600,7 @@ pub(crate) fn validate_link_property(
 fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
-) -> Result<Vec<LinkTarget>, CodecError> {
+) -> Result<Vec<Option<LinkTarget>>, CodecError> {
     let grammar = link_grammar(type_name);
     let Some(grammar) = grammar else {
         return Ok(Vec::new());
@@ -741,13 +741,13 @@ fn local_link(
     node: roxmltree::Node<'_, '_>,
     object_attribute: &str,
     subelements: &[String],
-) -> Result<LinkTarget, CodecError> {
+) -> Result<Option<LinkTarget>, CodecError> {
     if object_attribute == "obj" {
         reject_link_aliases(node, &["obj", "sub"])?;
     } else {
         reject_link_aliases(node, &[object_attribute])?;
     }
-    LinkTarget::try_from(LinkTargetWire {
+    LinkTarget::optional_from_wire(LinkTargetWire {
         document: None,
         document_attribute: None,
         object: Some(required_attr(node, object_attribute)?),
@@ -756,7 +756,7 @@ fn local_link(
     .map_err(CodecError::Malformed)
 }
 
-fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
+fn xlink(node: roxmltree::Node<'_, '_>) -> Result<Option<LinkTarget>, CodecError> {
     reject_link_aliases(node, &["name", "file", "sub"])?;
     let file = node.attribute("file").map(str::to_owned);
     let children = node
@@ -803,7 +803,7 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
             ));
         }
     };
-    LinkTarget::try_from(LinkTargetWire {
+    LinkTarget::optional_from_wire(LinkTargetWire {
         document: file.filter(|file| !file.is_empty()),
         document_attribute: Some("file".to_owned()),
         object: Some(required_attr(node, "name")?),

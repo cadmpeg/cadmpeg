@@ -47,7 +47,7 @@ pub(crate) fn transfer(
                 link_list(property, "App::PropertyLinkList", "Group").map(|links| {
                     links
                         .iter()
-                        .filter_map(|link| link.object().map(str::to_owned))
+                        .filter_map(|link| link.as_ref()?.object().map(str::to_owned))
                         .collect::<Vec<_>>()
                 })
             })
@@ -56,7 +56,8 @@ pub(crate) fn transfer(
         let linked = unique_property(&owned, "LinkedObject")?;
         let prototype_link = linked
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
-            .transpose()?;
+            .transpose()?
+            .flatten();
         let placement = selected_placement(&owned)?;
         let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
@@ -99,7 +100,7 @@ pub(crate) fn transfer(
                 link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
                     links
                         .iter()
-                        .filter_map(|link| link.object().map(str::to_owned))
+                        .filter_map(|link| link.as_ref()?.object().map(str::to_owned))
                         .collect::<Vec<_>>()
                 })
             })
@@ -672,7 +673,7 @@ fn single_link<'a>(
     expected_type: &str,
     root: &str,
     name: &str,
-) -> Result<&'a crate::native::LinkTarget, CodecError> {
+) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
     require_root(property, expected_type, name, root)?;
     if property.links().len() != 1 {
         return Err(malformed(format!(
@@ -681,14 +682,14 @@ fn single_link<'a>(
             property.links().len()
         )));
     }
-    Ok(&property.links()[0])
+    Ok(property.links()[0].as_ref())
 }
 
 fn link_list<'a>(
     property: &'a PropertyRecord,
     expected_type: &str,
     name: &str,
-) -> Result<&'a [crate::native::LinkTarget], CodecError> {
+) -> Result<&'a [Option<crate::native::LinkTarget>], CodecError> {
     require_root(property, expected_type, name, "LinkList")?;
     if property
         .values()
@@ -980,7 +981,9 @@ fn linked_object(
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
-    Ok(link.object().map(str::to_owned))
+    Ok(link
+        .and_then(crate::native::LinkTarget::object)
+        .map(str::to_owned))
 }
 
 fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {

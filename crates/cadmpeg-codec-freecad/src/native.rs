@@ -547,7 +547,7 @@ pub struct AttachmentRecord {
     /// Attached application object.
     pub object: String,
     /// Ordered support objects and subelements.
-    pub supports: Vec<LinkTarget>,
+    pub supports: Vec<Option<LinkTarget>>,
     /// Persisted attachment-map mode.
     pub map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
@@ -560,7 +560,7 @@ impl AttachmentRecord {
     pub(crate) fn try_new(
         id: String,
         object: String,
-        supports: Vec<LinkTarget>,
+        supports: Vec<Option<LinkTarget>>,
         map_mode: Option<MapModeIndex>,
         placement: Option<FiniteFrame>,
         offset: Option<FiniteFrame>,
@@ -601,7 +601,7 @@ impl AttachmentRecord {
 struct AttachmentRecordWire {
     id: String,
     object: String,
-    supports: Vec<LinkTarget>,
+    supports: Vec<Option<LinkTarget>>,
     map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
@@ -923,7 +923,7 @@ pub struct SemanticAnnotationRecord {
     /// Ordered user-visible text fragments.
     pub text: Vec<String>,
     /// Object and subelement references grouped by source property.
-    pub references: BTreeMap<String, Vec<LinkTarget>>,
+    pub references: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed or exactly framed annotation properties grouped by source name.
     pub parameters: BTreeMap<String, String>,
     /// Referenced symbol, image, or other side entries.
@@ -1011,9 +1011,9 @@ pub struct DrawingRecord {
     /// Persisted `TechDraw` runtime type.
     pub kind: TechDrawKind,
     /// Ordered source object and subelement references for a view or dimension.
-    pub sources: Vec<LinkTarget>,
+    pub sources: Vec<Option<LinkTarget>>,
     /// All drawing relationships grouped by their persisted property name.
-    pub relationships: BTreeMap<String, Vec<LinkTarget>>,
+    pub relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed scalar/vector/string drawing fields retained by property name.
     pub parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
@@ -1027,8 +1027,8 @@ struct DrawingRecordWire {
     kind: String,
     views: Vec<String>,
     template: Option<String>,
-    sources: Vec<LinkTarget>,
-    relationships: BTreeMap<String, Vec<LinkTarget>>,
+    sources: Vec<Option<LinkTarget>>,
+    relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     parameters: BTreeMap<String, String>,
     side_entries: Vec<String>,
 }
@@ -2109,6 +2109,18 @@ pub struct LinkTarget {
 }
 
 impl LinkTarget {
+    /// Admits a target from a parsed link element, or absence when the element
+    /// selects no document, object, or subelement.
+    pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {
+        let document =
+            ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
+        let object = wire.object.and_then(NonEmptyString::new);
+        if document.is_none() && object.is_none() && wire.subelements.is_empty() {
+            return Ok(None);
+        }
+        Self::try_new(document, object, wire.subelements).map(Some)
+    }
+
     /// Admits a target with a document, object, or subelement selection.
     pub fn try_new(
         document: Option<ExternalDocument>,
@@ -2227,8 +2239,8 @@ pub enum PropertyBody {
     Persisted {
         /// Ordered value elements.
         values: Vec<ValueRecord>,
-        /// Generically recovered ordered link targets.
-        links: Vec<LinkTarget>,
+        /// Generically recovered ordered link targets; `None` is a null link.
+        links: Vec<Option<LinkTarget>>,
         /// Referenced archive entries.
         side_entries: Vec<String>,
         /// Dynamic-property metadata, when carried.
@@ -2297,7 +2309,7 @@ impl PropertyRecord {
     }
 
     /// Recovered link targets; empty for a transient declaration.
-    pub fn links(&self) -> &[LinkTarget] {
+    pub fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             PropertyBody::Persisted { links, .. } => links,
             PropertyBody::Transient => &[],
@@ -2332,7 +2344,7 @@ struct PropertyRecordWire {
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     values: Vec<ValueRecord>,
-    links: Vec<LinkTarget>,
+    links: Vec<Option<LinkTarget>>,
     side_entries: Vec<String>,
     raw_xml: String,
     byte_start: u64,

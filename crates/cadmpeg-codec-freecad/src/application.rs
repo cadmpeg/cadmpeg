@@ -69,7 +69,7 @@ struct ApplicationPropertyWire<'a> {
     type_name: &'a str,
     family: PropertyFamily,
     order: usize,
-    links: &'a [LinkTarget],
+    links: &'a [Option<LinkTarget>],
     byte_start: u64,
     byte_end: u64,
     byte_len: u64,
