@@ -143,6 +143,9 @@ pub enum VerbatimSize {
     /// The payload size; its stored span is not reported.
     PayloadOnly(u64),
     /// The stored span; the payload it expands to is not reported.
+    ///
+    /// The wire pair (`compressed_size` present, `uncompressed_size` absent) is
+    /// its only origin: no codec reports a stored span without its payload.
     StoredOnly(u64),
     /// The payload occupies exactly this many stored bytes.
     Exact(u64),
@@ -763,6 +766,18 @@ mod tests {
             }
         );
         assert_ne!(reported.storage, unreported.storage);
+        assert_ne!(
+            EntryStorage::verbatim(VerbatimLabel::None, 0),
+            EntryStorage::unreported(VerbatimLabel::None)
+        );
+        assert_eq!(
+            EntryStorage::verbatim(VerbatimLabel::None, 0).expanded_size(),
+            Some(0)
+        );
+        assert_eq!(
+            EntryStorage::verbatim(VerbatimLabel::None, 0).stored_size(),
+            Some(0)
+        );
         assert_eq!(reported.stored_size(), Some(0));
         assert_eq!(reported.expanded_size(), Some(0));
         assert_eq!(unreported.stored_size(), None);
