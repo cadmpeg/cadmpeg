@@ -2056,7 +2056,7 @@ fn native_cacheless_procedural_surface_definition(
 
         if !matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full
+            cadmpeg_ir::geometry::LawSurfaceTail::Full {}
         ) {
             encode_native_law_surface(bytes, target, procedural, construction, None)?;
             return Ok(true);
@@ -2351,7 +2351,7 @@ fn encode_native_law_surface(
         native_law_formula(bytes, target, formula)?;
     }
     match &construction.tail {
-        cadmpeg_ir::geometry::LawSurfaceTail::Full => {
+        cadmpeg_ir::geometry::LawSurfaceTail::Full {} => {
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::Malformed("full law surface requires a cache-fit tolerance".into())
             })?;

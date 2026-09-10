@@ -1423,7 +1423,7 @@ impl LawSurfacePayload {
                 .iter()
                 .flatten()
                 .all(|value| value.is_finite()),
-            crate::geometry::LawSurfaceTail::Full
+            crate::geometry::LawSurfaceTail::Full {}
             | crate::geometry::LawSurfaceTail::Historical
             | crate::geometry::LawSurfaceTail::Optimal => true,
         };

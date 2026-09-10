@@ -1441,8 +1441,8 @@ fn validate_law_cache_fit_tolerance(
         let construction = definition_payload.construction();
 
         match (&construction.tail, value) {
-            (LawSurfaceTail::Full, None) => return Err(CacheFitToleranceError::MissingLawFull),
-            (LawSurfaceTail::Full, Some(_)) | (_, None) => {}
+            (LawSurfaceTail::Full {}, None) => return Err(CacheFitToleranceError::MissingLawFull),
+            (LawSurfaceTail::Full {}, Some(_)) | (_, None) => {}
             (_, Some(_)) => return Err(CacheFitToleranceError::NonFullLaw),
         }
     }
@@ -1452,7 +1452,7 @@ fn validate_law_cache_fit_tolerance(
 /// Structurally selected deformable-surface payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeformableSurfaceData {
     /// Mode-6 full embedded deformation payload.
     Full {
@@ -3894,7 +3894,7 @@ pub struct G2BlendSide {
 /// Singularity-specific payload of the first G2 blend side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum G2BlendFirstShape {
     /// Full singularity with an optional BS3 support surface.
     Full {
@@ -5581,10 +5581,10 @@ pub struct LawSurfaceConstruction {
 /// Mode-specific payload of a native law surface's standard surface tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawSurfaceTail {
     /// Selector 0; the surface record carries a solved NURBS cache.
-    Full,
+    Full {},
     /// Selector 1; compact parameter summaries replace the solved cache.
     Summary {
         /// Ordered U and V parameter summaries.
@@ -6612,7 +6612,7 @@ pub struct ParametricSurfaceCurveFlags {
 /// Mutually exclusive tail forms of a native projected intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProjectionTail {
     /// The ASM flag is followed immediately by the subtype close.
     EarlyClose {

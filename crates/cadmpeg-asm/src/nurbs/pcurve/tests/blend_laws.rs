@@ -179,7 +179,7 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
         );
         assert!(matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full
+            cadmpeg_ir::geometry::LawSurfaceTail::Full {}
         ));
         assert_eq!(cache_fit_tolerance, Some(0.07));
     }
