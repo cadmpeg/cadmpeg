@@ -7882,9 +7882,11 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
     for links in body_links.values_mut() {
         links.sort_by_key(|link| link.ordinal);
-        if links.iter().enumerate().any(|(ordinal, link)| {
-            link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len())
-        }) {
+        if links
+            .iter()
+            .enumerate()
+            .any(|(ordinal, link)| link.ordinal != ordinal as u32)
+        {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

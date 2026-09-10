@@ -993,7 +993,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
 
         design_reference: 9,
         ordinal: 0,
-        is_current: true,
     };
     assert_eq!(
         super::super::body_recipe_link_candidate(
