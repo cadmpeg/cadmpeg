@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -956,6 +956,8 @@ pub(crate) struct Projection {
     pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) boundary_vertex_derivations: Vec<BoundaryVertexDerivation>,
+    /// The Directory sequence each projected record was decoded from.
+    pub(crate) sequences: SourceSequences,
 }
 
 fn positive_sequence(value: i64) -> Option<u32> {
@@ -1197,15 +1199,108 @@ pub(super) fn admit<T>(
         .ok()
 }
 
+/// The Directory sequence a source-object association names.
+///
+/// The sole producer of the `D{sequence}` object-id spelling. Nothing reads the
+/// sequence back out of that text: every consumer holds the sequence itself,
+/// through [`SourceSequences`] or through the entry it is projecting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SourceObjectId(u32);
+
+impl SourceObjectId {
+    /// Names the Directory entry a projected record was decoded from.
+    pub(crate) const fn new(sequence: u32) -> Self {
+        Self(sequence)
+    }
+
+    /// The object-id text every source association carries.
+    pub(crate) fn text(self) -> String {
+        format!("D{}", self.0)
+    }
+}
+
+/// The Directory sequence each projected body and face was decoded from.
+///
+/// Recorded where the id is minted, so appearance binding reads the sequence
+/// the decoder held rather than parsing it back out of the identity.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct SourceSequences {
+    bodies: BTreeMap<BodyId, u32>,
+    faces: BTreeMap<FaceId, u32>,
+    curves: BTreeMap<CurveId, u32>,
+    surfaces: BTreeMap<SurfaceId, u32>,
+    points: BTreeMap<PointId, u32>,
+    body_neutral_forms: BTreeMap<BodyId, u32>,
+}
+
+impl SourceSequences {
+    /// Records the entry a body was decoded from, and -- when the body's key is
+    /// rooted at that entry -- that the body is its neutral form.
+    pub(super) fn record_body(&mut self, id: &BodyId, sequence: u32, stem: &crate::ids::Stem) {
+        self.bodies.insert(id.clone(), sequence);
+        if let Some(origin) = stem.origin() {
+            self.body_neutral_forms.insert(id.clone(), origin);
+        }
+    }
+
+    pub(super) fn record_face(&mut self, id: &FaceId, sequence: u32) {
+        self.faces.insert(id.clone(), sequence);
+    }
+
+    pub(super) fn record_curve(&mut self, id: &CurveId, sequence: u32) {
+        self.curves.insert(id.clone(), sequence);
+    }
+
+    pub(super) fn record_surface(&mut self, id: &SurfaceId, sequence: u32) {
+        self.surfaces.insert(id.clone(), sequence);
+    }
+
+    /// Records the entry a point is the neutral form of, when its key is rooted
+    /// at one.
+    pub(super) fn record_point(&mut self, id: &PointId, stem: &crate::ids::Stem) {
+        if let Some(sequence) = stem.origin() {
+            self.points.insert(id.clone(), sequence);
+        }
+    }
+
+    pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
+        self.bodies.get(id).copied()
+    }
+
+    pub(super) fn face(&self, id: &FaceId) -> Option<u32> {
+        self.faces.get(id).copied()
+    }
+
+    /// The Directory sequence this curve was decoded from.
+    pub(crate) fn curve(&self, id: &CurveId) -> Option<u32> {
+        self.curves.get(id).copied()
+    }
+
+    /// The Directory sequence this surface was decoded from.
+    pub(crate) fn surface(&self, id: &SurfaceId) -> Option<u32> {
+        self.surfaces.get(id).copied()
+    }
+
+    /// The Directory sequence this point is the neutral form of.
+    pub(crate) fn point(&self, id: &PointId) -> Option<u32> {
+        self.points.get(id).copied()
+    }
+
+    /// The Directory sequence this body is the neutral form of.
+    pub(crate) fn body_neutral_form(&self, id: &BodyId) -> Option<u32> {
+        self.body_neutral_forms.get(id).copied()
+    }
+}
+
 pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
-        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("D{}", entry.sequence))
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-            })?,
+        object_id: cadmpeg_ir::products::NonEmptyString::new(
+            SourceObjectId::new(entry.sequence).text(),
+        )
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("source object_id must not be empty"))?,
         name: std::str::from_utf8(&entry.label)
             .ok()
             .map(str::trim)
@@ -1226,6 +1321,7 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
+    let mut sequences = SourceSequences::default();
     let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
         entry.status.use_flag(global_table).is_some_and(|use_flag| {
@@ -1435,17 +1531,15 @@ pub(crate) fn project_geometry(
         if angularly_equal(angle, 0.0) {
             angle = std::f64::consts::TAU;
         }
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1470,6 +1564,7 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Circle(
@@ -1530,8 +1625,8 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "scaled coordinates are not finite"));
             continue;
         }
-        let point = PointId::mint(format!("iges:model:point#D{}", entry.sequence))
-            .expect("identity grammar");
+        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
@@ -1540,8 +1635,7 @@ pub(crate) fn project_geometry(
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
-            let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
-                .expect("identity grammar");
+            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
@@ -1619,8 +1713,8 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "scaled reference point is not finite"));
             continue;
         }
-        let point = PointId::mint(format!("iges:model:point#D{}", entry.sequence))
-            .expect("identity grammar");
+        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
@@ -1629,8 +1723,7 @@ pub(crate) fn project_geometry(
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
-            let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
-                .expect("identity grammar");
+            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
@@ -1690,8 +1783,9 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let stem = format!("D{}", entry.sequence);
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let curve = crate::ids::curve(&stem);
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Line(
@@ -1707,15 +1801,13 @@ pub(crate) fn project_geometry(
             decoded.insert(entry.sequence);
             continue;
         }
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -2051,17 +2143,15 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -2086,6 +2176,7 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(nurbs),
@@ -2112,32 +2203,32 @@ pub(crate) fn project_geometry(
     // decode report and the free-geometry shell; every `project` call appends
     // to `ir`; and every `admit_projected_entities` call can early-return on
     // the entity budget.
-    super::conics::project(ir, directory, parameters, global, ctx).merge_into(
+    super::conics::project(ir, directory, parameters, global, ctx, &mut sequences).merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    super::copious::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::copious::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
         &mut free_vertices,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
-    super::splines::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::splines::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
-    super::composite::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::composite::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
-    super::offsets::project(ir, directory, parameters, global, ctx).merge_into(
+    super::offsets::project(ir, directory, parameters, global, ctx, &mut sequences).merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
@@ -2146,15 +2237,22 @@ pub(crate) fn project_geometry(
     // A valid V5 Type 130 constituent is deferred until its exact offset
     // carrier has been projected above. The second composite pass consumes
     // that carrier while retaining each entity's ordered child list.
-    super::composite::project_type_130_children(ir, directory, parameters, global, ctx)?
-        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
+    super::composite::project_type_130_children(
+        ir,
+        directory,
+        parameters,
+        global,
+        ctx,
+        &mut sequences,
+    )?
+    .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(
         ctx,
         ir,
         &mut admitted_entities,
         "iges_geometry_composites_offsets",
     )?;
-    super::analytic_surfaces::project(ir, directory, parameters, global, ctx)
+    super::analytic_surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
@@ -2162,13 +2260,13 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_analytic_surfaces",
     )?;
-    super::surfaces::project(ir, directory, parameters, global, ctx)?
+    super::surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
-        let body = BodyId::mint("iges:model:body#free-geometry").expect("identity grammar");
-        let region = RegionId::mint("iges:model:region#free-geometry").expect("identity grammar");
-        let shell = ShellId::mint("iges:model:shell#free-geometry").expect("identity grammar");
+        let body = crate::ids::body(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let region = crate::ids::region(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let shell = crate::ids::shell(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Wire,
@@ -2195,11 +2293,11 @@ pub(crate) fn project_geometry(
         "iges_geometry_wire_topology",
     )?;
     let (trimming_projection, trimming_vertex_derivations) =
-        super::trimming::project(ir, directory, parameters, global, ctx);
+        super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences);
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
-    super::brep::project(ir, directory, parameters, global, ctx)
+    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
     super::csg::project(ir, directory, parameters, global, ctx)
@@ -2212,10 +2310,11 @@ pub(crate) fn project_geometry(
         trailing_pointer_analysis,
         global,
         ctx,
+        &mut sequences,
     );
     structure_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
-    super::presentation::project(ir, directory, parameters, global, ctx)
+    super::presentation::project(ir, directory, parameters, global, ctx, &sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
@@ -2238,9 +2337,7 @@ pub(crate) fn project_geometry(
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
         .iter()
-        .map(|sequence| {
-            PointId::mint(format!("iges:model:point#D{sequence}")).expect("identity grammar")
-        })
+        .map(|sequence| crate::ids::point(&crate::ids::Stem::directory(*sequence)))
         .collect::<BTreeSet<_>>();
     let vertex_points = ir
         .model
@@ -2257,6 +2354,7 @@ pub(crate) fn project_geometry(
         consumed,
         losses,
         boundary_vertex_derivations,
+        sequences,
     })
 }
 

@@ -322,15 +322,15 @@ impl CurveExpressionActivation {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveExpressionHelix {
     /// Constant cylindrical radius in model millimeters.
-    pub radius: f64,
+    pub radius: cadmpeg_ir::scalar::PositiveLength,
     /// Signed axial rise from `t = 0` through `t = 1`.
     pub height: f64,
     /// Native axial coordinate at `t = 0`.
     pub z_start: f64,
     /// Positive angular travel in revolutions.
-    pub revolutions: f64,
+    pub revolutions: cadmpeg_ir::scalar::PositiveReal,
     /// Angular position at `t = 0`, in radians.
-    pub start_angle: f64,
+    pub start_angle: cadmpeg_ir::scalar::Angle,
     /// Whether angular travel decreases as `t` increases.
     pub clockwise: bool,
 }
@@ -5626,17 +5626,16 @@ pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressio
     let radius = values.get("r")?;
     let theta = values.get("theta")?;
     let z = values.get("z")?;
-    if radius.constant <= 0.0 || radius.linear != 0.0 {
+    if radius.linear != 0.0 {
         return None;
     }
     let angular_travel = theta.linear;
-    let revolutions = angular_travel.abs() / 360.0;
-    (revolutions > 0.0).then_some(CurveExpressionHelix {
-        radius: radius.constant,
+    Some(CurveExpressionHelix {
+        radius: cadmpeg_ir::scalar::PositiveLength::new(radius.constant)?,
         height: z.linear,
         z_start: z.constant,
-        revolutions,
-        start_angle: theta.constant.to_radians(),
+        revolutions: cadmpeg_ir::scalar::PositiveReal::new(angular_travel.abs() / 360.0)?,
+        start_angle: cadmpeg_ir::scalar::Angle::new(theta.constant.to_radians())?,
         clockwise: angular_travel < 0.0,
     })
 }

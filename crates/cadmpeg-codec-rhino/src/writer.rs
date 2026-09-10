@@ -577,7 +577,7 @@ fn prepare_write(
             unsupported.join(", ")
         )));
     }
-    if model.points.len() > i32::MAX as usize
+    if i32::try_from(model.points.len()).is_err()
         || model.points.iter().any(|point| {
             !point.position.x.is_finite()
                 || !point.position.y.is_finite()
@@ -853,22 +853,18 @@ fn brep_payload(
         .iter()
         .enumerate()
         .map(|(index, vertex)| {
-            let incident = model
-                .edges
-                .iter()
-                .enumerate()
-                .flat_map(|(position, edge)| {
+            let incident =
+                wire_indexes(model.edges.iter().enumerate().flat_map(|(position, edge)| {
                     [edge.start, edge.end]
                         .into_iter()
                         .filter(move |endpoint| *endpoint == index)
-                        .map(move |_| position as i32)
-                })
-                .collect::<Vec<_>>();
-            let mut record = (index as i32).to_le_bytes().to_vec();
+                        .map(move |_| position)
+                }))?;
+            let mut record = wire_index(index)?.to_le_bytes().to_vec();
             for value in [vertex.point.x, vertex.point.y, vertex.point.z] {
                 record.extend(value.to_le_bytes());
             }
-            record.extend(indexes(&incident));
+            record.extend(indexes(&incident)?);
             record.extend(
                 vertex
                     .source
@@ -876,28 +872,23 @@ fn brep_payload(
                     .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
                     .to_le_bytes(),
             );
-            record
+            Ok(record)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(raw_array(&vertices));
     let edges = model
         .edges
         .iter()
         .enumerate()
         .map(|(index, edge)| {
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend((index as i32).to_le_bytes());
+            let index = wire_index(index)?;
+            let mut record = index.to_le_bytes().to_vec();
+            record.extend(index.to_le_bytes());
             record.extend(0_i32.to_le_bytes());
             record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
-            record.extend((edge.start as i32).to_le_bytes());
-            record.extend((edge.end as i32).to_le_bytes());
-            record.extend(indexes(
-                &edge
-                    .uses
-                    .iter()
-                    .map(|position| *position as i32)
-                    .collect::<Vec<_>>(),
-            ));
+            record.extend(wire_index(edge.start)?.to_le_bytes());
+            record.extend(wire_index(edge.end)?.to_le_bytes());
+            record.extend(indexes(&wire_indexes(edge.uses.iter().copied())?)?);
             record.extend(
                 edge.source
                     .tolerance
@@ -905,9 +896,9 @@ fn brep_payload(
                     .to_le_bytes(),
             );
             record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
-            record
+            Ok(record)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(raw_array(&edges));
     let trims = model
         .coedges
@@ -916,18 +907,19 @@ fn brep_payload(
         .map(|(index, coedge)| {
             let edge = &model.edges[coedge.edge];
             let (from, to) = model.endpoints(index);
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend((index as i32).to_le_bytes());
+            let index = wire_index(index)?;
+            let mut record = index.to_le_bytes().to_vec();
+            record.extend(index.to_le_bytes());
             record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
-            record.extend((coedge.edge as i32).to_le_bytes());
-            record.extend((from as i32).to_le_bytes());
-            record.extend((to as i32).to_le_bytes());
+            record.extend(wire_index(coedge.edge)?.to_le_bytes());
+            record.extend(wire_index(from)?.to_le_bytes());
+            record.extend(wire_index(to)?.to_le_bytes());
             record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
             let same_loop = edge.uses.len() == 2
                 && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
             record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend((coedge.owner_loop as i32).to_le_bytes());
+            record.extend(wire_index(coedge.owner_loop)?.to_le_bytes());
             record.extend(
                 [coedge.fit_tolerance, 0.0_f64]
                     .into_iter()
@@ -937,9 +929,9 @@ fn brep_payload(
             record.push(0);
             record.extend([0_u8; 31]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
-            record
+            Ok(record)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(raw_array(&trims));
     let loops = model
         .loops
@@ -947,14 +939,8 @@ fn brep_payload(
         .enumerate()
         .map(|(index, loop_)| {
             let face = &model.faces[loop_.face];
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend(indexes(
-                &loop_
-                    .coedges
-                    .iter()
-                    .map(|coedge| *coedge as i32)
-                    .collect::<Vec<_>>(),
-            ));
+            let mut record = wire_index(index)?.to_le_bytes().to_vec();
+            record.extend(indexes(&wire_indexes(loop_.coedges.iter().copied())?)?);
             record.extend(
                 brep_loop_type(
                     face.source.loop_role(&loop_.source.id),
@@ -962,30 +948,24 @@ fn brep_payload(
                 )
                 .to_le_bytes(),
             );
-            record.extend((loop_.face as i32).to_le_bytes());
-            record
+            record.extend(wire_index(loop_.face)?.to_le_bytes());
+            Ok(record)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(raw_array(&loops));
     let faces = model
         .faces
         .iter()
         .enumerate()
         .map(|(index, face)| {
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend(indexes(
-                &face
-                    .loops
-                    .iter()
-                    .map(|loop_| *loop_ as i32)
-                    .collect::<Vec<_>>(),
-            ));
-            record.extend((face.surface as i32).to_le_bytes());
+            let mut record = wire_index(index)?.to_le_bytes().to_vec();
+            record.extend(indexes(&wire_indexes(face.loops.iter().copied())?)?);
+            record.extend(wire_index(face.surface)?.to_le_bytes());
             record.extend(i32::from(face.source.sense == Sense::Reversed).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record
+            Ok(record)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(face_array(
         &faces,
         &model
@@ -1476,10 +1456,22 @@ fn empty_region_wrapper() -> Vec<u8> {
     crc_chunk(0x4000_8000, &body)
 }
 
-fn indexes(values: &[i32]) -> Vec<u8> {
-    let mut bytes = (values.len() as i32).to_le_bytes().to_vec();
+/// Converts one arena position into the native index the Brep records store.
+fn wire_index(position: usize) -> Result<i32, CodecError> {
+    i32::try_from(position).map_err(|_| {
+        CodecError::Malformed("Brep record index exceeds the native index range".into())
+    })
+}
+
+/// Converts a list of arena positions into the native indexes they store as.
+fn wire_indexes(positions: impl IntoIterator<Item = usize>) -> Result<Vec<i32>, CodecError> {
+    positions.into_iter().map(wire_index).collect()
+}
+
+fn indexes(values: &[i32]) -> Result<Vec<u8>, CodecError> {
+    let mut bytes = wire_index(values.len())?.to_le_bytes().to_vec();
     bytes.extend(values.iter().flat_map(|value| value.to_le_bytes()));
-    bytes
+    Ok(bytes)
 }
 
 fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {

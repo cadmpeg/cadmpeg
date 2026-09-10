@@ -69,49 +69,62 @@ pub struct PartialRecord {
     pub parameters: Vec<Value>,
 }
 
-/// The nonempty partial population of one entity instance.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RecordPartials(Vec<PartialRecord>);
+pub use partials::RecordPartials;
 
-impl RecordPartials {
-    pub fn single(first: PartialRecord) -> Self {
-        Self(vec![first])
+mod partials {
+    use super::PartialRecord;
+
+    /// The nonempty partial population of one entity instance.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct RecordPartials(Vec<PartialRecord>);
+
+    impl RecordPartials {
+        /// Builds the population of one simple entity instance.
+        pub fn single(first: PartialRecord) -> Self {
+            Self(vec![first])
+        }
+
+        /// Builds the population of one complex entity instance, or `None` when empty.
+        pub fn try_many(parts: Vec<PartialRecord>) -> Option<Self> {
+            (!parts.is_empty()).then_some(Self(parts))
+        }
+
+        /// The first partial record, which always exists.
+        pub fn first(&self) -> &PartialRecord {
+            &self.0[0]
+        }
     }
 
-    pub fn first(&self) -> &PartialRecord {
-        &self.0[0]
+    impl std::ops::Deref for RecordPartials {
+        type Target = [PartialRecord];
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
     }
-}
 
-impl std::ops::Deref for RecordPartials {
-    type Target = [PartialRecord];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    impl std::ops::DerefMut for RecordPartials {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
     }
-}
 
-impl std::ops::DerefMut for RecordPartials {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    impl<'a> IntoIterator for &'a RecordPartials {
+        type Item = &'a PartialRecord;
+        type IntoIter = std::slice::Iter<'a, PartialRecord>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter()
+        }
     }
-}
 
-impl<'a> IntoIterator for &'a RecordPartials {
-    type Item = &'a PartialRecord;
-    type IntoIter = std::slice::Iter<'a, PartialRecord>;
+    impl<'a> IntoIterator for &'a mut RecordPartials {
+        type Item = &'a mut PartialRecord;
+        type IntoIter = std::slice::IterMut<'a, PartialRecord>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a mut RecordPartials {
-    type Item = &'a mut PartialRecord;
-    type IntoIter = std::slice::IterMut<'a, PartialRecord>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter_mut()
+        }
     }
 }
 
@@ -1073,11 +1086,14 @@ impl Parser<'_, '_, '_> {
                     ),
                 });
             }
-            RecordPartials(parts)
+            parts
         } else {
-            RecordPartials::single(self.partial()?)
+            vec![self.partial()?]
         };
-        self.charge_vec_storage(&partials.0, "step_parse_record_storage")?;
+        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
+        let Some(partials) = RecordPartials::try_many(partials) else {
+            return Self::err_at(start, "entity instance has no partial record");
+        };
         self.punct(&TokenKind::Semicolon)?;
         Ok((
             id,

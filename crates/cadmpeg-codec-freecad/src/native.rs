@@ -51,14 +51,15 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
-    fn link_targets_reserve_absence_for_wire_admission() {
+    fn link_targets_reject_absence_on_every_admission_route() {
         assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
         let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
-        let target = serde_json::from_value::<super::LinkTarget>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&target).unwrap(), wire);
-        assert!(target.into_optional().is_none());
+        assert!(serde_json::from_value::<super::LinkTarget>(wire).is_err());
         let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
-        assert!(target.into_optional().is_some());
+        assert_eq!(
+            serde_json::to_value(&target).unwrap(),
+            serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":["Face1"]})
+        );
     }
 
     #[test]
@@ -266,7 +267,7 @@ mod tests {
 
     #[test]
     fn file_version_preserves_spelling_and_rejects_invalid_wire() {
-        let wire = serde_json::json!({"id":"document", "schema_version":"4", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
+        let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
         let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
         assert_eq!(record.file_version.value(), 1);
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
@@ -328,7 +329,7 @@ mod tests {
 
     #[test]
     fn document_kind_wire_must_match_domains_and_count() {
-        let mut wire = serde_json::json!({"id":"document", "schema_version":"4",
+        let mut wire = serde_json::json!({"id":"document",
             "file_version":"1", "program_version":null, "root_name":"Document",
             "object_count":1, "domains":["Part"], "document_kind":"empty"});
         assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
@@ -546,7 +547,7 @@ pub struct AttachmentRecord {
     /// Attached application object.
     pub object: String,
     /// Ordered support objects and subelements.
-    pub supports: Vec<LinkTarget>,
+    pub supports: Vec<Option<LinkTarget>>,
     /// Persisted attachment-map mode.
     pub map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
@@ -559,7 +560,7 @@ impl AttachmentRecord {
     pub(crate) fn try_new(
         id: String,
         object: String,
-        supports: Vec<LinkTarget>,
+        supports: Vec<Option<LinkTarget>>,
         map_mode: Option<MapModeIndex>,
         placement: Option<FiniteFrame>,
         offset: Option<FiniteFrame>,
@@ -600,7 +601,7 @@ impl AttachmentRecord {
 struct AttachmentRecordWire {
     id: String,
     object: String,
-    supports: Vec<LinkTarget>,
+    supports: Vec<Option<LinkTarget>>,
     map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
@@ -922,7 +923,7 @@ pub struct SemanticAnnotationRecord {
     /// Ordered user-visible text fragments.
     pub text: Vec<String>,
     /// Object and subelement references grouped by source property.
-    pub references: BTreeMap<String, Vec<LinkTarget>>,
+    pub references: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed or exactly framed annotation properties grouped by source name.
     pub parameters: BTreeMap<String, String>,
     /// Referenced symbol, image, or other side entries.
@@ -1010,9 +1011,9 @@ pub struct DrawingRecord {
     /// Persisted `TechDraw` runtime type.
     pub kind: TechDrawKind,
     /// Ordered source object and subelement references for a view or dimension.
-    pub sources: Vec<LinkTarget>,
+    pub sources: Vec<Option<LinkTarget>>,
     /// All drawing relationships grouped by their persisted property name.
-    pub relationships: BTreeMap<String, Vec<LinkTarget>>,
+    pub relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed scalar/vector/string drawing fields retained by property name.
     pub parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
@@ -1026,8 +1027,8 @@ struct DrawingRecordWire {
     kind: String,
     views: Vec<String>,
     template: Option<String>,
-    sources: Vec<LinkTarget>,
-    relationships: BTreeMap<String, Vec<LinkTarget>>,
+    sources: Vec<Option<LinkTarget>>,
+    relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     parameters: BTreeMap<String, String>,
     side_entries: Vec<String>,
 }
@@ -1831,8 +1832,6 @@ impl FileVersion {
 pub struct DocumentFacts {
     /// Stable document-record identity.
     pub id: String,
-    /// Persistence schema version.
-    pub schema_version: String,
     /// Persistence file version.
     pub file_version: FileVersion,
     /// Producing application version, when carried.
@@ -1867,7 +1866,6 @@ impl DocumentFacts {
 #[derive(Serialize, Deserialize)]
 struct DocumentFactsWire {
     id: String,
-    schema_version: String,
     file_version: String,
     program_version: Option<String>,
     root_name: String,
@@ -1880,7 +1878,6 @@ impl From<DocumentFacts> for DocumentFactsWire {
         Self {
             document_kind: value.document_kind(),
             id: value.id,
-            schema_version: value.schema_version,
             file_version: value.file_version.spelling,
             program_version: value.program_version,
             root_name: value.root_name,
@@ -1894,7 +1891,6 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
     fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
         let value = Self {
             id: wire.id,
-            schema_version: wire.schema_version,
             file_version: wire.file_version.try_into()?,
             program_version: wire.program_version,
             root_name: wire.root_name,
@@ -2108,6 +2104,18 @@ pub struct LinkTarget {
 }
 
 impl LinkTarget {
+    /// Admits a target from a parsed link element, or absence when the element
+    /// selects no document, object, or subelement.
+    pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {
+        let document =
+            ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
+        let object = wire.object.and_then(NonEmptyString::new);
+        if document.is_none() && object.is_none() && wire.subelements.is_empty() {
+            return Ok(None);
+        }
+        Self::try_new(document, object, wire.subelements).map(Some)
+    }
+
     /// Admits a target with a document, object, or subelement selection.
     pub fn try_new(
         document: Option<ExternalDocument>,
@@ -2124,14 +2132,6 @@ impl LinkTarget {
         })
     }
 
-    fn empty_link_target() -> Self {
-        Self {
-            document: None,
-            object: None,
-            subelements: Vec::new(),
-        }
-    }
-
     /// External document when the target is not local.
     pub fn document(&self) -> Option<&ExternalDocument> {
         self.document.as_ref()
@@ -2145,12 +2145,6 @@ impl LinkTarget {
     /// Sets a nonempty object identity.
     pub(crate) fn set_object(&mut self, object: NonEmptyString) {
         self.object = Some(object);
-    }
-
-    /// Converts a wire null target to absence.
-    pub(crate) fn into_optional(self) -> Option<Self> {
-        (self.document.is_some() || self.object.is_some() || !self.subelements.is_empty())
-            .then_some(self)
     }
 
     /// Document token retained on the CADIR wire.
@@ -2212,10 +2206,7 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
         let object = wire.object.and_then(NonEmptyString::new);
-        match (document, object, wire.subelements) {
-            (None, None, subelements) if subelements.is_empty() => Ok(Self::empty_link_target()),
-            (document, object, subelements) => Self::try_new(document, object, subelements),
-        }
+        Self::try_new(document, object, wire.subelements)
     }
 }
 
@@ -2243,8 +2234,8 @@ pub enum PropertyBody {
     Persisted {
         /// Ordered value elements.
         values: Vec<ValueRecord>,
-        /// Generically recovered ordered link targets.
-        links: Vec<LinkTarget>,
+        /// Generically recovered ordered link targets; `None` is a null link.
+        links: Vec<Option<LinkTarget>>,
         /// Referenced archive entries.
         side_entries: Vec<String>,
         /// Dynamic-property metadata, when carried.
@@ -2313,7 +2304,7 @@ impl PropertyRecord {
     }
 
     /// Recovered link targets; empty for a transient declaration.
-    pub fn links(&self) -> &[LinkTarget] {
+    pub fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             PropertyBody::Persisted { links, .. } => links,
             PropertyBody::Transient => &[],
@@ -2348,7 +2339,7 @@ struct PropertyRecordWire {
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     values: Vec<ValueRecord>,
-    links: Vec<LinkTarget>,
+    links: Vec<Option<LinkTarget>>,
     side_entries: Vec<String>,
     raw_xml: String,
     byte_start: u64,

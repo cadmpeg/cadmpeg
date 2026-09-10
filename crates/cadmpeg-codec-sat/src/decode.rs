@@ -40,16 +40,18 @@ fn decode_asm_binary(
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
     let width = header.width;
-    let start = asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
-        unsupported_unframed(
+    let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
+    let Some(stream) = stream else {
+        return Err(unsupported_unframed(
             &StreamEvidence::Binary {
                 family: Family::Asm,
                 header,
-                framed: false,
+                stream: None,
             },
             "ASM binary header has no record stream",
-        )
-    })?;
+        ));
+    };
+    let start = stream.offset();
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
     let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
@@ -71,7 +73,7 @@ fn decode_asm_binary(
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
-        framed: true,
+        stream: Some(stream),
     };
     let (matched, kernel) = layers(&evidence);
     build_result(
@@ -93,16 +95,18 @@ fn decode_acis_binary(
     if let Some(count) = header.metadata.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
-    let start = acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
-        unsupported_unframed(
+    let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
+    let Some(stream) = stream else {
+        return Err(unsupported_unframed(
             &StreamEvidence::Binary {
                 family: Family::Acis,
                 header,
-                framed: false,
+                stream: None,
             },
             "ACIS binary header has no record stream",
-        )
-    })?;
+        ));
+    };
+    let start = stream.offset();
     let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
         Some(limit) => sab::frame(
             bytes,
@@ -135,7 +139,7 @@ fn decode_acis_binary(
     let evidence = StreamEvidence::Binary {
         family: Family::Acis,
         header,
-        framed: true,
+        stream: Some(stream),
     };
     let (matched, kernel) = layers(&evidence);
     build_result(

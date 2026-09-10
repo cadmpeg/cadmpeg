@@ -119,11 +119,9 @@ pub fn compact_simple_hole_cylinder_id(
                 .windows(2)
                 .enumerate()
                 .filter_map(|(index, pair)| {
-                    let [class_204, class_203] = pair else {
-                        unreachable!("two-entry window")
-                    };
-                    (class_204.class_id == 204
-                        && class_203.class_id == 203
+                    let [class_204, class_203] = pair.first_chunk::<2>()?;
+                    (class_204.class_id() == 204
+                        && class_203.class_id() == 203
                         && class_204.source_entity_id().is_none()
                         && class_203.source_entity_id().is_none())
                     .then_some(())?;
@@ -178,7 +176,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .iter()
                 .enumerate()
                 .filter(|(_, candidate)| {
-                    candidate.class_id == 200
+                    candidate.class_id() == 200
                         && candidate.source_entity_id().is_none()
                         && table.surface_ids().contains(&candidate.entity_id)
                         && rows
@@ -250,16 +248,13 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
     outlines: impl IntoIterator<Item = CapOutline>,
 ) -> Option<HoleCylinder> {
     let (_, axis, _) = hole_placement(planes)?;
-    let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
-            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_ALIGNMENT)
-    })?;
-    let radial = (0..3)
-        .filter(|index| *index != axis_index)
-        .collect::<Vec<_>>();
+    let aligned_axis = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT)?;
+    let radial = aligned_axis
+        .complement()
+        .map(crate::decode::axis::Axis::index);
     let circles = outlines
         .into_iter()
-        .filter_map(|cap| cap_square_center_radius(cap.corners, axis_index))
+        .filter_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))
         .collect::<Vec<_>>();
     let (center, radius) = circles.first().copied()?;
     let scale = center
@@ -318,10 +313,10 @@ pub fn single_cap_circular_sweep_geometry<'a>(
         _ => return None,
     };
     if [
-        first_cap.class_id,
-        second_cap.class_id,
-        profile_id.class_id,
-        cylinder_id.class_id,
+        first_cap.class_id(),
+        second_cap.class_id(),
+        profile_id.class_id(),
+        cylinder_id.class_id(),
     ] != [204, 203, 200, 200]
         || profile_id.source_entity_id().is_none()
         || cylinder_id.source_entity_id().is_some()
@@ -448,10 +443,10 @@ pub fn two_cap_circular_sweep_geometry<'a>(
             cylinder_entry.entity_id,
         ]
         || [
-            first_plane_entry.class_id,
-            second_plane_entry.class_id,
-            profile_entry.class_id,
-            cylinder_entry.class_id,
+            first_plane_entry.class_id(),
+            second_plane_entry.class_id(),
+            profile_entry.class_id(),
+            cylinder_entry.class_id(),
         ] != [204, 203, 200, 200]
         || first_plane_entry.source_entity_id().is_some()
         || second_plane_entry.source_entity_id().is_some()

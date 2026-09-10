@@ -3321,7 +3321,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
     ir: &mut CadIr,
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
-    prefix: &str,
+    scope: &crate::decode::ids::IdScope,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
@@ -3330,7 +3330,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
         ir,
         graph,
         edges,
-        prefix,
+        scope,
         source_stream,
         annotations,
         &geometry_budget,
@@ -3342,7 +3342,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
     ir: &mut CadIr,
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
-    prefix: &str,
+    scope: &crate::decode::ids::IdScope,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -3390,8 +3390,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             }
             let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| {
                 let fin_xmt = u32::from(fin_xmt?);
-                let coedge_id =
-                    CoedgeId::mint(format!("{prefix}:fin#{fin_xmt}")).expect("identity grammar");
+                let coedge_id: CoedgeId = scope.id("fin", fin_xmt);
                 let coedge = model_index.coedges(coedge_id.as_str())?;
                 (&coedge.edge == edge_id).then_some(())?;
                 let loop_ = model_index.loops(coedge.owner_loop.as_str())?;
@@ -3488,11 +3487,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         else {
             continue;
         };
-        let curve_id =
-            CurveId::mint(format!("{prefix}:tolerant-curve#{xmt}")).expect("identity grammar");
-        let procedural_id =
-            ProceduralCurveId::mint(format!("{prefix}:tolerant-intersection#{xmt}"))
-                .expect("identity grammar");
+        let curve_id: CurveId = scope.id("tolerant-curve", xmt);
+        let procedural_id: ProceduralCurveId = scope.id("tolerant-intersection", xmt);
         let Ok(procedural) = ProceduralCurve::new(
             procedural_id.clone(),
             ProceduralCurveDefinition::TolerantIntersection {

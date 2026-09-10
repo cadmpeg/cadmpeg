@@ -10,7 +10,6 @@ use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -83,8 +82,7 @@ fn sectioned_area_curves_coplanar(
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
     sequences.iter().all(|sequence| {
-        let curve_id =
-            CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
+        let curve_id = crate::ids::curve(&crate::ids::Stem::directory(*sequence));
         let Some(curve) = index.curves(curve_id.as_str()) else {
             return false;
         };

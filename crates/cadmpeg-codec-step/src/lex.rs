@@ -372,7 +372,7 @@ impl<'a> Lexer<'a> {
             }
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
-            b if b.is_ascii_alphabetic() || b == b'_' => self.name(),
+            b if b.is_ascii_alphabetic() || b == b'_' => TokenKind::Name(self.name()),
             _ => return Err(Self::error(start, "unexpected byte")),
         };
         Ok(Token {
@@ -389,7 +389,7 @@ impl<'a> Lexer<'a> {
         kind
     }
 
-    fn name(&mut self) -> TokenKind {
+    fn name(&mut self) -> String {
         let start = self.at;
         self.at += 1;
         while self.input.get(self.at).is_some_and(|b| {
@@ -397,7 +397,7 @@ impl<'a> Lexer<'a> {
         }) {
             self.at += 1;
         }
-        TokenKind::Name(self.normalized(start, self.at).to_ascii_uppercase())
+        self.normalized(start, self.at).to_ascii_uppercase()
     }
 
     fn tag_name(&mut self) -> Result<TokenKind, LexError> {
@@ -429,10 +429,7 @@ impl<'a> Lexer<'a> {
         {
             return Err(Self::error(start, "user-defined name has no identifier"));
         }
-        let TokenKind::Name(name) = self.name() else {
-            unreachable!()
-        };
-        Ok(TokenKind::UserName(name))
+        Ok(TokenKind::UserName(self.name()))
     }
 
     fn occurrence(&mut self, prefix: OccurrencePrefix) -> Result<TokenKind, LexError> {

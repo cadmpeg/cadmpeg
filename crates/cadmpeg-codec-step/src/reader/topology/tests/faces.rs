@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::ids::kind;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -642,11 +643,11 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.as_str() == ids::data("face", face_step).as_str())
+        .find(|face| face.id.as_str() == ids::data(kind!("face"), face_step).as_str())
         .expect("decoded face");
     assert_eq!(
         face.loops[0].as_str(),
-        ids::data("loop", format!("{outer_loop}-face-{face_step}")).as_str()
+        ids::data(kind!("loop"), format!("{outer_loop}-face-{face_step}")).as_str()
     );
 }
 

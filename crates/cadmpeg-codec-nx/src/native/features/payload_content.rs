@@ -14,11 +14,11 @@ pub(crate) struct FeaturePayloadBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeaturePayloadContent<B> {
     blocks: B,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(crate) fn new(blocks: B, sha256: String) -> Result<Self, String> {
+    pub(crate) fn new(blocks: B, sha256: crate::native::hex::Sha256Hex) -> Result<Self, String> {
         blocks
             .as_ref()
             .iter()
@@ -69,7 +69,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
         }
         let content = Self::new(
             B::try_from(rows).ok()?,
-            cadmpeg_ir::hash::sha256_hex(&payload),
+            crate::native::hex::Sha256Hex::digest(&payload),
         )
         .ok()?;
         Some((payload, content))
@@ -80,7 +80,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
 struct PayloadContentWire {
     data_blocks: Vec<String>,
     byte_len: u64,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     block_payload_offsets: Vec<u64>,
     block_byte_lengths: Vec<u64>,
     block_source_offsets: Vec<u64>,
@@ -169,7 +169,7 @@ where
 mod tests {
     use super::*;
 
-    const TWO_BLOCKS: &str = r#"{"data_blocks":["first","second"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0,3],"block_byte_lengths":[3,5],"block_source_offsets":[10,100]}"#;
+    const TWO_BLOCKS: &str = r#"{"data_blocks":["first","second"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0,3],"block_byte_lengths":[3,5],"block_source_offsets":[10,100]}"#;
 
     #[test]
     fn payload_content_preserves_ordered_metadata_wire() {
@@ -225,6 +225,9 @@ mod tests {
                 source_offset: 0,
             },
         ];
-        assert!(FeaturePayloadContent::new(blocks, "hash".to_owned()).is_err());
+        assert!(
+            FeaturePayloadContent::new(blocks, crate::native::hex::Sha256Hex::digest(b"hash"))
+                .is_err()
+        );
     }
 }

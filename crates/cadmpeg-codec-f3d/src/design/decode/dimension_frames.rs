@@ -74,11 +74,11 @@ pub fn decode_dimension_recipe_records(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
-        native_stream(&companion.id).is_some_and(|stream| {
-            dimension_owners.contains(&(stream.to_owned(), companion.owner_record_index))
+        native_stream(companion.id()).is_some_and(|stream| {
+            dimension_owners.contains(&(stream.to_owned(), companion.owner_record_index()))
         })
     }) {
-        let Some(stream) = native_stream(&companion.id) else {
+        let Some(stream) = native_stream(companion.id()) else {
             continue;
         };
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
@@ -86,17 +86,20 @@ pub fn decode_dimension_recipe_records(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(start) = usize::try_from(companion.payload_byte_offset).ok() else {
+        let Some(payload) = companion.payload() else {
             continue;
         };
-        let Some(end) = usize::try_from(companion.payload_byte_length)
+        let Some(start) = usize::try_from(payload.byte_offset()).ok() else {
+            continue;
+        };
+        let Some(end) = usize::try_from(payload.byte_length())
             .ok()
             .and_then(|length| start.checked_add(length))
             .filter(|end| *end <= bytes.len())
         else {
             continue;
         };
-        for (recipe_ordinal, recipe_id) in companion.owned_recipe_ids.iter().enumerate() {
+        for (recipe_ordinal, recipe_id) in payload.owned_recipe_ids().iter().enumerate() {
             let Some(recipe) = recipes.get(recipe_id.as_str()).copied() else {
                 continue;
             };
@@ -122,30 +125,38 @@ pub fn decode_dimension_recipe_records(
             ) else {
                 continue;
             };
-            let references = decode_recipe_references(
-                &prefix_bytes,
-                u64::try_from(prefix_offset).unwrap_or(u64::MAX),
-            );
+            let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
+                continue;
+            };
+            let references = decode_recipe_references(&prefix_bytes, prefix_offset);
             let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
                 continue;
             };
             let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
                 continue;
             };
+            let (Ok(recipe_ordinal), Ok(byte_offset), Ok(frame_length), Ok(program_offset)) = (
+                u32::try_from(recipe_ordinal),
+                u64::try_from(at),
+                u64::try_from(record_end - at),
+                u64::try_from(program_offset),
+            ) else {
+                continue;
+            };
             out.push(DesignDimensionRecipeRecord {
                 id: ids::native_design_dimension_recipe_record_id(&entry.name, recipe.byte_offset),
-                companion_record_index: companion.record_index,
-                recipe_ordinal: u32::try_from(recipe_ordinal).unwrap_or(u32::MAX),
+                companion_record_index: companion.record_index(),
+                recipe_ordinal,
                 recipe_id: recipe.id.clone(),
                 recipe_kind: recipe.kind,
-                byte_offset: u64::try_from(at).unwrap_or(u64::MAX),
+                byte_offset,
                 class_tag,
                 record_index,
-                frame_length: u64::try_from(record_end - at).unwrap_or(u64::MAX),
-                prefix_offset: u64::try_from(prefix_offset).unwrap_or(u64::MAX),
+                frame_length,
+                prefix_offset,
                 prefix_bytes,
                 references,
-                program_offset: u64::try_from(program_offset).unwrap_or(u64::MAX),
+                program_offset,
                 program,
                 matching_edge_operand_ids: Vec::new(),
             });
@@ -634,20 +645,20 @@ pub fn decode_dimension_locus_pairs(
         .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
-        native_stream(&companion.id).is_some_and(|scope| {
-            dimension_companions.contains(&(scope.to_owned(), companion.record_index))
+        native_stream(companion.id()).is_some_and(|scope| {
+            dimension_companions.contains(&(scope.to_owned(), companion.record_index()))
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && companion
-                    .id
+                    .id()
                     .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
         };
-        let scope = native_stream(&companion.id).expect("entry matched companion stream");
+        let scope = native_stream(companion.id()).expect("entry matched companion stream");
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))
@@ -670,9 +681,13 @@ pub fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
-        let Some(mut pair) =
-            find_dimension_locus_pair(bytes, start, end, companion.record_index, &geometry_indices)
-        else {
+        let Some(mut pair) = find_dimension_locus_pair(
+            bytes,
+            start,
+            end,
+            companion.record_index(),
+            &geometry_indices,
+        ) else {
             continue;
         };
         pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset());
@@ -883,21 +898,21 @@ pub fn decode_dimension_null_locus_pairs(
         .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
-        native_stream(&companion.id).is_some_and(|scope| {
-            let key = (scope.to_owned(), companion.record_index);
+        native_stream(companion.id()).is_some_and(|scope| {
+            let key = (scope.to_owned(), companion.record_index());
             dimension_companions.contains(&key) && !typed_companions.contains(&key)
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && companion
-                    .id
+                    .id()
                     .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
         };
-        let scope = native_stream(&companion.id).expect("entry matched companion stream");
+        let scope = native_stream(companion.id()).expect("entry matched companion stream");
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))
@@ -924,7 +939,7 @@ pub fn decode_dimension_null_locus_pairs(
             bytes,
             start,
             end,
-            companion.record_index,
+            companion.record_index(),
             &geometry_indices,
         ) else {
             continue;
@@ -1087,7 +1102,7 @@ pub fn decode_dimension_annotation_frames(
     let mut out = Vec::new();
     let streams = companions
         .iter()
-        .filter_map(|companion| native_stream(&companion.id))
+        .filter_map(|companion| native_stream(companion.id()))
         .collect::<HashSet<_>>();
     let mut decoded_offsets = HashSet::new();
     for stream in streams {
@@ -1123,7 +1138,7 @@ pub fn decode_dimension_annotation_frames(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut intervals = companions
             .iter()
-            .filter(|companion| native_stream(&companion.id) == Some(stream))
+            .filter(|companion| native_stream(companion.id()) == Some(stream))
             .filter_map(|companion| {
                 let (start, end) = companion_owned_interval(
                     companion,
@@ -1133,7 +1148,7 @@ pub fn decode_dimension_annotation_frames(
                     headers,
                     bytes.len(),
                 )?;
-                Some((start, end, Some(companion.record_index)))
+                Some((start, end, Some(companion.record_index())))
             })
             .collect::<Vec<_>>();
         intervals.extend(scopes.iter().filter_map(|scope| {
@@ -1150,10 +1165,10 @@ pub fn decode_dimension_annotation_frames(
                     companions
                         .iter()
                         .find(|companion| {
-                            native_stream(&companion.id) == Some(stream)
-                                && companion.record_index == owner.companion_record_index()
+                            native_stream(companion.id()) == Some(stream)
+                                && companion.record_index() == owner.companion_record_index()
                         })
-                        .and_then(|companion| usize::try_from(companion.byte_offset).ok())
+                        .and_then(|companion| usize::try_from(companion.byte_offset()).ok())
                 })
                 .min()?;
             let start = usize::try_from(scope.byte_offset()).ok()?;
@@ -1648,20 +1663,20 @@ pub fn decode_dimension_locus_groups(
         .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
-        native_stream(&companion.id).is_some_and(|scope| {
-            dimension_companions.contains(&(scope.to_owned(), companion.record_index))
+        native_stream(companion.id()).is_some_and(|scope| {
+            dimension_companions.contains(&(scope.to_owned(), companion.record_index()))
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && companion
-                    .id
+                    .id()
                     .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
         };
-        let scope = native_stream(&companion.id).expect("entry matched companion stream");
+        let scope = native_stream(companion.id()).expect("entry matched companion stream");
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))
@@ -1693,7 +1708,7 @@ pub fn decode_dimension_locus_groups(
             bytes,
             start,
             end,
-            companion.record_index,
+            companion.record_index(),
             &geometry_indices,
             &sketch_entities,
         );
@@ -1748,12 +1763,12 @@ pub(crate) fn companion_owned_interval<'a>(
     headers: &[DesignRecordHeader],
     stream_length: usize,
 ) -> Option<(usize, usize)> {
-    let native_scope = native_stream(&companion.id)?;
+    let native_scope = native_stream(companion.id())?;
     let owning_scope_record_index = owners
         .iter()
         .find(|owner| {
             native_stream(owner.id()) == Some(native_scope)
-                && owner.record_index() == companion.owner_record_index
+                && owner.record_index() == companion.owner_record_index()
         })
         .map(crate::records::DesignParameterOwner::scope_record_index);
     let foreign_scope_members = scopes
@@ -1764,14 +1779,14 @@ pub(crate) fn companion_owned_interval<'a>(
         })
         .flat_map(|scope| scope.reference_members().values().copied())
         .collect::<HashSet<_>>();
-    let start = usize::try_from(companion.byte_offset)
+    let start = usize::try_from(companion.byte_offset())
         .ok()?
         .checked_add(58)?;
     let end = owners
         .iter()
         .filter(|owner| {
             native_stream(owner.id()) == Some(native_scope)
-                && owner.byte_offset() > companion.byte_offset
+                && owner.byte_offset() > companion.byte_offset()
         })
         .filter_map(|owner| usize::try_from(owner.byte_offset()).ok())
         .chain(
@@ -1779,7 +1794,7 @@ pub(crate) fn companion_owned_interval<'a>(
                 .into_iter()
                 .filter(|parameter| {
                     native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.byte_offset() > companion.byte_offset
+                        && parameter.byte_offset() > companion.byte_offset()
                 })
                 .filter_map(|parameter| usize::try_from(parameter.byte_offset()).ok()),
         )
@@ -1788,7 +1803,7 @@ pub(crate) fn companion_owned_interval<'a>(
                 .iter()
                 .filter(|scope| {
                     native_stream(&scope.id) == Some(native_scope)
-                        && scope.byte_offset() > companion.byte_offset
+                        && scope.byte_offset() > companion.byte_offset()
                 })
                 .filter_map(|scope| usize::try_from(scope.byte_offset()).ok()),
         )
@@ -1797,7 +1812,7 @@ pub(crate) fn companion_owned_interval<'a>(
                 .iter()
                 .filter(|header| {
                     native_stream(&header.id) == Some(native_scope)
-                        && header.byte_offset > companion.byte_offset
+                        && header.byte_offset > companion.byte_offset()
                         && foreign_scope_members.contains(&header.record_index)
                 })
                 .filter_map(|header| usize::try_from(header.byte_offset).ok()),

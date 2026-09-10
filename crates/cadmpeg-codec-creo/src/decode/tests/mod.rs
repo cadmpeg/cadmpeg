@@ -98,11 +98,9 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -125,12 +123,13 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(35, 200, Some(3)),
         entry(36, 200, Some(4)),
     ];
-    crate::feature::FeatureEntityTable {
+    crate::feature::FeatureEntityTable::new(
         feature_id,
-        table_class_id: 29,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([11, 12, 13, 14])
 }
 

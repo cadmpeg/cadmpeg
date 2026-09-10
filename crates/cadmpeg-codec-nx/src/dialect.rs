@@ -99,12 +99,17 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
     let streams = scan
         .streams
         .iter()
-        .filter_map(|stream| stream.schema().map(|schema| (stream, schema)))
+        .filter_map(|stream| stream.schema_token().map(|schema| (stream, schema)))
         .collect::<Vec<_>>();
     let extra = cadmpeg_parasolid::extra_layers(
         streams
             .into_iter()
-            .map(|(stream, schema)| (schema.to_owned(), format!("stream@{}", stream.file_offset)))
+            .map(|(stream, schema)| {
+                (
+                    schema.clone(),
+                    cadmpeg_parasolid::Carrier::new(format!("stream@{}", stream.file_offset)),
+                )
+            })
             .collect(),
         // NX verifies no Parasolid schema itself; every kernel layer is residual.
         &[],

@@ -185,10 +185,10 @@ pub(in super::super) fn section_entity_is_generated_profile(
                 return None;
             };
             ([
-                rowless_cap.class_id,
-                cap.class_id,
-                profile.class_id,
-                cylinder.class_id,
+                rowless_cap.class_id(),
+                cap.class_id(),
+                profile.class_id(),
+                cylinder.class_id(),
             ] == [204, 203, 200, 200]
                 && profile.source_entity_id() == Some(source_entity_id)
                 && cylinder.source_entity_id().is_none()
@@ -214,8 +214,8 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
         return false;
     };
     if table.table_class_id != 29
-        || first.class_id != 204
-        || second.class_id != 203
+        || first.class_id() != 204
+        || second.class_id() != 203
         || rest.is_empty()
         || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {

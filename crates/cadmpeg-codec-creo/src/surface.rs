@@ -424,8 +424,6 @@ pub struct SurfaceParameterRecord {
     pub opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
     /// Maximal contiguous scalar-token frames in byte order.
     pub scalar_frames: Vec<SurfaceParameterScalarFrame>,
-    /// Maximal scalar-token frame ending at the body boundary.
-    pub terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
     /// Row kind and its decoded carrier, when available.
     pub carrier: SurfaceParameterCarrier,
     /// Structural form that bounded the body.
@@ -441,24 +439,6 @@ pub struct SurfaceParameterRecord {
 pub enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
     Resolved(InlineSurfaceCarrier),
-}
-
-/// Complete interpolation data replayed by a later positional spline row.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PositionalSplineReplay {
-    /// U-major interpolation points.
-    pub(crate) points: Vec<[f64; 3]>,
-    /// Ordered U parameters.
-    pub(crate) u_parameters: Vec<f64>,
-    /// Ordered V parameters.
-    pub(crate) v_parameters: Vec<f64>,
-    /// Lower-U and upper-U boundary derivatives.
-    pub(crate) u_derivatives: Vec<[f64; 3]>,
-    /// Lower-V and upper-V boundary derivatives.
-    pub(crate) v_derivatives: Vec<[f64; 3]>,
-    /// Mixed derivatives in lower-U/lower-V, upper-U/lower-V,
-    /// lower-U/upper-V, upper-U/upper-V order.
-    pub(crate) mixed_derivatives: Vec<[f64; 3]>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -625,7 +605,7 @@ fn parse_positional_spline_replay(
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<(PositionalSplineReplay, usize)> {
+) -> Option<(crate::interpolation_grid::InterpolationGrid, usize)> {
     let shape = spline_replay_shape(prototype)?;
     let envelope_close = surface_body_compound_close(SurfaceKind::Spline, body, cache)?;
     let mut cursor = envelope_close.checked_add(1)?;
@@ -669,15 +649,16 @@ fn parse_positional_spline_replay(
     )?)?;
     let u_parameters = take_spline_scalars(body, &mut cursor, shape.u_count, "u_params", cache)?;
     let v_parameters = take_spline_scalars(body, &mut cursor, shape.v_count, "v_params", cache)?;
+    let mixed_derivatives = <[[f64; 3]; 4]>::try_from(mixed_derivatives).ok()?;
     Some((
-        PositionalSplineReplay {
+        crate::interpolation_grid::InterpolationGrid::try_new(
             points,
             u_parameters,
             v_parameters,
             u_derivatives,
             v_derivatives,
             mixed_derivatives,
-        },
+        )?,
         cursor,
     ))
 }
@@ -704,7 +685,7 @@ pub(crate) fn decode_positional_spline_replay(
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<PositionalSplineReplay> {
+) -> Option<crate::interpolation_grid::InterpolationGrid> {
     let (replay, consumed) = parse_positional_spline_replay(body, prototype, cache)?;
     (consumed == body.len()).then_some(replay)
 }
@@ -1360,7 +1341,7 @@ impl SurfaceParameterRecord {
             && prototype_minor_radius.is_finite()
             && prototype_minor_radius > 0.0)
             .then_some(())?;
-        let frame = self.terminal_scalar_frame.as_ref()?;
+        let frame = self.terminal_scalar_frame()?;
         let slot = frame.slots.last()?;
         let value = slot.value?;
         (slot.offset.checked_add(slot.raw.len()) == Some(self.body.len())
@@ -1418,12 +1399,13 @@ impl SurfaceParameterRecord {
                     .slots
                     .last()
                     .and_then(|slot| slot.offset.checked_add(slot.raw.len()));
-                if frame.slots.len() == 5 && end == Some(frame_end) {
-                    let [coordinate0, coordinate1, coordinate2, coordinate3, coordinate4] =
-                        frame.slots.as_slice()
-                    else {
-                        unreachable!("five slots were checked above");
-                    };
+                if let (
+                    Ok([coordinate0, coordinate1, coordinate2, coordinate3, coordinate4]),
+                    true,
+                ) = (
+                    <&[SurfaceParameterScalar; 5]>::try_from(frame.slots.as_slice()),
+                    end == Some(frame_end),
+                ) {
                     let values = [
                         coordinate0.value?,
                         coordinate1.value?,
@@ -1448,18 +1430,15 @@ impl SurfaceParameterRecord {
                     .slots
                     .last()
                     .and_then(|slot| slot.offset.checked_add(slot.raw.len()))?;
-                if first.slots.len() >= 3
-                    && second.slots.len() == 2
-                    && first_end < second.offset
-                    && second_end == frame_end
-                {
-                    let first_coordinates = &first.slots[first.slots.len() - 3..];
-                    let [coordinate0, coordinate1, coordinate2] = first_coordinates else {
-                        unreachable!("three trailing slots were selected");
-                    };
-                    let [coordinate3, coordinate4] = second.slots.as_slice() else {
-                        unreachable!("two slots were checked above");
-                    };
+                if let (
+                    Some([coordinate0, coordinate1, coordinate2]),
+                    Ok([coordinate3, coordinate4]),
+                    true,
+                ) = (
+                    first.slots.last_chunk::<3>(),
+                    <&[SurfaceParameterScalar; 2]>::try_from(second.slots.as_slice()),
+                    first_end < second.offset && second_end == frame_end,
+                ) {
                     let values = [
                         coordinate0.value?,
                         coordinate1.value?,
@@ -1732,6 +1711,12 @@ impl SurfaceParameterRecord {
                     (Some(_), Some(_)) | (None, None) => None,
                 }
             })
+    }
+
+    /// The maximal scalar-token frame ending at the body boundary.
+    #[must_use]
+    pub fn terminal_scalar_frame(&self) -> Option<&SurfaceParameterScalarFrame> {
+        terminal_scalar_frame_of(&self.body, &self.scalar_frames)
     }
 
     fn terminal_scalar_frame_has_owned_end(
@@ -2063,17 +2048,14 @@ impl SurfaceParameterRecord {
         (first_end == type24_round::SEPARATOR).then_some(())?;
         let (second_diameter, mut cursor) = decode_at(type24_round::SECOND_DIAMETER_ENDPOINT)?;
         (cursor == type24_round::EXTENT_SCALARS).then_some(())?;
-        let mut coordinates = Vec::with_capacity(6);
-        for _ in 0..5 {
+        let mut coordinates = [0.0; 6];
+        for coordinate in coordinates.iter_mut().take(5) {
             let (value, next) = decode_at(cursor)?;
-            coordinates.push(value);
+            *coordinate = value;
             cursor = next;
         }
         (cursor == type24_round::TERMINAL).then_some(())?;
-        coordinates.push(0.0);
-        let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
-            unreachable!("six bounded round coordinates")
-        };
+        let [a0, a1, a2, b0, b1, b2] = coordinates;
         let diameter = (second_diameter - first_diameter).abs();
         let scale = [first_diameter, second_diameter]
             .into_iter()
@@ -2082,7 +2064,7 @@ impl SurfaceParameterRecord {
             .fold(1.0, f64::max);
         (diameter > EPS_SURFACE_NONZERO * scale).then_some(Type24RoundEnvelope {
             diameter,
-            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+            extent_endpoints: [[a0, a1, a2], [b0, b1, b2]],
         })
     }
 
@@ -2101,16 +2083,14 @@ impl SurfaceParameterRecord {
         (first_end == type24_seg::LITERAL_RUN).then_some(())?;
         let (second_diameter, mut cursor) = decode_at(type24_seg::SECOND_DIAMETER_ENDPOINT)?;
         (cursor == type24_seg::EXTENT_COORDINATES).then_some(())?;
-        let mut coordinates = Vec::with_capacity(6);
-        for _ in 0..6 {
+        let mut coordinates = [0.0; 6];
+        for coordinate in &mut coordinates {
             let (value, next) = decode_at(cursor)?;
-            coordinates.push(value);
+            *coordinate = value;
             cursor = next;
         }
         (cursor == type24_seg::TRAILER).then_some(())?;
-        let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
-            unreachable!("six bounded segmented-round coordinates")
-        };
+        let [a0, a1, a2, b0, b1, b2] = coordinates;
         let diameter = (second_diameter - first_diameter).abs();
         let scale = [first_diameter, second_diameter]
             .into_iter()
@@ -2119,7 +2099,7 @@ impl SurfaceParameterRecord {
             .fold(1.0, f64::max);
         (diameter > EPS_SURFACE_NONZERO * scale).then_some(Type24RoundEnvelope {
             diameter,
-            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+            extent_endpoints: [[a0, a1, a2], [b0, b1, b2]],
         })
     }
 
@@ -2176,8 +2156,8 @@ impl SurfaceParameterRecord {
             }
             [leading, trailing] if leading.slots.len() == 1 => {
                 let (leading_values, leading_end) = contiguous_values(leading)?;
-                let [first] = leading_values.as_slice() else {
-                    unreachable!("one leading diameter slot was checked above");
+                let &[first] = leading_values.as_slice() else {
+                    return None;
                 };
                 let (trailing_values, trailing_end) = contiguous_values(trailing)?;
                 let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
@@ -2202,7 +2182,7 @@ impl SurfaceParameterRecord {
                         && self.body.get(..2) == Some(&[0xeb, 0xba])
                         && self.body.get(leading_end..trailing.offset) == Some(&[0x12]));
                 (controls_match && frame_reaches_body_end(trailing_end)).then_some(())?;
-                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+                ([first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
             [leading, trailing] => {
                 let (leading_values, leading_end) = contiguous_values(leading)?;
@@ -3792,13 +3772,13 @@ fn scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScala
     frames
 }
 
-fn terminal_scalar_frame(
+fn terminal_scalar_frame_of<'a>(
     body: &[u8],
-    frames: &[SurfaceParameterScalarFrame],
-) -> Option<SurfaceParameterScalarFrame> {
+    frames: &'a [SurfaceParameterScalarFrame],
+) -> Option<&'a SurfaceParameterScalarFrame> {
     let frame = frames.last()?;
     let last = frame.slots.last()?;
-    (last.offset + last.raw.len() == body.len()).then(|| frame.clone())
+    (last.offset + last.raw.len() == body.len()).then_some(frame)
 }
 
 fn split_cylinder_outline_bounds(
@@ -4932,13 +4912,11 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
         let opaque_spans = opaque_spans(&body, &scalar_tokens);
         let scalar_frames = scalar_frames(&scalar_tokens);
-        let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_frames);
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
             scalar_tokens,
             opaque_spans,
             scalar_frames,
-            terminal_scalar_frame,
             carrier: SurfaceParameterCarrier::Unresolved(row.kind),
             body,
             boundary,
@@ -6566,15 +6544,15 @@ fn decode_signed_axis_aligned_cylinder_frame(
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let spans =
         std::array::from_fn::<_, 3, _>(|index| (corners[1][index] - corners[0][index]).abs());
-    let mut axis_indices = (0..3).filter(|index| close(spans[*index], signed_length.abs()));
-    let axis_index = axis_indices.next()?;
-    axis_indices.next().is_none().then_some(())?;
-    let [first_radial, second_radial] = match axis_index {
-        0 => [1, 2],
-        1 => [0, 2],
-        2 => [0, 1],
-        _ => unreachable!("three model axes"),
-    };
+    let mut axes = crate::decode::axis::Axis::ALL
+        .into_iter()
+        .filter(|axis| close(spans[axis.index()], signed_length.abs()));
+    let model_axis = axes.next()?;
+    axes.next().is_none().then_some(())?;
+    let axis_index = model_axis.index();
+    let [first_radial, second_radial] = model_axis
+        .complement()
+        .map(crate::decode::axis::Axis::index);
     let (diameter_index, radius_index) = match (
         close(spans[first_radial], 2.0 * spans[second_radial]),
         close(spans[second_radial], 2.0 * spans[first_radial]),
@@ -8407,7 +8385,7 @@ fn complete_plane_compact_scalar_suffix(
     }
     let tokens = scalar_tokens(SurfaceKind::Plane, body, cache);
     let frames = scalar_frames(&tokens);
-    let frame = terminal_scalar_frame(body, &frames)?;
+    let frame = terminal_scalar_frame_of(body, &frames)?;
     (frame.offset > 0 && frame.slots.len() == 9).then_some(())?;
     let slots = complete_plane_envelope_slots(&body[frame.offset..], 9, cache)?;
     slots

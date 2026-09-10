@@ -39,7 +39,6 @@ fn decodes_extended_type24_round_edge_separator_and_shells() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::Cylinder,
             ),
@@ -75,7 +74,6 @@ fn perpendicular_round_edge_uses_equal_endpoint_deltas_as_radius() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Cylinder,
         ),

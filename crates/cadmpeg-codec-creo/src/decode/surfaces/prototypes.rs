@@ -61,14 +61,14 @@ pub(in super::super) fn prototype_parameter_array(
 pub(in super::super) fn prototype_spline_nurbs(
     record: &crate::surface::SurfacePrototypeRecord,
 ) -> Option<NurbsSurface> {
-    interpolation_spline_surface(
-        &prototype_vector_array(record, "i_points")?,
-        &prototype_parameter_array(record, "u_params")?,
-        &prototype_parameter_array(record, "v_params")?,
-        &prototype_vector_array(record, "end_u_tangts")?,
-        &prototype_vector_array(record, "end_v_tangts")?,
-        &prototype_vector_array(record, "end_uv_deriv")?,
-    )
+    interpolation_spline_surface(&crate::interpolation_grid::InterpolationGrid::try_new(
+        prototype_vector_array(record, "i_points")?,
+        prototype_parameter_array(record, "u_params")?,
+        prototype_parameter_array(record, "v_params")?,
+        prototype_vector_array(record, "end_u_tangts")?,
+        prototype_vector_array(record, "end_v_tangts")?,
+        <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
+    )?)
 }
 
 pub(in super::super) fn prototype_local_frame(
@@ -490,14 +490,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         else {
             continue;
         };
-        let Some(nurbs) = interpolation_spline_surface(
-            &replay.points,
-            &replay.u_parameters,
-            &replay.v_parameters,
-            &replay.u_derivatives,
-            &replay.v_derivatives,
-            &replay.mixed_derivatives,
-        ) else {
+        let Some(nurbs) = interpolation_spline_surface(&replay) else {
             continue;
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -653,14 +646,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
                 if row.kind == crate::surface::SurfaceKind::Spline =>
             {
-                let Some(nurbs) = interpolation_spline_surface(
-                    spline.points(),
-                    spline.u_parameters(),
-                    spline.v_parameters(),
-                    spline.u_derivatives(),
-                    spline.v_derivatives(),
-                    spline.mixed_derivatives(),
-                ) else {
+                let Some(nurbs) = interpolation_spline_surface(spline) else {
                     continue;
                 };
                 SurfaceGeometry::Nurbs(nurbs)

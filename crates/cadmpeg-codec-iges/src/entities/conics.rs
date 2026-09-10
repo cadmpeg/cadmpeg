@@ -10,7 +10,7 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry};
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
@@ -21,26 +21,37 @@ const EPS_CONIC_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
 
-fn add_bounded_curve(
-    ir: &mut CadIr,
-    entry: &DirectoryEntry,
-    geometry: CurveGeometry,
+/// The bounded span one conic carrier is projected over.
+#[derive(Clone, Copy)]
+struct BoundedSpan {
     start: Point3,
     end: Point3,
     parameter_range: [f64; 2],
     tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
+}
+
+fn add_bounded_curve(
+    ir: &mut CadIr,
+    entry: &DirectoryEntry,
+    geometry: CurveGeometry,
+    span: BoundedSpan,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
-    let stem = format!("D{}", entry.sequence);
-    let start_point =
-        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-    let end_point =
-        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-    let start_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-    let end_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-    let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-    let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+    let BoundedSpan {
+        start,
+        end,
+        parameter_range,
+        tolerance,
+    } = span;
+    let stem = crate::ids::Stem::directory(entry.sequence);
+    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    sequences.record_point(&start_point, &stem);
+    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    sequences.record_point(&end_point, &stem);
+    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+    let curve = crate::ids::curve(&stem);
+    let edge = crate::ids::edge(&stem);
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -65,6 +76,7 @@ fn add_bounded_curve(
             tolerance,
         },
     ]);
+    sequences.record_curve(&curve, entry.sequence);
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry,
@@ -96,6 +108,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> WireProjectionOutcome {
     let records = parameters
         .iter()
@@ -448,14 +461,24 @@ pub(super) fn project(
         } else {
             None
         };
-        let edge =
-            match add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance) {
-                Ok(edge) => edge,
-                Err(error) => {
-                    losses.push(entity_loss(entry, error.to_string()));
-                    continue;
-                }
-            };
+        let edge = match add_bounded_curve(
+            ir,
+            entry,
+            geometry,
+            BoundedSpan {
+                start,
+                end,
+                parameter_range,
+                tolerance,
+            },
+            sequences,
+        ) {
+            Ok(edge) => edge,
+            Err(error) => {
+                losses.push(entity_loss(entry, error.to_string()));
+                continue;
+            }
+        };
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

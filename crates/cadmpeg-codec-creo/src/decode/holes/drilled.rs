@@ -112,8 +112,8 @@ fn split_patch_table_is_counterbore(
             && !table.surface_ids().contains(&entry.entity_id)
     };
     if !table.entries.windows(2).any(|entries| {
-        entries[0].class_id == 204
-            && entries[1].class_id == 203
+        entries[0].class_id() == 204
+            && entries[1].class_id() == 203
             && is_rowless(&entries[0])
             && is_rowless(&entries[1])
     }) {
@@ -125,7 +125,7 @@ fn split_patch_table_is_counterbore(
     let mut cylinder_ids_by_source = BTreeMap::<u32, Vec<u32>>::new();
     let mut plane_ids_by_source = BTreeMap::<u32, Vec<u32>>::new();
     let mut rowless_counts_by_source = BTreeMap::<u32, usize>::new();
-    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+    for entry in table.entries.iter().filter(|entry| entry.class_id() == 200) {
         let materialized = table.surface_ids().contains(&entry.entity_id);
         let rowless = is_rowless(entry);
         if !materialized && !rowless {
@@ -212,7 +212,7 @@ pub fn paired_hole_replay_surfaces_by_source(
             break;
         };
         let class_204 = &table.entries[index];
-        if class_204.class_id != 204 || class_203.class_id != 203 {
+        if class_204.class_id() != 204 || class_203.class_id() != 203 {
             index += 1;
             continue;
         }
@@ -223,7 +223,7 @@ pub fn paired_hole_replay_surfaces_by_source(
         while let Some(entry) = table
             .entries
             .get(index)
-            .filter(|entry| entry.class_id == 200)
+            .filter(|entry| entry.class_id() == 200)
         {
             framed_class_200_count += 1;
             let kind = entry_kind(entry)?;
@@ -246,7 +246,7 @@ pub fn paired_hole_replay_surfaces_by_source(
             == table
                 .entries
                 .iter()
-                .filter(|entry| entry.class_id == 200)
+                .filter(|entry| entry.class_id() == 200)
                 .count())
     .then_some(())?;
     let materialized = runs

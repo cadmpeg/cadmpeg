@@ -818,7 +818,7 @@ pub(super) fn feature_entity_table_records(
                 .iter()
                 .map(|entry| CreoFeatureEntityTableEntryRecord {
                     entity_id: entry.entity_id,
-                    class_id: entry.class_id,
+                    class_id: entry.class_id(),
                     source_entity_id: entry.source_entity_id(),
                     related_entity_id: entry.related_entity_id(),
                     related_entity_state: entry.related_entity_state(),
@@ -2014,7 +2014,7 @@ pub(super) fn surface_parameter_records(
                 slots: record.scalar_tokens.clone(),
                 opaque_spans: record.opaque_spans.clone(),
                 scalar_frames: record.scalar_frames.clone(),
-                terminal_scalar_frame: record.terminal_scalar_frame.clone(),
+                terminal_scalar_frame: record.terminal_scalar_frame().cloned(),
                 tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
                         values: frame.values(),

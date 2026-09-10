@@ -184,7 +184,7 @@ fn placement_matrix(
     crate::product::placement_matrix(property)
 }
 
-fn support_links(property: &PropertyRecord) -> Result<Vec<LinkTarget>, CodecError> {
+fn support_links(property: &PropertyRecord) -> Result<Vec<Option<LinkTarget>>, CodecError> {
     if property.type_name != "App::PropertyLinkSubList" {
         return Err(malformed(format!(
             "attachment property {} has runtime type {}, expected App::PropertyLinkSubList",

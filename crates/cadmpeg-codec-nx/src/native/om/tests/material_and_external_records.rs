@@ -33,7 +33,10 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     assert_eq!(serde_json::to_value(&assets[0]).unwrap()["version"], 42);
     assert_eq!(assets[0].first_ifd_offset(), 8);
     assert_eq!(assets[0].byte_len(), texture.len() as u64);
-    assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
+    assert_eq!(
+        assets[0].sha256,
+        crate::native::hex::Sha256Hex::digest(&texture)
+    );
     assert_eq!(
         assets[0].source_entry(),
         "/Root/materialsTif/AISI Steel 4340"

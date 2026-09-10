@@ -66,6 +66,7 @@ pub(crate) mod datum;
 pub(crate) mod decode;
 pub(crate) mod dialect;
 pub(crate) mod feature;
+pub(crate) mod interpolation_grid;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
 pub(crate) mod layout;
 pub(crate) mod legacy;

@@ -40,7 +40,9 @@ pub use definitions::{
     FeatureTrimVertexTable,
 };
 #[cfg(test)]
-pub(crate) use entity::{dummy_table_entry, entry_payload, EntryPayload, RelatedState};
+pub(crate) use entity::{
+    dummy_table_entry, entry_payload, EntryPayload, PlainClass, RelatedClass, RelatedState,
+};
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
     FeatureEntityTableEntry,

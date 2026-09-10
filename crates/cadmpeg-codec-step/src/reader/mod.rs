@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema-aware STEP-to-IR decoding entry point.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -79,7 +80,6 @@ pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
 struct StageOutcome<T> {
     value: T,
     claims: HashSet<u64>,
-    warnings: Vec<String>,
     losses: Vec<LossNote>,
     notes: Vec<String>,
 }
@@ -200,14 +200,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         self.typed_records.extend(outcome.claims.drain());
         self.body.losses.append(&mut outcome.losses);
         self.body.notes.append(&mut outcome.notes);
-    }
-
-    fn absorb_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
-        self.body.losses.extend(
-            warnings
-                .into_iter()
-                .map(|message| StepLossCode::DecodeWarning.note(message)),
-        );
     }
 
     fn into_result(
@@ -399,16 +391,9 @@ fn decode_exchange_mode(
     session.absorb(&mut dependencies);
     session.absorb(&mut presentation);
     session.absorb(&mut product);
-    session.absorb_warnings(std::mem::take(&mut geometry.warnings));
-    session.absorb_warnings(std::mem::take(&mut topology.warnings));
-    session.absorb_warnings(std::mem::take(&mut presentation.warnings));
-    session.absorb_warnings(std::mem::take(&mut product.warnings));
-    session.absorb_warnings(std::mem::take(&mut tessellation.warnings));
     session.absorb(&mut tessellation);
     session.absorb(&mut topology);
     session.absorb(&mut geometry);
-    session.absorb_warnings(std::mem::take(&mut pmi.warnings));
-    session.absorb_warnings(std::mem::take(&mut validation.warnings));
     session.absorb(&mut pmi);
     session.absorb(&mut validation);
 
@@ -420,15 +405,15 @@ fn decode_exchange_mode(
         &product.value.product_definition_ids_by_shape,
     );
     session.absorb(&mut drawing);
-    let mut post_decode_warnings = Vec::new();
+    let mut post_decode_losses = Vec::new();
     session.charge_stage("step_carrier_retention")?;
     retain_unowned_carriers(
         exchange,
         &mut session.ir,
         &mut session.typed_records,
-        &mut post_decode_warnings,
+        &mut post_decode_losses,
     );
-    session.absorb_warnings(post_decode_warnings);
+    session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
     let opaque_offsets = match mode {
@@ -693,7 +678,7 @@ fn retain_unowned_carriers(
     exchange: &Exchange,
     ir: &mut CadIr,
     typed_records: &mut HashSet<u64>,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) {
     let owned = ir
         .model
@@ -738,7 +723,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(ids::data("pcurve", id).as_str()))
+        .filter(|id| !owned.contains(ids::data(kind!("pcurve"), id).as_str()))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
@@ -899,9 +884,9 @@ fn retain_unowned_carriers(
         .filter(|id| protected.contains(id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    warnings.push(format!(
+    losses.push(StepLossCode::DecodeWarning.note(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-    ));
+    )));
 }
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
@@ -1004,7 +989,8 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId::from(ids::data(&kind, id))
+    let derived = crate::ids::IdentityKind::parse(&kind);
+    UnknownId::from(ids::data(derived.as_ref().unwrap_or(kind!("record")), id))
 }
 
 fn record_targets(

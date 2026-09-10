@@ -2,6 +2,7 @@
 //! XML-backed mesh modifier userdata attached to object attributes.
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::loss::Diagnostics;
 use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
 use crate::settings;
 use crate::wire::Uuid;
@@ -273,7 +274,7 @@ pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Option<MeshModifiers> {
     let displacement_descriptor =
         first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
@@ -1034,7 +1035,7 @@ mod tests {
     #[test]
     fn parses_v2_displacement_fields_and_sub_item() {
         let payload = v2_payload(XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1071,7 +1072,7 @@ mod tests {
     #[test]
     fn parses_v2_edge_softening_fields() {
         let payload = v2_payload(EDGE_SOFTENING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[edge_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1100,7 +1101,7 @@ mod tests {
 <unknown type=\"double\">99</unknown>\
 </EDGE-SOFTENING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[edge_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1121,7 +1122,7 @@ mod tests {
     #[test]
     fn parses_v2_thickening_fields() {
         let payload = v2_payload(THICKENING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[thickening_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1152,7 +1153,7 @@ mod tests {
 <unknown type=\"double\">99</unknown>\
 </THICKENING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[thickening_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1172,7 +1173,7 @@ mod tests {
     #[test]
     fn parses_v2_curve_piping_fields() {
         let payload = v2_payload(CURVE_PIPING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[curve_piping_descriptor(
@@ -1205,7 +1206,7 @@ mod tests {
 <CAP-TYPE TYPE=\"STRING\">FLAT</CAP-TYPE>\
 </CURVE-PIPING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[curve_piping_descriptor(
@@ -1229,7 +1230,7 @@ mod tests {
     #[test]
     fn parses_v2_shut_lining_fields_and_ordered_curves() {
         let payload = v2_payload(SHUT_LINING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1276,7 +1277,7 @@ mod tests {
 <PULL>1</PULL><IS-BUMP>FALSE</IS-BUMP></CURVE>\
 </SHUT-LINING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1303,7 +1304,7 @@ mod tests {
     fn parses_v1_shut_lining_userdata_and_defaults() {
         let xml = "<xml><shut-lining-object-data><curve><radius>2.75</radius><profile>3</profile></curve></shut-lining-object-data></xml>";
         let payload = v1_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1369,7 +1370,7 @@ mod tests {
                 Some(MESH_MODIFIER_PLUGIN),
             ),
         ];
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers =
             parse_attribute_userdata(&bytes, &descriptors, ArchiveVersion::V6, &mut warnings)
                 .expect("mesh modifiers");
@@ -1390,7 +1391,7 @@ mod tests {
             (ArchiveVersion::V5, 1),
             (ArchiveVersion::V6, 0),
         ] {
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let modifiers = parse_attribute_userdata(
                 &payload,
                 &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1426,7 +1427,7 @@ mod tests {
     #[test]
     fn malformed_xml_is_dropped_and_wrong_application_is_ignored() {
         let malformed = v2_payload("<xml><new-displacement-object-data>");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed,
             &[descriptor(&malformed, Some(MESH_MODIFIER_PLUGIN))],
@@ -1438,7 +1439,7 @@ mod tests {
             |warning| warning.contains("displacement userdata") && warning.contains("dropped")
         ));
 
-        let mut ignored_warnings = Vec::new();
+        let mut ignored_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed,
             &[descriptor(&malformed, None)],
@@ -1449,7 +1450,7 @@ mod tests {
         assert!(ignored_warnings.is_empty());
 
         let malformed_edge = v2_payload("<xml><edge-softening-object-data>");
-        let mut edge_warnings = Vec::new();
+        let mut edge_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_edge,
             &[edge_descriptor(&malformed_edge, Some(MESH_MODIFIER_PLUGIN))],
@@ -1462,7 +1463,7 @@ mod tests {
         }));
 
         let malformed_thickening = v2_payload("<xml><thickening-object-data>");
-        let mut thickening_warnings = Vec::new();
+        let mut thickening_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_thickening,
             &[thickening_descriptor(
@@ -1478,7 +1479,7 @@ mod tests {
         }));
 
         let malformed_curve_piping = v2_payload("<xml><curve-piping-object-data>");
-        let mut curve_piping_warnings = Vec::new();
+        let mut curve_piping_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_curve_piping,
             &[curve_piping_descriptor(
@@ -1494,7 +1495,7 @@ mod tests {
         }));
 
         let malformed_shut_lining = v2_payload("<xml><shut-lining-object-data>");
-        let mut shut_lining_warnings = Vec::new();
+        let mut shut_lining_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_shut_lining,
             &[shut_lining_descriptor(
