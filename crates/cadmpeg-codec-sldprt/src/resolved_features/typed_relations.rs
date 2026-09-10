@@ -52,6 +52,16 @@ enum SingleEntityRelation {
 }
 
 impl SingleEntityRelation {
+    /// The constrained coordinate and the profile axis it is measured along, when this
+    /// relation is axis-aligned.
+    fn axes(self) -> Option<(SketchCoordinateAxis, ProfileAxis)> {
+        match self {
+            Self::Horizontal => Some((SketchCoordinateAxis::V, ProfileAxis::U)),
+            Self::Vertical => Some((SketchCoordinateAxis::U, ProfileAxis::V)),
+            Self::Fixed => None,
+        }
+    }
+
     fn definition(self, entity: &SketchEntityId) -> SketchConstraintDefinitionInput {
         let entity = entity.clone();
         match self {
@@ -129,57 +139,88 @@ enum MarkerRelationGroup {
 
 impl MarkerRelationGroup {
     fn of(kind: crate::records::SketchRelationKind) -> Self {
+        use crate::records::SketchRelationKind as Kind;
         match kind {
-            crate::records::SketchRelationKind::Horizontal => {
-                Self::SingleEntity(SingleEntityRelation::Horizontal)
-            }
-            crate::records::SketchRelationKind::Vertical => {
-                Self::SingleEntity(SingleEntityRelation::Vertical)
-            }
-            crate::records::SketchRelationKind::Fixed => {
-                Self::SingleEntity(SingleEntityRelation::Fixed)
-            }
-            crate::records::SketchRelationKind::ArcAngle90 => {
-                Self::ArcQuarter(QuarterTurn::Quarter)
-            }
-            crate::records::SketchRelationKind::ArcAngle180 => Self::ArcQuarter(QuarterTurn::Half),
-            crate::records::SketchRelationKind::ArcAngle270 => {
-                Self::ArcQuarter(QuarterTurn::ThreeQuarters)
-            }
-            crate::records::SketchRelationKind::EllipseAngle90 => {
-                Self::EllipseQuarter(QuarterTurn::Quarter)
-            }
-            crate::records::SketchRelationKind::EllipseAngle180 => {
-                Self::EllipseQuarter(QuarterTurn::Half)
-            }
-            crate::records::SketchRelationKind::EllipseAngle270 => {
-                Self::EllipseQuarter(QuarterTurn::ThreeQuarters)
-            }
-            crate::records::SketchRelationKind::Parallel => Self::Binary(BinaryRelation::Parallel),
-            crate::records::SketchRelationKind::Perpendicular => {
-                Self::Binary(BinaryRelation::Perpendicular)
-            }
-            crate::records::SketchRelationKind::Tangent => Self::Binary(BinaryRelation::Tangent),
-            crate::records::SketchRelationKind::Equal => Self::Binary(BinaryRelation::Equal),
-            crate::records::SketchRelationKind::Collinear => {
-                Self::Binary(BinaryRelation::Collinear)
-            }
-            crate::records::SketchRelationKind::Concentric => {
-                Self::Binary(BinaryRelation::Concentric)
-            }
-            crate::records::SketchRelationKind::Coradial => Self::Binary(BinaryRelation::Coradial),
-            crate::records::SketchRelationKind::Coincident
-            | crate::records::SketchRelationKind::MergePoints => Self::Coincidence,
-            crate::records::SketchRelationKind::HorizontalPoints
-            | crate::records::SketchRelationKind::VerticalPoints => Self::AxisPoints,
-            crate::records::SketchRelationKind::AtIntersection => Self::AtIntersection,
-            crate::records::SketchRelationKind::Symmetric => Self::Symmetric,
-            crate::records::SketchRelationKind::Midpoint => Self::Midpoint,
-            crate::records::SketchRelationKind::Distance
-            | crate::records::SketchRelationKind::Angle
-            | crate::records::SketchRelationKind::Radius
-            | crate::records::SketchRelationKind::Diameter => Self::Dimensional,
-            _ => Self::Other,
+            Kind::Horizontal => Self::SingleEntity(SingleEntityRelation::Horizontal),
+            Kind::Vertical => Self::SingleEntity(SingleEntityRelation::Vertical),
+            Kind::Fixed => Self::SingleEntity(SingleEntityRelation::Fixed),
+            Kind::ArcAngle90 => Self::ArcQuarter(QuarterTurn::Quarter),
+            Kind::ArcAngle180 => Self::ArcQuarter(QuarterTurn::Half),
+            Kind::ArcAngle270 => Self::ArcQuarter(QuarterTurn::ThreeQuarters),
+            Kind::EllipseAngle90 => Self::EllipseQuarter(QuarterTurn::Quarter),
+            Kind::EllipseAngle180 => Self::EllipseQuarter(QuarterTurn::Half),
+            Kind::EllipseAngle270 => Self::EllipseQuarter(QuarterTurn::ThreeQuarters),
+            Kind::Parallel => Self::Binary(BinaryRelation::Parallel),
+            Kind::Perpendicular => Self::Binary(BinaryRelation::Perpendicular),
+            Kind::Tangent => Self::Binary(BinaryRelation::Tangent),
+            Kind::Equal => Self::Binary(BinaryRelation::Equal),
+            Kind::Collinear => Self::Binary(BinaryRelation::Collinear),
+            Kind::Concentric => Self::Binary(BinaryRelation::Concentric),
+            Kind::Coradial => Self::Binary(BinaryRelation::Coradial),
+            Kind::Coincident | Kind::MergePoints => Self::Coincidence,
+            Kind::HorizontalPoints | Kind::VerticalPoints => Self::AxisPoints,
+            Kind::AtIntersection => Self::AtIntersection,
+            Kind::Symmetric => Self::Symmetric,
+            Kind::Midpoint => Self::Midpoint,
+            Kind::Distance | Kind::Angle | Kind::Radius | Kind::Diameter => Self::Dimensional,
+            Kind::OffsetEdge
+            | Kind::ArcAngleTop
+            | Kind::ArcAngleBottom
+            | Kind::ArcAngleLeft
+            | Kind::ArcAngleRight
+            | Kind::SnapGrid
+            | Kind::SnapLength
+            | Kind::SnapAngle
+            | Kind::UseEdge
+            | Kind::EllipseAngleTop
+            | Kind::EllipseAngleBottom
+            | Kind::EllipseAngleLeft
+            | Kind::EllipseAngleRight
+            | Kind::AtPierce
+            | Kind::DoubleDistance
+            | Kind::AngleThreePoint
+            | Kind::ArcLength
+            | Kind::Normal
+            | Kind::NormalPoints
+            | Kind::SketchOffset
+            | Kind::AlongX
+            | Kind::AlongY
+            | Kind::AlongZ
+            | Kind::AlongXPoints
+            | Kind::AlongYPoints
+            | Kind::AlongZPoints
+            | Kind::ParallelYz
+            | Kind::ParallelZx
+            | Kind::Intersection
+            | Kind::Patterned
+            | Kind::IsoByPoint
+            | Kind::SameIsoparametric
+            | Kind::FitSpline
+            | Kind::EqualCurvature
+            | Kind::EqualTangent
+            | Kind::TangentFace
+            | Kind::AlongX3d
+            | Kind::AlongY3d
+            | Kind::AlongXPoints3d
+            | Kind::AlongYPoints3d
+            | Kind::Traction
+            | Kind::BeltTraction
+            | Kind::BlockFixedLock
+            | Kind::BlockNormalLock
+            | Kind::BlockRotateLock
+            | Kind::FakeSlotConstraint
+            | Kind::FixedSlot
+            | Kind::SameSlots
+            | Kind::LinearPatternCount
+            | Kind::CircularPatternCount
+            | Kind::RadialOffset
+            | Kind::PlanarOffset
+            | Kind::EqualCurvature3dAligned
+            | Kind::FlangeFaceDistance
+            | Kind::ConicRho
+            | Kind::C3Touch
+            | Kind::DoubleAngle
+            | Kind::SameCurveLength => Self::Other,
         }
     }
 }
@@ -374,7 +415,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     }
     Some(match MarkerRelationGroup::of(kind) {
         MarkerRelationGroup::SingleEntity(single) => {
-            if matches!(kind, Horizontal | Vertical) {
+            let axes = single.axes();
+            if let Some((same_coordinate, _)) = axes {
                 if let Some([first, second]) = axis_relation_point_loci(
                     marker,
                     sketch,
@@ -386,17 +428,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                             first,
                             second,
-                            if kind == Horizontal {
-                                SketchCoordinateAxis::V
-                            } else {
-                                SketchCoordinateAxis::U
-                            },
+                            same_coordinate,
                         )
                         .ok()?,
                     });
                 }
             }
-            if matches!(kind, Horizontal | Vertical) {
+            if let Some((same_coordinate, _)) = axes {
                 let point_links = marker
                     .links()
                     .iter()
@@ -420,11 +458,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                                     relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                         first.clone(),
                                         second.clone(),
-                                        if kind == Horizontal {
-                                            SketchCoordinateAxis::V
-                                        } else {
-                                            SketchCoordinateAxis::U
-                                        },
+                                        same_coordinate,
                                     )
                                     .ok()?,
                                 });
@@ -443,7 +477,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
                         return Vec::new();
                     };
-                    if kind == Fixed
+                    if single == SingleEntityRelation::Fixed
                         && matches!(
                             linked.kind,
                             SketchInputKind::Point
@@ -485,7 +519,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     && matches!(second.kind, SketchInputKind::Point | SketchInputKind::ConstrainedPoint));
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
-            let entities = if point_owner_pair && matches!(kind, Horizontal | Vertical) {
+            let entities = if point_owner_pair && axes.is_some() {
                 Vec::new()
             } else {
                 match owner_entities.as_slice() {
@@ -501,14 +535,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 }
             };
             if let [entity] = entities.as_slice() {
-                if matches!(kind, Horizontal | Vertical)
+                if axes.is_some()
                     && sketch_entities.is_empty()
                     && entity.as_str().contains("sketch-entity#relation-point:")
                 {
                     return Some(native());
                 }
                 single.definition(entity)
-            } else if matches!(kind, Horizontal | Vertical) {
+            } else if let Some((same_coordinate, profile_axis)) = axes {
                 let loci =
                     relation_operand_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
                         unique_axis_aligned_linked_loci(
@@ -517,11 +551,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             sketch_entities,
                             markers_by_id,
                             loci_by_marker,
-                            if kind == Horizontal {
-                                ProfileAxis::U
-                            } else {
-                                ProfileAxis::V
-                            },
+                            profile_axis,
                         )
                     });
                 let Some(loci) = loci else {
@@ -533,11 +563,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                     first.clone(),
                     second.clone(),
-                    if kind == Horizontal {
-                        SketchCoordinateAxis::V
-                    } else {
-                        SketchCoordinateAxis::U
-                    },
+                    same_coordinate,
                 )
                 .map_or_else(
                     |_| native(),

@@ -413,10 +413,26 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         .unwrap();
     let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
     for (field, value, message) in [
-        ("ordinal", serde_json::json!(3), "ordinal"),
-        ("offset", serde_json::json!(u64::MAX), "offset"),
-        ("object_index", serde_json::json!(77), "object index"),
-        ("local_id", serde_json::json!(77), "local object id"),
+        (
+            "ordinal",
+            serde_json::json!(3),
+            "SolidWorks feature-input lane expects entity ordinal",
+        ),
+        (
+            "offset",
+            serde_json::json!(u64::MAX),
+            "sketch entity offset is not a marker in native_payload",
+        ),
+        (
+            "object_index",
+            serde_json::json!(77),
+            "SolidWorks feature-input object index does not match its native payload",
+        ),
+        (
+            "local_id",
+            serde_json::json!(77),
+            "SolidWorks feature-input local object id does not match its native payload",
+        ),
     ] {
         let mut wire = original.clone();
         wire["sketch_input_entities"][0][field] = value;
@@ -424,16 +440,21 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(error.to_string().contains(message), "{field}: {error}");
     }
-    for field in ["ordinal", "offset"] {
+    for (field, message) in [
+        (
+            "ordinal",
+            "SolidWorks feature-input lane expects entity ordinal",
+        ),
+        (
+            "offset",
+            "SolidWorks feature-input object index does not match its native payload",
+        ),
+    ] {
         let mut wire = original.clone();
         wire["sketch_input_entities"][1][field] = wire["sketch_input_entities"][0][field].clone();
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
         let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
-        let message = error.to_string();
-        assert!(
-            message.contains(field) || message.contains("does not match its native payload"),
-            "{field}: {error}"
-        );
+        assert!(error.to_string().contains(message), "{field}: {error}");
     }
 }
 

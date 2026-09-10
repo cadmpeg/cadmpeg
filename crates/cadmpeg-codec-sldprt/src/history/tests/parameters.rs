@@ -120,6 +120,32 @@ fn layered_parameter_aliases_match_materialized_precedence() {
 }
 
 #[test]
+fn an_empty_quoted_run_is_not_a_parameter_reference() {
+    use crate::history::parameters::{
+        definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
+    };
+    let tokens = expression_identifier_tokens("\"\" + Width").expect("closed quotes");
+    assert_eq!(
+        tokens
+            .iter()
+            .map(ExpressionIdentifier::value)
+            .collect::<Vec<_>>(),
+        ["Width"]
+    );
+    assert!(!tokens.iter().any(definite_parameter_reference));
+
+    let named = expression_identifier_tokens("\"D1@Sketch1\"").expect("closed quotes");
+    assert_eq!(
+        named
+            .iter()
+            .map(ExpressionIdentifier::value)
+            .collect::<Vec<_>>(),
+        ["D1@Sketch1"]
+    );
+    assert!(named.iter().all(definite_parameter_reference));
+}
+
+#[test]
 fn subtraction_separates_unquoted_parameter_references() {
     assert_eq!(
         expression_identifiers("D1@Sketch1-D2@Sketch1").collect::<Vec<_>>(),

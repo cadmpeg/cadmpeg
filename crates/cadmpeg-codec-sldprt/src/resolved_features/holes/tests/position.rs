@@ -442,6 +442,57 @@ fn hole_temporary_axis_decodes_depth_point_direction_layout() {
 }
 
 #[test]
+fn an_absent_object_name_trailer_sources_no_hole_position() {
+    // The trailer's absent marker is not an object identifier: a hole whose XML
+    // record carries no source must not join through it.
+    let mut history = native_history();
+    history.features[0].source_id = None;
+    let mut lane = lane();
+    lane.native_payload.resize(200, 0);
+    lane.names.push(FeatureInputName {
+        id: "hole-name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        value: "Hole".into(),
+        object_id: Some(ObjectId::Absent),
+    });
+    let hole_trailer = 6 + "Hole".encode_utf16().count() * 2;
+    lane.native_payload[hole_trailer..hole_trailer + 8]
+        .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+    lane.native_payload[hole_trailer + 8..hole_trailer + 12]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+
+    let child_offset = hole_trailer + 32;
+    lane.names.push(FeatureInputName {
+        id: "position-name".into(),
+        parent: "lane".into(),
+        ordinal: 1,
+        offset: child_offset as u64,
+        value: "Position".into(),
+        object_id: ObjectId::from_value(6),
+    });
+    let child_trailer = child_offset + 6 + "Position".encode_utf16().count() * 2;
+    lane.native_payload[child_trailer..child_trailer + 8]
+        .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+    lane.native_payload[child_trailer + 8..child_trailer + 12].copy_from_slice(&6u32.to_le_bytes());
+
+    assert_eq!(
+        hole_position_sketch_source(&history.features[0], &lane),
+        None
+    );
+
+    // The same fixture with a real identifier in the trailer still joins, so the
+    // absent marker is what stops it.
+    lane.names[0].object_id = ObjectId::from_value(7);
+    lane.native_payload[hole_trailer + 8..hole_trailer + 12].copy_from_slice(&7u32.to_le_bytes());
+    assert_eq!(
+        hole_position_sketch_source(&history.features[0], &lane),
+        Some(6)
+    );
+}
+
+#[test]
 fn embedded_position_sketch_name_resolves_its_typed_source() {
     let history = native_history();
     let mut lane = lane();
