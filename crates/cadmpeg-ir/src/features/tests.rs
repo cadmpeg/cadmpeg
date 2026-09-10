@@ -67,16 +67,20 @@ fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
 }
 
 #[test]
-fn draft_anchor_round_trips_through_the_flat_wire_shape() {
+fn draft_anchor_round_trips_as_a_nested_key() {
     use crate::features::{DraftAnchor, FeatureDefinition};
 
     let wire = serde_json::json!({
         "definition": "draft",
         "faces": {"kind": "native", "value": "draft:faces"},
-        "neutral_plane": {"kind": "unresolved"},
-        "parting_tool": {"kind": "native", "value": "draft:parting-tool"},
-        "pull_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "pull_plane": "test:draft:plane#pull",
+        "anchor": {
+            "kind": "parting_line",
+            "tool": {"kind": "native", "value": "draft:parting-tool"},
+            "pull": {
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "plane": "test:draft:plane#pull"
+            }
+        },
         "angle": 0.1,
         "outward": false
     });
@@ -92,53 +96,14 @@ fn draft_anchor_round_trips_through_the_flat_wire_shape() {
 }
 
 #[test]
-fn draft_anchor_rejects_split_or_conflicting_wire_fields() {
-    use crate::features::FeatureDefinition;
-
-    let base = serde_json::json!({
-        "definition": "draft",
-        "faces": {"kind": "unresolved"},
-        "neutral_plane": {"kind": "unresolved"},
-        "pull_direction": null,
-        "angle": null,
-        "outward": null
-    });
-    for invalid in [
-        {
-            let mut value = base.clone();
-            value["pull_plane"] = serde_json::json!("test:draft:plane#pull");
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["parting_tool"] =
-                serde_json::json!({"kind": "native", "value": "draft:parting-tool"});
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["neutral_plane"] =
-                serde_json::json!({"kind": "native", "value": "draft:neutral-plane"});
-            value["parting_tool"] =
-                serde_json::json!({"kind": "native", "value": "draft:parting-tool"});
-            value["pull_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-            value
-        },
-    ] {
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
-fn wrap_mode_round_trips_through_the_flat_wire_shape() {
+fn wrap_mode_round_trips_as_a_nested_key() {
     use crate::features::{FeatureDefinition, WrapMode};
 
     let wire = serde_json::json!({
         "definition": "wrap",
         "profile": {"kind": "native", "value": "wrap:profile"},
         "face": {"kind": "native", "value": "wrap:face"},
-        "mode": "emboss",
-        "depth": 2.5
+        "mode": {"emboss": {"depth": 2.5}}
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
@@ -159,34 +124,10 @@ fn wrap_mode_round_trips_through_the_flat_wire_shape() {
     };
     let encoded = serde_json::to_value(scribe).unwrap();
     assert_eq!(encoded.get("mode"), Some(&serde_json::json!("scribe")));
-    assert_eq!(encoded.get("depth"), None);
 }
 
 #[test]
-fn wrap_mode_rejects_a_missing_or_forbidden_depth() {
-    use crate::features::FeatureDefinition;
-
-    for invalid in [
-        serde_json::json!({
-            "definition": "wrap",
-            "profile": {"kind": "native", "value": "wrap:profile"},
-            "face": {"kind": "native", "value": "wrap:face"},
-            "mode": "emboss"
-        }),
-        serde_json::json!({
-            "definition": "wrap",
-            "profile": {"kind": "native", "value": "wrap:profile"},
-            "face": {"kind": "native", "value": "wrap:face"},
-            "mode": "scribe",
-            "depth": 1.0
-        }),
-    ] {
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
-fn helix_shape_round_trips_through_the_flat_wire_shape() {
+fn helix_shape_round_trips_as_a_nested_key() {
     use crate::features::{FeatureDefinition, HelixShape};
 
     let conical_wire = serde_json::json!({
@@ -194,11 +135,10 @@ fn helix_shape_round_trips_through_the_flat_wire_shape() {
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         "radius": 2.0,
-        "pitch": 3.0,
+        "shape": {"kind": "conical", "pitch": 3.0, "cone_angle": 0.2},
         "revolutions": 4.0,
         "start_angle": 0.0,
-        "clockwise": false,
-        "cone_angle": 0.2
+        "clockwise": false
     });
     let conical: FeatureDefinition = serde_json::from_value(conical_wire.clone()).unwrap();
     assert!(matches!(
@@ -215,11 +155,10 @@ fn helix_shape_round_trips_through_the_flat_wire_shape() {
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         "radius": 2.0,
-        "pitch": 0.0,
+        "shape": {"kind": "spiral", "radial_growth": 1.5},
         "revolutions": 4.0,
         "start_angle": 0.0,
-        "clockwise": false,
-        "radial_growth": 1.5
+        "clockwise": false
     });
     let spiral: FeatureDefinition = serde_json::from_value(spiral_wire.clone()).unwrap();
     assert!(matches!(
@@ -235,44 +174,6 @@ fn helix_shape_round_trips_through_the_flat_wire_shape() {
 }
 
 #[test]
-fn helix_shape_rejects_sentinel_and_conflicting_wire_fields() {
-    use crate::features::FeatureDefinition;
-
-    let base = serde_json::json!({
-        "definition": "helix",
-        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "radius": 2.0,
-        "pitch": 0.0,
-        "revolutions": 4.0,
-        "start_angle": 0.0,
-        "clockwise": false
-    });
-    for invalid in [
-        base.clone(),
-        {
-            let mut value = base.clone();
-            value["pitch"] = serde_json::json!(3.0);
-            value["radial_growth"] = serde_json::json!(1.5);
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["radial_growth"] = serde_json::json!(1.5);
-            value["cone_angle"] = serde_json::json!(0.2);
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["cone_angle"] = serde_json::json!(0.2);
-            value
-        },
-    ] {
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
     let valid = TrimCellSelection::new(vec![1, 4], 5).unwrap();
     assert_eq!(valid.removed(), &[1, 4]);
@@ -282,7 +183,7 @@ fn trim_cell_selection_requires_unique_in_range_ordinals() {
 }
 
 #[test]
-fn trim_cells_preserve_the_flat_wire_fields_and_reject_invalid_input() {
+fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
     use crate::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
 
     let definition = FeatureDefinition::TrimSurface {
@@ -292,9 +193,8 @@ fn trim_cells_preserve_the_flat_wire_fields_and_reject_invalid_input() {
     };
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(wire["definition"], "trim_surface");
-    assert_eq!(wire["keep"], "unresolved");
-    assert_eq!(wire["cell_selection"]["removed"], serde_json::json!([1, 4]));
-    assert_eq!(wire["cell_selection"]["total"], 5);
+    assert_eq!(wire["keep"]["cells"]["removed"], serde_json::json!([1, 4]));
+    assert_eq!(wire["keep"]["cells"]["total"], 5);
     let decoded: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         decoded,
@@ -304,12 +204,8 @@ fn trim_cells_preserve_the_flat_wire_fields_and_reject_invalid_input() {
         } if selection.removed() == [1, 4] && selection.total() == 5
     ));
 
-    let mut conflicting = wire.clone();
-    conflicting["keep"] = serde_json::json!("inside");
-    assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
-
     let mut invalid = wire;
-    invalid["cell_selection"]["removed"] = serde_json::json!([6]);
+    invalid["keep"]["cells"]["removed"] = serde_json::json!([6]);
     assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
 }
 
@@ -382,7 +278,7 @@ fn revolve_construction_admits_only_typed_partial_states() {
 }
 
 #[test]
-fn extrude_direction_preserves_the_flat_source_wire_shape() {
+fn extrude_direction_round_trips_as_a_nested_key() {
     use crate::features::{ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, PathRef};
 
     let wire = serde_json::json!({
@@ -390,7 +286,11 @@ fn extrude_direction_preserves_the_flat_source_wire_shape() {
         "profile": {"kind": "native", "value": "test:profile"},
         "direction": {
             "kind": "explicit",
-            "value": {"x": 0.0, "y": 1.0, "z": 0.0}
+            "vector": {"x": 0.0, "y": 1.0, "z": 0.0},
+            "source": {
+                "kind": "edge",
+                "reference": {"kind": "native", "value": "test:direction-edge"}
+            }
         },
         "start": {"kind": "profile_plane"},
         "extent": {
@@ -400,10 +300,6 @@ fn extrude_direction_preserves_the_flat_source_wire_shape() {
             }
         },
         "op": "new_body",
-        "direction_source": {
-            "kind": "edge",
-            "reference": {"kind": "native", "value": "test:direction-edge"}
-        },
         "solid": true
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
@@ -420,29 +316,6 @@ fn extrude_direction_preserves_the_flat_source_wire_shape() {
         } if reference == "test:direction-edge"
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
-}
-
-#[test]
-fn extrude_direction_rejects_a_source_without_an_explicit_vector() {
-    use crate::features::FeatureDefinition;
-
-    let invalid = serde_json::json!({
-        "definition": "extrude",
-        "profile": {"kind": "native", "value": "test:profile"},
-        "start": {"kind": "profile_plane"},
-        "extent": {
-            "kind": "one_sided",
-            "side": {
-                "termination": {"kind": "blind", "length": 4.0}
-            }
-        },
-        "op": "new_body",
-        "direction_source": {"kind": "custom"}
-    });
-    let error = serde_json::from_value::<FeatureDefinition>(invalid)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("direction_source requires an explicit extrusion direction"));
 }
 
 #[test]
@@ -465,16 +338,22 @@ fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
 #[test]
 fn sketch_binding_preserves_known_planar_space_without_geometry() {
     for wire in [
-        serde_json::json!({"definition": "sketch", "space": "unresolved"}),
-        serde_json::json!({"definition": "sketch", "space": "planar"}),
-        serde_json::json!({"definition": "sketch", "space": "planar", "sketch": "test:model:sketch#1"}),
+        serde_json::json!({"definition": "sketch", "sketch": {"space": "unresolved"}}),
+        serde_json::json!({"definition": "sketch", "sketch": {"space": "planar"}}),
+        serde_json::json!({
+            "definition": "sketch",
+            "sketch": {"space": "planar", "sketch": "test:model:sketch#1"}
+        }),
     ] {
         let definition: super::FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(definition).unwrap(), wire);
     }
     for wire in [
-        serde_json::json!({"definition": "sketch", "space": "unresolved", "sketch": "test:model:sketch#1"}),
-        serde_json::json!({"definition": "sketch", "space": "spatial"}),
+        serde_json::json!({
+            "definition": "sketch",
+            "sketch": {"space": "unresolved", "sketch": "test:model:sketch#1"}
+        }),
+        serde_json::json!({"definition": "sketch", "sketch": {"space": "spatial"}}),
     ] {
         assert!(serde_json::from_value::<super::FeatureDefinition>(wire).is_err());
     }

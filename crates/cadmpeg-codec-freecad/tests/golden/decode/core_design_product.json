@@ -3516,8 +3516,10 @@
         {
           "definition": {
             "definition": "sketch",
-            "sketch": "fcstd:design:sketch#Profile",
-            "space": "planar"
+            "sketch": {
+              "sketch": "fcstd:design:sketch#Profile",
+              "space": "planar"
+            }
           },
           "id": "fcstd:design:feature#Profile",
           "name": "Profile",

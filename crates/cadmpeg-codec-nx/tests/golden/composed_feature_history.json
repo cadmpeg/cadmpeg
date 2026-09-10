@@ -18,8 +18,10 @@
           {
             "definition": {
               "definition": "sketch",
-              "sketch": "nx:feature-history:sketch#0000000000-0000000000",
-              "space": "planar"
+              "sketch": {
+                "sketch": "nx:feature-history:sketch#0000000000-0000000000",
+                "space": "planar"
+              }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "SKETCH",
@@ -52,8 +54,10 @@
           {
             "definition": {
               "definition": "sketch",
-              "sketch": "nx:feature-history:sketch#0000000000-0000000001",
-              "space": "planar"
+              "sketch": {
+                "sketch": "nx:feature-history:sketch#0000000000-0000000001",
+                "space": "planar"
+              }
             },
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "SKETCH",

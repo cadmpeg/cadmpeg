@@ -722,7 +722,7 @@ pub struct DraftPull {
 /// Selection form and pull frame of a draft operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DraftAnchor {
     /// A neutral plane remains fixed during the operation.
     NeutralPlane {
@@ -757,80 +757,6 @@ impl DraftAnchor {
         match self {
             Self::NeutralPlane { pull, .. } => pull.as_mut(),
             Self::PartingLine { pull, .. } => Some(pull),
-        }
-    }
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the draft-anchor wire schema")]
-struct DraftAnchorSchemaWire {
-    neutral_plane: FaceSelection,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parting_tool: Option<FaceSelection>,
-    pull_direction: Option<FeatureDirection3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pull_plane: Option<FeatureId>,
-}
-
-mod draft_anchor_wire {
-    use super::{DraftAnchor, DraftPull, FaceSelection, FeatureDirection3, FeatureId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        neutral_plane: FaceSelection,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parting_tool: Option<FaceSelection>,
-        pull_direction: Option<FeatureDirection3>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pull_plane: Option<FeatureId>,
-    }
-
-    pub fn serialize<S>(value: &DraftAnchor, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (neutral_plane, parting_tool, pull) = match value {
-            DraftAnchor::NeutralPlane { plane, pull } => (plane.clone(), None, pull.as_ref()),
-            DraftAnchor::PartingLine { tool, pull } => {
-                (FaceSelection::Unresolved, Some(tool.clone()), Some(pull))
-            }
-        };
-        Wire {
-            neutral_plane,
-            parting_tool,
-            pull_direction: pull.map(|pull| pull.direction),
-            pull_plane: pull.and_then(|pull| pull.plane.clone()),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DraftAnchor, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        let pull = match (wire.pull_direction, wire.pull_plane) {
-            (Some(direction), plane) => Some(DraftPull { direction, plane }),
-            (None, None) => None,
-            (None, Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "draft pull plane requires a pull direction",
-                ));
-            }
-        };
-        match (wire.neutral_plane, wire.parting_tool, pull) {
-            (FaceSelection::Unresolved, Some(tool), Some(pull)) => {
-                Ok(DraftAnchor::PartingLine { tool, pull })
-            }
-            (FaceSelection::Unresolved, Some(_), None) => Err(serde::de::Error::custom(
-                "parting-line draft requires a pull direction",
-            )),
-            (plane, None, pull) => Ok(DraftAnchor::NeutralPlane { plane, pull }),
-            (_, Some(_), _) => Err(serde::de::Error::custom(
-                "draft cannot carry both a neutral plane and a parting tool",
-            )),
         }
     }
 }
@@ -2801,8 +2727,6 @@ pub enum FeatureDefinition {
         /// Initial radial distance from the axis.
         radius: PositiveLength,
         /// Axial or radial construction law.
-        #[serde(flatten, with = "helix_shape_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "HelixShapeSchemaWire"))]
         shape: HelixShape,
         /// Positive number of revolutions.
         revolutions: PositiveReal,
@@ -2872,15 +2796,11 @@ pub enum FeatureDefinition {
         /// Face receiving the mapped profile.
         face: FaceSelection,
         /// Material or imprint operation performed by the mapping.
-        #[serde(flatten, with = "wrap_mode_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "WrapModeSchemaWire"))]
         mode: WrapMode,
     },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Source-declared sketch space and optional decoded geometry.
-        #[serde(flatten, with = "sketch_feature_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "SketchFeatureSchemaWire"))]
         sketch: SketchFeatureBinding,
     },
     /// Solved spatial-sketch node in the construction history.
@@ -2937,8 +2857,7 @@ pub enum FeatureDefinition {
         /// Profile swept along `direction`.
         profile: ProfileRef,
         /// Direction in which the profile is swept and its optional persisted source.
-        #[serde(flatten, with = "extrude_direction_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "ExtrudeDirectionSchemaWire"))]
+        #[serde(default)]
         direction: ExtrudeDirection,
         /// Plane or face from which the extrusion begins.
         #[serde(default)]
@@ -3278,8 +3197,6 @@ pub enum FeatureDefinition {
         /// Sketch or model-space path defining the trim boundary.
         tool: PathRef,
         /// Region or explicit partition-cell set retained after trimming.
-        #[serde(flatten, with = "trim_region_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "TrimRegionSchemaWire"))]
         keep: TrimRegion,
     },
     /// Extends selected surface boundaries by a fixed distance.
@@ -3314,8 +3231,6 @@ pub enum FeatureDefinition {
         /// Faces whose angle is modified.
         faces: FaceSelection,
         /// Structurally selected anchor and pull frame.
-        #[serde(flatten, with = "draft_anchor_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "DraftAnchorSchemaWire"))]
         anchor: DraftAnchor,
         /// Signed draft angle.
         angle: Option<SlopeAngle>,
@@ -3679,103 +3594,6 @@ pub enum ExtrudeDirection {
     },
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-enum ExtrudeDirectionValueWire {
-    Unresolved,
-    #[default]
-    ProfileNormal,
-    ReversedProfileNormal,
-    Explicit(FeatureDirection3),
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "fields define the extrusion-direction wire schema"
-)]
-struct ExtrudeDirectionSchemaWire {
-    #[serde(
-        default,
-        skip_serializing_if = "ExtrudeDirectionValueWire::is_profile_normal"
-    )]
-    direction: ExtrudeDirectionValueWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction_source: Option<ExtrusionDirectionSource>,
-}
-
-impl ExtrudeDirectionValueWire {
-    fn is_profile_normal(&self) -> bool {
-        matches!(self, Self::ProfileNormal)
-    }
-}
-
-mod extrude_direction_wire {
-    use super::{ExtrudeDirection, ExtrudeDirectionValueWire, ExtrusionDirectionSource};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        #[serde(
-            default,
-            skip_serializing_if = "ExtrudeDirectionValueWire::is_profile_normal"
-        )]
-        direction: ExtrudeDirectionValueWire,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction_source: Option<ExtrusionDirectionSource>,
-    }
-
-    pub fn serialize<S>(value: &ExtrudeDirection, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (direction, direction_source) = match value {
-            ExtrudeDirection::Unresolved => (ExtrudeDirectionValueWire::Unresolved, None),
-            ExtrudeDirection::ProfileNormal => (ExtrudeDirectionValueWire::ProfileNormal, None),
-            ExtrudeDirection::ReversedProfileNormal => {
-                (ExtrudeDirectionValueWire::ReversedProfileNormal, None)
-            }
-            ExtrudeDirection::Explicit { vector, source } => {
-                (ExtrudeDirectionValueWire::Explicit(*vector), source.clone())
-            }
-        };
-        Wire {
-            direction,
-            direction_source,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<ExtrudeDirection, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let Wire {
-            direction,
-            direction_source,
-        } = Wire::deserialize(deserializer)?;
-        match direction {
-            ExtrudeDirectionValueWire::Explicit(vector) => Ok(ExtrudeDirection::Explicit {
-                vector,
-                source: direction_source,
-            }),
-            ExtrudeDirectionValueWire::Unresolved if direction_source.is_none() => {
-                Ok(ExtrudeDirection::Unresolved)
-            }
-            ExtrudeDirectionValueWire::ProfileNormal if direction_source.is_none() => {
-                Ok(ExtrudeDirection::ProfileNormal)
-            }
-            ExtrudeDirectionValueWire::ReversedProfileNormal if direction_source.is_none() => {
-                Ok(ExtrudeDirection::ReversedProfileNormal)
-            }
-            _ => Err(serde::de::Error::custom(
-                "direction_source requires an explicit extrusion direction",
-            )),
-        }
-    }
-}
 /// One complete spatial placement in a hole operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4601,7 +4419,9 @@ pub enum PrincipalPlane {
 }
 
 /// Known sketch space and its optional resolved planar geometry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "SketchFeatureBindingWire", into = "SketchFeatureBindingWire")]
 pub enum SketchFeatureBinding {
     /// The feature's sketch space is unresolved.
     Unresolved,
@@ -4619,81 +4439,31 @@ impl SketchFeatureBinding {
     }
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the planar-sketch wire schema")]
-struct SketchFeatureSchemaWire {
-    space: SketchFeatureSpaceSchema,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    sketch: Option<crate::sketches::SketchId>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "space", rename_all = "snake_case", deny_unknown_fields)]
+enum SketchFeatureBindingWire {
+    Unresolved {},
+    Planar {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SketchId>,
+    },
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[expect(dead_code, reason = "variants define the planar-sketch wire schema")]
-enum SketchFeatureSpaceSchema {
-    Unresolved,
-    Planar,
-}
-
-mod sketch_feature_wire {
-    use super::SketchFeatureBinding;
-    use crate::sketches::SketchId;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Clone, Copy, Default, Deserialize, Serialize)]
-    #[serde(rename_all = "snake_case")]
-    enum Space {
-        Unresolved,
-        #[default]
-        Planar,
-        Spatial,
-    }
-
-    #[derive(Serialize)]
-    struct WriteWire<'a> {
-        space: Space,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        sketch: Option<&'a SketchId>,
-    }
-
-    #[derive(Deserialize)]
-    struct ReadWire {
-        #[serde(default)]
-        space: Space,
-        #[serde(default)]
-        sketch: Option<SketchId>,
-    }
-
-    pub fn serialize<S>(value: &SketchFeatureBinding, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        WriteWire {
-            space: match value {
-                SketchFeatureBinding::Unresolved => Space::Unresolved,
-                SketchFeatureBinding::Planar(_) => Space::Planar,
-            },
-            sketch: value.id(),
+impl From<SketchFeatureBinding> for SketchFeatureBindingWire {
+    fn from(value: SketchFeatureBinding) -> Self {
+        match value {
+            SketchFeatureBinding::Unresolved => Self::Unresolved {},
+            SketchFeatureBinding::Planar(sketch) => Self::Planar { sketch },
         }
-        .serialize(serializer)
     }
+}
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SketchFeatureBinding, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReadWire::deserialize(deserializer)?;
-        match (wire.space, wire.sketch) {
-            (Space::Planar, sketch) => Ok(SketchFeatureBinding::Planar(sketch)),
-            (Space::Unresolved, None) => Ok(SketchFeatureBinding::Unresolved),
-            (Space::Unresolved, Some(_)) => Err(serde::de::Error::custom(
-                "sketch must be absent when space is unresolved",
-            )),
-            (Space::Spatial, _) => Err(serde::de::Error::custom(
-                "spatial sketch geometry requires the spatial_sketch definition",
-            )),
+impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
+    fn from(value: SketchFeatureBindingWire) -> Self {
+        match value {
+            SketchFeatureBindingWire::Unresolved {} => Self::Unresolved,
+            SketchFeatureBindingWire::Planar { sketch } => Self::Planar(sketch),
         }
     }
 }
@@ -4755,7 +4525,7 @@ pub enum BodyRetentionMode {
 /// Material effect of a wrapped profile.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
     /// Add material above the target face.
     Emboss {
@@ -4769,78 +4539,6 @@ pub enum WrapMode {
     },
     /// Imprint the profile without adding or removing material.
     Scribe,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the wrap-mode wire schema")]
-struct WrapModeSchemaWire {
-    mode: WrapModeSchemaKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    depth: Option<Length>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "variants define the wrap-mode wire schema")]
-#[serde(rename_all = "snake_case")]
-enum WrapModeSchemaKind {
-    Emboss,
-    Deboss,
-    Scribe,
-}
-
-mod wrap_mode_wire {
-    use super::{Length, WrapMode};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    enum Kind {
-        Emboss,
-        Deboss,
-        Scribe,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        mode: Kind,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        depth: Option<Length>,
-    }
-
-    pub fn serialize<S>(value: &WrapMode, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (mode, depth) = match value {
-            WrapMode::Emboss { depth } => (Kind::Emboss, Some(*depth)),
-            WrapMode::Deboss { depth } => (Kind::Deboss, Some(*depth)),
-            WrapMode::Scribe => (Kind::Scribe, None),
-        };
-        Wire { mode, depth }.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<WrapMode, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.mode, wire.depth) {
-            (Kind::Emboss, Some(depth)) => Ok(WrapMode::Emboss { depth }),
-            (Kind::Deboss, Some(depth)) => Ok(WrapMode::Deboss { depth }),
-            (Kind::Scribe, None) => Ok(WrapMode::Scribe),
-            (Kind::Emboss, None) => Err(serde::de::Error::custom(
-                "wrap mode emboss requires the depth field",
-            )),
-            (Kind::Deboss, None) => Err(serde::de::Error::custom(
-                "wrap mode deboss requires the depth field",
-            )),
-            (Kind::Scribe, Some(_)) => Err(serde::de::Error::custom(
-                "wrap mode scribe forbids the depth field",
-            )),
-        }
-    }
 }
 
 /// Continuity order imposed at a generated surface boundary.
@@ -5085,85 +4783,6 @@ impl TryFrom<TrimCellSelectionWire> for TrimCellSelection {
             .ok_or("trim cell selection removed must be nonempty, unique, and within total")
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum TrimRegionWire {
-    Unresolved,
-    Inside,
-    Outside,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the trim region wire schema")]
-struct TrimRegionSchemaWire {
-    keep: TrimRegionWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cell_selection: Option<TrimCellSelection>,
-}
-
-mod trim_region_wire {
-    use super::{TrimCellSelection, TrimRegion, TrimRegionWire};
-    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize)]
-    struct Borrowed<'a> {
-        keep: TrimRegionWire,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cell_selection: Option<&'a TrimCellSelection>,
-    }
-
-    #[derive(Deserialize)]
-    struct Owned {
-        keep: TrimRegionWire,
-        #[serde(default)]
-        cell_selection: Option<TrimCellSelection>,
-    }
-
-    pub fn serialize<S>(value: &TrimRegion, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            TrimRegion::Unresolved => Borrowed {
-                keep: TrimRegionWire::Unresolved,
-                cell_selection: None,
-            },
-            TrimRegion::Inside => Borrowed {
-                keep: TrimRegionWire::Inside,
-                cell_selection: None,
-            },
-            TrimRegion::Outside => Borrowed {
-                keep: TrimRegionWire::Outside,
-                cell_selection: None,
-            },
-            TrimRegion::Cells(selection) => Borrowed {
-                keep: TrimRegionWire::Unresolved,
-                cell_selection: Some(selection),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<TrimRegion, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Owned::deserialize(deserializer)?;
-        match (wire.keep, wire.cell_selection) {
-            (TrimRegionWire::Unresolved, None) => Ok(TrimRegion::Unresolved),
-            (TrimRegionWire::Inside, None) => Ok(TrimRegion::Inside),
-            (TrimRegionWire::Outside, None) => Ok(TrimRegion::Outside),
-            (TrimRegionWire::Unresolved, Some(selection)) => Ok(TrimRegion::Cells(selection)),
-            (_, Some(_)) => Err(D::Error::custom(
-                "trim surface cell_selection requires keep to be unresolved",
-            )),
-        }
-    }
-}
-
 /// Geometric law used to extend a surface boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6962,7 +6581,7 @@ pub enum HelixConstructionStyle {
 /// Axial or radial construction law of a helix feature.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HelixShape {
     /// Constant-radius helix with signed axial rise per revolution.
     Cylindrical {
@@ -6981,83 +6600,6 @@ pub enum HelixShape {
         /// Signed radial growth per revolution.
         radial_growth: Length,
     },
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the helix-shape wire schema")]
-struct HelixShapeSchemaWire {
-    pitch: Length,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    radial_growth: Option<Length>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cone_angle: Option<SlopeAngle>,
-}
-
-mod helix_shape_wire {
-    use super::{HelixShape, Length, NonZeroLength, SlopeAngle};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        pitch: Length,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        radial_growth: Option<Length>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cone_angle: Option<SlopeAngle>,
-    }
-
-    pub fn serialize<S>(value: &HelixShape, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (pitch, radial_growth, cone_angle) = match value {
-            HelixShape::Cylindrical { pitch } => (Length::from(*pitch), None, None),
-            HelixShape::Conical { pitch, cone_angle } => {
-                (Length::from(*pitch), None, Some(*cone_angle))
-            }
-            HelixShape::Spiral { radial_growth } => (Length::ZERO, Some(*radial_growth), None),
-        };
-        Wire {
-            pitch,
-            radial_growth,
-            cone_angle,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HelixShape, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.pitch.get() == 0.0, wire.radial_growth, wire.cone_angle) {
-            (false, None, None) => Ok(HelixShape::Cylindrical {
-                pitch: NonZeroLength::new(wire.pitch.get()).ok_or_else(|| {
-                    serde::de::Error::custom("helix pitch field must be finite and nonzero")
-                })?,
-            }),
-            (false, None, Some(cone_angle)) => Ok(HelixShape::Conical {
-                pitch: NonZeroLength::new(wire.pitch.get()).ok_or_else(|| {
-                    serde::de::Error::custom("helix pitch field must be finite and nonzero")
-                })?,
-                cone_angle,
-            }),
-            (true, Some(radial_growth), None) => Ok(HelixShape::Spiral { radial_growth }),
-            (_, Some(_), Some(_)) => Err(serde::de::Error::custom(
-                "helix radial_growth and cone_angle fields are mutually exclusive",
-            )),
-            (false, Some(_), None) => Err(serde::de::Error::custom(
-                "helix radial_growth requires a zero pitch field",
-            )),
-            (true, None, Some(_)) => Err(serde::de::Error::custom(
-                "helix cone_angle requires a nonzero pitch field",
-            )),
-            (true, None, None) => Err(serde::de::Error::custom(
-                "helix zero pitch requires the radial_growth field",
-            )),
-        }
-    }
 }
 
 /// Result topology retained by a projection-on-surface operation.

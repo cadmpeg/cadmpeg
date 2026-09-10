@@ -238,8 +238,10 @@
           "source_tag": "Sketch",
           "definition": {
             "definition": "sketch",
-            "space": "planar",
-            "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277"
+            "sketch": {
+              "space": "planar",
+              "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277"
+            }
           },
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
         }

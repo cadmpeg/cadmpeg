@@ -64,6 +64,9 @@
             "sldprt:model:feature#247:0": {
               "definition": {
                 "definition": "extrude",
+                "direction": {
+                  "kind": "profile_normal"
+                },
                 "extent": {
                   "kind": "one_sided",
                   "side": {
@@ -143,6 +146,9 @@
         {
           "definition": {
             "definition": "extrude",
+            "direction": {
+              "kind": "profile_normal"
+            },
             "extent": {
               "kind": "one_sided",
               "side": {

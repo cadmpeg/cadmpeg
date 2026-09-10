@@ -54,7 +54,9 @@
             "sldprt:model:feature#247:0": {
               "definition": {
                 "definition": "sketch",
-                "space": "planar"
+                "sketch": {
+                  "space": "planar"
+                }
               },
               "evaluation": {
                 "kind": "active"
@@ -107,7 +109,9 @@
         {
           "definition": {
             "definition": "sketch",
-            "space": "planar"
+            "sketch": {
+              "space": "planar"
+            }
           },
           "id": "sldprt:model:feature#247:0",
           "name": "Sketch1",
