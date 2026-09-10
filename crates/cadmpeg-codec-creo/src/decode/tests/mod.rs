@@ -98,7 +98,6 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,

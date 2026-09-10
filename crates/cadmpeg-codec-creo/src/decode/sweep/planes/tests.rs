@@ -82,7 +82,6 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -231,7 +230,6 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
 fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     let entry = crate::feature::FeatureEntityTableEntry {
         entity_id: 33,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(11), None, None),
         prefixed: false,
         offset: 0,

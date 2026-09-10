@@ -40,7 +40,6 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -247,7 +246,6 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -317,7 +315,6 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -388,15 +385,13 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.table_class_id = 29;
-    table.entries[3].class_id = 201;
-    table.entries[3].payload = crate::feature::EntryPayload::Plain;
+    table.entries[3].payload = crate::feature::EntryPayload::Plain { class: 201 };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[3].class_id = 200;
     table.entries[3].payload = crate::feature::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(

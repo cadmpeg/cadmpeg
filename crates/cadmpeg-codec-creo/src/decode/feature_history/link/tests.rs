@@ -101,7 +101,6 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,

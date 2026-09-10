@@ -567,7 +567,6 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -678,7 +677,6 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         ),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
@@ -718,12 +716,17 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 
     let mut conflicting = table.clone();
     conflicting.entries[3].payload = crate::feature::EntryPayload::Related {
+        class: crate::feature::RelatedClass::Class210,
         entity: 101,
         state: crate::feature::RelatedState::Zero,
     };
     assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
     let mut wrong_predecessor_class = table.clone();
-    wrong_predecessor_class.entries[0].class_id = 219;
+    wrong_predecessor_class.entries[0].payload = crate::feature::EntryPayload::Related {
+        class: crate::feature::RelatedClass::Class219,
+        entity: 11,
+        state: crate::feature::RelatedState::Zero,
+    };
     wrong_predecessor_class
         .entries
         .push(entry(999, 214, Some(888)));
@@ -743,7 +746,6 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         payload: crate::feature::entry_payload(class_id, None, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
@@ -804,7 +806,6 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
         table_class_id: 64,
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 226,
-            class_id: 209,
             payload: crate::feature::entry_payload(209, None, None, None),
             prefixed: true,
             offset: 0,
@@ -1052,7 +1053,6 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -1128,7 +1128,6 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: 0,
         end_offset: 0,
@@ -1188,7 +1187,6 @@ fn new_sheet_output_requires_an_owned_output_surface() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
         offset: 0,
         end_offset: 0,

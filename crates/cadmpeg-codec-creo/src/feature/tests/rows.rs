@@ -202,10 +202,10 @@ fn generated_table_prototype_uses_its_prefixed_entry_class() {
     let entries = read_entries(&payload, 0, 2).expect("prototype and positional entry");
 
     assert_eq!(entries[0].entity_id, 20);
-    assert_eq!(entries[0].class_id, 30);
+    assert_eq!(entries[0].class_id(), 30);
     assert!(entries[0].prefixed);
     assert_eq!(entries[0].end_offset, 5);
-    assert_eq!(entries[1].class_id, 200);
+    assert_eq!(entries[1].class_id(), 200);
     assert_eq!(entries[1].source_entity_id(), Some(7));
 
     let misplaced = [10, 30, 0, 0xe3, 0xf7, 31, 20, 0xe4, 0xe3];
@@ -218,7 +218,7 @@ fn class_219_generated_entry_retains_its_related_entity() {
     let entries = read_entries(&payload, 0, 1).expect("class-219 generated entry");
 
     assert_eq!(entries[0].entity_id, 1466);
-    assert_eq!(entries[0].class_id, 219);
+    assert_eq!(entries[0].class_id(), 219);
     assert_eq!(entries[0].source_entity_id(), None);
     assert_eq!(entries[0].related_entity_id(), Some(1175));
     assert_eq!(entries[0].related_entity_state(), Some(0));
@@ -240,7 +240,7 @@ fn class_2017_generated_entry_retains_related_entity_and_state() {
     let entries = read_entries(&payload, 0, 1).expect("class-2017 generated entry");
 
     assert_eq!(entries[0].entity_id, 4694);
-    assert_eq!(entries[0].class_id, 2017);
+    assert_eq!(entries[0].class_id(), 2017);
     assert_eq!(entries[0].related_entity_id(), Some(4680));
     assert_eq!(entries[0].related_entity_state(), Some(1));
     assert_eq!(entries[0].end_offset, payload.len());
@@ -262,7 +262,7 @@ fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
     let entries = read_entries(&payload, 0, 1).expect("class-210 generated entry");
 
     assert_eq!(entries[0].entity_id, 1463);
-    assert_eq!(entries[0].class_id, 210);
+    assert_eq!(entries[0].class_id(), 210);
     assert_eq!(entries[0].related_entity_id(), Some(1369));
     assert_eq!(entries[0].related_entity_state(), Some(0));
 }
@@ -273,7 +273,7 @@ fn class_214_generated_entry_retains_its_related_entity() {
     let entries = read_entries(&payload, 0, 1).expect("class-214 generated entry");
 
     assert_eq!(entries[0].entity_id, 1353);
-    assert_eq!(entries[0].class_id, 214);
+    assert_eq!(entries[0].class_id(), 214);
     assert_eq!(entries[0].related_entity_id(), Some(184));
     assert_eq!(entries[0].related_entity_state(), Some(0));
 }
@@ -489,10 +489,10 @@ fn generated_entity_entries_accept_variable_schema_classes() {
     let entries = read_entries(&payload, 0, 2).expect("generated entity entries");
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].entity_id, 13);
-    assert_eq!(entries[0].class_id, 204);
+    assert_eq!(entries[0].class_id(), 204);
     assert!(entries[0].prefixed);
     assert_eq!(entries[1].entity_id, 18);
-    assert_eq!(entries[1].class_id, 203);
+    assert_eq!(entries[1].class_id(), 203);
     assert!(!entries[1].prefixed);
 }
 

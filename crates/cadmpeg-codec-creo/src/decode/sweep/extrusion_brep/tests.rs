@@ -47,7 +47,6 @@ fn generated_side_table() -> crate::feature::FeatureEntityTable {
         table_class_id: 29,
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 31,
-            class_id: 200,
             payload: crate::feature::entry_payload(200, Some(11), None, None),
             prefixed: false,
             offset: 0,
@@ -127,7 +126,6 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         payload: crate::feature::entry_payload(class_id, None, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -135,7 +133,6 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
     };
     let materialized = crate::feature::FeatureEntityTableEntry {
         entity_id: 32,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(13), None, None),
         prefixed: false,
         offset: 0,
