@@ -59,7 +59,6 @@ pub(super) fn decode(
         .into_iter()
         .collect::<BTreeSet<_>>();
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut annotations = Annotations::default();
     let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange);
@@ -381,14 +380,14 @@ pub(super) fn decode(
                     typed.insert(id);
                     typed.extend(refs);
                 } else {
-                    warnings.push(format!(
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    ));
+                    )));
                 }
             } else {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
-                ));
+                )));
             }
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
             if set_dimension_tolerance(
@@ -397,14 +396,14 @@ pub(super) fn decode(
             ) {
                 typed.extend([id, fit_id]);
             } else {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                ));
+                )));
             }
         } else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
-            ));
+            )));
         }
     }
 
@@ -466,10 +465,10 @@ pub(super) fn decode(
                     .find_map(|value| measure(value, exchange, &mut measurements))
             });
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} has no numeric magnitude",
                 record.display_name()
-            ));
+            )));
             continue;
         };
         let defined_unit = record
@@ -705,7 +704,7 @@ pub(super) fn decode(
     StageOutcome {
         value: (),
         claims: typed,
-        losses: super::fold_warnings(losses, warnings),
+        losses,
         notes: Vec::new(),
     }
 }

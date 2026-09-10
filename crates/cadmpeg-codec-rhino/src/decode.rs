@@ -3765,6 +3765,19 @@ struct BrepStageContext<'a> {
 }
 
 impl BrepDraft {
+    /// Records the loss for one unreadable Brep display-mesh cache slot.
+    fn mesh_cache_slot_dropped(
+        &mut self,
+        kind: &str,
+        index: usize,
+        error: &impl std::fmt::Display,
+    ) {
+        self.warnings.push_coded(
+            RhinoLossCode::BrepMeshCacheDegraded,
+            format!("invalid {kind} mesh cache slot {index}: {error}"),
+        );
+    }
+
     fn apply(
         self,
         ir: &mut CadIr,
@@ -3891,11 +3904,7 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                         .tessellations
                         .push(mesh.tessellation);
                 }
-                Err(error) => {
-                    staged
-                        .warnings
-                        .push(format!("invalid {kind} mesh cache slot {index}: {error}"));
-                }
+                Err(error) => staged.mesh_cache_slot_dropped(kind, index, &error),
             }
         }
     }

@@ -41,7 +41,7 @@ fn a_transformed_composite_curve_is_an_omitted_carrier() {
         transform: Transform::identity(),
     };
 
-    assert!(!curve_is_supported(&transformed));
     let mut emitter = crate::writer::Emitter::new();
     assert!(curve(&mut emitter, &transformed).is_none());
+    assert!(!curve_is_supported(&transformed));
 }

@@ -222,7 +222,7 @@ pub(super) fn decode(
         losses: Vec::new(),
         notes: Vec::new(),
     };
-    let mut warnings = Vec::new();
+    let mut losses: Vec<LossNote> = Vec::new();
     for (&id, record) in &exchange.records {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
         else {
@@ -253,15 +253,15 @@ pub(super) fn decode(
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
-            ));
+            )));
             continue;
         };
         if !carrier_index.points.contains_key(&point_id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
-            ));
+            )));
         }
     }
     let wire_models = exchange
@@ -298,16 +298,16 @@ pub(super) fn decode(
             &vertices,
             &edges,
             point_positions,
-            &mut warnings,
+            &mut losses,
         );
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
-                warnings.push(topology_commit_error(
+                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
-                ));
+                )));
             } else {
                 committed += 1;
                 built_wire_models.insert(model);
@@ -321,14 +321,14 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-            ));
+            )));
         } else if let Some(failures) = failures {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
                 failures.count
-            ));
+            )));
         }
     }
     for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
@@ -343,16 +343,16 @@ pub(super) fn decode(
             &edges,
             point_positions,
             scope_root,
-            &mut warnings,
+            &mut losses,
         );
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
-                warnings.push(topology_commit_error(
+                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
-                ));
+                )));
             } else {
                 committed += 1;
                 for shell in &built.shell_sources {
@@ -371,14 +371,14 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-            ));
+            )));
         } else if let Some(failures) = failures {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
                 failures.count
-            ));
+            )));
         }
     }
     let decoded_pcurves = ir
@@ -405,9 +405,9 @@ pub(super) fn decode(
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
-            ));
+            )));
             continue;
         };
         if let Some(root_built) = built_roots.get(&key).cloned() {
@@ -440,8 +440,7 @@ pub(super) fn decode(
             &decoded_pcurves,
             point_positions,
             scope_root,
-            &mut warnings,
-            &mut result.losses,
+            &mut losses,
         );
         let (built, failures) = outcome.into_parts();
         let failure_message = failures
@@ -453,10 +452,10 @@ pub(super) fn decode(
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &commit_session, ir);
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
-                warnings.push(topology_commit_error(
+                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("STEP topology root #{id}"),
                     &error,
-                ));
+                )));
             } else {
                 for shell in &built.shell_sources {
                     result
@@ -500,10 +499,10 @@ pub(super) fn decode(
                 let detail = failure_message
                     .as_deref()
                     .map_or_else(String::new, |message| format!(": {message}"));
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
                     failures.count,
-                ));
+                )));
             }
         }
     }
@@ -513,17 +512,16 @@ pub(super) fn decode(
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} omitted unsupported or unresolved member(s): {}",
                 omitted
                     .iter()
                     .map(|member| format!("#{member}"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            ));
+            )));
         }
-        let Some(mut built) =
-            build_geometric_set(id, record, exchange, carrier_index, &mut warnings)
+        let Some(mut built) = build_geometric_set(id, record, exchange, carrier_index, &mut losses)
         else {
             if mark_standalone_geometric_set(
                 id,
@@ -534,16 +532,16 @@ pub(super) fn decode(
             ) {
                 continue;
             }
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
-            ));
+            )));
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft, ir) {
-            warnings.push(topology_commit_error(
+            losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                 &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                 &error,
-            ));
+            )));
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
             result.claims.extend(std::mem::take(&mut built.typed));
@@ -566,7 +564,7 @@ pub(super) fn decode(
         };
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} omitted unsupported or unresolved member(s): {}",
                 representation_type,
                 omitted
@@ -574,7 +572,7 @@ pub(super) fn decode(
                     .map(|member| format!("#{member}"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            ));
+            )));
         }
         mark_standalone_geometric_set(id, record, exchange, carrier_index, &mut result.claims);
     }
@@ -638,7 +636,7 @@ pub(super) fn decode(
                 .push(vertex.id.clone());
         }
     }
-    result.losses = super::fold_warnings(result.losses, warnings);
+    result.losses.append(&mut losses);
     result
 }
 
@@ -842,7 +840,7 @@ fn build_wire(
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
     let Some(model) = exchange.records.get(&id) else {
         return BuildOutcome::Partial {
@@ -873,7 +871,7 @@ fn build_wire(
             edefs,
             point_positions,
             scoped,
-            warnings,
+            losses,
         ) {
             Some(value) => outcome.push(value),
             None => outcome.fail(None),
@@ -891,7 +889,7 @@ fn build_wire_set(
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     scoped: bool,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<Built> {
     let set = exchange.records.get(&set_id)?;
     let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
@@ -903,7 +901,7 @@ fn build_wire_set(
     };
     let mut typed = HashSet::from([id, set_id]);
     if set_type == "CONNECTED_EDGE_SUB_SET"
-        && !validate_subset_parent(set_id, set, set_type, exchange, warnings)
+        && !validate_subset_parent(set_id, set, set_type, exchange, losses)
     {
         typed.remove(&set_id);
     }
@@ -920,7 +918,7 @@ fn build_wire_set(
         built_edges.push(Edge {
             id: ir_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                edge_id, edge, exchange, warnings,
+                edge_id, edge, exchange, losses,
             )),
             start: VertexId::from(ids::data(
                 kind!("vertex"),
@@ -970,7 +968,10 @@ fn build_wire_set(
         ) {
             Ok(shell) => shell,
             Err(error) => {
-                warnings.push(format!("CONNECTED_EDGE_SET #{set_id}: {error}"));
+                losses.push(
+                    StepLossCode::DecodeWarning
+                        .note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
+                );
                 return None;
             }
         }],
@@ -990,7 +991,9 @@ fn build_wire_set(
         },
     )
     .map_err(|error| {
-        warnings.push(format!("CONNECTED_EDGE_SET #{set_id}: {error}"));
+        losses.push(
+            StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
+        );
     })
     .ok()?;
     built.shell_sources.insert(set_id);
@@ -1004,7 +1007,7 @@ fn build_shell_wire(
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     scope_root: bool,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
     let Some(model) = exchange.records.get(&id) else {
         return BuildOutcome::Partial {
@@ -1036,7 +1039,7 @@ fn build_shell_wire(
             point_positions,
             scoped,
             scope_root,
-            warnings,
+            losses,
         ) {
             Some(value) => outcome.push(value),
             None => outcome.fail(None),
@@ -1055,7 +1058,7 @@ fn build_shell_wire_set(
     point_positions: &CarrierIndex,
     scoped: bool,
     scope_root: bool,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<Built> {
     let shell_record = exchange.records.get(&shell_id)?;
     let mut typed = HashSet::from([id, shell_id]);
@@ -1124,7 +1127,7 @@ fn build_shell_wire_set(
         edges.push(Edge {
             id: ir_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                edge_id, edge, exchange, warnings,
+                edge_id, edge, exchange, losses,
             )),
             start: VertexId::from(ids::data(
                 kind!("vertex"),
@@ -1178,7 +1181,9 @@ fn build_shell_wire_set(
         ) {
             Ok(shell) => shell,
             Err(error) => {
-                warnings.push(format!("wire shell #{shell_id}: {error}"));
+                losses.push(
+                    StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
+                );
                 return None;
             }
         }],
@@ -1198,7 +1203,7 @@ fn build_shell_wire_set(
         },
     )
     .map_err(|error| {
-        warnings.push(format!("wire shell #{shell_id}: {error}"));
+        losses.push(StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")));
     })
     .ok()?;
     built.shell_sources.insert(shell_id);
@@ -1247,12 +1252,12 @@ fn build_geometric_set(
     representation: &RawRecord,
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<Built> {
     let Some(set_ids) = representation_items(representation) else {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no item list"
-        ));
+        )));
         return None;
     };
     let mut typed = HashSet::from([id]);
@@ -1263,21 +1268,21 @@ fn build_geometric_set(
     let mut faces = Vec::new();
     for set_id in set_ids {
         let Some(set) = exchange.records.get(&set_id) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped missing set #{set_id}"
-            ));
+            )));
             continue;
         };
         let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped non-set member #{set_id}"
-            ));
+            )));
             continue;
         };
         let Some(items) = named_refs(set, set_type, 1) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
-            ));
+            )));
             continue;
         };
         typed.insert(set_id);
@@ -1312,9 +1317,9 @@ fn build_geometric_set(
         }
     }
     let Some(shell) = shell else {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no indexed surface member; set dropped"
-        ));
+        )));
         return None;
     };
     staged_topology(
@@ -1342,9 +1347,9 @@ fn build_geometric_set(
         },
     )
     .map_err(|error| {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
-        ));
+        )));
     })
     .ok()
 }
@@ -1550,12 +1555,12 @@ fn edge_curve_id_reported(
     edge_id: u64,
     edge: &EdgeDef,
     exchange: &Exchange,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<CurveId> {
     let Some(curve_step) = edge.curve() else {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
-        ));
+        )));
         return None;
     };
     let curve = exchange.records.get(&curve_step);
@@ -1570,9 +1575,9 @@ fn edge_curve_id_reported(
             })
         })
     {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
-        ));
+        )));
     }
     carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve)))
 }
@@ -1946,7 +1951,6 @@ fn build(
     decoded_pcurves: &BTreeSet<PcurveId>,
     point_positions: &CarrierIndex,
     scope_root: bool,
-    warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
     let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions) else {
@@ -1986,7 +1990,6 @@ fn build(
             scope_shell_carriers,
             scope_shell_carriers,
             scope_root,
-            warnings,
             losses,
             &mut failure,
         );
@@ -2050,7 +2053,6 @@ fn build(
             scoped || scope_root,
             scoped || scope_root,
             scope_root,
-            warnings,
             losses,
             &mut failure,
         ) {
@@ -2080,7 +2082,6 @@ fn build_one(
     scope_faces: bool,
     scope_edges: bool,
     scope_root: bool,
-    warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
     failure: &mut Option<BuildFailure>,
 ) -> Option<Built> {
@@ -2151,7 +2152,7 @@ fn build_one(
                 CarrierKind::ConnectedFaceSet,
             )?;
             if set_type == "CONNECTED_FACE_SUB_SET"
-                && !validate_subset_parent(shell_step, sr, set_type, exchange, warnings)
+                && !validate_subset_parent(shell_step, sr, set_type, exchange, losses)
             {
                 typed.remove(&shell_step);
             }
@@ -2586,7 +2587,10 @@ fn build_one(
                             })
                             .collect::<Result<Vec<_>, cadmpeg_ir::geometry::ParameterRangeError>>()
                             .map_err(|error| {
-                                warnings.push(format!("coedge pcurve parameter_range: {error}"));
+                                losses.push(
+                                    StepLossCode::DecodeWarning
+                                        .note(format!("coedge pcurve parameter_range: {error}")),
+                                );
                             })
                             .ok()?,
                         use_curve: None,
@@ -2737,7 +2741,10 @@ fn build_one(
                 ) {
                     Ok(shell) => shell,
                     Err(error) => {
-                        warnings.push(format!("{shell_type} #{shell_step}: {error}"));
+                        losses.push(
+                            StepLossCode::DecodeWarning
+                                .note(format!("{shell_type} #{shell_step}: {error}")),
+                        );
                         return None;
                     }
                 },
@@ -2757,7 +2764,7 @@ fn build_one(
         edges.push(Edge {
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                edge_id, e, exchange, warnings,
+                edge_id, e, exchange, losses,
             )),
             start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
             end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
@@ -4486,7 +4493,7 @@ fn validate_subset_parent(
     record: &RawRecord,
     subset_type: &str,
     exchange: &Exchange,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> bool {
     let base_type = match subset_type {
         "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
@@ -4501,9 +4508,9 @@ fn validate_subset_parent(
             .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
     };
     let Some(parent) = parent else {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "{subset_type} #{id} has no resolvable parent {base_type}"
-        ));
+        )));
         return false;
     };
     if exchange
@@ -4513,9 +4520,9 @@ fn validate_subset_parent(
     {
         true
     } else {
-        warnings.push(format!(
+        losses.push(StepLossCode::DecodeWarning.note(format!(
             "{subset_type} #{id} parent #{parent} does not resolve to {base_type}"
-        ));
+        )));
         false
     }
 }

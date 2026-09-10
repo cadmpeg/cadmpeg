@@ -15,8 +15,10 @@ pub struct IdentityKind(Cow<'static, str>);
 
 impl IdentityKind {
     /// Builds a kind from a source literal, rejected at compile time by [`kind!`].
-    #[must_use]
-    pub const fn from_literal(literal: &'static str) -> Self {
+    ///
+    /// Crate-private so `kind!`, whose `static` forces const evaluation, is the
+    /// only door: there is no runtime call site where the assert could fire.
+    pub(crate) const fn from_literal(literal: &'static str) -> Self {
         assert!(
             literal_is_valid(literal.as_bytes()),
             "a STEP identity kind is nonempty and free of ':', '#' and whitespace"

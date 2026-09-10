@@ -38,7 +38,6 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
     let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
@@ -51,7 +50,9 @@ pub(super) fn decode(
             continue;
         };
         let Some(items) = entity_parameter(record, kind, 0, 1).and_then(ValueExt::list) else {
-            warnings.push(format!("{kind} #{id} has no structured items"));
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no structured items")),
+            );
             continue;
         };
         let item_ids = items
@@ -137,9 +138,9 @@ pub(super) fn decode(
             continue;
         }
         let Some(item) = tessellated_annotation_item(record) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_ANNOTATION_OCCURRENCE #{id} has no tessellated item"
-            ));
+            )));
             continue;
         };
         let mut associator = TessellationItemAssociator {
@@ -162,7 +163,6 @@ pub(super) fn decode(
         let message = format!(
             "repositioned tessellated item #{id} has no valid AXIS2_PLACEMENT_3D; unresolved placement is not applied"
         );
-        warnings.push(message.clone());
         losses.push(StepLossCode::TessellationPlacementUnresolved.note(message));
     }
     for id in unresolved_containers {
@@ -172,7 +172,10 @@ pub(super) fn decode(
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
         };
-        warnings.push(format!("{kind} #{id} has no decoded exact body link"));
+        losses.push(
+            StepLossCode::DecodeWarning
+                .note(format!("{kind} #{id} has no decoded exact body link")),
+        );
     }
     let unresolved_items = item_bodies
         .iter()
@@ -188,7 +191,6 @@ pub(super) fn decode(
                 "tessellation item #{item} has {} distinct repositioning placements; mesh retained in source coordinates",
                 distinct.len()
             );
-            warnings.push(message.clone());
             losses.push(StepLossCode::TessellationPlacementAmbiguous.note(message));
         }
     }
@@ -203,7 +205,6 @@ pub(super) fn decode(
             };
             let message =
                 format!("tessellation item #{item} has {detail}; mesh retained as detached");
-            warnings.push(message.clone());
             losses.push(StepLossCode::TessellationItemBodyUnresolved.note(message));
         }
     }
@@ -216,11 +217,17 @@ pub(super) fn decode(
         let Some(coordinate_id) =
             inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
         else {
-            warnings.push(format!("{kind} #{id} has no COORDINATES_LIST reference"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{kind} #{id} has no COORDINATES_LIST reference")),
+            );
             continue;
         };
         let Some(vertices) = coordinates.get(&coordinate_id) else {
-            warnings.push(format!("{kind} #{id} has no resolved COORDINATES_LIST"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{kind} #{id} has no resolved COORDINATES_LIST")),
+            );
             continue;
         };
         let offset = entity.own_parameter_offset();
@@ -237,14 +244,19 @@ pub(super) fn decode(
             }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
-            warnings.push(format!("{kind} #{id} has no triangle indices"));
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no triangle indices")),
+            );
             continue;
         };
         let pnindex = match entity_parameter(record, kind, 0, offset) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
-                    warnings.push(format!("{kind} #{id} has an invalid pnindex"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("{kind} #{id} has an invalid pnindex")),
+                    );
                     continue;
                 };
                 indices
@@ -256,9 +268,9 @@ pub(super) fn decode(
                 .flatten()
                 .any(|index| *index == 0 || *index as usize > vertices.len())
             {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} has an out-of-range one-based coordinate index"
-                ));
+                )));
                 continue;
             }
             let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
@@ -285,9 +297,9 @@ pub(super) fn decode(
                     .flatten()
                     .any(|index| *index == 0 || *index as usize > pnindex.len())
             {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} has an out-of-range one-based tessellation index"
-                ));
+                )));
                 continue;
             }
             (
@@ -313,9 +325,9 @@ pub(super) fn decode(
             ) {
                 Ok(normals) => normals,
                 Err(error) => {
-                    warnings.push(format!(
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
                         "{kind} #{id} normal-row allocation refused: {error}"
-                    ));
+                    )));
                     Vec::new()
                 }
             },
@@ -326,10 +338,10 @@ pub(super) fn decode(
                 .map(|index| source_normals[*index as usize - 1])
                 .collect(),
             count => {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} carries {count} normals for {} coordinates",
                     local_vertices.len()
-                ));
+                )));
                 Vec::new()
             }
         };
@@ -380,7 +392,6 @@ pub(super) fn decode(
             let message = format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
             );
-            warnings.push(message.clone());
             losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
         ir.model.tessellations.push(
@@ -413,7 +424,7 @@ pub(super) fn decode(
     Ok(StageOutcome {
         value: (),
         claims: typed,
-        losses: super::fold_warnings(losses, warnings),
+        losses,
         notes: Vec::new(),
     })
 }

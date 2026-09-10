@@ -1214,8 +1214,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     if minor >= 1 {
         let normal_count = count(reader, 24)?;
         if normal_count != 0 && normal_count != point_count {
-            warnings
-                .push("redundant point-cloud normal count mismatch; channel dropped".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "redundant point-cloud normal count mismatch; channel dropped",
+            );
         }
         for _ in 0..normal_count {
             crate::settings::vector(reader)?;
@@ -1225,8 +1227,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
             reader.take(4)?;
         }
         if color_count != 0 && color_count != point_count {
-            warnings
-                .push("redundant point-cloud color count mismatch; channel dropped".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "redundant point-cloud color count mismatch; channel dropped",
+            );
         }
     }
     if minor >= 2 {
@@ -1238,8 +1242,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
             }
         }
         if value_count != 0 && value_count != point_count {
-            warnings
-                .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "redundant point-cloud scalar count mismatch; channel dropped",
+            );
         }
     }
     if point_count == 0 {
@@ -1718,6 +1724,64 @@ mod tests {
     use super::*;
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
+
+    /// A point cloud whose optional channels disagree with the point count.
+    fn mismatched_point_cloud_payload() -> Vec<u8> {
+        let mut payload = vec![0x12];
+        payload.extend(2_i32.to_le_bytes());
+        for point in [[0.0_f64, 0.0, 0.0], [1.0, 1.0, 1.0]] {
+            payload.extend(point.into_iter().flat_map(f64::to_le_bytes));
+        }
+        payload.extend(
+            [
+                0.0_f64, 0.0, 0.0, // origin
+                1.0, 0.0, 0.0, // x
+                0.0, 1.0, 0.0, // y
+                0.0, 0.0, 1.0, // z
+                0.0, 0.0, 1.0, 0.0, // equation
+            ]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+        );
+        payload.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0.0_f64, 0.0, 1.0].into_iter().flat_map(f64::to_le_bytes));
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0_u8; 4]);
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend(0.5_f64.to_le_bytes());
+        payload
+    }
+
+    /// Every redundant point-cloud channel repair carries the repair code itself.
+    #[test]
+    fn point_cloud_channel_repairs_carry_the_redundant_field_code() {
+        let payload = mismatched_point_cloud_payload();
+        let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+        let cloud = read_cloud(&mut reader, 1.0).expect("point cloud");
+        assert_eq!(
+            cloud
+                .warnings
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud normal count mismatch; channel dropped"
+                ),
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud color count mismatch; channel dropped"
+                ),
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud scalar count mismatch; channel dropped"
+                ),
+            ]
+        );
+    }
 
     #[test]
     fn stored_count_above_legacy_limit_is_bounded_by_payload() {
