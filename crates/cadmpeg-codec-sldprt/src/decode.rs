@@ -2783,7 +2783,7 @@ fn build_geometry_ir(
                 &mut annotations,
                 id.clone(),
                 display_stream,
-                display_face.table.start as u64,
+                display_face.table.start() as u64,
                 "displaylist_tessellation",
                 Exactness::ByteExact,
             );

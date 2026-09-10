@@ -131,15 +131,15 @@ pub(crate) fn display_assignments(
     for (table_index, face) in faces.iter().enumerate() {
         let Some(class) = classes.iter().find(|class| {
             class.name == "uoTempFaceTessData_c"
-                && class.content.start <= face.table.start
-                && face.table.start < class.content.end
+                && class.content.start() <= face.table.start()
+                && face.table.start() < class.content.end()
         }) else {
             continue;
         };
         let definitions = inline_definitions(
             section,
-            face.metadata.start,
-            face.metadata.end.min(class.content.end),
+            face.metadata.start(),
+            face.metadata.end().min(class.content.end()),
         );
         if let [definition] = definitions.as_slice() {
             assignments.push(DisplayAppearanceAssignment {
@@ -152,7 +152,7 @@ pub(crate) fn display_assignments(
         if class.name != "uoBodyPropInfo_c" {
             continue;
         }
-        let definitions = inline_definitions(section, class.content.start, class.content.end);
+        let definitions = inline_definitions(section, class.content.start(), class.content.end());
         let [definition] = definitions.as_slice() else {
             continue;
         };
@@ -160,12 +160,12 @@ pub(crate) fn display_assignments(
             .iter()
             .rev()
             .find(|previous| previous.name == "uoBodyPropInfo_c")
-            .map_or(0, |previous| previous.content.end);
+            .map_or(0, |previous| previous.content.end());
         let face_indexes = faces
             .iter()
             .enumerate()
             .filter(|(_, face)| {
-                previous_body_end <= face.table.start && face.table.end <= class.class_offset
+                previous_body_end <= face.table.start() && face.table.end() <= class.class_offset
             })
             .map(|(table_index, _)| table_index)
             .collect::<Vec<_>>();
@@ -203,8 +203,8 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             };
             if !classes.iter().any(|class| {
                 class.name == "moCompFeature_c"
-                    && class.content.start <= record_offset
-                    && record_offset + feature_visual::LEN <= class.content.end
+                    && class.content.start() <= record_offset
+                    && record_offset + feature_visual::LEN <= class.content.end()
             }) || View::u32_le_at(record, feature_visual::VERSION)
                 != Some(feature_visual::VERSION_VALUE)
                 || View::u32_le_at(record, feature_visual::SELECTOR_ONE_A)
