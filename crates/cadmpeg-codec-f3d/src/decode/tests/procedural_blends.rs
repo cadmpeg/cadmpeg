@@ -219,7 +219,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             Some(4)
         );
         assert_eq!(native.offsets, [-3.0, -6.0]);
-        assert_eq!(native.radius_selector, RollingBallRadiusSelector::None);
+        assert_eq!(native.radius_selector, RollingBallRadiusSelector::None {});
         assert_eq!(native.u_range, [Some(-1.0), Some(2.0)]);
         assert_eq!(native.v_range, [None, None]);
         assert_eq!(native.shape_prefix, 1);

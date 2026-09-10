@@ -693,10 +693,6 @@
                 -1.0,
                 2.0
               ],
-              "v_range": [
-                null,
-                null
-              ],
               "shape_parameter": 0.125,
               "shape_length": 6.0,
               "shape_tail": 12,
@@ -726,11 +722,13 @@
                 32,
                 33
               ],
-              "secondary_curve": "f3d:brep:procedural_surface#9:variable_secondary",
-              "secondary_range": [
-                null,
-                null
-              ],
+              "secondary_curve": {
+                "curve": "f3d:brep:procedural_surface#9:variable_secondary",
+                "parameter_range": [
+                  null,
+                  null
+                ]
+              },
               "convexity": "convex",
               "render_mode": "rolling_ball_snapshot",
               "post_range": [

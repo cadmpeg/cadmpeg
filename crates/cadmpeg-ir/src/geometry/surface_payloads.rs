@@ -2193,7 +2193,7 @@ impl BlendSurfacePayload {
                         }
                 });
             let selector_valid = match construction.radius_selector {
-                crate::geometry::RollingBallRadiusSelector::None => true,
+                crate::geometry::RollingBallRadiusSelector::None {} => true,
                 crate::geometry::RollingBallRadiusSelector::Value { value } => value.is_finite(),
             };
             let scalars_valid = construction

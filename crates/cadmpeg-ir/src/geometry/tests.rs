@@ -156,7 +156,7 @@ fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
 }
 
 #[test]
-fn g2_full_support_keeps_the_flat_wire_shape() {
+fn the_g2_full_support_is_one_nested_key_or_absent() {
     let shape = crate::geometry::G2BlendFirstShape::Full {
         support: Some(crate::geometry::G2BlendFullSupport {
             surface: crate::ids::SurfaceId::mint("test:model:surface#support")
@@ -169,26 +169,42 @@ fn g2_full_support_keeps_the_flat_wire_shape() {
         value,
         serde_json::json!({
             "kind": "full",
-            "surface": "test:model:surface#support",
-            "tolerance": 0.02
+            "support": {
+                "surface": "test:model:surface#support",
+                "tolerance": 0.02
+            }
         })
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::G2BlendFirstShape>(value).unwrap(),
+        serde_json::from_value::<crate::geometry::G2BlendFirstShape>(value.clone()).unwrap(),
         shape
     );
-}
 
-#[test]
-fn g2_full_support_rejects_split_wire_fields() {
-    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(serde_json::json!({
-        "kind": "full",
-        "surface": "test:model:surface#support"
-    }))
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("G2 full surface and tolerance must occur together"));
+    let absent = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(
+        serde_json::json!({"kind": "full"}),
+    )
+    .unwrap();
+    assert_eq!(
+        absent,
+        crate::geometry::G2BlendFirstShape::Full { support: None }
+    );
+
+    let mut half = value.clone();
+    half["support"]
+        .as_object_mut()
+        .expect("a support object")
+        .remove("tolerance");
+    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(half)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("tolerance"), "{error}");
+
+    let mut bogus = value;
+    bogus["support"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(bogus)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -199,9 +215,8 @@ struct RevisionCompoundLoftDirectionWireTest {
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct VariableBlendShapeWireTest {
     radii: crate::geometry::VariableBlendRadii,
-    #[serde(with = "super::variable_blend_u_range_wire")]
     u_range: [f64; 2],
-    #[serde(rename = "v_range", with = "super::variable_blend_v_range_wire")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     v_lower: Option<f64>,
 }
 
@@ -234,7 +249,7 @@ fn the_variable_blend_radii_are_one_nested_tagged_object() {
     assert_eq!(wire["radii"]["second"]["name"], "two_ends");
     assert_eq!(wire["radii"]["second"]["discriminator"], 1);
     assert_eq!(wire["u_range"], serde_json::json!([-1.0, 2.0]));
-    assert_eq!(wire["v_range"], serde_json::json!([-0.5, null]));
+    assert_eq!(wire["v_lower"], -0.5);
     assert_eq!(
         serde_json::from_value::<VariableBlendShapeWireTest>(wire).unwrap(),
         value
@@ -269,6 +284,7 @@ fn a_single_variable_blend_radius_has_no_second_law_key() {
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 
+    assert!(base.get("v_lower").is_none());
     let mut wire = base;
     wire["u_range"] = serde_json::json!([-1.0, null]);
     assert!(serde_json::from_value::<VariableBlendShapeWireTest>(wire).is_err());

@@ -438,7 +438,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                     slice,
                     slice_range: [Some(0.0), Some(1.0)],
                     offsets: [3.0, 3.0],
-                    radius_selector: RollingBallRadiusSelector::None,
+                    radius_selector: RollingBallRadiusSelector::None {},
                     u_range: [Some(0.0), Some(1.0)],
                     v_range: [Some(0.0), Some(1.0)],
                     shape_prefix: 0,
