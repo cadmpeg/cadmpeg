@@ -442,6 +442,40 @@ def scan_placement(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+# An absolute filesystem path of an authoring machine is corpus provenance and
+# must not be checked in. A URL path segment is not one: it follows a host name,
+# so the character before the segment is alphanumeric.
+AUTHORING_PATH = re.compile(r"(?<![0-9A-Za-z])/(?:home|Users|root)/[0-9A-Za-z._-]+/")
+AUTHORING_PATH_TEXT_SUFFIXES = frozenset(
+    {".rs", ".json", ".md", ".toml", ".txt", ".py", ".sh"}
+)
+AUTHORING_PATH_ROOTS = ("crates", "docs")
+# The CI runner home is the runner's own path, not an authoring machine's.
+AUTHORING_PATH_ALLOWED = ("/home/runner/", "/home/linuxbrew/")
+
+
+def scan_authoring_paths() -> list[Finding]:
+    """Report every checked-in absolute path of an authoring machine."""
+    findings: list[Finding] = []
+    for root in AUTHORING_PATH_ROOTS:
+        for path in sorted((ROOT / root).rglob("*")):
+            if not path.is_file() or path.suffix not in AUTHORING_PATH_TEXT_SUFFIXES:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for number, line in enumerate(text.splitlines(), start=1):
+                for match in AUTHORING_PATH.finditer(line):
+                    if line[match.start():].startswith(AUTHORING_PATH_ALLOWED):
+                        continue
+                    findings.append(Finding(
+                        "authoring_path",
+                        str(path.relative_to(ROOT)),
+                        number,
+                        f"Checked-in absolute path {match.group(0)!r} names an authoring "
+                        "machine; elide or digest the value instead.",
+                    ))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -451,6 +485,7 @@ def check_source() -> list[Finding]:
     for path, source in sources.items():
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
+    findings.extend(scan_authoring_paths())
     return sorted(findings, key=lambda item: (item.path, item.line, item.rule))
 
 

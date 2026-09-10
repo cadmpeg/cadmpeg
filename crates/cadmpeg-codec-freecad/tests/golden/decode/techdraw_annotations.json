@@ -1870,7 +1870,7 @@
             "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
             "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
             "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217728\">\n                    <Integer value=\"2\"/>\n                </Property>",
-            "Symbol": "<Property name=\"Symbol\" type=\"App::PropertyString\" status=\"8\">\n                    <String value=\"/home/pcurve/side2/cadmpeg-freecad-l8-20260714/corpus/freecad_fcstd/fixtures/cc0_template.svg\"/>\n                </Property>",
+            "Symbol": "__elided_authoring_path_sha256:2b25790b13dd250c3b22415fb776cfa6d8dba840cae08d2a270fda72f57b2ef7",
             "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
             "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"105.0000000000000000\"/>\n                </Property>",
             "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"148.5000000000000000\"/>\n                </Property>"
