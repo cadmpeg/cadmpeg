@@ -1391,7 +1391,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1401,7 +1404,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:17%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:17%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1411,8 +1417,14 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%3A1",
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%3A2"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%3A1",
+              "role": "unspecified"
+            },
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%3A2",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1422,7 +1434,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:30%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:30%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1432,7 +1447,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:33%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:33%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1442,7 +1460,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:35%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:35%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1452,7 +1473,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:40%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:40%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1462,7 +1486,10 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42",
           "loops": [
-            "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:42%3A1"
+            {
+              "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:42%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
@@ -1500,7 +1527,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:10%3A1"
         },
@@ -1514,7 +1540,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:17%3A1"
         },
@@ -1528,7 +1553,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%3A1"
         },
@@ -1539,7 +1563,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%3A2"
         },
@@ -1553,7 +1576,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:30%3A1"
         },
@@ -1567,7 +1589,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:33%3A1"
         },
@@ -1581,7 +1602,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:35%3A1"
         },
@@ -1595,7 +1615,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:40%3A1"
         },
@@ -1606,7 +1625,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:42%3A1"
         }

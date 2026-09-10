@@ -315,7 +315,10 @@
         {
           "id": "catia:standard:face#0",
           "loops": [
-            "catia:standard:loop#0:0"
+            {
+              "id": "catia:standard:loop#0:0",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
@@ -324,7 +327,10 @@
         {
           "id": "catia:standard:face#1",
           "loops": [
-            "catia:standard:loop#1:0"
+            {
+              "id": "catia:standard:loop#1:0",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
@@ -333,7 +339,10 @@
         {
           "id": "catia:standard:face#2",
           "loops": [
-            "catia:standard:loop#2:0"
+            {
+              "id": "catia:standard:loop#2:0",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
@@ -342,7 +351,10 @@
         {
           "id": "catia:standard:face#3",
           "loops": [
-            "catia:standard:loop#3:0"
+            {
+              "id": "catia:standard:loop#3:0",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
@@ -374,7 +386,6 @@
               }
             ]
           },
-          "boundary_role": "outer",
           "face": "catia:standard:face#0",
           "id": "catia:standard:loop#0:0"
         },
@@ -401,7 +412,6 @@
               }
             ]
           },
-          "boundary_role": "outer",
           "face": "catia:standard:face#1",
           "id": "catia:standard:loop#1:0"
         },
@@ -428,7 +438,6 @@
               }
             ]
           },
-          "boundary_role": "outer",
           "face": "catia:standard:face#2",
           "id": "catia:standard:loop#2:0"
         },
@@ -455,7 +464,6 @@
               }
             ]
           },
-          "boundary_role": "outer",
           "face": "catia:standard:face#3",
           "id": "catia:standard:loop#3:0"
         }

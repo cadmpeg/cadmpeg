@@ -135,12 +135,9 @@ pub struct AsmBrep {
 
 impl Serialize for AsmBrep {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        cadmpeg_ir::topology::with_topology_serialization(
-            &self.faces,
-            &self.loops,
-            &self.coedges,
-            || Self::serialize(self, serializer),
-        )
+        cadmpeg_ir::topology::with_topology_serialization(&self.loops, &self.coedges, || {
+            Self::serialize(self, serializer)
+        })
     }
 }
 

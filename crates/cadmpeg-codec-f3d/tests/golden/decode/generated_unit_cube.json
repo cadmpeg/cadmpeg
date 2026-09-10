@@ -86,7 +86,10 @@
           "surface": "f3d:brep:entity#16",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#10"
+            {
+              "id": "f3d:brep:entity#10",
+              "role": "unspecified"
+            }
           ],
           "name": "back face"
         },
@@ -96,7 +99,10 @@
           "surface": "f3d:brep:entity#17",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#11"
+            {
+              "id": "f3d:brep:entity#11",
+              "role": "unspecified"
+            }
           ],
           "name": "bottom face"
         },
@@ -106,7 +112,10 @@
           "surface": "f3d:brep:entity#18",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#12"
+            {
+              "id": "f3d:brep:entity#12",
+              "role": "unspecified"
+            }
           ],
           "name": "front face"
         },
@@ -116,7 +125,10 @@
           "surface": "f3d:brep:entity#19",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#13"
+            {
+              "id": "f3d:brep:entity#13",
+              "role": "unspecified"
+            }
           ],
           "name": "left face"
         },
@@ -126,7 +138,10 @@
           "surface": "f3d:brep:entity#20",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#14"
+            {
+              "id": "f3d:brep:entity#14",
+              "role": "unspecified"
+            }
           ],
           "name": "right face"
         },
@@ -136,7 +151,10 @@
           "surface": "f3d:brep:entity#21",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#15"
+            {
+              "id": "f3d:brep:entity#15",
+              "role": "unspecified"
+            }
           ],
           "name": "top face"
         }
@@ -145,7 +163,6 @@
         {
           "id": "f3d:brep:entity#10",
           "face": "f3d:brep:entity#4",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [
@@ -159,7 +176,6 @@
         {
           "id": "f3d:brep:entity#11",
           "face": "f3d:brep:entity#5",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [
@@ -173,7 +189,6 @@
         {
           "id": "f3d:brep:entity#12",
           "face": "f3d:brep:entity#6",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [
@@ -187,7 +202,6 @@
         {
           "id": "f3d:brep:entity#13",
           "face": "f3d:brep:entity#7",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [
@@ -201,7 +215,6 @@
         {
           "id": "f3d:brep:entity#14",
           "face": "f3d:brep:entity#8",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [
@@ -215,7 +228,6 @@
         {
           "id": "f3d:brep:entity#15",
           "face": "f3d:brep:entity#9",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [

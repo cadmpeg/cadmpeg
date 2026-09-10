@@ -80,7 +80,10 @@
           "surface": "f3d:brep:entity#6",
           "sense": "forward",
           "loops": [
-            "f3d:brep:entity#5"
+            {
+              "id": "f3d:brep:entity#5",
+              "role": "unspecified"
+            }
           ]
         }
       ],
@@ -88,7 +91,6 @@
         {
           "id": "f3d:brep:entity#5",
           "face": "f3d:brep:entity#4",
-          "boundary_role": "unspecified",
           "boundary": {
             "kind": "ring",
             "coedges": [

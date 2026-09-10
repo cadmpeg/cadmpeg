@@ -3167,7 +3167,10 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
@@ -3177,7 +3180,10 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20",
           "loops": [
-            "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
@@ -3187,7 +3193,10 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24",
           "loops": [
-            "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%3A1"
+            {
+              "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
@@ -3197,7 +3206,10 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28",
           "loops": [
-            "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%3A1"
+            {
+              "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
@@ -3207,7 +3219,10 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30",
           "loops": [
-            "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%3A1"
+            {
+              "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
@@ -3217,7 +3232,10 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32",
           "loops": [
-            "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%3A1"
+            {
+              "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
@@ -3227,7 +3245,10 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3237,7 +3258,10 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:17",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:17%3A1"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:17%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3247,8 +3271,14 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:25",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:25%3A1",
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:25%3A2"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:25%3A1",
+              "role": "unspecified"
+            },
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:25%3A2",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3258,7 +3288,10 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:30",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:30%3A1"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:30%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3268,8 +3301,14 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:36",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:36%3A1",
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:36%3A2"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:36%3A1",
+              "role": "unspecified"
+            },
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:36%3A2",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3279,7 +3318,10 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:38",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:38%3A1"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:38%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3289,7 +3331,10 @@
         {
           "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:41",
           "loops": [
-            "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:41%3A1"
+            {
+              "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:41%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
@@ -3299,7 +3344,10 @@
         {
           "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4",
           "loops": [
-            "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4%3A1"
+            {
+              "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Cylinder:Shape:Cylinder.Shape.brp:8%40c15ae4a939ac7ba4",
@@ -3309,7 +3357,10 @@
         {
           "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b",
           "loops": [
-            "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b%3A1"
+            {
+              "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#Cylinder:Shape:Cylinder.Shape.brp:8%40c15ae4a939ac7ba4",
@@ -3319,7 +3370,10 @@
         {
           "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4",
           "loops": [
-            "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4%3A1"
+            {
+              "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#Cylinder:Shape:Cylinder.Shape.brp:8%40c15ae4a939ac7ba4",
@@ -3329,7 +3383,10 @@
         {
           "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
@@ -3339,7 +3396,10 @@
         {
           "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:20",
           "loops": [
-            "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
@@ -3349,7 +3409,10 @@
         {
           "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:24",
           "loops": [
-            "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:24%3A1"
+            {
+              "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:24%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
@@ -3359,7 +3422,10 @@
         {
           "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:28",
           "loops": [
-            "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:28%3A1"
+            {
+              "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:28%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
@@ -3369,7 +3435,10 @@
         {
           "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:30",
           "loops": [
-            "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:30%3A1"
+            {
+              "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:30%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
@@ -3379,7 +3448,10 @@
         {
           "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:32",
           "loops": [
-            "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:32%3A1"
+            {
+              "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:32%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
@@ -3547,7 +3619,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:10",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%3A1"
         },
@@ -3561,7 +3632,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:20",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%3A1"
         },
@@ -3575,7 +3645,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:24",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%3A1"
         },
@@ -3589,7 +3658,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:28",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%3A1"
         },
@@ -3603,7 +3671,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:30",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%3A1"
         },
@@ -3617,7 +3684,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:32",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%3A1"
         },
@@ -3631,7 +3697,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:10",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:10%3A1"
         },
@@ -3645,7 +3710,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:17",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:17%3A1"
         },
@@ -3659,7 +3723,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:25",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:25%3A1"
         },
@@ -3670,7 +3733,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:25",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:25%3A2"
         },
@@ -3684,7 +3746,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:30",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:30%3A1"
         },
@@ -3698,7 +3759,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:36",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:36%3A1"
         },
@@ -3709,7 +3769,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:36",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:36%3A2"
         },
@@ -3723,7 +3782,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:38",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:38%3A1"
         },
@@ -3737,7 +3795,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:41",
           "id": "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:41%3A1"
         },
@@ -3751,7 +3808,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4",
           "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4%3A1"
         },
@@ -3762,7 +3818,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b",
           "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b%3A1"
         },
@@ -3773,7 +3828,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4",
           "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4%3A1"
         },
@@ -3787,7 +3841,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:10",
           "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:10%3A1"
         },
@@ -3801,7 +3854,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:20",
           "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:20%3A1"
         },
@@ -3815,7 +3867,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:24",
           "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:24%3A1"
         },
@@ -3829,7 +3880,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:28",
           "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:28%3A1"
         },
@@ -3843,7 +3893,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:30",
           "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:30%3A1"
         },
@@ -3857,7 +3906,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:32",
           "id": "fcstd:model:loop#DesignedFeature:Shape:DesignedFeature.Shape.brp:32%3A1"
         }

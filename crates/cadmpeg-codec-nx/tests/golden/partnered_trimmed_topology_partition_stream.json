@@ -73,7 +73,10 @@
           {
             "id": "nx:s0:face#20",
             "loops": [
-              "nx:s0:loop#21"
+              {
+                "id": "nx:s0:loop#21",
+                "role": "unspecified"
+              }
             ],
             "sense": "forward",
             "shell": "nx:s0:shell#3",
@@ -83,7 +86,10 @@
           {
             "id": "nx:s0:face#4",
             "loops": [
-              "nx:s0:loop#5"
+              {
+                "id": "nx:s0:loop#5",
+                "role": "unspecified"
+              }
             ],
             "sense": "forward",
             "shell": "nx:s0:shell#3",
@@ -100,7 +106,6 @@
               ],
               "kind": "ring"
             },
-            "boundary_role": "unspecified",
             "face": "nx:s0:face#20",
             "id": "nx:s0:loop#21"
           },
@@ -111,7 +116,6 @@
               ],
               "kind": "ring"
             },
-            "boundary_role": "unspecified",
             "face": "nx:s0:face#4",
             "id": "nx:s0:loop#5"
           }

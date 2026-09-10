@@ -240,7 +240,10 @@
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
           "loops": [
-            "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1"
+            {
+              "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
@@ -250,7 +253,10 @@
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
           "loops": [
-            "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1"
+            {
+              "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
@@ -260,7 +266,10 @@
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
           "loops": [
-            "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1"
+            {
+              "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
@@ -295,7 +304,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1"
         },
@@ -309,7 +317,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1"
         },
@@ -320,7 +327,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1"
         }

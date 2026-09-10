@@ -79,7 +79,10 @@
         {
           "id": "sldprt:brep:face#10",
           "loops": [
-            "sldprt:brep:loop#20"
+            {
+              "id": "sldprt:brep:loop#20",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "sldprt:brep:shell#0",
@@ -97,7 +100,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }

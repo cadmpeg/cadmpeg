@@ -154,7 +154,10 @@
         {
           "id": "step:data:face#36",
           "loops": [
-            "step:data:loop#32-face-36"
+            {
+              "id": "step:data:loop#32-face-36",
+              "role": "outer"
+            }
           ],
           "sense": "forward",
           "shell": "step:data:shell#37",
@@ -172,7 +175,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "outer",
           "face": "step:data:face#36",
           "id": "step:data:loop#32-face-36"
         }

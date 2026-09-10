@@ -1241,7 +1241,10 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
           "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1"
+            {
+              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
@@ -1251,7 +1254,10 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
           "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1"
+            {
+              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
@@ -1261,7 +1267,10 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
           "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1"
+            {
+              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
@@ -1271,7 +1280,10 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
           "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1"
+            {
+              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
@@ -1281,7 +1293,10 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
           "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1"
+            {
+              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
@@ -1291,7 +1306,10 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
           "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1"
+            {
+              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
@@ -1301,7 +1319,10 @@
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
           "loops": [
-            "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1"
+            {
+              "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
@@ -1311,7 +1332,10 @@
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
           "loops": [
-            "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1"
+            {
+              "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
@@ -1321,7 +1345,10 @@
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
           "loops": [
-            "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1"
+            {
+              "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
@@ -1376,7 +1403,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1"
         },
@@ -1390,7 +1416,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1"
         },
@@ -1404,7 +1429,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1"
         },
@@ -1418,7 +1442,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1"
         },
@@ -1432,7 +1455,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1"
         },
@@ -1446,7 +1468,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1"
         },
@@ -1457,7 +1478,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1"
         },
@@ -1471,7 +1491,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1"
         },
@@ -1482,7 +1501,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1"
         }

@@ -333,7 +333,10 @@
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
           "loops": [
-            "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1"
+            {
+              "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
@@ -343,7 +346,10 @@
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
           "loops": [
-            "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1"
+            {
+              "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "reversed",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
@@ -353,7 +359,10 @@
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
           "loops": [
-            "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1"
+            {
+              "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1",
+              "role": "unspecified"
+            }
           ],
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
@@ -391,7 +400,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1"
         },
@@ -402,7 +410,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1"
         },
@@ -416,7 +423,6 @@
             ],
             "kind": "ring"
           },
-          "boundary_role": "unspecified",
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1"
         }
