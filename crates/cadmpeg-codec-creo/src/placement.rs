@@ -966,7 +966,7 @@ fn zero_offset_standard_section_plane_equation(
             table
                 .entries
                 .iter()
-                .map(|entry| entry.class_id())
+                .map(crate::feature::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
         })
         .collect::<Vec<_>>();
@@ -1024,7 +1024,7 @@ fn circular_profile_aligned_origin(
             table
                 .entries
                 .iter()
-                .map(|entry| entry.class_id())
+                .map(crate::feature::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
         })
         .collect::<Vec<_>>();

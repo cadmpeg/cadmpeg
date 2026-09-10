@@ -995,7 +995,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     ) && topology
         .entries
         .iter()
-        .map(|entry| entry.class_id())
+        .map(crate::feature::FeatureEntityTableEntry::class_id)
         .eq([221, 222, 220, 220])
         && owner_entry.source_entity_id() == Some(feature_id)
         && matches!(
