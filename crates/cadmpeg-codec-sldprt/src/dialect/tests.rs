@@ -93,7 +93,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
     );
-    let layers = DialectLayers::of(host).with(kernel);
+    let layers = DialectLayers::of(host).with(kernel.into_matched());
     let losses = dialect_losses(&layers);
 
     assert_eq!(losses.len(), 1);
