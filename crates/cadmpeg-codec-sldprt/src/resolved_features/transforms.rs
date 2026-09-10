@@ -719,8 +719,8 @@ pub(super) fn sketch_entity_marker_loci(entity: &SketchEntity) -> Option<SketchE
         | SketchGeometryDefinition::Parabola { .. }
         | SketchGeometryDefinition::Nurbs { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
-        | SketchGeometryDefinition::Native { .. } => SketchInputKind::LineOrCircle,
-        SketchGeometryDefinition::Text { .. } => return None,
+        | SketchGeometryDefinition::Native { .. }
+        | SketchGeometryDefinition::Text { .. } => SketchInputKind::LineOrCircle,
     };
     let loci = sketch_entity_loci(entity);
     (!loci.is_empty()).then_some(SketchEntityMarkerLoci { kind, loci })
