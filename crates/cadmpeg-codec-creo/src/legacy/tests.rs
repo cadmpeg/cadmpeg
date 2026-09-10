@@ -1150,13 +1150,16 @@ fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
 #[test]
 fn value_kind_types_are_distinct_and_preserve_identity_tokens() {
     let token = |code: crate::legacy::type_code::LegacyTypeCode| code.identity_token();
-    assert_eq!(token(ValueKind::INTEGER.type_code()), "integer");
-    assert_eq!(token(ValueKind::REAL.type_code()), "real");
-    assert_eq!(token(ValueKind::TYPE3.type_code()), "type_3");
-    assert_eq!(token(ValueKind::TYPE4.type_code()), "type_4");
-    assert_eq!(token(ValueKind::TYPE5.type_code()), "type_5");
-    assert_eq!(token(ValueKind::TYPE6.type_code()), "type_6");
-    assert_eq!(token(ValueKind::TYPE7.type_code()), "type_7");
-    assert_eq!(token(ValueKind::TYPE9.type_code()), "type_9");
-    assert_eq!(token(ValueKind::TYPE11.type_code()), "type_11");
+    assert_eq!(
+        token(super::declaration_code(ValueKind::INTEGER)),
+        "integer"
+    );
+    assert_eq!(token(super::declaration_code(ValueKind::REAL)), "real");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE3)), "type_3");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE4)), "type_4");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE5)), "type_5");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE6)), "type_6");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE7)), "type_7");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE9)), "type_9");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE11)), "type_11");
 }

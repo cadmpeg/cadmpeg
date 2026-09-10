@@ -209,24 +209,6 @@ pub(in super::super) fn source_meta(
             crate::coverage::UNDECODED_LEGACY_STRING_ENCODING_COUNT,
             undecoded_encodings,
         );
-        fn record_scalar_string_coverage<K>(
-            coverage: &mut cadmpeg_ir::Coverage,
-            scalar_key: cadmpeg_ir::CoverageKey,
-            unresolved_key: cadmpeg_ir::CoverageKey,
-            undecoded_key: cadmpeg_ir::CoverageKey,
-            values: &crate::legacy::TypedValues<crate::legacy::ValueRecord<K>>,
-        ) where
-            K: crate::legacy::LegacyCode<Payload = crate::legacy::StringValue>,
-        {
-            let undecoded_encodings = values
-                .rows
-                .iter()
-                .map(|record| record.payload.undecoded_encoding_count())
-                .sum();
-            coverage.record(scalar_key, values.rows.len());
-            coverage.record(unresolved_key, values.unresolved_count);
-            coverage.record(undecoded_key, undecoded_encodings);
-        }
         record_scalar_string_coverage(
             &mut coverage,
             crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
@@ -962,4 +944,23 @@ pub(in super::super) fn source_meta(
         ),
         coverage,
     )
+}
+
+fn record_scalar_string_coverage<K>(
+    coverage: &mut cadmpeg_ir::Coverage,
+    scalar_key: cadmpeg_ir::CoverageKey,
+    unresolved_key: cadmpeg_ir::CoverageKey,
+    undecoded_key: cadmpeg_ir::CoverageKey,
+    values: &crate::legacy::TypedValues<crate::legacy::ValueRecord<K>>,
+) where
+    K: crate::legacy::LegacyCode<Payload = crate::legacy::StringValue>,
+{
+    let undecoded_encodings = values
+        .rows
+        .iter()
+        .map(|record| record.payload.undecoded_encoding_count())
+        .sum();
+    coverage.record(scalar_key, values.rows.len());
+    coverage.record(unresolved_key, values.unresolved_count);
+    coverage.record(undecoded_key, undecoded_encodings);
 }

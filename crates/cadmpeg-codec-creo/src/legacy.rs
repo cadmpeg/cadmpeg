@@ -1092,7 +1092,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
         for value in &scope.values {
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == identity_kind.type_code())
+                .filter(|declaration| declaration.type_code == declaration_code(identity_kind))
             else {
                 continue;
             };
@@ -1240,7 +1240,7 @@ where
         while let Some(value) = scope.values.get(index) {
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == identity_kind.type_code())
+                .filter(|declaration| declaration.type_code == declaration_code(identity_kind))
             else {
                 index += 1;
                 continue;
@@ -1610,11 +1610,11 @@ impl<K> Clone for ValueKind<K> {
 
 impl<K: LegacyCode> ValueKind<K> {
     const KIND: Self = Self(std::marker::PhantomData);
+}
 
-    /// The declaration code whose values carry this identity.
-    fn type_code(self) -> LegacyTypeCode {
-        K::CODE
-    }
+/// The declaration code named by an identity marker.
+fn declaration_code<K: LegacyCode>(_kind: ValueKind<K>) -> LegacyTypeCode {
+    K::CODE
 }
 
 impl ValueKind<IntegerCode> {
