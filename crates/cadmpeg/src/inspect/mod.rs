@@ -802,9 +802,9 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
     for run in &summary.runs()[..shown] {
         println!(
             "  0x{:08x}..0x{:08x}  {} bytes",
-            run.start,
+            run.start(),
             run.end(),
-            run.len
+            run.len()
         );
     }
     if shown < summary.runs().len() {
