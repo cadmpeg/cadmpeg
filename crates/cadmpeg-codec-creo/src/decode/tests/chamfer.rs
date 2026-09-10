@@ -74,7 +74,6 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cone(
                     crate::surface::PositionalConeFrame::new(

@@ -687,7 +687,6 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             scalar_tokens: replay_frame.slots.clone(),
             opaque_spans: Vec::new(),
             scalar_frames: vec![replay_frame.clone()],
-            terminal_scalar_frame: Some(replay_frame),
             carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::TorusOrSphere,
             ),
@@ -890,7 +889,6 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                             slots: std::iter::once(second).chain(extent).collect(),
                         },
                     ],
-                    terminal_scalar_frame: None,
                     carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                         crate::surface::SurfaceKind::Cylinder,
                     ),
@@ -1412,7 +1410,6 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
                 scalar_tokens: Vec::new(),
                 opaque_spans: Vec::new(),
                 scalar_frames: Vec::new(),
-                terminal_scalar_frame: None,
                 carrier: positional_cylinder_frame.map_or(
                     crate::surface::SurfaceParameterCarrier::Unresolved(
                         crate::surface::SurfaceKind::Cylinder,
@@ -1467,7 +1464,6 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
                 frame: crate::surface::PositionalCylinderFrame::new(
