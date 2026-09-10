@@ -6544,15 +6544,15 @@ fn decode_signed_axis_aligned_cylinder_frame(
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let spans =
         std::array::from_fn::<_, 3, _>(|index| (corners[1][index] - corners[0][index]).abs());
-    let mut axis_indices = (0..3).filter(|index| close(spans[*index], signed_length.abs()));
-    let axis_index = axis_indices.next()?;
-    axis_indices.next().is_none().then_some(())?;
-    let [first_radial, second_radial] = match axis_index {
-        0 => [1, 2],
-        1 => [0, 2],
-        2 => [0, 1],
-        _ => unreachable!("three model axes"),
-    };
+    let mut axes = crate::decode::axis::Axis::ALL
+        .into_iter()
+        .filter(|axis| close(spans[axis.index()], signed_length.abs()));
+    let model_axis = axes.next()?;
+    axes.next().is_none().then_some(())?;
+    let axis_index = model_axis.index();
+    let [first_radial, second_radial] = model_axis
+        .complement()
+        .map(crate::decode::axis::Axis::index);
     let (diameter_index, radius_index) = match (
         close(spans[first_radial], 2.0 * spans[second_radial]),
         close(spans[second_radial], 2.0 * spans[first_radial]),
