@@ -51,14 +51,15 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
-    fn link_targets_reserve_absence_for_wire_admission() {
+    fn link_targets_reject_absence_on_every_admission_route() {
         assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
         let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
-        let target = serde_json::from_value::<super::LinkTarget>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&target).unwrap(), wire);
-        assert!(target.into_optional().is_none());
+        assert!(serde_json::from_value::<super::LinkTarget>(wire).is_err());
         let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
-        assert!(target.into_optional().is_some());
+        assert_eq!(
+            serde_json::to_value(&target).unwrap(),
+            serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":["Face1"]})
+        );
     }
 
     #[test]
@@ -2124,14 +2125,6 @@ impl LinkTarget {
         })
     }
 
-    fn empty_link_target() -> Self {
-        Self {
-            document: None,
-            object: None,
-            subelements: Vec::new(),
-        }
-    }
-
     /// External document when the target is not local.
     pub fn document(&self) -> Option<&ExternalDocument> {
         self.document.as_ref()
@@ -2145,12 +2138,6 @@ impl LinkTarget {
     /// Sets a nonempty object identity.
     pub(crate) fn set_object(&mut self, object: NonEmptyString) {
         self.object = Some(object);
-    }
-
-    /// Converts a wire null target to absence.
-    pub(crate) fn into_optional(self) -> Option<Self> {
-        (self.document.is_some() || self.object.is_some() || !self.subelements.is_empty())
-            .then_some(self)
     }
 
     /// Document token retained on the CADIR wire.
@@ -2212,10 +2199,7 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
         let object = wire.object.and_then(NonEmptyString::new);
-        match (document, object, wire.subelements) {
-            (None, None, subelements) if subelements.is_empty() => Ok(Self::empty_link_target()),
-            (document, object, subelements) => Self::try_new(document, object, subelements),
-        }
+        Self::try_new(document, object, wire.subelements)
     }
 }
 
