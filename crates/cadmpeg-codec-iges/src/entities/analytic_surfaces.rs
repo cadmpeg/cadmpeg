@@ -9,7 +9,6 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{derive_reference_direction, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{PointId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,7 +21,7 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
-    let id = PointId::mint(format!("iges:model:point#D{sequence}")).expect("identity grammar");
+    let id = crate::ids::point(&crate::ids::Stem::directory(sequence));
     ir.model
         .points
         .iter()
@@ -494,8 +493,7 @@ pub(super) fn project(
             }
         };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
-                .expect("identity grammar"),
+            id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: result,
             source_object: Some(match source_object(entry) {
                 Ok(source) => source,

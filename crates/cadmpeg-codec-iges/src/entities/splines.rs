@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
@@ -173,17 +173,13 @@ fn add_edge(
         None,
         parameter_range[1],
     )?;
-    let stem = format!("D{}", entry.sequence);
-    let start_point =
-        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-    let end_point =
-        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-    let start_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-    let end_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-    let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-    let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+    let stem = crate::ids::Stem::directory(entry.sequence);
+    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+    let curve = crate::ids::curve(&stem);
+    let edge = crate::ids::edge(&stem);
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -870,8 +866,7 @@ pub(super) fn project(
             continue;
         };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
-                .expect("identity grammar"),
+            id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(source_object(entry)?),
         });

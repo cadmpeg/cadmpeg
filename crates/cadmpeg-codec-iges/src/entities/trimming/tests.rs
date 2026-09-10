@@ -286,7 +286,7 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
 
     let (vertex_ids, derivations) = create_boundary_vertices(
         &mut candidate,
-        "D9",
+        &crate::ids::Stem::directory(9_u32),
         "iges:entity:directory#9",
         0,
         &source_endpoints,

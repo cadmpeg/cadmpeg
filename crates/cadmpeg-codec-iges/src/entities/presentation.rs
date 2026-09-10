@@ -458,8 +458,7 @@ pub(super) fn project(
         names.insert(entry.sequence, name.clone());
         appearance(
             ir,
-            AppearanceId::mint(format!("iges:appearance:color#D{}", entry.sequence))
-                .expect("identity grammar"),
+            crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
             name,
             color,
         );
@@ -469,8 +468,7 @@ pub(super) fn project(
     let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
         match value.cmp(&0) {
             std::cmp::Ordering::Greater => Some((
-                AppearanceId::mint(format!("iges:appearance:standard#{value}"))
-                    .expect("identity grammar"),
+                crate::ids::appearance_standard(&crate::ids::Stem::number(value)),
                 standard_color(value)?,
             )),
             std::cmp::Ordering::Less => {
@@ -480,8 +478,7 @@ pub(super) fn project(
                     return None;
                 }
                 Some((
-                    AppearanceId::mint(format!("iges:appearance:color#D{sequence}"))
-                        .expect("identity grammar"),
+                    crate::ids::appearance_color(&crate::ids::Stem::directory(sequence)),
                     *defined.get(&sequence)?,
                 ))
             }

@@ -16,9 +16,7 @@ use crate::parameter::{
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
-};
+use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
@@ -1699,7 +1697,7 @@ fn plane_boundary_edge(
 fn plane_face_draft(
     surface_sequence: u32,
     source_sequence: u32,
-    stem: &str,
+    stem: &crate::ids::Stem,
     boundary_edges: Vec<Edge>,
     resolution: f64,
     sequences: &mut super::geometry::SourceSequences,
@@ -1712,21 +1710,19 @@ fn plane_face_draft(
     } else {
         None
     };
-    let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+    let body_id = crate::ids::body(&stem);
     sequences.record_body(&body_id, source_sequence);
-    let region_id = RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
-    let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
-    let face_id = FaceId::mint(format!("iges:model:face#{stem}")).expect("identity grammar");
+    let region_id = crate::ids::region(&stem);
+    let shell_id = crate::ids::shell(&stem);
+    let face_id = crate::ids::face(&stem);
     sequences.record_face(&face_id, source_sequence);
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::with_capacity(boundary_edges.len());
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
         let edge_id = edge.id.clone();
         candidate.model_mut().edges.push(edge);
-        let loop_id = LoopId::mint(format!("iges:model:loop#{stem}:{boundary_index}"))
-            .expect("identity grammar");
-        let coedge_id = CoedgeId::mint(format!("iges:model:coedge#{stem}:{boundary_index}"))
-            .expect("identity grammar");
+        let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
+        let coedge_id = crate::ids::coedge(&stem.slot(boundary_index));
         candidate.model_mut().coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
@@ -1749,8 +1745,7 @@ fn plane_face_draft(
     candidate.model_mut().faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
-        surface: SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
-            .expect("identity grammar"),
+        surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
         sense: Sense::Forward,
         loops: {
             let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids);
@@ -1855,16 +1850,16 @@ fn legacy_single_parent_face(
         }
         let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution)
             .map_err(PlaneBoundaryError::legacy_message)?;
-        let edge_id = EdgeId::mint(format!(
-            "iges:model:edge#legacy-single-parent-D{}-{boundary_index}",
-            entry.sequence
-        ))
-        .expect("identity grammar");
+        let edge_id = crate::ids::edge(
+            &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
+                .tail_index(boundary_index),
+        );
         edge.id = edge_id.clone();
         edge.end = edge.start.clone();
         boundary_edges.push(edge);
     }
-    let stem = format!("legacy-single-parent-D{}", entry.sequence);
+    let stem =
+        crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
     Ok(Some((
         plane_face_draft(
             parent_sequence,
@@ -2646,11 +2641,15 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             ) {
                 Ok(mut edge) => {
-                    edge.id =
-                        EdgeId::mint(format!("iges:model:edge#bounded-plane-D{}", entry.sequence))
-                            .expect("identity grammar");
+                    edge.id = crate::ids::edge(&crate::ids::Stem::word_directory(
+                        crate::ids::Word::BoundedPlane,
+                        entry.sequence,
+                    ));
                     edge.end = edge.start.clone();
-                    let stem = format!("bounded-plane-D{}", entry.sequence);
+                    let stem = crate::ids::Stem::word_directory(
+                        crate::ids::Word::BoundedPlane,
+                        entry.sequence,
+                    );
                     let candidate = plane_face_draft(
                         entry.sequence,
                         entry.sequence,

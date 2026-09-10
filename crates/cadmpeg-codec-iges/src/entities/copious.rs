@@ -9,7 +9,7 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -333,18 +333,12 @@ pub(super) fn project(
                 && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
-                let point = PointId::mint(format!(
-                    "iges:model:point#D{}-{}",
-                    entry.sequence,
-                    index + 1
-                ))
-                .expect("identity grammar");
-                let vertex = VertexId::mint(format!(
-                    "iges:model:vertex#D{}-{}",
-                    entry.sequence,
-                    index + 1
-                ))
-                .expect("identity grammar");
+                let point = crate::ids::point(
+                    &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
+                );
+                let vertex = crate::ids::vertex(
+                    &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
+                );
                 ir.model.points.push(Point {
                     source_object: None,
                     id: point.clone(),
@@ -401,20 +395,17 @@ pub(super) fn project(
         knots.extend([parameter_end, parameter_end]);
         let start = points[0];
         let end = points[points.len() - 1];
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = if entry.form == 63 {
             start_vertex.clone()
         } else {
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar")
+            crate::ids::vertex(&stem.tail(crate::ids::Word::End))
         };
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.push(Point {
             source_object: None,
             id: start_point.clone(),
