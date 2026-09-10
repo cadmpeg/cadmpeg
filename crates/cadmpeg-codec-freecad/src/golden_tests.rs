@@ -72,6 +72,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         Ok(result) => {
             let native_shape = native_shape(&result.ir().native);
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
+            elide_authoring_paths(&mut ir);
             if let Some(native) = ir.get_mut("native") {
                 *native = serde_json::json!({
                     "__elided": "native arena values are omitted; structure is pinned by identity",
@@ -89,6 +90,57 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
+}
+
+/// Prefix of an elided string leaf. A source property whose value is an
+/// absolute filesystem path from the machine that authored the fixture is
+/// corpus content that must not be checked in; the digest still pins the
+/// decoded value.
+const ELIDED_PATH_PREFIX: &str = "__elided_authoring_path_sha256:";
+
+/// Replaces every string leaf carrying a POSIX home path or a Windows drive
+/// path with its digest. The decoded value stays pinned; the path does not
+/// enter the repository.
+fn elide_authoring_paths(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => {
+            if carries_authoring_path(text) {
+                *text = format!(
+                    "{ELIDED_PATH_PREFIX}{}",
+                    cadmpeg_ir::hash::sha256_hex(text.as_bytes())
+                );
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                elide_authoring_paths(item);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for field in fields.values_mut() {
+                elide_authoring_paths(field);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// True when the text carries an absolute filesystem path of an authoring
+/// machine. A URL path segment is not one: it follows a host name, so the
+/// character before the segment is not a quote, a space, or the start.
+fn carries_authoring_path(text: &str) -> bool {
+    const ROOTS: [&str; 3] = ["/home/", "/Users/", "/root/"];
+    for root in ROOTS {
+        for (index, _) in text.match_indices(root) {
+            let preceding = text[..index].chars().next_back();
+            if preceding.is_none_or(|character| !character.is_alphanumeric()) {
+                return true;
+            }
+        }
+    }
+    text.as_bytes().windows(3).any(|window| {
+        window[0].is_ascii_alphabetic() && window[1] == b':' && matches!(window[2], b'\\' | b'/')
+    })
 }
 
 /// Summarizes native arena structure without hashing platform-dependent values.
