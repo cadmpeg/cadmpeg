@@ -377,7 +377,7 @@ mod tests {
                 assert_eq!(
                     crate::registry::canonical_format_name(descriptor.id().as_str()),
                     Some(descriptor.id().as_str()),
-                    "{} output format is absent from docs/dialects.toml",
+                    "{} output format is absent from crates/cadmpeg-registry/docs/dialects.toml",
                     descriptor.id()
                 );
             }

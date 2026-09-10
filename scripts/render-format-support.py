@@ -40,8 +40,8 @@ from dialect_support_data import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-IDENTITY_REL = Path("docs") / "dialects.toml"
-SUPPORT_REL = Path("docs") / "dialect-support.toml"
+IDENTITY_REL = Path("crates") / "cadmpeg-registry" / "docs" / "dialects.toml"
+SUPPORT_REL = Path("crates") / "cadmpeg-registry" / "docs" / "dialect-support.toml"
 LADDER_REL = Path("docs") / "format-support.md"
 README_REL = Path("README.md")
 

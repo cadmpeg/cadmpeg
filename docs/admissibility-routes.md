@@ -50,7 +50,7 @@ gates above runs the same check set for every dialect of its format. There is
 no per-dialect row here because there is no per-dialect route.
 
 What is dialect-keyed is the evidence each classification rests on. Fixture
-coverage is per row in [`dialect-support.toml`](dialect-support.toml), and it
+coverage is per row in [`dialect-support.toml`](../crates/cadmpeg-registry/docs/dialect-support.toml), and it
 is uneven:
 
 - **IGES rejection.** All 78 golden fixtures are `iges:5.3-fixed-ascii`. The

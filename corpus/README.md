@@ -54,7 +54,7 @@ vertices = 8
 
 ## The derived `dialect` field
 
-One manifest field is not donor-supplied. `dialect` holds the `docs/dialects.toml` id that the codec's own `inspect()` reads out of the file's bytes, pinned like a golden. Do not write it by hand and do not copy it from the registry: run
+One manifest field is not donor-supplied. `dialect` holds the `crates/cadmpeg-registry/docs/dialects.toml` id that the codec's own `inspect()` reads out of the file's bytes, pinned like a golden. Do not write it by hand and do not copy it from the registry: run
 
 ```sh
 UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
