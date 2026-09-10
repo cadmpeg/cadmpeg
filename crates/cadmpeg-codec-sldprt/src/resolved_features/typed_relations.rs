@@ -43,6 +43,147 @@ const EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12: f64 = 1.0e-12;
 const EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12: f64 = 1.0e-12;
 const EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9: f64 = 1.0e-9;
 
+/// A relation kind narrowed to the single-entity forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SingleEntityRelation {
+    Horizontal,
+    Vertical,
+    Fixed,
+}
+
+impl SingleEntityRelation {
+    fn definition(self, entity: &SketchEntityId) -> SketchConstraintDefinitionInput {
+        let entity = entity.clone();
+        match self {
+            Self::Horizontal => SketchConstraintDefinitionInput::Horizontal { entity },
+            Self::Vertical => SketchConstraintDefinitionInput::Vertical { entity },
+            Self::Fixed => SketchConstraintDefinitionInput::Fixed { entity },
+        }
+    }
+}
+
+/// A quarter-turn sweep named by an arc- or ellipse-angle relation kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuarterTurn {
+    Quarter,
+    Half,
+    ThreeQuarters,
+}
+
+impl QuarterTurn {
+    fn angle(self) -> f64 {
+        match self {
+            Self::Quarter => std::f64::consts::FRAC_PI_2,
+            Self::Half => std::f64::consts::PI,
+            Self::ThreeQuarters => 3.0 * std::f64::consts::FRAC_PI_2,
+        }
+    }
+}
+
+/// A relation kind narrowed to the two-entity forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BinaryRelation {
+    Parallel,
+    Perpendicular,
+    Tangent,
+    Equal,
+    Collinear,
+    Concentric,
+    Coradial,
+}
+
+impl BinaryRelation {
+    fn definition(
+        self,
+        first: &SketchEntityId,
+        second: &SketchEntityId,
+    ) -> SketchConstraintDefinitionInput {
+        let (first, second) = (first.clone(), second.clone());
+        match self {
+            Self::Parallel => SketchConstraintDefinitionInput::Parallel { first, second },
+            Self::Perpendicular => SketchConstraintDefinitionInput::Perpendicular { first, second },
+            Self::Tangent => SketchConstraintDefinitionInput::Tangent { first, second },
+            Self::Equal => SketchConstraintDefinitionInput::Equal { first, second },
+            Self::Collinear => SketchConstraintDefinitionInput::Collinear { first, second },
+            Self::Concentric => SketchConstraintDefinitionInput::Concentric { first, second },
+            Self::Coradial => SketchConstraintDefinitionInput::Coradial { first, second },
+        }
+    }
+}
+
+/// The relation-kind groups the typed marker projection handles as one shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkerRelationGroup {
+    SingleEntity(SingleEntityRelation),
+    Dimensional,
+    ArcQuarter(QuarterTurn),
+    EllipseQuarter(QuarterTurn),
+    Binary(BinaryRelation),
+    Coincidence,
+    AxisPoints,
+    AtIntersection,
+    Symmetric,
+    Midpoint,
+    Other,
+}
+
+impl MarkerRelationGroup {
+    fn of(kind: crate::records::SketchRelationKind) -> Self {
+        match kind {
+            crate::records::SketchRelationKind::Horizontal => {
+                Self::SingleEntity(SingleEntityRelation::Horizontal)
+            }
+            crate::records::SketchRelationKind::Vertical => {
+                Self::SingleEntity(SingleEntityRelation::Vertical)
+            }
+            crate::records::SketchRelationKind::Fixed => {
+                Self::SingleEntity(SingleEntityRelation::Fixed)
+            }
+            crate::records::SketchRelationKind::ArcAngle90 => {
+                Self::ArcQuarter(QuarterTurn::Quarter)
+            }
+            crate::records::SketchRelationKind::ArcAngle180 => Self::ArcQuarter(QuarterTurn::Half),
+            crate::records::SketchRelationKind::ArcAngle270 => {
+                Self::ArcQuarter(QuarterTurn::ThreeQuarters)
+            }
+            crate::records::SketchRelationKind::EllipseAngle90 => {
+                Self::EllipseQuarter(QuarterTurn::Quarter)
+            }
+            crate::records::SketchRelationKind::EllipseAngle180 => {
+                Self::EllipseQuarter(QuarterTurn::Half)
+            }
+            crate::records::SketchRelationKind::EllipseAngle270 => {
+                Self::EllipseQuarter(QuarterTurn::ThreeQuarters)
+            }
+            crate::records::SketchRelationKind::Parallel => Self::Binary(BinaryRelation::Parallel),
+            crate::records::SketchRelationKind::Perpendicular => {
+                Self::Binary(BinaryRelation::Perpendicular)
+            }
+            crate::records::SketchRelationKind::Tangent => Self::Binary(BinaryRelation::Tangent),
+            crate::records::SketchRelationKind::Equal => Self::Binary(BinaryRelation::Equal),
+            crate::records::SketchRelationKind::Collinear => {
+                Self::Binary(BinaryRelation::Collinear)
+            }
+            crate::records::SketchRelationKind::Concentric => {
+                Self::Binary(BinaryRelation::Concentric)
+            }
+            crate::records::SketchRelationKind::Coradial => Self::Binary(BinaryRelation::Coradial),
+            crate::records::SketchRelationKind::Coincident
+            | crate::records::SketchRelationKind::MergePoints => Self::Coincidence,
+            crate::records::SketchRelationKind::HorizontalPoints
+            | crate::records::SketchRelationKind::VerticalPoints => Self::AxisPoints,
+            crate::records::SketchRelationKind::AtIntersection => Self::AtIntersection,
+            crate::records::SketchRelationKind::Symmetric => Self::Symmetric,
+            crate::records::SketchRelationKind::Midpoint => Self::Midpoint,
+            crate::records::SketchRelationKind::Distance
+            | crate::records::SketchRelationKind::Angle
+            | crate::records::SketchRelationKind::Radius
+            | crate::records::SketchRelationKind::Diameter => Self::Dimensional,
+            _ => Self::Other,
+        }
+    }
+}
+
 #[cfg(test)]
 pub(super) fn typed_marker_relation_definition(
     marker: &SketchInputEntity,
@@ -96,12 +237,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinitionInput> {
-    use crate::records::SketchRelationKind::{
-        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
-        HorizontalPoints, MergePoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
-        Vertical, VerticalPoints,
-    };
+    use crate::records::SketchRelationKind::{Fixed, Horizontal, HorizontalPoints, Vertical};
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
         SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_) => None,
@@ -144,15 +280,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             native_ref: Some(owner.id.clone()),
         }));
         SketchConstraintDefinitionInput::Native {
-            native_kind: match marker.kind {
-                SketchInputKind::Relation(kind) => {
-                    nonempty_literal!("sldprt:marker-relation:{}", kind.native_code())
-                }
-                kind @ (SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)) => {
-                    nonempty_literal!("sldprt:marker-relation:{}", kind.native_code())
-                }
-                _ => unreachable!("non-relation markers were rejected"),
-            },
+            native_kind: nonempty_literal!("sldprt:marker-relation:{}", marker.kind.native_code()),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -244,8 +372,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
         }
     }
-    Some(match kind {
-        Horizontal | Vertical | Fixed => {
+    Some(match MarkerRelationGroup::of(kind) {
+        MarkerRelationGroup::SingleEntity(single) => {
             if matches!(kind, Horizontal | Vertical) {
                 if let Some([first, second]) = axis_relation_point_loci(
                     marker,
@@ -379,18 +507,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 {
                     return Some(native());
                 }
-                match kind {
-                    Horizontal => SketchConstraintDefinitionInput::Horizontal {
-                        entity: entity.clone(),
-                    },
-                    Vertical => SketchConstraintDefinitionInput::Vertical {
-                        entity: entity.clone(),
-                    },
-                    Fixed => SketchConstraintDefinitionInput::Fixed {
-                        entity: entity.clone(),
-                    },
-                    _ => unreachable!("relation kind was filtered above"),
-                }
+                single.definition(entity)
             } else if matches!(kind, Horizontal | Vertical) {
                 let loci =
                     relation_operand_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
@@ -430,17 +547,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Some(native());
             }
         }
-        ArcAngle90 | ArcAngle180 | ArcAngle270 => {
+        MarkerRelationGroup::ArcQuarter(quarter) => {
             let Some(entity) = linked_single_arc_entity(marker, markers_by_id, loci_by_marker)
             else {
                 return Some(native());
             };
-            let angle = match kind {
-                ArcAngle90 => std::f64::consts::FRAC_PI_2,
-                ArcAngle180 => std::f64::consts::PI,
-                ArcAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
-                _ => unreachable!("relation kind was filtered above"),
-            };
+            let angle = quarter.angle();
             if !sketch_entities.is_empty() {
                 let Some(SketchGeometryDefinition::Arc {
                     start_angle,
@@ -470,7 +582,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 angle: cadmpeg_ir::scalar::Angle::new(angle)?,
             }
         }
-        EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => {
+        MarkerRelationGroup::EllipseQuarter(quarter) => {
             let Some(entity) = linked_single_ellipse_entity(
                 marker,
                 markers_by_id,
@@ -479,12 +591,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             ) else {
                 return Some(native());
             };
-            let angle = match kind {
-                EllipseAngle90 => std::f64::consts::FRAC_PI_2,
-                EllipseAngle180 => std::f64::consts::PI,
-                EllipseAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
-                _ => unreachable!("relation kind was filtered above"),
-            };
+            let angle = quarter.angle();
             let Some(SketchGeometryDefinition::Ellipse {
                 bounds: Some([start, end]),
                 ..
@@ -510,7 +617,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 angle: cadmpeg_ir::scalar::Angle::new(angle)?,
             }
         }
-        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
+        MarkerRelationGroup::Binary(binary) => {
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
             let forward_entities = marker
@@ -607,39 +714,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 };
             }
-            match kind {
-                Parallel => SketchConstraintDefinitionInput::Parallel {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Perpendicular => SketchConstraintDefinitionInput::Perpendicular {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Tangent => SketchConstraintDefinitionInput::Tangent {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Equal => SketchConstraintDefinitionInput::Equal {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Collinear => SketchConstraintDefinitionInput::Collinear {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Concentric => SketchConstraintDefinitionInput::Concentric {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Coradial => SketchConstraintDefinitionInput::Coradial {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                _ => unreachable!("relation kind was filtered above"),
-            }
+            binary.definition(first, second)
         }
-        Coincident | MergePoints => {
+        MarkerRelationGroup::Coincidence => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
@@ -655,7 +732,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::CoincidentLoci { loci }
         }
-        HorizontalPoints | VerticalPoints => {
+        MarkerRelationGroup::AxisPoints => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
@@ -676,7 +753,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 |relation| SketchConstraintDefinitionInput::SameCoordinate { relation },
             )
         }
-        AtIntersection => {
+        MarkerRelationGroup::AtIntersection => {
             if sketch_entities.is_empty() {
                 return Some(native());
             }
@@ -728,7 +805,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 second: second.clone(),
             }
         }
-        Symmetric => {
+        MarkerRelationGroup::Symmetric => {
             if sketch_entities.is_empty() {
                 return Some(native());
             }
@@ -781,7 +858,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 axis,
             }
         }
-        Midpoint => {
+        MarkerRelationGroup::Midpoint => {
             let Some((point, entity)) =
                 linked_midpoint_operands(marker, markers_by_id, loci_by_marker)
             else {
@@ -806,11 +883,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::Midpoint { point, entity }
         }
-        crate::records::SketchRelationKind::Distance
-        | crate::records::SketchRelationKind::Angle
-        | crate::records::SketchRelationKind::Radius
-        | crate::records::SketchRelationKind::Diameter => return None,
-        _ => native(),
+        MarkerRelationGroup::Dimensional => return None,
+        MarkerRelationGroup::Other => native(),
     })
 }
 
