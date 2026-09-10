@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use std::num::NonZeroU32;
-
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
@@ -10,7 +8,27 @@ use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
 
-const TABLE_FRAMING: NonZeroU32 = NonZeroU32::MIN.saturating_add(7);
+/// Header and checksum bytes surrounding a fixture table body.
+const TABLE_FRAMING: usize = 8;
+
+/// A table whose body is the first `len` bytes of a chunk framed by
+/// [`TABLE_FRAMING`] bytes.
+fn metadata_table(
+    typecode: u32,
+    len: usize,
+    records: Vec<crate::container::Record>,
+) -> crate::container::Table {
+    let record_count = records.len();
+    crate::container::Table::new(
+        typecode,
+        0..len + TABLE_FRAMING,
+        0..len,
+        records,
+        record_count,
+        std::collections::BTreeMap::new(),
+    )
+    .expect("a fixture table body lies inside its framing")
+}
 
 #[test]
 fn decodes_bounded_utf8_and_utf16_strings() {
@@ -363,15 +381,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
     name.extend(2_u32.to_le_bytes());
     name.extend([b'X', 0, 0, 0]);
     let (data, record) = metadata_record(0x2000_8027, name);
-    let table = crate::container::Table {
-        typecode: 0x1000_0014,
-        range: 0..data.len(),
-        body: 0..data.len(),
-        framing: TABLE_FRAMING,
-        records: vec![record],
-        record_count: 1,
-        object_typecodes: std::collections::BTreeMap::new(),
-    };
+    let table = metadata_table(0x1000_0014, data.len(), vec![record]);
     let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&data, ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
@@ -380,15 +390,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
     let mut trailing = data;
     trailing.push(1);
     let (trailing, record) = metadata_record(0x2000_8027, trailing);
-    let table = crate::container::Table {
-        typecode: 0x1000_0014,
-        range: 0..trailing.len(),
-        body: 0..trailing.len(),
-        framing: TABLE_FRAMING,
-        records: vec![record],
-        record_count: 1,
-        object_typecodes: std::collections::BTreeMap::new(),
-    };
+    let table = metadata_table(0x1000_0014, trailing.len(), vec![record]);
     let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&trailing, ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
@@ -515,15 +517,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     .expect("required invariant");
     assert_eq!(class_descriptor.class_data_range.len(), payload.len());
     assert_eq!(userdata.len(), 2);
-    let table = crate::container::Table {
-        typecode: 0x1000_0011,
-        range: 0..data.len(),
-        body: 0..data.len(),
-        framing: TABLE_FRAMING,
-        records: vec![record],
-        record_count: 1,
-        object_typecodes: std::collections::BTreeMap::new(),
-    };
+    let table = metadata_table(0x1000_0011, data.len(), vec![record]);
     let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
     assert_eq!(metadata.layers.len(), 1, "{warnings:?}");
@@ -574,15 +568,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         .concat(),
     );
     let (future_data, future_record) = metadata_record(0x2000_8050, future_class);
-    let future_table = crate::container::Table {
-        typecode: 0x1000_0011,
-        range: 0..future_data.len(),
-        body: 0..future_data.len(),
-        framing: TABLE_FRAMING,
-        records: vec![future_record.clone()],
-        record_count: 1,
-        object_typecodes: std::collections::BTreeMap::new(),
-    };
+    let future_table = metadata_table(0x1000_0011, future_data.len(), vec![future_record.clone()]);
     let mut future_warnings = Diagnostics::new();
     let future =
         settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
@@ -664,26 +650,14 @@ fn layer_metadata(
         .concat(),
     );
     let (data, record) = metadata_record(0x2000_8050, class);
-    let table = crate::container::Table {
-        typecode: 0x1000_0011,
-        range: 0..data.len(),
-        body: 0..data.len(),
-        framing: TABLE_FRAMING,
-        records: vec![record],
-        record_count: 1,
-        object_typecodes: std::collections::BTreeMap::new(),
-    };
+    let table = metadata_table(0x1000_0011, data.len(), vec![record]);
     let mut tables = Vec::new();
     if let Some(value) = writer_version {
-        tables.push(crate::container::Table {
-            typecode: 0x1000_0014,
-            range: 0..0,
-            body: 0..0,
-            framing: TABLE_FRAMING,
-            records: vec![crate::container::Record::short(0xa000_0026, 0..0, value)],
-            record_count: 1,
-            object_typecodes: std::collections::BTreeMap::new(),
-        });
+        tables.push(metadata_table(
+            0x1000_0014,
+            0,
+            vec![crate::container::Record::short(0xa000_0026, 0..0, value)],
+        ));
     }
     tables.push(table);
     let mut warnings = Diagnostics::new();
@@ -1141,18 +1115,14 @@ fn current_material_accepts_the_source_reader_i32_range() {
 
 #[test]
 fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
-    let table = crate::container::Table {
-        typecode: 0x1000_0015,
-        range: 0..0,
-        body: 0..0,
-        framing: TABLE_FRAMING,
-        records: vec![
+    let table = metadata_table(
+        0x1000_0015,
+        0,
+        vec![
             crate::container::Record::short(0xa000_0038, 0..0, 3),
             crate::container::Record::short(0xa000_0038, 0..0, 7),
         ],
-        record_count: 2,
-        object_typecodes: std::collections::BTreeMap::new(),
-    };
+    );
     let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.settings.current_layer, Some(7));

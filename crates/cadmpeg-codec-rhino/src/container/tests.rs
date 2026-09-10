@@ -871,3 +871,31 @@ fn skips_short_and_long_unknown_table_records() {
         .iter()
         .any(|note| note.contains("unknown bounded record")));
 }
+
+#[test]
+fn a_table_body_must_leave_framing_inside_its_chunk_range() {
+    let empty = || std::collections::BTreeMap::new();
+    let table = crate::container::Table::new(0x1000_0014, 0..40, 4..36, Vec::new(), 0, empty())
+        .expect("a body inside its chunk range");
+    assert_eq!(table.framing().get(), 8);
+    assert_eq!(table.body(), &(4..36));
+    assert_eq!(table.range(), &(0..40));
+    assert!(
+        crate::container::Table::new(0x1000_0014, 0..40, 0..40, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(
+        crate::container::Table::new(0x1000_0014, 4..40, 0..36, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(
+        crate::container::Table::new(0x1000_0014, 0..40, 4..44, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(crate::container::Table::new(
+        0x1000_0014,
+        0..u32::MAX as usize + 2,
+        0..0,
+        Vec::new(),
+        0,
+        empty(),
+    )
+    .is_none());
+}
