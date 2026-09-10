@@ -292,7 +292,8 @@ fn decode_container<'a>(
         }
     };
     let material_catalog = crate::materials::project_catalog(&protein_instances);
-    let mut structural_issues = Vec::new();
+    let mut protein_issues = Vec::new();
+    let mut ufrx_issues = Vec::new();
     let protein_assets = protein_instances
         .iter()
         .flat_map(|instance| {
@@ -307,7 +308,7 @@ fn decode_container<'a>(
                 asset: asset.clone(),
             })
         })
-        .filter_map(|wire| admit_protein_asset(wire, &mut structural_issues))
+        .filter_map(|wire| admit_protein_asset(wire, &mut protein_issues))
         .collect::<Vec<_>>();
     let protein_rejections = protein_instances
         .iter()
@@ -326,9 +327,8 @@ fn decode_container<'a>(
                     detail: rejected.detail.clone(),
                 })
         })
-        .filter_map(|wire| admit_protein_rejection(wire, &mut structural_issues))
+        .filter_map(|wire| admit_protein_rejection(wire, &mut protein_issues))
         .collect::<Vec<_>>();
-    let protein_admission_issue_count = structural_issues.len();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
     let ufrx = match &container.ufrx {
@@ -386,7 +386,7 @@ fn decode_container<'a>(
                     admit_ufrx_record(
                         admitted,
                         &format!("ufrx-model-state-{ordinal}"),
-                        &mut structural_issues,
+                        &mut ufrx_issues,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -414,7 +414,7 @@ fn decode_container<'a>(
                     admit_ufrx_record(
                         admitted,
                         &format!("ufrx-external-reference-{ordinal}"),
-                        &mut structural_issues,
+                        &mut ufrx_issues,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -443,7 +443,7 @@ fn decode_container<'a>(
                     admit_ufrx_record(
                         admitted,
                         &format!("ufrx-embedded-reference-{ordinal}"),
-                        &mut structural_issues,
+                        &mut ufrx_issues,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -467,7 +467,7 @@ fn decode_container<'a>(
                     admit_ufrx_record(
                         admitted,
                         &format!("ufrx-occurrence-{ordinal}"),
-                        &mut structural_issues,
+                        &mut ufrx_issues,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -494,7 +494,7 @@ fn decode_container<'a>(
                             active_model_state: state.active_model_state.clone(),
                             active_model_state_state: state.active_model_state_state,
                         });
-                    admit_ufrx_record(admitted, "ufrx-representation", &mut structural_issues)
+                    admit_ufrx_record(admitted, "ufrx-representation", &mut ufrx_issues)
                 }),
                 model_states,
                 external_references: references,
@@ -507,7 +507,10 @@ fn decode_container<'a>(
             }
         }
     };
-    let ufrx_issue_count = structural_issues.len() - protein_admission_issue_count;
+    let protein_admission_issue_count = protein_issues.len();
+    let ufrx_issue_count = ufrx_issues.len();
+    let mut structural_issues = protein_issues;
+    structural_issues.extend(ufrx_issues);
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
