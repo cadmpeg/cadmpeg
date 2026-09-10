@@ -19,11 +19,18 @@ use cadmpeg_ir::ids::{
 pub(crate) trait Ordinal: Copy {
     /// The decimal spelling of this number.
     fn spelling(self) -> String;
+
+    /// This number read as a Directory sequence, if it is one.
+    fn sequence(self) -> Option<u32>;
 }
 
 impl Ordinal for u32 {
     fn spelling(self) -> String {
         self.to_string()
+    }
+
+    fn sequence(self) -> Option<u32> {
+        Some(self)
     }
 }
 
@@ -31,11 +38,19 @@ impl Ordinal for usize {
     fn spelling(self) -> String {
         self.to_string()
     }
+
+    fn sequence(self) -> Option<u32> {
+        u32::try_from(self).ok()
+    }
 }
 
 impl Ordinal for i64 {
     fn spelling(self) -> String {
         self.to_string()
+    }
+
+    fn sequence(self) -> Option<u32> {
+        u32::try_from(self).ok()
     }
 }
 
@@ -97,59 +112,93 @@ const _: () = {
 };
 
 /// An identity key built only from decoded numbers and [`Word`]s.
+///
+/// A key rooted at a Directory sequence carries that sequence as its origin,
+/// and every derivation keeps it, so a reader that needs the entry a record
+/// came from asks the stem instead of parsing the minted text.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Stem(String);
+pub(crate) struct Stem {
+    key: String,
+    origin: Option<u32>,
+}
 
 impl Stem {
     /// The key of one Directory entry: `D{sequence}`.
     pub(crate) fn directory(sequence: impl Ordinal) -> Self {
-        Self(format!("D{}", sequence.spelling()))
+        Self {
+            key: format!("D{}", sequence.spelling()),
+            origin: sequence.sequence(),
+        }
     }
 
     /// A key that is one fixed word.
     pub(crate) fn word(word: Word) -> Self {
-        Self(word.text().to_owned())
+        Self {
+            key: word.text().to_owned(),
+            origin: None,
+        }
     }
 
     /// A fixed word qualified by a Directory sequence: `{word}-D{sequence}`.
+    ///
+    /// The key is rooted at the word, not at the sequence, so it has no origin:
+    /// such a record is a derivation of the entry, not its whole neutral form.
     pub(crate) fn word_directory(word: Word, sequence: impl Ordinal) -> Self {
-        Self(format!("{}-D{}", word.text(), sequence.spelling()))
+        Self {
+            key: format!("{}-D{}", word.text(), sequence.spelling()),
+            origin: None,
+        }
     }
 
     /// A key that is one decoded number.
     pub(crate) fn number(value: impl Ordinal) -> Self {
-        Self(value.spelling())
+        Self {
+            key: value.spelling(),
+            origin: None,
+        }
+    }
+
+    /// The Directory entry this key is rooted at, if it is rooted at one.
+    pub(crate) const fn origin(&self) -> Option<u32> {
+        self.origin
     }
 
     /// A child keyed by a Directory sequence: `{self}:D{sequence}`.
     pub(crate) fn child(&self, sequence: impl Ordinal) -> Self {
-        Self(format!("{}:D{}", self.0, sequence.spelling()))
+        self.derive(format!("{}:D{}", self.key, sequence.spelling()))
     }
 
     /// A child keyed by an ordinal: `{self}:{index}`.
     pub(crate) fn slot(&self, index: impl Ordinal) -> Self {
-        Self(format!("{}:{}", self.0, index.spelling()))
+        self.derive(format!("{}:{}", self.key, index.spelling()))
     }
 
     /// A named part of this key: `{self}:{word}`.
     pub(crate) fn part(&self, word: Word) -> Self {
-        Self(format!("{}:{}", self.0, word.text()))
+        self.derive(format!("{}:{}", self.key, word.text()))
     }
 
     /// A named derivation of this key: `{self}-{word}`.
     pub(crate) fn tail(&self, word: Word) -> Self {
-        Self(format!("{}-{}", self.0, word.text()))
+        self.derive(format!("{}-{}", self.key, word.text()))
     }
 
     /// A numbered derivation of this key: `{self}-{index}`.
     pub(crate) fn tail_index(&self, index: impl Ordinal) -> Self {
-        Self(format!("{}-{}", self.0, index.spelling()))
+        self.derive(format!("{}-{}", self.key, index.spelling()))
+    }
+
+    fn derive(&self, key: String) -> Self {
+        Self {
+            key,
+            origin: self.origin,
+        }
     }
 }
 
 impl fmt::Display for Stem {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(&self.key)
     }
 }
 

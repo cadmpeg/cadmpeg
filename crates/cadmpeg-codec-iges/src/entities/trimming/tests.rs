@@ -291,6 +291,7 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         0,
         &source_endpoints,
         cadmpeg_ir::units::PositiveScalar::new(1.0).unwrap(),
+        &mut crate::entities::geometry::SourceSequences::default(),
     )
     .unwrap();
 

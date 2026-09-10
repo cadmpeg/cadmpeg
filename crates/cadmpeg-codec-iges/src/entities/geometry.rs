@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -1229,11 +1229,18 @@ pub(crate) struct SourceSequences {
     faces: BTreeMap<FaceId, u32>,
     curves: BTreeMap<CurveId, u32>,
     surfaces: BTreeMap<SurfaceId, u32>,
+    points: BTreeMap<PointId, u32>,
+    body_neutral_forms: BTreeMap<BodyId, u32>,
 }
 
 impl SourceSequences {
-    pub(super) fn record_body(&mut self, id: &BodyId, sequence: u32) {
+    /// Records the entry a body was decoded from, and -- when the body's key is
+    /// rooted at that entry -- that the body is its neutral form.
+    pub(super) fn record_body(&mut self, id: &BodyId, sequence: u32, stem: &crate::ids::Stem) {
         self.bodies.insert(id.clone(), sequence);
+        if let Some(origin) = stem.origin() {
+            self.body_neutral_forms.insert(id.clone(), origin);
+        }
     }
 
     pub(super) fn record_face(&mut self, id: &FaceId, sequence: u32) {
@@ -1246,6 +1253,14 @@ impl SourceSequences {
 
     pub(super) fn record_surface(&mut self, id: &SurfaceId, sequence: u32) {
         self.surfaces.insert(id.clone(), sequence);
+    }
+
+    /// Records the entry a point is the neutral form of, when its key is rooted
+    /// at one.
+    pub(super) fn record_point(&mut self, id: &PointId, stem: &crate::ids::Stem) {
+        if let Some(sequence) = stem.origin() {
+            self.points.insert(id.clone(), sequence);
+        }
     }
 
     pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
@@ -1264,6 +1279,16 @@ impl SourceSequences {
     /// The Directory sequence this surface was decoded from.
     pub(crate) fn surface(&self, id: &SurfaceId) -> Option<u32> {
         self.surfaces.get(id).copied()
+    }
+
+    /// The Directory sequence this point is the neutral form of.
+    pub(crate) fn point(&self, id: &PointId) -> Option<u32> {
+        self.points.get(id).copied()
+    }
+
+    /// The Directory sequence this body is the neutral form of.
+    pub(crate) fn body_neutral_form(&self, id: &BodyId) -> Option<u32> {
+        self.body_neutral_forms.get(id).copied()
     }
 }
 
@@ -1508,7 +1533,9 @@ pub(crate) fn project_geometry(
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
         let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve = crate::ids::curve(&stem);
@@ -1599,6 +1626,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
@@ -1686,6 +1714,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
@@ -1773,7 +1802,9 @@ pub(crate) fn project_geometry(
             continue;
         }
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
         let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let edge = crate::ids::edge(&stem);
@@ -2114,7 +2145,9 @@ pub(crate) fn project_geometry(
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
         let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve = crate::ids::curve(&stem);

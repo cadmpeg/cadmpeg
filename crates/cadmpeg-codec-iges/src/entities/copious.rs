@@ -337,6 +337,7 @@ pub(super) fn project(
                 let point = crate::ids::point(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
+                sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
                 let vertex = crate::ids::vertex(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
@@ -398,7 +399,9 @@ pub(super) fn project(
         let end = points[points.len() - 1];
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
         let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = if entry.form == 63 {
             start_vertex.clone()
