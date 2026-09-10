@@ -523,27 +523,27 @@ pub enum CatiaConsolidatedCylinderPayload {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
-        axis: crate::checked::RelaxedUnitVector3,
+        axis: crate::checked::RelaxedHypotUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: crate::checked::RelaxedUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
     },
     /// Complete three-dimensional frame reconstructed from layout `0x5a`.
     Layout5a {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
-        axis: crate::checked::RelaxedUnitVector3,
+        axis: crate::checked::RelaxedHypotUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: crate::checked::RelaxedUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
     },
     /// Complete layout-`0x62` frame and its redundant range origin.
     RangeOrigin {
         /// Stored unit vector in the token-defined carrier plane.
         stored_vector: crate::checked::RelaxedUnitVector2,
         /// Cylinder-axis unit direction.
-        axis: crate::checked::RelaxedUnitVector3,
+        axis: crate::checked::RelaxedHypotUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
-        reference_direction: crate::checked::RelaxedUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
         /// Origin of the stored partial circumferential interval.
         range_origin: f64,
     },
@@ -599,13 +599,13 @@ struct CatiaConsolidatedCylinderWire {
 enum CatiaConsolidatedCylinderPayloadWire {
     Resolved {
         frame_token: u8,
-        axis: crate::checked::RelaxedUnitVector3,
-        reference_direction: crate::checked::RelaxedUnitVector3,
+        axis: crate::checked::RelaxedHypotUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
     },
     RangeOrigin {
         stored_vector: crate::checked::RelaxedUnitVector2,
-        axis: crate::checked::RelaxedUnitVector3,
-        reference_direction: crate::checked::RelaxedUnitVector3,
+        axis: crate::checked::RelaxedHypotUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
         range_origin: f64,
     },
 }
@@ -736,9 +736,9 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
     /// Token selecting the serialized frame-vector role.
     pub frame_token: u8,
     /// Cylinder-axis unit direction.
-    pub axis: crate::checked::RelaxedUnitVector3,
+    pub axis: crate::checked::RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: crate::checked::RelaxedUnitVector3,
+    pub reference_direction: crate::checked::RelaxedHypotUnitVector3,
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
@@ -1042,11 +1042,11 @@ pub struct CatiaConsolidatedSphere {
     /// Sphere centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: crate::checked::ExactUnitVector3,
+    pub direction_x: crate::checked::ExactHypotUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: crate::checked::ExactUnitVector3,
+    pub direction_y: crate::checked::ExactHypotUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: crate::checked::ExactUnitVector3,
+    pub axis: crate::checked::ExactHypotUnitVector3,
     /// Sphere radius.
     pub radius: crate::checked::PositiveFinite,
     /// Active azimuth interval.

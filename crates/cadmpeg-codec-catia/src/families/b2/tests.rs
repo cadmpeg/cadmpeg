@@ -1759,10 +1759,33 @@ fn b2_cylinder_parser_admits_the_full_stored_pair_tolerance_band() {
     assert_eq!(cylinder.axis.get(), [component, 0.0, 0.0]);
     assert_eq!(cylinder.reference_direction.get(), [-0.0, component, 0.0]);
 
-    let mut outside = b2_cylinder_stream();
-    outside[30..38].copy_from_slice(&(1.0 + 2.0e-9_f64).to_le_bytes());
-    outside[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::families::b2::records::b2_cylinders(&outside).is_empty());
+    let mut quarter_turned = b2_cylinder_stream();
+    quarter_turned[29] = 0x1c;
+    quarter_turned[30..38].copy_from_slice(&component.to_le_bytes());
+    quarter_turned[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+    let cylinders = crate::families::b2::records::b2_cylinders(&quarter_turned);
+    let [cylinder] = cylinders.as_slice() else {
+        panic!("one quarter-turned B2 cylinder at the tolerance edge")
+    };
+    assert_eq!(cylinder.axis.get(), [0.0, -component, 0.0]);
+    assert_eq!(cylinder.reference_direction.get(), [component, 0.0, 0.0]);
+
+    let mut range_origin = b2_range_origin_cylinder_stream();
+    range_origin[30..38].copy_from_slice(&0.0_f64.to_le_bytes());
+    range_origin[38..46].copy_from_slice(&component.to_le_bytes());
+    let cylinders = crate::families::b2::records::b2_cylinders(&range_origin);
+    let [cylinder] = cylinders.as_slice() else {
+        panic!("one range-origin B2 cylinder at the tolerance edge")
+    };
+    assert_eq!(cylinder.axis.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder.reference_direction.get(), [0.0, 0.0, component]);
+
+    for mut outside in [b2_cylinder_stream(), b2_range_origin_cylinder_stream()] {
+        let far = 1.0 + 2.0e-9_f64;
+        outside[30..38].copy_from_slice(&far.to_le_bytes());
+        outside[38..46].copy_from_slice(&0.0_f64.to_le_bytes());
+        assert!(crate::families::b2::records::b2_cylinders(&outside).is_empty());
+    }
 }
 
 #[test]

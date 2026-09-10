@@ -13,7 +13,8 @@ use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
-    CoordinatePlane, ExactUnitVector3, OrderedInterval, PositiveFinite, RelaxedUnitVector2,
+    CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
+    OrderedInterval, PositiveFinite, RelaxedHypotUnitVector3, RelaxedUnitVector2,
     RelaxedUnitVector3,
 };
 use crate::families::a5a8::records::FreeformSurface;
@@ -1911,9 +1912,9 @@ pub struct B2SpatialCircle {
     /// Circle centre.
     pub center: Point3,
     /// Unit circle-plane normal.
-    pub axis: ExactUnitVector3,
+    pub axis: ExactNormUnitVector3,
     /// Unit radial reference direction.
-    pub ref_direction: ExactUnitVector3,
+    pub ref_direction: ExactNormUnitVector3,
     /// Positive radius in millimetres.
     pub radius: PositiveFinite,
     /// Stored arc-length interval.
@@ -1951,7 +1952,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     let transverse_norm = transverse.norm();
     let orthogonality = stored_reference.dot(transverse).abs();
     let cross = stored_reference.cross(transverse);
-    let axis = ExactUnitVector3::normalized([cross.x, cross.y, cross.z])?;
+    let axis = ExactNormUnitVector3::normalized([cross.x, cross.y, cross.z])?;
     let radius = values[9];
     let range = [values[10], values[11]];
     if !values.iter().all(|value| value.is_finite())
@@ -1962,7 +1963,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
         return None;
     }
     let ref_direction =
-        ExactUnitVector3::from_norm([stored_reference.x, stored_reference.y, stored_reference.z])?;
+        ExactNormUnitVector3::new([stored_reference.x, stored_reference.y, stored_reference.z])?;
     let radius = PositiveFinite::new(radius)?;
     let range = OrderedInterval::new(range)?;
     Some(B2SpatialCircle {
@@ -2075,9 +2076,9 @@ pub struct B2Cylinder {
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder-axis unit direction.
-    pub axis: RelaxedUnitVector3,
+    pub axis: RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: RelaxedUnitVector3,
+    pub reference_direction: RelaxedHypotUnitVector3,
     /// Cylinder radius.
     pub radius: PositiveFinite,
     /// Arc-length circumferential range.
@@ -2211,11 +2212,11 @@ pub struct B2Sphere {
     /// Sphere centre.
     pub center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: ExactUnitVector3,
+    pub direction_x: ExactHypotUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: ExactUnitVector3,
+    pub direction_y: ExactHypotUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: ExactUnitVector3,
+    pub axis: ExactHypotUnitVector3,
     /// Sphere radius.
     pub radius: PositiveFinite,
     /// Active azimuth interval.
@@ -2793,7 +2794,7 @@ pub(crate) fn b2_spheres_from_records(
             .then_some(())?;
             let radius = PositiveFinite::new(radius)?;
             let unit_direction =
-                |stored: [f64; 3]| ExactUnitVector3::from_scaled(stored, radius.get());
+                |stored: [f64; 3]| ExactHypotUnitVector3::from_scaled(stored, radius.get());
             let direction_x = unit_direction(stored_x)?;
             let direction_y = unit_direction(stored_y)?;
             let axis = unit_direction(stored_axis)?;
@@ -3003,8 +3004,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedUnitVector3::X,
-                reference_direction: RelaxedUnitVector3::Y,
+                axis: RelaxedHypotUnitVector3::X,
+                reference_direction: RelaxedHypotUnitVector3::Y,
                 radius,
                 u_range,
                 v_range,
@@ -3034,7 +3035,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedUnitVector3::Y,
+                axis: RelaxedHypotUnitVector3::Y,
                 reference_direction: vector.in_plane(CoordinatePlane::Xz),
                 radius,
                 u_range,
