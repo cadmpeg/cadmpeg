@@ -31,7 +31,6 @@ pub(super) fn decode(
     ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<()> {
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
     let face_indices = ir
@@ -109,7 +108,9 @@ pub(super) fn decode(
         }
         let Some(items) = partial_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            warnings.push(format!("INVISIBILITY #{id} has no item set"));
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
+            );
             continue;
         };
         let mut supported = true;
@@ -158,9 +159,9 @@ pub(super) fn decode(
                 }
             }
             if !target_supported || !hidden {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{id} targets unsupported item #{target}"
-                ));
+                )));
                 supported = false;
             }
         }
@@ -177,15 +178,15 @@ pub(super) fn decode(
         let Some(assigned_items) =
             partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            ));
+            )));
             continue;
         };
         if assigned_items.is_empty() {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            ));
+            )));
             continue;
         }
         let Some(name) =
@@ -200,9 +201,9 @@ pub(super) fn decode(
                 )
             })
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            ));
+            )));
             continue;
         };
         let description = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -260,7 +261,10 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
+            );
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
@@ -349,9 +353,9 @@ pub(super) fn decode(
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
-                    warnings.push(format!(
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
                         "STYLED_ITEM #{style_id} has no resolved surface color"
-                    ));
+                    )));
                 }
                 continue;
             }
@@ -405,9 +409,9 @@ pub(super) fn decode(
                 &body_indices,
             );
             if targets.is_empty() {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
-                ));
+                )));
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
@@ -471,9 +475,9 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                ));
+                )));
                 supported = false;
             }
         }
@@ -488,9 +492,9 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                ));
+                )));
                 supported = false;
             }
         }
@@ -540,7 +544,7 @@ pub(super) fn decode(
     StageOutcome {
         value: (),
         claims: typed,
-        losses: super::fold_warnings(losses, warnings),
+        losses,
         notes: Vec::new(),
     }
 }

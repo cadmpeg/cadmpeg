@@ -1471,3 +1471,21 @@ fn class_report_preserves_nil_class_source_selection() {
         });
     }
 }
+
+/// A dropped Brep display-mesh cache slot carries the mesh-cache code itself.
+#[test]
+fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
+    let mut staged = BrepDraft::default();
+    staged.mesh_cache_slot_dropped("render", 2, &"payload is truncated");
+    assert_eq!(
+        staged
+            .warnings
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            Some(RhinoLossCode::BrepMeshCacheDegraded),
+            "invalid render mesh cache slot 2: payload is truncated"
+        )]
+    );
+}

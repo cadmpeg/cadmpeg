@@ -309,7 +309,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let source_curve_parameter_scales =
         resolve_source_curve_parameter_scales(exchange, &unit_scales);
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
     let mut apll_point_names = BTreeMap::new();
@@ -384,7 +383,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .filter(|name| !name.is_empty());
                     apll_point_names.insert(id, source_name);
                 } else {
-                    warnings.push(format!("{point_type} #{id} has invalid coordinates"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("{point_type} #{id} has invalid coordinates")),
+                    );
                 }
             }
             Some("CARTESIAN_POINT") => {
@@ -398,7 +400,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     points2.insert(id, position);
                     typed.insert(id);
                 } else {
-                    warnings.push(format!("CARTESIAN_POINT #{id} has invalid coordinates"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("CARTESIAN_POINT #{id} has invalid coordinates")),
+                    );
                 }
             }
             Some("DIRECTION") => {
@@ -413,20 +418,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     directions2.insert(id, direction);
                     typed.insert(id);
                 } else {
-                    warnings.push(format!("DIRECTION #{id} is invalid or zero"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("DIRECTION #{id} is invalid or zero")),
+                    );
                 }
             }
             _ => {}
         }
     }
-    decode_tessellated_curve_sets(
-        exchange,
-        &unit_scales,
-        ir,
-        &mut typed,
-        &mut warnings,
-        &mut losses,
-    );
+    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses);
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record
@@ -534,9 +535,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 vectors2.insert(id, value);
                 typed.insert(id);
             } else {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "VECTOR #{id} has an invalid direction or magnitude"
-                ));
+                )));
             }
         }
     }
@@ -578,7 +579,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 placements.insert(id, placement);
                 typed.insert(id);
             } else {
-                warnings.push(format!("AXIS2_PLACEMENT_3D #{id} has an invalid location"));
+                losses.push(
+                    StepLossCode::DecodeWarning
+                        .note(format!("AXIS2_PLACEMENT_3D #{id} has an invalid location")),
+                );
             }
         }
     }
@@ -588,9 +592,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             transformation_operators.insert(id, transform);
             typed.insert(id);
         } else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
-            ));
+            )));
         }
     }
     let mut transformation_operators2 = BTreeMap::new();
@@ -601,9 +605,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             transformation_operators2.insert(id, transform);
             typed.insert(id);
         } else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "CARTESIAN_TRANSFORMATION_OPERATOR_2D #{id} has invalid axes, origin, or scale"
-            ));
+            )));
         }
     }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
@@ -625,7 +629,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             placements2.insert(id, placement);
             typed.insert(id);
         } else {
-            warnings.push(format!("AXIS2_PLACEMENT_2D #{id} has an invalid location"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("AXIS2_PLACEMENT_2D #{id} has an invalid location")),
+            );
         }
     }
     let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, BTreeSet<u64>)>::new();
@@ -655,7 +662,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     &placements2,
                     &transformation_operators2,
                     pcurve_angle_scale,
-                    &mut warnings,
+                    &mut losses,
                     &mut BTreeSet::new(),
                     0,
                 )
@@ -787,7 +794,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             | LeafCurveEntity::UniformCurve
             | LeafCurveEntity::QuasiUniformCurve
             | LeafCurveEntity::BezierCurve => {
-                nurbs_curve(id, record, &points, &mut warnings).map(CurveGeometry::Nurbs)
+                nurbs_curve(id, record, &points, &mut losses).map(CurveGeometry::Nurbs)
             }
         };
         if let Some(geometry) = geometry {
@@ -801,7 +808,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             typed.insert(id);
         } else {
-            warnings.push(format!("{} #{id} has invalid geometry", curve_kind.name()));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{} #{id} has invalid geometry", curve_kind.name())),
+            );
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -811,7 +821,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut warnings) {
+        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Nurbs(nurbs),
@@ -819,9 +829,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             typed.insert(id);
         } else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
-            ));
+            )));
         }
     }
 
@@ -890,7 +900,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ) {
                 Ok(procedural) => procedural,
                 Err(error) => {
-                    warnings.push(format!("curve construction #{id}: {error}"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("curve construction #{id}: {error}")),
+                    );
                     continue;
                 }
             };
@@ -959,7 +972,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     tolerance: ir.tolerances.linear.get(),
                     master_representation,
                     record_id: id,
-                    warnings: &mut warnings,
+                    losses: &mut losses,
                 };
                 (
                     parameters
@@ -989,7 +1002,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 }) {
                     Ok(procedural) => procedural,
                     Err(error) => {
-                        warnings.push(format!("TRIMMED_CURVE #{id}: {error}"));
+                        losses.push(
+                            StepLossCode::DecodeWarning
+                                .note(format!("TRIMMED_CURVE #{id}: {error}")),
+                        );
                         continue;
                     }
                 };
@@ -1040,7 +1056,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     ) {
                         Ok(segments) => segments,
                         Err(error) => {
-                            warnings.push(format!("COMPOSITE_CURVE #{id}: {error}"));
+                            losses.push(
+                                StepLossCode::DecodeWarning
+                                    .note(format!("COMPOSITE_CURVE #{id}: {error}")),
+                            );
                             continue;
                         }
                     },
@@ -1116,7 +1135,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }) {
                 Ok(procedural) => procedural,
                 Err(error) => {
-                    warnings.push(format!("curve construction #{id}: {error}"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("curve construction #{id}: {error}")),
+                    );
                     continue;
                 }
             };
@@ -1135,9 +1157,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
     for (id, _) in exchange.entities("CURVE_REPLICA") {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
-            ));
+            )));
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
@@ -1157,26 +1179,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if !carrier_index.curves.contains_key(&id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TRIMMED_CURVE #{id} has invalid or unresolved basis/trim selectors"
-            ));
+            )));
         }
     }
     for (id, record) in
         exchange.entities_any(&["COMPOSITE_CURVE", "BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"])
     {
         if !carrier_index.curves.contains_key(&id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} has invalid, cyclic, or unresolved segments",
                 record.simple_name().unwrap_or("COMPOSITE_CURVE")
-            ));
+            )));
         }
     }
     for (id, _) in exchange.entities("OFFSET_CURVE_3D") {
         if !carrier_index.curves.contains_key(&id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "OFFSET_CURVE_3D #{id} has invalid or unresolved basis parameters"
-            ));
+            )));
         }
     }
     for (id, _) in exchange
@@ -1202,9 +1224,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"
-            ));
+            )));
             entry.insert(curve_index);
         }
     }
@@ -1212,19 +1234,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
     {
         let Some(basis) = surface_curve_basis(record) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} has no decoded 3D curve",
                 record.simple_name().unwrap_or("SURFACE_CURVE")
-            ));
+            )));
             continue;
         };
         if carrier_index.curves.contains_key(&basis) {
             typed.insert(id);
         } else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} has no decoded 3D curve",
                 record.simple_name().unwrap_or("SURFACE_CURVE")
-            ));
+            )));
         }
     }
 
@@ -1272,20 +1294,22 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             _ => continue,
         };
         let Some(definition) = definition else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} has an unresolved directrix, vector, or axis",
                 entity_type(
                     record,
                     &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
                 )
                 .expect("matched swept surface")
-            ));
+            )));
             continue;
         };
         let definition = match definition {
             Ok(definition) => definition,
             Err(error) => {
-                warnings.push(format!("procedural surface #{id}: {error}"));
+                losses.push(
+                    StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")),
+                );
                 continue;
             }
         };
@@ -1304,7 +1328,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ) {
                 Ok(surface) => surface,
                 Err(error) => {
-                    warnings.push(format!("procedural surface #{id}: {error}"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("procedural surface #{id}: {error}")),
+                    );
                     continue;
                 }
             },
@@ -1390,7 +1417,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             | LeafSurfaceEntity::UniformSurface
             | LeafSurfaceEntity::QuasiUniformSurface
             | LeafSurfaceEntity::BezierSurface => {
-                nurbs_surface(id, record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
+                nurbs_surface(id, record, &points, &mut losses).map(SurfaceGeometry::Nurbs)
             }
         };
         if let Some(geometry) = geometry {
@@ -1401,7 +1428,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             typed.insert(id);
         } else {
-            warnings.push(format!("{surface_type} #{id} has invalid geometry"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{surface_type} #{id} has invalid geometry")),
+            );
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
@@ -1410,7 +1440,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut warnings) {
+        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Nurbs(nurbs),
@@ -1418,9 +1448,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             typed.insert(id);
         } else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
-            ));
+            )));
         }
     }
 
@@ -1508,9 +1538,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 record_angle_scale,
                 &source_curve_parameter_scales,
             ) else {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "RECTANGULAR_TRIMMED_SURFACE #{id} has no established support parameterization"
-                ));
+                )));
                 continue;
             };
             for (range, parameter_scale) in parameter_ranges.iter_mut().zip(parameter_scales) {
@@ -1563,7 +1593,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 }) {
                     Ok(surface) => surface,
                     Err(error) => {
-                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        losses.push(
+                            StepLossCode::DecodeWarning
+                                .note(format!("procedural surface #{id}: {error}")),
+                        );
                         continue;
                     }
                 },
@@ -1652,7 +1685,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 ) {
                     Ok(surface) => surface,
                     Err(error) => {
-                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        losses.push(
+                            StepLossCode::DecodeWarning
+                                .note(format!("procedural surface #{id}: {error}")),
+                        );
                         continue;
                     }
                 },
@@ -1696,7 +1732,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 )) {
                     Ok(surface) => surface,
                     Err(error) => {
-                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        losses.push(StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")));
                         continue;
                     }
                 },
@@ -1753,7 +1789,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 ) {
                     Ok(surface) => surface,
                     Err(error) => {
-                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        losses.push(
+                            StepLossCode::DecodeWarning
+                                .note(format!("procedural surface #{id}: {error}")),
+                        );
                         continue;
                     }
                 },
@@ -1771,9 +1810,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
     for (id, _) in exchange.entities("SURFACE_REPLICA") {
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
-            ));
+            )));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
@@ -1790,23 +1829,23 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
     for (id, _) in exchange.entities("RECTANGULAR_TRIMMED_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "RECTANGULAR_TRIMMED_SURFACE #{id} has invalid or unresolved basis/trim selectors"
-            ));
+            )));
         }
     }
     for (id, _) in exchange.entities("CURVE_BOUNDED_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "CURVE_BOUNDED_SURFACE #{id} has invalid or unresolved support/boundaries"
-            ));
+            )));
         }
     }
     for (id, _) in exchange.entities("OFFSET_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "OFFSET_SURFACE #{id} has invalid or unresolved support parameters"
-            ));
+            )));
         }
     }
 
@@ -1828,9 +1867,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded topology curve #{curve_step} as an unknown carrier"
-            ));
+            )));
             entry.insert(curve_index);
         }
     }
@@ -1852,9 +1891,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred surface #{id} as an unknown carrier"
-            ));
+            )));
             entry.insert(surface_index);
         }
     }
@@ -1881,9 +1920,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded face surface #{surface_step} from face #{face_id} as an unknown carrier"
-            ));
+            )));
             entry.insert(surface_index);
         }
     }
@@ -1930,21 +1969,24 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 _ => None,
             })
         else {
-            warnings.push(format!("PCURVE #{id} has no decoded surface or 2D curve"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("PCURVE #{id} has no decoded surface or 2D curve")),
+            );
             continue;
         };
         let Some(scales) = surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PCURVE #{id} has no established owning surface parameterization"
-            ));
+            )));
             continue;
         };
         let mut geometry = geometry.clone();
         if geometry.try_scale_coordinates(*scales).is_err() {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
-            ));
+            )));
             continue;
         }
         ir.model.pcurves.push(Pcurve {
@@ -1984,7 +2026,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .is_some_and(|id| decoded_pcurve_steps.contains(&id))
             });
         }) {
-            warnings.push(format!("procedural surface {}: {error}", surface.id));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("procedural surface {}: {error}", surface.id)),
+            );
         }
     }
 
@@ -1993,9 +2038,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|value| logical_value(value).ok().flatten())
         else {
             if carrier_index.surfaces.contains_key(&id) {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "DEGENERATE_TOROIDAL_SURFACE #{id} has invalid sheet selection"
-                ));
+                )));
             }
             continue;
         };
@@ -2012,7 +2057,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ) {
                 Ok(surface) => surface,
                 Err(error) => {
-                    warnings.push(format!("procedural surface #{id}: {error}"));
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("procedural surface #{id}: {error}")),
+                    );
                     continue;
                 }
             },
@@ -2048,7 +2096,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             units: unit_scales,
         },
         claims: typed,
-        losses: super::fold_warnings(losses, warnings),
+        losses,
         notes: Vec::new(),
     }
 }
@@ -2058,7 +2106,6 @@ fn decode_tessellated_curve_sets(
     unit_scales: &UnitScales,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-    warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
 ) {
     for (&id, record) in &exchange.records {
@@ -2068,30 +2115,30 @@ fn decode_tessellated_curve_sets(
         let Some(coordinates_id) =
             tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
-            ));
+            )));
             continue;
         };
         let Some(coordinates_record) = exchange.records.get(&coordinates_id) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
-            ));
+            )));
             continue;
         };
         let scale = unit_scales.length([coordinates_id]);
         let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
-            ));
+            )));
             continue;
         };
         let Some(strips) =
             tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid line strips"
-            ));
+            )));
             continue;
         };
         let source_name = representation_item_name(record)
@@ -2633,7 +2680,7 @@ struct TrimParameterContext<'a> {
     tolerance: f64,
     master_representation: TrimMasterRepresentation,
     record_id: u64,
-    warnings: &'a mut Vec<String>,
+    losses: &'a mut Vec<LossNote>,
 }
 
 fn trimmed_curve_attributes(parameters: &[Value]) -> Option<(u64, bool, TrimMasterRepresentation)> {
@@ -3663,10 +3710,10 @@ fn select_trim_parameter(
                 trim_parameter_value(value, context)
             } else {
                 if cartesian.is_some() {
-                    context.warnings.push(format!(
+                    context.losses.push(StepLossCode::DecodeWarning.note(format!(
                         "TRIMMED_CURVE #{} fell back to a Cartesian trim selector because master_representation is .PARAMETER.",
                         context.record_id
-                    ));
+                    )));
                 }
                 cartesian.and_then(|value| trim_cartesian_parameter(value, context))
             }
@@ -3676,10 +3723,10 @@ fn select_trim_parameter(
                 trim_cartesian_parameter(value, context)
             } else {
                 if parameter.is_some() {
-                    context.warnings.push(format!(
+                    context.losses.push(StepLossCode::DecodeWarning.note(format!(
                         "TRIMMED_CURVE #{} fell back to a parameter trim selector because master_representation is .CARTESIAN.",
                         context.record_id
-                    ));
+                    )));
                 }
                 parameter.and_then(|value| trim_parameter_value(value, context))
             }
@@ -4004,14 +4051,14 @@ fn periodic_value(
     value: Option<&Value>,
     field: &str,
     record_id: u64,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<bool> {
     match logical_value(value?).ok()? {
         Some(value) => Some(value),
         None => {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
-            ));
+            )));
             Some(false)
         }
     }
@@ -4146,7 +4193,7 @@ struct NurbsCurveDefinition {
 fn nurbs_curve_definition(
     id: u64,
     record: &RawRecord,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
     periodicity_field: &str,
 ) -> Option<NurbsCurveDefinition> {
     let (base, offset) = if record.partials.len() > 1 {
@@ -4171,7 +4218,7 @@ fn nurbs_curve_definition(
         base.parameters.get(offset + 3),
         periodicity_field,
         id,
-        warnings,
+        losses,
     )?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
     let knots = if let Some(knot_leaf) = record.partial("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -4264,9 +4311,9 @@ fn nurbs_curve(
     id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point3>,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<NurbsCurve> {
-    let definition = nurbs_curve_definition(id, record, warnings, "B_SPLINE_CURVE")?;
+    let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE")?;
     let control_points = definition
         .control_points
         .into_iter()
@@ -4286,9 +4333,9 @@ fn nurbs_pcurve(
     id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<PcurveGeometry> {
-    let definition = nurbs_curve_definition(id, record, warnings, "B_SPLINE_CURVE pcurve")?;
+    let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE pcurve")?;
     let control_points = definition
         .control_points
         .into_iter()
@@ -4315,7 +4362,7 @@ fn decode_pcurve_geometry(
     placements: &BTreeMap<u64, (Point2, Point2, Point2)>,
     transformations: &BTreeMap<u64, Transform2>,
     angle_scale: f64,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
     active: &mut BTreeSet<u64>,
     depth: usize,
 ) -> Option<(PcurveGeometry, BTreeSet<u64>)> {
@@ -4334,7 +4381,7 @@ fn decode_pcurve_geometry(
                     | "BEZIER_CURVE"
             )
         }) {
-            nurbs_pcurve(id, record, points, warnings)?
+            nurbs_pcurve(id, record, points, losses)?
         } else {
             let curve_type = entity_type(
                 record,
@@ -4441,7 +4488,7 @@ fn decode_pcurve_geometry(
                         placements,
                         transformations,
                         angle_scale,
-                        warnings,
+                        losses,
                         active,
                         depth + 1,
                     )?;
@@ -4464,7 +4511,7 @@ fn decode_pcurve_geometry(
                         placements,
                         transformations,
                         angle_scale,
-                        warnings,
+                        losses,
                         active,
                         depth + 1,
                     )?;
@@ -4511,7 +4558,7 @@ fn decode_pcurve_geometry(
                         placements,
                         transformations,
                         angle_scale,
-                        warnings,
+                        losses,
                         active,
                         depth + 1,
                     )?;
@@ -5080,7 +5127,7 @@ fn nurbs_surface(
     id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point3>,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<NurbsSurface> {
     let (base, offset) = if record.partials.len() > 1 {
         (record.partial("B_SPLINE_SURFACE")?, 0)
@@ -5129,13 +5176,13 @@ fn nurbs_surface(
         base.parameters.get(offset + 4),
         &format!("{surface_name} U direction"),
         id,
-        warnings,
+        losses,
     )?;
     let v_periodic = periodic_value(
         base.parameters.get(offset + 5),
         &format!("{surface_name} V direction"),
         id,
-        warnings,
+        losses,
     )?;
     let expected_u = usize::try_from(u_count)
         .ok()?

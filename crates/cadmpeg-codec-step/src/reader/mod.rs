@@ -77,16 +77,6 @@ pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
         })
 }
 
-/// Appends untyped stage warnings to a stage's typed losses.
-fn fold_warnings(mut losses: Vec<LossNote>, warnings: Vec<String>) -> Vec<LossNote> {
-    losses.extend(
-        warnings
-            .into_iter()
-            .map(|message| StepLossCode::DecodeWarning.note(message)),
-    );
-    losses
-}
-
 struct StageOutcome<T> {
     value: T,
     claims: HashSet<u64>,
@@ -415,19 +405,15 @@ fn decode_exchange_mode(
         &product.value.product_definition_ids_by_shape,
     );
     session.absorb(&mut drawing);
-    let mut post_decode_warnings = Vec::new();
+    let mut post_decode_losses = Vec::new();
     session.charge_stage("step_carrier_retention")?;
     retain_unowned_carriers(
         exchange,
         &mut session.ir,
         &mut session.typed_records,
-        &mut post_decode_warnings,
+        &mut post_decode_losses,
     );
-    session.body.losses.extend(
-        post_decode_warnings
-            .into_iter()
-            .map(|message| StepLossCode::DecodeWarning.note(message)),
-    );
+    session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
     let opaque_offsets = match mode {
@@ -692,7 +678,7 @@ fn retain_unowned_carriers(
     exchange: &Exchange,
     ir: &mut CadIr,
     typed_records: &mut HashSet<u64>,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) {
     let owned = ir
         .model
@@ -898,9 +884,9 @@ fn retain_unowned_carriers(
         .filter(|id| protected.contains(id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    warnings.push(format!(
+    losses.push(StepLossCode::DecodeWarning.note(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-    ));
+    )));
 }
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
