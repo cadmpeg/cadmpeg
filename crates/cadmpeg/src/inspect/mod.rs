@@ -69,10 +69,18 @@ fn native_input_parser(
         })
         .collect::<Vec<_>>();
     let parser = clap::builder::PossibleValuesParser::new(pairs.iter().map(|(name, _)| *name));
-    let by_name = pairs
-        .into_iter()
-        .collect::<std::collections::BTreeMap<_, _>>();
-    parser.map(move |name| by_name[name.as_str()])
+    parser.try_map(move |name| {
+        pairs
+            .iter()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|(_, native)| *native)
+            .ok_or_else(|| {
+                clap::Error::raw(
+                    clap::error::ErrorKind::InvalidValue,
+                    format!("`{name}` is not a native input format\n"),
+                )
+            })
+    })
 }
 
 impl clap::Args for InspectArgs {
