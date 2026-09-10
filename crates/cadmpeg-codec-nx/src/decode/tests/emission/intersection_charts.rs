@@ -33,9 +33,9 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .collect::<Vec<_>>();
     assert_eq!(incident_coedges.len(), 2);
     incident_coedges[0].id =
-        cadmpeg_ir::ids::CoedgeId::mint("nx:test:fin#7").expect("identity grammar");
+        cadmpeg_ir::ids::CoedgeId::mint("nx:s0:fin#7").expect("identity grammar");
     incident_coedges[1].id =
-        cadmpeg_ir::ids::CoedgeId::mint("nx:test:fin#22").expect("identity grammar");
+        cadmpeg_ir::ids::CoedgeId::mint("nx:s0:fin#22").expect("identity grammar");
     let mut stream = partnered_trimmed_topology_partition_stream();
     let edge = stream
         .windows(2)
@@ -56,7 +56,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         &mut ir,
         &graph,
         &edges,
-        "nx:test",
+        &crate::decode::ids::IdScope::stream(0),
         &stream,
         &mut annotations,
     );
@@ -121,7 +121,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         &mut off_support_ir,
         &graph,
         &edges,
-        "nx:test",
+        &crate::decode::ids::IdScope::stream(0),
         &stream,
         &mut annotations,
     );
@@ -151,7 +151,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         &mut ir,
         &graph,
         &edges,
-        "nx:test",
+        &crate::decode::ids::IdScope::stream(0),
         &source_stream,
         &mut annotations,
     );

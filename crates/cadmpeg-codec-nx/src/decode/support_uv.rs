@@ -1926,7 +1926,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
 /// One stream's ownership and provenance context for deferred intersection-chart
 /// attachment.
 pub(crate) struct IntersectionCompletionSource<'a> {
-    pub(crate) prefix: String,
+    pub(crate) scope: crate::decode::ids::IdScope,
     pub(crate) graph: &'a Graph,
     pub(crate) source_stream: StreamHandle,
     pub(crate) coedge_start: usize,
@@ -1944,7 +1944,7 @@ fn stream_owns_id(id: &str, prefix: &str) -> bool {
 pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     ir: &mut CadIr,
     graph: &Graph,
-    prefix: &str,
+    scope: &crate::decode::ids::IdScope,
     coedge_start: usize,
     procedural_start: usize,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
@@ -1953,7 +1953,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source = IntersectionCompletionSource {
-        prefix: prefix.to_owned(),
+        scope: scope.clone(),
         graph,
         source_stream,
         coedge_start,
@@ -2029,7 +2029,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 return None;
             }
             let source_index = sources.iter().position(|source| {
-                index >= source.coedge_start && stream_owns_id(coedge.id.as_str(), &source.prefix)
+                index >= source.coedge_start
+                    && stream_owns_id(coedge.id.as_str(), source.scope.as_str())
             })?;
             let surface = loop_faces
                 .get(&coedge.owner_loop)
@@ -2070,7 +2071,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         if multiple_sources
             && !sources.iter().any(|source| {
                 index >= source.procedural_start
-                    && stream_owns_id(procedural.id.as_str(), &source.prefix)
+                    && stream_owns_id(procedural.id.as_str(), source.scope.as_str())
             })
         {
             continue;
@@ -2243,11 +2244,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
-        let pcurve_id = PcurveId::mint(format!(
-            "{}:intersection-pcurve-completed#{fin_xmt}",
-            source.prefix
-        ))
-        .expect("identity grammar");
+        let pcurve_id: PcurveId = source.scope.id("intersection-pcurve-completed", fin_xmt);
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
