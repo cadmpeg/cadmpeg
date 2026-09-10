@@ -51,6 +51,27 @@ pub(crate) enum VersionFlag {
     V5_3 = 11,
 }
 
+// `ALL` is the whole table, in table order: walking the successor chain from the
+// first entry visits every entry exactly once, so a variant missing from `ALL`
+// -- which `exact` would then answer `None` for, and `effective` would clamp --
+// runs the walk off the end of the array and fails to compile.
+const _: () = {
+    let mut index = 0;
+    let mut flag = VersionFlag::ALL[0];
+    loop {
+        assert!(VersionFlag::ALL[index].value() == VersionFlag::MIN + index as i64);
+        assert!(VersionFlag::ALL[index].value() == flag.value());
+        match flag.next() {
+            Some(following) => {
+                index += 1;
+                flag = following;
+            }
+            None => break,
+        }
+    }
+    assert!(index + 1 == VersionFlag::ALL.len());
+};
+
 impl VersionFlag {
     pub(crate) const ALL: [Self; 11] = [
         Self::V1_0,
@@ -66,14 +87,38 @@ impl VersionFlag {
         Self::V5_3,
     ];
     const MIN: i64 = Self::V1_0 as i64;
-    const MAX: i64 = Self::V5_3 as i64;
+
+    /// The entry after this one in the version table.
+    ///
+    /// Exhaustive over the variants, so a new version must state its place and
+    /// the const block above then proves `ALL` carries it.
+    const fn next(self) -> Option<Self> {
+        match self {
+            Self::V1_0 => Some(Self::AnsiY1426M1981),
+            Self::AnsiY1426M1981 => Some(Self::V2_0),
+            Self::V2_0 => Some(Self::V3_0),
+            Self::V3_0 => Some(Self::AsmeAnsiY1426M1987),
+            Self::AsmeAnsiY1426M1987 => Some(Self::V4_0),
+            Self::V4_0 => Some(Self::AsmeY1426M1989),
+            Self::AsmeY1426M1989 => Some(Self::V5_0),
+            Self::V5_0 => Some(Self::V5_1),
+            Self::V5_1 => Some(Self::V5_2),
+            Self::V5_2 => Some(Self::V5_3),
+            Self::V5_3 => None,
+        }
+    }
 
     /// Returns the exact table entry, without applying postprocessor recovery.
     pub(crate) const fn exact(value: i64) -> Option<Self> {
-        if value < Self::MIN || value > Self::MAX {
-            return None;
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let flag = Self::ALL[index];
+            if flag.value() == value {
+                return Some(flag);
+            }
+            index += 1;
         }
-        Some(Self::ALL[(value - Self::MIN) as usize])
+        None
     }
 
     /// Applies the IGES 5.3 postprocessor clamp to a declared value.

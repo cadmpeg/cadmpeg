@@ -10,10 +10,7 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
@@ -120,18 +117,17 @@ fn topology_vertex(
     candidate: &mut ModelDraft,
     vertex_ids: &mut BTreeMap<(u32, usize), VertexId>,
     vertex_lists: &BTreeMap<u32, Vec<Point3>>,
-    stem: &str,
+    stem: &crate::ids::Stem,
     list: u32,
     index: usize,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> VertexId {
     vertex_ids
         .entry((list, index))
         .or_insert_with(|| {
-            let point_id = PointId::mint(format!("iges:model:point#{stem}:D{list}:{}", index + 1))
-                .expect("identity grammar");
-            let vertex_id =
-                VertexId::mint(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1))
-                    .expect("identity grammar");
+            let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
+            sequences.record_point(&point_id, stem);
+            let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
             candidate.model_mut().points.push(Point {
                 source_object: None,
                 id: point_id.clone(),
@@ -181,13 +177,13 @@ fn project_pcurve_uses(
     uses: &[(bool, u32)],
     resolved: Vec<(PcurveGeometry, [f64; 2])>,
     fit_tolerance: Option<f64>,
-    id_stem: &str,
+    id_stem: &crate::ids::Stem,
 ) -> Result<Vec<PcurveUse>, &'static str> {
     uses.iter()
         .zip(resolved)
         .enumerate()
         .map(|(index, ((isoparametric, _), (geometry, range)))| {
-            let id = PcurveId::mint(format!("{id_stem}:{index}")).expect("identity grammar");
+            let id = crate::ids::pcurve(&id_stem.slot(index));
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
@@ -266,6 +262,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> ProjectionOutcome {
     let records = parameters
         .iter()
@@ -772,10 +769,10 @@ pub(super) fn project(
         // commits below, or the commit's `&mut ir` will not compile.
         let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
-        let stem = format!("D{}", entry.sequence);
-        let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
-        let region_id =
-            RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let body_id = crate::ids::body(&stem);
+        sequences.record_body(&body_id, entry.sequence, &stem);
+        let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
@@ -787,17 +784,15 @@ pub(super) fn project(
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
                 stem.clone()
             } else {
-                format!("{stem}:D{shell_sequence}")
+                stem.child(shell_sequence)
             };
-            let shell_id =
-                ShellId::mint(format!("iges:model:shell#{shell_stem}")).expect("identity grammar");
+            let shell_id = crate::ids::shell(&shell_stem);
             let mut shell_faces = Vec::new();
             for (face_sequence, native_face_sense) in shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = faces[&face_sequence].clone();
                 let surface_id =
-                    SurfaceId::mint(format!("iges:model:surface#D{}", face_definition.surface))
-                        .expect("identity grammar");
+                    crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
@@ -806,13 +801,9 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let face_id =
-                    FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
-                        .expect("identity grammar");
-                let loop_id_for = |sequence| {
-                    LoopId::mint(format!("iges:model:loop#{shell_stem}:D{sequence}"))
-                        .expect("identity grammar")
-                };
+                let face_id = crate::ids::face(&shell_stem.child(face_sequence));
+                sequences.record_face(&face_id, face_sequence);
+                let loop_id_for = |sequence| crate::ids::r#loop(&shell_stem.child(sequence));
                 for loop_sequence in face_definition.loops.iter() {
                     let uses = loops[&loop_sequence].clone();
                     let loop_id = loop_id_for(loop_sequence);
@@ -826,10 +817,7 @@ pub(super) fn project(
                     let coedge_ids = edge_use_indices
                         .iter()
                         .map(|index| {
-                            CoedgeId::mint(format!(
-                                "iges:model:coedge#{shell_stem}:D{loop_sequence}:{index}"
-                            ))
-                            .expect("identity grammar")
+                            crate::ids::coedge(&shell_stem.child(loop_sequence).slot(*index))
                         })
                         .collect::<Vec<_>>();
                     let coedge_by_use = edge_use_indices
@@ -861,6 +849,7 @@ pub(super) fn project(
                                 &stem,
                                 *vertex_list,
                                 *vertex_index,
+                                sequences,
                             );
                             let after = if coedge_ids.is_empty() {
                                 None
@@ -897,9 +886,7 @@ pub(super) fn project(
                                 pcurves,
                                 resolved,
                                 Some(tolerance),
-                                &format!(
-                                    "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
-                                ),
+                                &shell_stem.child(loop_sequence).slot(use_index),
                             ) {
                                 Ok(projected) => projected,
                                 Err(error) => {
@@ -923,6 +910,7 @@ pub(super) fn project(
                                 &stem,
                                 list,
                                 index,
+                                sequences,
                             );
                         }
                         let edge_key = (*edge_list, *edge_index);
@@ -959,11 +947,9 @@ pub(super) fn project(
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             id.clone()
                         } else {
-                            let curve_id = CurveId::mint(format!(
-                                "iges:model:curve#D{}",
-                                edge_definition.curve
-                            ))
-                            .expect("identity grammar");
+                            let curve_id = crate::ids::curve(&crate::ids::Stem::directory(
+                                edge_definition.curve,
+                            ));
                             let curve_edges = edges_by_curve.get_or_insert_with(|| {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
@@ -1014,12 +1000,7 @@ pub(super) fn project(
                                     break;
                                 }
                             };
-                            let id = EdgeId::mint(format!(
-                                "iges:model:edge#{stem}:D{}:{}",
-                                edge_key.0,
-                                edge_key.1 + 1
-                            ))
-                            .expect("identity grammar");
+                            let id = crate::ids::edge(&stem.child(edge_key.0).slot(edge_key.1 + 1));
                             let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 source_edge.param_range(),
@@ -1050,7 +1031,7 @@ pub(super) fn project(
                             pcurves,
                             resolved,
                             Some(tolerance),
-                            &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
+                            &shell_stem.child(loop_sequence).slot(use_index),
                         ) {
                             Ok(projected) => projected,
                             Err(error) => {

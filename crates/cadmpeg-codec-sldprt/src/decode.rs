@@ -3018,7 +3018,10 @@ fn source_meta(
         attributes.insert("sldprt_active_partition_unresolved".into(), "true".into());
     }
     if let Some(header) = header {
-        attributes.insert("parasolid_schema".to_string(), header.schema.clone());
+        attributes.insert(
+            "parasolid_schema".to_string(),
+            header.schema.value().to_owned(),
+        );
         attributes.insert(
             "parasolid_description".to_string(),
             header.description.clone(),
@@ -3259,7 +3262,10 @@ fn build_metadata_ir(
             ),
         };
         attributes.insert("active_parasolid_block".to_string(), name.clone());
-        attributes.insert("parasolid_schema".to_string(), site.header.schema.clone());
+        attributes.insert(
+            "parasolid_schema".to_string(),
+            site.header.schema.value().to_owned(),
+        );
         crate::annotations::note(
             &mut annotations,
             id.clone(),
