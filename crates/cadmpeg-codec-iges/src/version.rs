@@ -51,6 +51,14 @@ pub(crate) enum VersionFlag {
     V5_3 = 11,
 }
 
+const _: () = {
+    let mut index = 0;
+    while index < VersionFlag::ALL.len() {
+        assert!(VersionFlag::ALL[index].value() == VersionFlag::MIN + index as i64);
+        index += 1;
+    }
+};
+
 impl VersionFlag {
     pub(crate) const ALL: [Self; 11] = [
         Self::V1_0,
@@ -66,14 +74,18 @@ impl VersionFlag {
         Self::V5_3,
     ];
     const MIN: i64 = Self::V1_0 as i64;
-    const MAX: i64 = Self::V5_3 as i64;
 
     /// Returns the exact table entry, without applying postprocessor recovery.
     pub(crate) const fn exact(value: i64) -> Option<Self> {
-        if value < Self::MIN || value > Self::MAX {
-            return None;
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let flag = Self::ALL[index];
+            if flag.value() == value {
+                return Some(flag);
+            }
+            index += 1;
         }
-        Some(Self::ALL[(value - Self::MIN) as usize])
+        None
     }
 
     /// Applies the IGES 5.3 postprocessor clamp to a declared value.
