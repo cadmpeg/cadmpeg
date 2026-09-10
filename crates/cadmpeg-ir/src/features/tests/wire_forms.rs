@@ -419,9 +419,10 @@ fn an_unresolved_hole_wire_keeps_its_form_and_carries_no_dimensions() {
 
     let mut with_dimension = unresolved.clone();
     with_dimension["countersink_angle"] = serde_json::json!(0.5);
-    let kind: HoleKind = serde_json::from_value(with_dimension).unwrap();
-    assert_eq!(kind, HoleKind::Unresolved(Some(HoleForm::Counterbore)));
-    assert_eq!(serde_json::to_value(kind).unwrap(), unresolved);
+    let error = serde_json::from_value::<HoleKind>(with_dimension)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("countersink_angle"), "{error}");
 
     let formless = serde_json::json!({"kind": "unresolved"});
     let kind: HoleKind = serde_json::from_value(formless.clone()).unwrap();
@@ -940,6 +941,42 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
         );
         assert_eq!(serde_json::to_value(expected).unwrap(), wire);
     }
+}
+
+#[test]
+fn an_unknown_hole_wire_key_is_rejected_by_name() {
+    use crate::features::{HoleKind, HoleShape, HoleSpecification};
+
+    let error = serde_json::from_value::<HoleKind>(serde_json::json!({
+        "kind": "partial_counterbore",
+        "diameter": 10.0,
+        "counter_bore_depth": 4.0
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("counter_bore_depth"), "{error}");
+
+    let error = serde_json::from_value::<HoleShape>(serde_json::json!({
+        "kind": {"kind": "partial_counterbore", "diameter": 10.0},
+        "diameter": 2.0,
+        "counter_bore_depth": 4.0
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("counter_bore_depth"), "{error}");
+
+    let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+        "standard": "iso",
+        "threaded": false,
+        "modeled": false,
+        "cosmetic": false,
+        "hand": "right",
+        "depth": {"kind": "hole_depth"},
+        "clearence": 0.5
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("clearence"), "{error}");
 }
 
 #[test]
