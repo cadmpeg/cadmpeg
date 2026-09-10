@@ -731,16 +731,9 @@ pub(crate) fn project_compact_edge_selections(
                     None => EdgeSelection::Native(native),
                 }
             };
-            let sole_unresolved_fillet_group = match &definition {
-                FeatureDefinition::Fillet { groups } => match groups.as_slice() {
-                    [group] if group.radius.is_unresolved() => {
-                        Some((group.edges.clone(), group.tangency_weight))
-                    }
-                    _ => None,
-                },
-                _ => None,
-            };
-            if let Some((existing_edges, tangency_weight)) = sole_unresolved_fillet_group {
+            if let Some((existing_edges, tangency_weight)) =
+                sole_unresolved_fillet_group(&definition)
+            {
                 if let Some(radius_groups) =
                     variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
                 {
@@ -1631,6 +1624,22 @@ pub(crate) fn project_compact_surface_selections(
     }
 
     Ok(())
+}
+
+/// The edges and tangency weight of a fillet whose one group has no radius.
+fn sole_unresolved_fillet_group(
+    definition: &FeatureDefinition,
+) -> Option<(EdgeSelection, Option<cadmpeg_ir::scalar::FiniteReal>)> {
+    let FeatureDefinition::Fillet { groups } = definition else {
+        return None;
+    };
+    let [group] = groups.as_slice() else {
+        return None;
+    };
+    group
+        .radius
+        .is_unresolved()
+        .then(|| (group.edges.clone(), group.tangency_weight))
 }
 
 fn full_round_fillet_selection_triple<'a>(
