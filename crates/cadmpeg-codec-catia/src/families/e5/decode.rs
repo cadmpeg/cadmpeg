@@ -112,7 +112,7 @@ pub(crate) fn try_decode_e5(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    preserve_raw_payload(
+    let payload_index = preserve_raw_payload(
         &mut unknowns,
         &mut annotations,
         scan,
@@ -258,7 +258,7 @@ pub(crate) fn try_decode_e5(
         )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
+    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
     Some(FamilyOutput {
         ir,

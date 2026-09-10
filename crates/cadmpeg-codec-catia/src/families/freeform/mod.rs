@@ -483,7 +483,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut unknowns = Vec::new();
     let payload_id =
         UnknownId::mint("catia:payload:unknown#freeform".to_string()).expect("identity grammar");
-    preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
+    let payload_index =
+        preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -643,7 +644,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
+    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
     let mut coverage = cadmpeg_ir::Coverage::default();
     coverage.record(

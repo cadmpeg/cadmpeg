@@ -1801,7 +1801,7 @@ fn try_decode_standard_population(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    preserve_raw_payload(
+    let payload_index = preserve_raw_payload(
         &mut unknowns,
         &mut annotations,
         scan,
@@ -2178,7 +2178,7 @@ fn try_decode_standard_population(
         &owner_binding_budget,
     )
     .ok()?;
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
+    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
 
     let mut report = build_geometry_report(
