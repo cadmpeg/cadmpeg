@@ -397,10 +397,31 @@ pub(crate) fn saved_section_arc_carrier(
     Some(([center_u, center_v], radius))
 }
 
-pub(crate) fn saved_section_arc_geometry(
+/// The arc facts recovered from a saved-section row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SavedSectionArc {
+    pub(crate) center: cadmpeg_ir::math::Point2,
+    pub(crate) radius: Length,
+    pub(crate) start_angle: Angle,
+    pub(crate) end_angle: Angle,
+}
+
+impl SavedSectionArc {
+    pub(crate) fn into_geometry(self) -> Option<SketchGeometry> {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: self.center,
+            radius: self.radius,
+            start_angle: self.start_angle,
+            end_angle: self.end_angle,
+        })
+        .ok()
+    }
+}
+
+pub(crate) fn saved_section_arc(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
-) -> Option<SketchGeometry> {
+) -> Option<SavedSectionArc> {
     let arc = saved_section_arc_record(definition, segment)?;
     let ([center_u, center_v], radius) = saved_section_arc_carrier(definition, segment)?;
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
@@ -422,13 +443,12 @@ pub(crate) fn saved_section_arc_geometry(
     while end <= start {
         end += std::f64::consts::TAU;
     }
-    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+    Some(SavedSectionArc {
         center: cadmpeg_ir::math::Point2::new(center_u, center_v),
         radius: Length::new(radius)?,
         start_angle: Angle::new(start)?,
         end_angle: Angle::new(end)?,
     })
-    .ok()
 }
 
 pub(crate) fn saved_section_segment_point_coordinates(
@@ -445,11 +465,7 @@ pub(crate) fn saved_section_segment_point_coordinates(
             ])
         }
         crate::feature::FeatureSegmentKind::Arc(_) => {
-            let SketchGeometryDefinition::Arc { center, .. } =
-                (saved_section_arc_geometry(definition, segment)?).into_definition()
-            else {
-                unreachable!();
-            };
+            let center = saved_section_arc(definition, segment)?.center;
             let arc = saved_section_arc_record(definition, segment)?;
             let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
                 arc.endpoints
@@ -911,7 +927,7 @@ pub(crate) fn resolved_section_segment_geometry_with_missing_line(
 ) -> Option<SketchGeometry> {
     let stored = section_segment_geometry(points, segment);
     let saved = saved_section_line_geometry(definition, segment)
-        .or_else(|| saved_section_arc_geometry(definition, segment))
+        .or_else(|| saved_section_arc(definition, segment).and_then(SavedSectionArc::into_geometry))
         .or_else(|| {
             missing_line
                 .filter(|(offset, _)| *offset == segment.offset)
