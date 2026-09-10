@@ -3,6 +3,7 @@
 //!
 //! Stops at a validated native representation; no topology IDs or IR carriers.
 
+use crate::loss::Diagnostics;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
 
@@ -415,7 +416,7 @@ pub(crate) struct ValidatedRawBrep {
     /// Validated Brep payload.
     raw: RawBrep,
     /// Warnings for repaired positional fields or discarded optional data.
-    warnings: Vec<String>,
+    warnings: Diagnostics,
 }
 
 /// Body kind selected from one validated serialized Brep.
@@ -430,7 +431,7 @@ pub(crate) enum BrepBodyKind {
 impl ValidatedRawBrep {
     /// Validates and normalizes one structurally decoded Brep.
     pub(crate) fn try_new(mut raw: RawBrep) -> Result<Self, GeometryError> {
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         for (label, mismatch) in [
             (
                 "vertex",
@@ -476,9 +477,12 @@ impl ValidatedRawBrep {
             ),
         ] {
             if mismatch {
-                warnings.push(format!(
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                    format!(
                     "redundant Brep {label} positional index mismatch; serialized array order used"
-                ));
+                ),
+                );
             }
         }
         for vertex in &raw.vertices {
@@ -643,7 +647,10 @@ impl ValidatedRawBrep {
         {
             raw.face_sides.clear();
             raw.regions.clear();
-            warnings.push("invalid optional Brep region topology discarded".to_string());
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                "invalid optional Brep region topology discarded".to_string(),
+            );
         }
         Ok(Self { raw, warnings })
     }
@@ -654,7 +661,7 @@ impl ValidatedRawBrep {
     }
 
     /// Returns warnings produced while validation normalized optional data.
-    pub(crate) fn warnings(&self) -> &[String] {
+    pub(crate) fn warnings(&self) -> &Diagnostics {
         &self.warnings
     }
 
@@ -748,7 +755,7 @@ pub(crate) enum BrepParse {
         /// The semantic validation failure.
         error: GeometryError,
         /// Recoverable optional-channel warnings found before validation.
-        warnings: Vec<String>,
+        warnings: Diagnostics,
     },
 }
 
@@ -773,7 +780,7 @@ pub(crate) fn parse(
         ));
     }
     let minor = version & 0x0f;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let mut losses = Vec::new();
     let c2 = read_children(
         bytes,
@@ -827,9 +834,10 @@ pub(crate) fn parse(
     let is_solid = if minor >= 2 {
         let flag = RawSolidFlag::parse(reader.i32()?);
         if let RawSolidFlag::OutOfRange(value) = flag {
-            warnings.push(format!(
-                "invalid Brep is_solid value {value}; retained for native fidelity"
-            ));
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::EnumerationValueDegraded,
+                format!("invalid Brep is_solid value {value}; retained for native fidelity"),
+            );
         }
         flag
     } else {
@@ -856,9 +864,10 @@ pub(crate) fn parse(
                     face_sides = sides;
                     regions = topology_regions;
                 }
-                Err(error) => warnings.push(format!(
-                    "invalid optional Brep region topology discarded: {error}"
-                )),
+                Err(error) => warnings.push_coded(
+                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                    format!("invalid optional Brep region topology discarded: {error}"),
+                ),
             }
         }
     }
@@ -887,7 +896,7 @@ pub(crate) fn parse(
     };
     match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
-            validated.warnings.splice(0..0, warnings);
+            validated.warnings.prepend(warnings);
             Ok(BrepParse::Valid(validated))
         }
         Err(error) => Ok(BrepParse::SemanticInvalid {
@@ -999,7 +1008,7 @@ fn parse_legacy_major2(
     let mut loops = Vec::with_capacity(loop_count);
     let mut trims = Vec::with_capacity(trim_count);
     let mut faces = Vec::with_capacity(face_count);
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     for face_position in 0..face_count {
         let face_index = reader.i32()?;
         let _obsolete_material = reader.i32()?;
@@ -1357,7 +1366,7 @@ fn parse_legacy_major2(
     };
     match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
-            validated.warnings.splice(0..0, warnings);
+            validated.warnings.prepend(warnings);
             Ok(BrepParse::Valid(validated))
         }
         Err(error) => Ok(BrepParse::SemanticInvalid {
@@ -1508,7 +1517,7 @@ fn read_legacy_mesh_sides(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     face_count: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let start = reader.position();
     let mut slots = Vec::with_capacity(face_count);
@@ -1517,7 +1526,10 @@ fn read_legacy_mesh_sides(
             Ok(value) => value != 0,
             Err(error) => {
                 reader.skip_remaining()?;
-                warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                    format!("legacy Brep mesh cache degraded: {error}"),
+                );
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
             }
         };
@@ -1527,13 +1539,19 @@ fn read_legacy_mesh_sides(
                 Ok(object) => object,
                 Err(error) => {
                     reader.skip_remaining()?;
-                    warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
+                    warnings.push_coded(
+                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                        format!("legacy Brep mesh cache degraded: {error}"),
+                    );
                     return Ok((empty_mesh_slots(face_count), start..reader.position()));
                 }
             };
             if let Err(error) = reader.skip(object.next_offset() - object_start) {
                 reader.skip_remaining()?;
-                warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                    format!("legacy Brep mesh cache degraded: {error}"),
+                );
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
             }
             match parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings) {
@@ -1546,11 +1564,17 @@ fn read_legacy_mesh_sides(
                     userdata,
                 }),
                 Ok(_) => {
-                    warnings.push("legacy Brep mesh cache slot has wrong class".to_string());
+                    warnings.push_coded(
+                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                        "legacy Brep mesh cache slot has wrong class".to_string(),
+                    );
                     None
                 }
                 Err(error) => {
-                    warnings.push(format!("legacy Brep mesh cache slot degraded: {error}"));
+                    warnings.push_coded(
+                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                        format!("legacy Brep mesh cache slot degraded: {error}"),
+                    );
                     None
                 }
             }
@@ -1583,7 +1607,7 @@ fn read_children(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_type: RawBrepBaseType,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawBrepChildren, GeometryError> {
     let start = reader.position();
     let chunk = anonymous_chunk(bytes, reader, archive)?;
@@ -1645,7 +1669,7 @@ fn read_vertices(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(Vec<RawBrepVertex>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -1700,7 +1724,7 @@ fn read_edges(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
@@ -1751,7 +1775,7 @@ fn read_trims(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
@@ -1826,7 +1850,7 @@ fn read_loops(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(Vec<RawBrepLoop>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -1856,7 +1880,7 @@ fn read_faces(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(Vec<RawBrepFace>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -1926,7 +1950,7 @@ fn read_mesh_sides(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     face_count: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -1954,11 +1978,17 @@ fn read_mesh_sides(
                         })
                     }
                     Ok(_) => {
-                        warnings.push("Brep mesh cache slot has wrong class".to_string());
+                        warnings.push_coded(
+                            crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                            "Brep mesh cache slot has wrong class".to_string(),
+                        );
                         None
                     }
                     Err(error) => {
-                        warnings.push(format!("Brep mesh cache slot degraded: {error}"));
+                        warnings.push_coded(
+                            crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                            format!("Brep mesh cache slot degraded: {error}"),
+                        );
                         None
                     }
                 }
@@ -1974,7 +2004,10 @@ fn read_mesh_sides(
         Ok(result) => Ok(result),
         Err(error) => {
             reader.skip(chunk.next_offset() - reader.position())?;
-            warnings.push(format!("Brep mesh cache degraded: {error}"));
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                format!("Brep mesh cache degraded: {error}"),
+            );
             Ok((
                 alloc_filled(face_count, None, "Rhino Brep degraded mesh slots").map_err(
                     |allocation| {
@@ -1995,7 +2028,7 @@ fn read_regions(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     face_count: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RegionRead, GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut outer = body_reader(bytes, &chunk)?;
@@ -2051,14 +2084,18 @@ fn read_regions(
                 verify_checksum_ranges(bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
-                warnings.push("Brep region wrapper checksum mismatch".to_string());
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    "Brep region wrapper checksum mismatch".to_string(),
+                );
             }
             Ok((sides, regions, Some(chunk.range()), inline_region_loaded))
         }
         Err(error) => {
-            warnings.push(format!(
-                "invalid optional Brep region topology discarded: {error}"
-            ));
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                format!("invalid optional Brep region topology discarded: {error}"),
+            );
             Ok((Vec::new(), Vec::new(), Some(chunk.range()), false))
         }
     }
@@ -2069,7 +2106,7 @@ fn read_region_topology_userdata(
     extra: &ClassUserdata,
     archive: ArchiveVersion,
     face_count: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RegionRead, GeometryError> {
     let mut parent = BoundedReader::new(bytes, extra.payload_range.start, extra.payload_range.end)?;
     let topology_chunk = anonymous_chunk(bytes, &mut parent, archive)?;
@@ -2115,7 +2152,7 @@ fn read_region_sides<'a>(
     bytes: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Vec<RawBrepFaceSide>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
@@ -2141,7 +2178,7 @@ fn read_region_records<'a>(
     bytes: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Vec<RawBrepRegion>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
@@ -2166,7 +2203,8 @@ fn read_region_records<'a>(
     }
     finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
     if index_mismatch {
-        warnings.push(
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
             "redundant Brep region positional index mismatch; serialized array order used"
                 .to_string(),
         );
@@ -2210,7 +2248,7 @@ fn region_element(
         ))
     } else {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        let class = parse_class_wrapper(bytes, chunk.range(), archive, &mut Vec::new())?;
+        let class = parse_class_wrapper(bytes, chunk.range(), archive, &mut Diagnostics::new())?;
         if class.class_uuid != expected_class {
             return Err(error(start, "unexpected Brep region element class"));
         }
@@ -2565,7 +2603,7 @@ fn finish_anonymous(
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
     child: BoundedReader<'_>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     if child.remaining() != 0 {
         warnings.push(format!(
@@ -2577,10 +2615,13 @@ fn finish_anonymous(
         verify_checksum(bytes, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "Brep anonymous CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "Brep anonymous CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
@@ -2592,7 +2633,7 @@ fn finish_anonymous_children(
     chunk: &Chunk,
     child: BoundedReader<'_>,
     children: &[Range<usize>],
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     finish_anonymous_ranges(bytes, parent, chunk, child, &direct, warnings)
@@ -2604,7 +2645,7 @@ fn finish_anonymous_ranges(
     chunk: &Chunk,
     child: BoundedReader<'_>,
     direct_ranges: &[Range<usize>],
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     if child.remaining() != 0 {
         warnings.push(format!(
@@ -2616,10 +2657,13 @@ fn finish_anonymous_ranges(
         verify_checksum_ranges(bytes, chunk, direct_ranges)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "Brep anonymous CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "Brep anonymous CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
@@ -2743,7 +2787,7 @@ mod tests {
     fn v5_region_topology_userdata_decodes_the_v5_array_grammar() {
         let payload = region_topology_userdata_payload();
         let descriptor = region_topology_userdata_descriptor(0..payload.len());
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (sides, regions, source_range, loaded) = read_region_topology_userdata(
             &payload,
             &descriptor,
@@ -2773,7 +2817,7 @@ mod tests {
     fn v6_region_topology_arrays_unwrap_polymorphic_records() {
         let payload = region_topology_v6_payload();
         let descriptor = region_topology_userdata_descriptor(0..payload.len());
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (sides, regions, _, loaded) = read_region_topology_userdata(
             &payload,
             &descriptor,
@@ -3221,7 +3265,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            Vec::new(),
+            Diagnostics::new(),
         );
         assert_eq!(
             legacy_decoded_curve_endpoints(&circle, 0).expect("circle endpoints"),
@@ -3232,7 +3276,7 @@ mod tests {
             CurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap(),
             ),
-            Vec::new(),
+            Diagnostics::new(),
         );
         assert_eq!(
             legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
@@ -3253,8 +3297,13 @@ mod tests {
     fn raw_arrays_consume_complete_anonymous_wrappers() {
         let bytes = packed_array(0, &[]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let (_, range) = read_vertices(&bytes, &mut reader, ArchiveVersion::V5, &mut Vec::new())
-            .expect("vertex");
+        let (_, range) = read_vertices(
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+        )
+        .expect("vertex");
         assert_eq!(range, 0..bytes.len());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3265,7 +3314,7 @@ mod tests {
         let crc = bytes.len() - 1;
         bytes[crc] ^= 1;
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         read_vertices(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
             .expect("recoverable vertex wrapper");
         assert_eq!(reader.remaining(), 0);
@@ -3282,8 +3331,13 @@ mod tests {
             }
             let bytes = anonymous(&body);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let (faces, _) = read_faces(&bytes, &mut reader, ArchiveVersion::V5, &mut Vec::new())
-                .expect("faces");
+            let (faces, _) = read_faces(
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                &mut Diagnostics::new(),
+            )
+            .expect("faces");
             assert!(faces.is_empty());
         }
     }
@@ -3300,7 +3354,7 @@ mod tests {
                 &mut reader,
                 ArchiveVersion::V5,
                 Some(writer),
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 &mut Vec::new(),
             )
             .expect("trims");
@@ -3348,7 +3402,7 @@ mod tests {
     fn mesh_side_wrapper_degrades_truncated_present_slot_without_losing_parent() {
         let bytes = anonymous(&[1]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("degraded cache");
         assert!(slots[0].is_none());
@@ -3360,7 +3414,7 @@ mod tests {
     fn legacy_mesh_side_degrades_truncated_present_slot() {
         let bytes = [1_u8];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (slots, range) =
             read_legacy_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
                 .expect("legacy cache degradation");
@@ -3375,7 +3429,7 @@ mod tests {
     fn mesh_side_wrapper_starts_with_face_zero_presence() {
         let bytes = anonymous(&[0]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("empty cache slot");
         assert_eq!(slots.len(), 1);
@@ -3390,7 +3444,7 @@ mod tests {
         let wrapper = mesh_class_wrapper_with_userdata();
         let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("mesh cache with userdata");
         assert_eq!(slots.len(), 1);
@@ -3421,7 +3475,7 @@ mod tests {
             &mut reader,
             ArchiveVersion::V5,
             RawBrepBaseType::Curve,
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .expect("children");
         assert!(array.slots[0].is_none());
@@ -3441,7 +3495,7 @@ mod tests {
         .concat();
         let bytes = region_array(&entries, 2);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let regions = read_region_records(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
             .expect("regions with redundant indexes");
         assert_eq!(
@@ -3454,7 +3508,7 @@ mod tests {
         assert_eq!(regions[0].sides, [1]);
         assert_eq!(regions[1].sides, [0]);
         assert_eq!(
-            warnings,
+            warnings.messages().collect::<Vec<_>>(),
             ["redundant Brep region positional index mismatch; serialized array order used"]
         );
     }
@@ -3489,7 +3543,7 @@ mod tests {
         outer_prefix.push(1);
         let outer = anonymous_mixed(&[(&outer_prefix, false), (&nested, true)]);
         let mut reader = BoundedReader::new(&outer, 0, outer.len()).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (_, regions, _, loaded) =
             read_regions(&outer, &mut reader, ArchiveVersion::V5, 0, &mut warnings)
                 .expect("regions");

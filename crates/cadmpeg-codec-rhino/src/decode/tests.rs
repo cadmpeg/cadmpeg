@@ -2,6 +2,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::*;
+use crate::loss::Diagnostics;
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -18,7 +19,7 @@ fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
 }
 
 fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
-    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new())
+    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), crate::loss::Diagnostics::new())
 }
 
 #[test]
@@ -42,7 +43,10 @@ fn rejected_expansion_discards_every_report_bucket() {
         .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss"));
     report.rollback(checkpoint);
 
-    assert_eq!(report.phase_warnings, ["existing warning"]);
+    assert_eq!(
+        report.phase_warnings.messages().collect::<Vec<_>>(),
+        ["existing warning"]
+    );
     assert_eq!(report.phase_losses.len(), 1);
     assert_eq!(report.phase_losses[0].message, "existing parse-phase loss");
     assert_eq!(report.typed_losses.len(), 1);
@@ -837,7 +841,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             (20.0, decoded_nurbs(line_nurbs(-2.0, 2.0, false))),
         ],
         end_parameter: 40.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
     assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
@@ -854,12 +858,12 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             (1.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
         ],
         end_parameter: 2.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(5.0, nested)],
         end_parameter: 9.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
@@ -887,7 +891,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (1.0, decoded_nurbs(quadratic)),
         ],
         end_parameter: 2.0,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0)
         .expect("degree elevation")
@@ -951,7 +955,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
         cap_u_axes: [Vector3::new(1.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)],
         caps,
         meshes: Vec::new(),
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     }
 }
 
@@ -1288,13 +1292,6 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
 
 #[test]
 fn redundant_field_diagnostics_use_the_typed_repair_loss() {
-    assert!(redundant_field_diagnostic(
-        "redundant mesh channel count mismatch"
-    ));
-    assert!(redundant_field_diagnostic(
-        "rhino:object:curve#1: redundant point-cloud color count mismatch"
-    ));
-    assert!(!redundant_field_diagnostic("mesh channel count mismatch"));
     assert_eq!(
         RhinoLossCode::RedundantFieldRepaired
             .note("repair")

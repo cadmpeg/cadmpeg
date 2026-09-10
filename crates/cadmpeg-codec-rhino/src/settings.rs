@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino document properties, settings, units, and layer metadata.
 
+use crate::loss::Diagnostics;
 use std::collections::BTreeSet;
 use std::ops::Range;
 
@@ -1422,7 +1423,7 @@ pub(crate) fn parse_rendering_attributes(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     kind: RenderingAttributesKind,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Range<usize>, FramingError> {
     let start = reader.position();
     let chunk = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1461,7 +1462,7 @@ pub(crate) fn parse_rendering_attributes(
             ));
         }
         if let Some(warning) = checksum_warning(data, &material)? {
-            warnings.push(warning);
+            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
         }
         let mut material_payload =
             BoundedReader::new(data, material.body().start, material.body().end)?;
@@ -1557,7 +1558,7 @@ pub(crate) fn parse_rendering_attributes(
             }
             mapping_payload.skip_remaining()?;
             if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
-                warnings.push(warning);
+                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
             }
             children.push(mapping.range());
             payload.skip(mapping.next_offset() - payload.position())?;
@@ -1572,7 +1573,7 @@ pub(crate) fn parse_rendering_attributes(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push(warning);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(start..reader.position())
@@ -1600,7 +1601,7 @@ fn skip_model_attributes(
     data: &[u8],
     payload: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Range<usize>, FramingError> {
     let chunk = crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
     if chunk.typecode != MODEL_ATTRIBUTES || chunk.short() {
@@ -1610,7 +1611,7 @@ fn skip_model_attributes(
         ));
     }
     if let Some(warning) = checksum_warning(data, &chunk)? {
-        warnings.push(warning);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
     }
     payload.skip(chunk.next_offset() - payload.position())?;
     Ok(chunk.range())
@@ -1650,7 +1651,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
         begin_direct_object(data, reader, archive, "embedded linetype")?;
@@ -1727,7 +1728,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     finish(&mut payload, "embedded linetype")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push(warning);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -1743,7 +1744,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
         begin_direct_object(data, reader, archive, "embedded section style")?;
@@ -1839,7 +1840,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     // result because the cascade has passed it.
     finish(&mut payload, "embedded section style")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push(warning);
+        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -1883,7 +1884,7 @@ fn parse_layer(
     record: &Record,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
@@ -2125,7 +2126,7 @@ pub(crate) fn parse_metadata(
     data: &[u8],
     archive: ArchiveVersion,
     tables: &[Table],
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> DocumentMetadata {
     let mut metadata = DocumentMetadata::default();
     let mut ids = BTreeSet::new();
@@ -2205,9 +2206,12 @@ pub(crate) fn parse_metadata(
                     Ok((layer, userdata_degraded)) => {
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {
-                                warnings.push(format!(
+                                warnings.push_coded(
+                                    crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                                    format!(
                                     "duplicate layer UUID {id}; first record owns archive identity"
-                                ));
+                                ),
+                                );
                             }
                         }
                         metadata.layers.push(layer);
@@ -2235,10 +2239,13 @@ pub(crate) fn parse_metadata(
                     _ => {}
                 }
                 if duplicate_singleton {
-                    warnings.push(format!(
-                        "duplicate singleton metadata record {:#x}; later record wins",
-                        record.typecode
-                    ));
+                    warnings.push_coded(
+                        crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                        format!(
+                            "duplicate singleton metadata record {:#x}; later record wins",
+                            record.typecode
+                        ),
+                    );
                 }
             }
             if let Err(error) = result {
@@ -2277,7 +2284,7 @@ pub(crate) fn parse_metadata(
     metadata
 }
 
-fn reassign_duplicate_layer_indices(layers: &mut [LayerRecord], warnings: &mut Vec<String>) {
+fn reassign_duplicate_layer_indices(layers: &mut [LayerRecord], warnings: &mut Diagnostics) {
     let mut used = layers
         .iter()
         .map(|layer| layer.index)
@@ -2291,7 +2298,7 @@ fn reassign_duplicate_layer_indices(layers: &mut [LayerRecord], warnings: &mut V
         let new_index = next_layer_index(&used);
         layer.index = new_index;
         used.insert(new_index);
-        warnings.push(format!(
+        warnings.push_coded(crate::loss::RhinoLossCode::DuplicateRecordResolved, format!(
             "duplicate layer index {original_index}; later record assigned new index {new_index}; first record owns archive references"
         ));
     }

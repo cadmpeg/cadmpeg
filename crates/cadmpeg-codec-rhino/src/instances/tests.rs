@@ -4,6 +4,7 @@
 use super::{
     anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
 };
+use crate::loss::Diagnostics;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
@@ -79,7 +80,7 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     let crc = bytes.len() - 1;
     bytes[crc] ^= 1;
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let (_, payload) = anonymous(
         &bytes,
         &mut reader,
@@ -255,8 +256,13 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     set_anonymous_minor(&mut reference, 9);
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
-    let parsed = parse_file_reference(&reference, &mut reader, ArchiveVersion::V6, &mut Vec::new())
-        .expect("future file-reference suffix is bounded");
+    let parsed = parse_file_reference(
+        &reference,
+        &mut reader,
+        ArchiveVersion::V6,
+        &mut Diagnostics::new(),
+    )
+    .expect("future file-reference suffix is bounded");
     assert_eq!(parsed.full_path, "/full/source.3dm");
     assert_eq!(reader.remaining(), 0);
 }
@@ -1498,7 +1504,7 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     body.extend(utf16_bytes("retained name"));
     let data = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let mut losses = Vec::new();
     let units = super::unit_detail(&data, &mut reader, archive, &mut warnings, &mut losses)
         .expect("unit evidence");
