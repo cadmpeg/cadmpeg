@@ -661,7 +661,7 @@ fn projection_role_keeps_the_native_string_wire_shape() {
 }
 
 #[test]
-fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
+fn vector_offset_roles_are_two_named_keys_of_one_nested_object() {
     let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset(
         crate::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
             crate::ids::CurveId::mint("test:model:curve#source").expect("valid identity"),
@@ -675,20 +675,27 @@ fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
         .unwrap(),
     );
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["labels"], serde_json::json!(["source", "offset"]));
-    assert_eq!(wire["codes"], serde_json::json!([7, 9]));
+    assert_eq!(wire["roles"], serde_json::json!({"source": 7, "offset": 9}));
+    assert!(wire.get("labels").is_none());
+    assert!(wire.get("codes").is_none());
     assert_eq!(
         serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire.clone()).unwrap(),
         definition
     );
 
-    let mut invalid = wire;
-    invalid["labels"] = serde_json::json!(["offset", "source"]);
-    let error =
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(invalid).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("vector-offset labels must be [\"source\", \"offset\"]"));
+    let mut labelled = wire.clone();
+    labelled["roles"]["labels"] = serde_json::json!(["source", "offset"]);
+    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(labelled)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("labels"), "{error}");
+
+    let mut stray = wire;
+    stray["roles"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(stray)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
 }
 
 #[test]
@@ -1114,4 +1121,91 @@ fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
     let line = LinePcurve::try_new(origin, Point2::new(above, 0.0)).unwrap();
     assert_eq!(serde_json::to_value(line).unwrap(), wire);
     assert_eq!(serde_json::from_value::<LinePcurve>(wire).unwrap(), line);
+}
+
+#[test]
+fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
+    let cases: [(&str, serde_json::Value); 4] = [
+        (
+            "G2BlendFirstShape",
+            serde_json::json!({"kind": "full", "zz_bogus": 1}),
+        ),
+        (
+            "DeformableSurfaceData",
+            serde_json::json!({"kind": "full", "zz_bogus": 1}),
+        ),
+        (
+            "LawSurfaceTail",
+            serde_json::json!({"kind": "full", "zz_bogus": 1}),
+        ),
+        (
+            "ProjectionTail",
+            serde_json::json!({"kind": "ranged", "zz_bogus": 1}),
+        ),
+    ];
+    for (name, wire) in cases {
+        let error = match name {
+            "G2BlendFirstShape" => {
+                serde_json::from_value::<crate::geometry::G2BlendFirstShape>(wire).unwrap_err()
+            }
+            "DeformableSurfaceData" => {
+                serde_json::from_value::<crate::geometry::DeformableSurfaceData>(wire).unwrap_err()
+            }
+            "LawSurfaceTail" => {
+                serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap_err()
+            }
+            _ => serde_json::from_value::<crate::geometry::ProjectionTail>(wire).unwrap_err(),
+        }
+        .to_string();
+        assert!(error.contains("zz_bogus"), "{name}: {error}");
+    }
+}
+
+#[test]
+fn a_law_surface_full_tail_is_an_empty_struct_variant() {
+    let tail = crate::geometry::LawSurfaceTail::Full {};
+    let wire = serde_json::to_value(tail.clone()).unwrap();
+    assert_eq!(wire, serde_json::json!({"kind": "full"}));
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
+        tail
+    );
+}
+
+#[test]
+fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
+    use crate::geometry::{SkinSurfaceLayout, SkinSurfaceProfile};
+
+    let compact = SkinSurfaceLayout::Compact {
+        inner_count: 3,
+        curve: "test:model:curve#0".try_into().expect("valid identity"),
+        subdata: crate::geometry::LoftSubdata::type_211([1, 1], [0.0, 1.0]),
+        first_tail: 1,
+        secondary_curve: "test:model:curve#1".try_into().expect("valid identity"),
+        second_tail: 2,
+    };
+    let wire = serde_json::to_value(&compact).unwrap();
+    assert_eq!(wire["inner_count"], serde_json::json!(3));
+    assert_eq!(
+        serde_json::from_value::<SkinSurfaceLayout>(wire).unwrap(),
+        compact
+    );
+
+    let profiles = SkinSurfaceLayout::Profiles {
+        profiles: Vec::<SkinSurfaceProfile>::new(),
+        path: "test:model:curve#2".try_into().expect("valid identity"),
+        tail: [0, 0],
+    };
+    let mut wire = serde_json::to_value(&profiles).unwrap();
+    assert!(wire.get("inner_count").is_none());
+    assert_eq!(
+        serde_json::from_value::<SkinSurfaceLayout>(wire.clone()).unwrap(),
+        profiles
+    );
+
+    wire["inner_count"] = serde_json::json!(0);
+    let error = serde_json::from_value::<SkinSurfaceLayout>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("inner_count"), "{error}");
 }

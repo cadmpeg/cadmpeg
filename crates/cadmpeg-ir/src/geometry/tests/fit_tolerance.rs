@@ -51,13 +51,13 @@ fn fit_tolerance_rejects_negative_and_nonfinite_values_at_admission() {
 #[test]
 fn law_tail_requires_exactly_its_cache_contract() {
     assert!(matches!(
-        ProceduralSurface::new(surface_id(), law(LawSurfaceTail::Full), None),
+        ProceduralSurface::new(surface_id(), law(LawSurfaceTail::Full {}), None),
         Err(ProceduralGeometryError::Cache(
             CacheFitToleranceError::MissingLawFull
         ))
     ));
     let full =
-        ProceduralSurface::try_new(surface_id(), law(LawSurfaceTail::Full), Some(0.25), None)
+        ProceduralSurface::try_new(surface_id(), law(LawSurfaceTail::Full {}), Some(0.25), None)
             .unwrap();
     let mut wire = serde_json::to_value(&full).unwrap();
     assert_eq!(wire["cache_fit_tolerance"], 0.25);
@@ -106,7 +106,7 @@ fn law_tail_requires_exactly_its_cache_contract() {
 #[test]
 fn rejected_surface_tolerance_edits_preserve_the_owner() {
     let mut surface =
-        ProceduralSurface::try_new(surface_id(), law(LawSurfaceTail::Full), Some(1.0e300), None)
+        ProceduralSurface::try_new(surface_id(), law(LawSurfaceTail::Full {}), Some(1.0e300), None)
             .unwrap();
     let before = surface.clone();
     for value in [f64::INFINITY, f64::NAN, -1.0] {
@@ -133,7 +133,7 @@ fn rejected_surface_tolerance_edits_preserve_the_owner() {
     assert_eq!(surface.cache_fit_tolerance(), None);
     let before = surface.clone();
     assert!(surface
-        .edit_definition(|definition| *definition = law(LawSurfaceTail::Full))
+        .edit_definition(|definition| *definition = law(LawSurfaceTail::Full {}))
         .is_err());
     assert_eq!(surface, before);
 }

@@ -2691,7 +2691,7 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             let (_, cache_end) = surface_block(span, cur.pos())?;
             cur.set_pos(cache_end);
             (
-                cadmpeg_ir::geometry::LawSurfaceTail::Full,
+                cadmpeg_ir::geometry::LawSurfaceTail::Full {},
                 Some(cur.take_f64()? * LEN_TO_MM),
             )
         }
