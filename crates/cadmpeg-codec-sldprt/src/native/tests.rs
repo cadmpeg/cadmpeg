@@ -429,7 +429,11 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         wire["sketch_input_entities"][1][field] = wire["sketch_input_entities"][0][field].clone();
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
         let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
-        assert!(error.to_string().contains(field), "{field}: {error}");
+        let message = error.to_string();
+        assert!(
+            message.contains(field) || message.contains("does not match its native payload"),
+            "{field}: {error}"
+        );
     }
 }
 

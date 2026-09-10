@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::records::Feature;
+#[cfg(test)]
 use crate::records::FeatureSource;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};
 use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};

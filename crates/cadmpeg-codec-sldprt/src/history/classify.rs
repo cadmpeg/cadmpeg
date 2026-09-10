@@ -97,7 +97,7 @@ pub(crate) fn reserved_feature_tree_node_role(
         (FeatureManagerLayout::Current, tag, Some(12)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (FeatureManagerLayout::Current, tag, Some(13) | Some(14) | Some(15))
+        (FeatureManagerLayout::Current, tag, Some(13..=15))
             if tag.eq_ignore_ascii_case("Feature") =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
@@ -131,7 +131,7 @@ pub(crate) fn reserved_feature_tree_node_role(
         {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (FeatureManagerLayout::FoldersAtSeven, tag, Some(11) | Some(12))
+        (FeatureManagerLayout::FoldersAtSeven, tag, Some(11 | 12))
             if tag.eq_ignore_ascii_case("Feature") =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)

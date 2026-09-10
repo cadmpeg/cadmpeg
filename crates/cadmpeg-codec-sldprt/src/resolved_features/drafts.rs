@@ -16,7 +16,9 @@ use crate::layout::draft_aligned_direction_frame as aligned_dir;
 use crate::layout::draft_compact_selection_prefix as compact_sel;
 use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
+#[cfg(test)]
 use crate::records::FeatureSource;
+#[cfg(test)]
 use crate::records::ObjectId;
 
 const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;

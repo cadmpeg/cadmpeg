@@ -69,7 +69,9 @@ use cadmpeg_ir::{
 };
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 use crate::records::FeatureSource;
+#[cfg(test)]
 use crate::records::ObjectId;
 #[cfg(test)]
 use std::collections::BTreeMap;

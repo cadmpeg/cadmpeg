@@ -788,7 +788,7 @@ pub(crate) struct FeatureInputReference {
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputName {
     /// Globally unique deterministic identifier for this name record.
     pub(crate) id: String,
@@ -831,6 +831,7 @@ impl ObjectId {
     }
 
     /// The trailer for a raw identifier value.
+    #[cfg(test)]
     pub(crate) fn from_value(value: u32) -> Option<Self> {
         FeatureSourceId::try_from(value).ok().map(Self::Id)
     }
@@ -1178,7 +1179,7 @@ mod sketch_input_links_wire {
         let mut map = serializer.serialize_map(Some(if links.is_some() { 2 } else { 0 }))?;
         if let Some(links) = links {
             map.serialize_entry("links", links.entries())?;
-            map.serialize_entry("link_selector", &links.selector)?;
+            map.serialize_entry("link_selector", &links.selector())?;
         }
         map.end()
     }
@@ -1247,16 +1248,14 @@ impl SketchInputEntity {
         )
         .map_err(str::to_string)?;
         if wire.object_index != entity.object_index {
-            return Err(format!(
-                "sketch entity object_index disagrees with native_payload at offset {}",
-                wire.offset
-            ));
+            return Err(
+                "SolidWorks feature-input object index does not match its native payload".into(),
+            );
         }
         if wire.local_id != entity.local_id {
-            return Err(format!(
-                "sketch entity local_id disagrees with native_payload at offset {}",
-                wire.offset
-            ));
+            return Err(
+                "SolidWorks feature-input local object id does not match its native payload".into(),
+            );
         }
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
@@ -2000,7 +1999,7 @@ mod tests {
         let mut renamed = wire;
         renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
         let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
-        assert!(error.to_string().contains("local_id disagrees"));
+        assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }
 

@@ -88,7 +88,7 @@ pub(crate) fn generated_feature_source_ids(
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_value())
+        .filter_map(crate::records::Feature::source_value)
         .collect::<HashSet<_>>();
     let existing = native
         .feature_histories
@@ -200,8 +200,7 @@ pub(crate) fn sync_neutral_features(
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
                 .and_then(|candidate| candidate.source_id)
                 .or_else(|| generated_sources.get(&feature.id).copied())
-                .map(String::from)
-                .unwrap_or_else(|| feature.id.as_str().to_owned());
+                .map_or_else(|| feature.id.as_str().to_owned(), String::from);
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -371,7 +370,7 @@ pub(crate) fn sync_neutral_features(
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
-            let source_id = structural_parent_sources.get(parent).cloned().flatten();
+            let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
                 Some(record_id) => Some(crate::records::TreeParent::Record {
                     record_id: record_id.clone(),
