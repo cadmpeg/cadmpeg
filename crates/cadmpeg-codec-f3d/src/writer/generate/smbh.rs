@@ -1751,10 +1751,12 @@ fn native_tolerant_vertex_tail(
     // carries the fact and the sentinel is written back.
     let tolerance = match (vertex.tolerance, stored.map(|tail| tail.evaluated_slot)) {
         (Some(tolerance), _) => Some(tolerance.get()),
-        (None, Some(EvaluatedToleranceSlot::Unset)) => Some(-1.0),
+        (None, Some(EvaluatedToleranceSlot::Unset { .. })) => Some(-1.0),
         // The source record ended before the evaluated slot; only the
         // leading slots are written back.
-        (None, Some(EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Evaluated)) => None,
+        (None, Some(EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Evaluated { .. })) => {
+            None
+        }
         (None, None) => return,
     };
     // The record stores three f64 tolerance slots: the two leading slots
@@ -1767,7 +1769,9 @@ fn native_tolerant_vertex_tail(
     let leading = stored
         .as_ref()
         .map_or([-1.0; 2], |tail| tail.leading_tolerances);
-    let trailing = stored.as_ref().map_or(Some(0), |tail| tail.trailing_field);
+    let trailing = stored
+        .as_ref()
+        .map_or(Some(0), |tail| tail.evaluated_slot.trailing());
     for value in leading {
         native_f64(records, value);
     }

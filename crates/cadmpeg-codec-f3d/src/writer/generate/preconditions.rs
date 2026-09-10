@@ -1093,14 +1093,15 @@ pub(crate) fn validate_source_less_design_links(
             .leading_tolerances
             .iter()
             .any(|value| !value.is_finite())
-            || (tail.evaluated_slot == EvaluatedToleranceSlot::Absent
-                && tail.trailing_field.is_some())
             || vertex_by_id
                 .get(tail.vertex.as_str())
                 .copied()
                 .is_none_or(|vertex| {
                     vertex.tolerance.is_some()
-                        != (tail.evaluated_slot == EvaluatedToleranceSlot::Evaluated)
+                        != matches!(
+                            tail.evaluated_slot,
+                            EvaluatedToleranceSlot::Evaluated { .. }
+                        )
                 })
         {
             return Err(CodecError::InvalidInput(format!(
@@ -1284,8 +1285,7 @@ mod tests {
                 record_index: 0,
                 vertex: target.model.vertices[0].id.clone(),
                 leading_tolerances: [-1.0, -1.0],
-                trailing_field: Some(0),
-                evaluated_slot: EvaluatedToleranceSlot::Unset,
+                evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
             }],
             ..F3dNative::default()
         };

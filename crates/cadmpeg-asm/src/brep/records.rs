@@ -316,17 +316,42 @@ native_record! {
     asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
 }
 
-/// Shape of the evaluated tolerance slot of one tolerant ASM vertex record.
+/// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
+/// with the version-gated LONG that follows the slot when it is present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", tag = "slot")]
 pub enum EvaluatedToleranceSlot {
-    /// The record ends before the slot; the vertex carries no tolerance.
+    /// The record ends before the slot; the vertex carries no tolerance and
+    /// there is no trailing field.
     Absent,
     /// The slot holds the `-1` unset sentinel; the vertex carries no tolerance.
-    Unset,
+    Unset {
+        /// Trailing LONG following the slot, retained verbatim; absent in
+        /// older streams, a small non-negative per-entity change counter when
+        /// present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trailing: Option<i64>,
+    },
     /// The slot holds a tolerance, stored on the vertex.
-    Evaluated,
+    Evaluated {
+        /// Trailing LONG following the slot, retained verbatim; absent in
+        /// older streams, a small non-negative per-entity change counter when
+        /// present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trailing: Option<i64>,
+    },
+}
+
+impl EvaluatedToleranceSlot {
+    /// The trailing LONG following the slot, when the slot is present.
+    #[must_use]
+    pub fn trailing(self) -> Option<i64> {
+        match self {
+            Self::Absent => None,
+            Self::Unset { trailing } | Self::Evaluated { trailing } => trailing,
+        }
+    }
 }
 
 native_record! {
@@ -343,13 +368,10 @@ native_record! {
     /// The first two independent tolerance evaluations, retained verbatim in
     /// native centimetres; `-1` denotes an unset evaluation.
     leading_tolerances: [f64; 2],
-    /// Version-gated trailing LONG following the evaluated tolerance,
-    /// retained verbatim; absent in older streams, a small non-negative
-    /// per-entity change counter when present.
-    trailing_field: Option<i64> [serde(default, skip_serializing_if = "Option::is_none")],
-    /// Shape of the evaluated tolerance slot. The unset sentinel is a marker
-    /// rather than a length, so the neutral vertex carries no tolerance and
-    /// this record keeps whether the slot was unset or absent.
+    /// Shape of the evaluated tolerance slot, carrying the trailing LONG that
+    /// follows it. The unset sentinel is a marker rather than a length, so the
+    /// neutral vertex carries no tolerance and this record keeps whether the
+    /// slot was unset or absent.
     evaluated_slot: EvaluatedToleranceSlot,
 }
 
