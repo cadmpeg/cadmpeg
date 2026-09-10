@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn file_version_preserves_spelling_and_rejects_invalid_wire() {
-        let wire = serde_json::json!({"id":"document", "schema_version":"4", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
+        let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
         let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
         assert_eq!(record.file_version.value(), 1);
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn document_kind_wire_must_match_domains_and_count() {
-        let mut wire = serde_json::json!({"id":"document", "schema_version":"4",
+        let mut wire = serde_json::json!({"id":"document",
             "file_version":"1", "program_version":null, "root_name":"Document",
             "object_count":1, "domains":["Part"], "document_kind":"empty"});
         assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
@@ -1831,8 +1831,6 @@ impl FileVersion {
 pub struct DocumentFacts {
     /// Stable document-record identity.
     pub id: String,
-    /// Persistence schema version.
-    pub schema_version: String,
     /// Persistence file version.
     pub file_version: FileVersion,
     /// Producing application version, when carried.
@@ -1867,7 +1865,6 @@ impl DocumentFacts {
 #[derive(Serialize, Deserialize)]
 struct DocumentFactsWire {
     id: String,
-    schema_version: String,
     file_version: String,
     program_version: Option<String>,
     root_name: String,
@@ -1880,7 +1877,6 @@ impl From<DocumentFacts> for DocumentFactsWire {
         Self {
             document_kind: value.document_kind(),
             id: value.id,
-            schema_version: value.schema_version,
             file_version: value.file_version.spelling,
             program_version: value.program_version,
             root_name: value.root_name,
@@ -1894,7 +1890,6 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
     fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
         let value = Self {
             id: wire.id,
-            schema_version: wire.schema_version,
             file_version: wire.file_version.try_into()?,
             program_version: wire.program_version,
             root_name: wire.root_name,
