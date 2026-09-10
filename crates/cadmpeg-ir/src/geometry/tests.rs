@@ -236,7 +236,6 @@ fn revision_compound_loft_direction_rejects_a_mismatched_selector() {
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct VariableBlendShapeWireTest {
-    #[serde(flatten, with = "super::variable_blend_radii_wire")]
     radii: crate::geometry::VariableBlendRadii,
     #[serde(with = "super::variable_blend_u_range_wire")]
     u_range: [f64; 2],
@@ -257,7 +256,7 @@ fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendVal
 }
 
 #[test]
-fn variable_blend_shape_keeps_the_flat_wire_fields() {
+fn the_variable_blend_radii_are_one_nested_tagged_object() {
     let value = VariableBlendShapeWireTest {
         radii: crate::geometry::VariableBlendRadii::Two {
             first: variable_blend_value(0),
@@ -267,11 +266,11 @@ fn variable_blend_shape_keeps_the_flat_wire_fields() {
         v_lower: Some(-0.5),
     };
     let wire = serde_json::to_value(&value).unwrap();
-    assert_eq!(wire["radius_kind"], "two_radii");
-    assert_eq!(wire["first_value"]["name"], "two_ends");
-    assert_eq!(wire["first_value"]["discriminator"], 0);
-    assert_eq!(wire["second_value"]["name"], "two_ends");
-    assert_eq!(wire["second_value"]["discriminator"], 1);
+    assert_eq!(wire["radii"]["kind"], "two");
+    assert_eq!(wire["radii"]["first"]["name"], "two_ends");
+    assert_eq!(wire["radii"]["first"]["discriminator"], 0);
+    assert_eq!(wire["radii"]["second"]["name"], "two_ends");
+    assert_eq!(wire["radii"]["second"]["discriminator"], 1);
     assert_eq!(wire["u_range"], serde_json::json!([-1.0, 2.0]));
     assert_eq!(wire["v_range"], serde_json::json!([-0.5, null]));
     assert_eq!(
@@ -281,28 +280,56 @@ fn variable_blend_shape_keeps_the_flat_wire_fields() {
 }
 
 #[test]
-fn variable_blend_shape_rejects_inconsistent_wire_fields() {
-    let mut wire = serde_json::to_value(VariableBlendShapeWireTest {
+fn a_single_variable_blend_radius_has_no_second_law_key() {
+    let single = VariableBlendShapeWireTest {
         radii: crate::geometry::VariableBlendRadii::Single {
             value: variable_blend_value(0),
         },
         u_range: [-1.0, 2.0],
         v_lower: None,
-    })
-    .unwrap();
-    wire["second_value"] = serde_json::to_value(variable_blend_value(1)).unwrap();
-    assert!(serde_json::from_value::<VariableBlendShapeWireTest>(wire).is_err());
+    };
+    let base = serde_json::to_value(&single).unwrap();
+    assert_eq!(base["radii"]["kind"], "single");
+    assert!(base["radii"].get("second").is_none());
 
-    let mut wire = serde_json::to_value(VariableBlendShapeWireTest {
-        radii: crate::geometry::VariableBlendRadii::Single {
-            value: variable_blend_value(0),
-        },
-        u_range: [-1.0, 2.0],
-        v_lower: None,
-    })
-    .unwrap();
+    let mut second_beside_single = base.clone();
+    second_beside_single["radii"]["second"] =
+        serde_json::to_value(variable_blend_value(1)).unwrap();
+    let error = serde_json::from_value::<VariableBlendShapeWireTest>(second_beside_single)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("second"), "{error}");
+
+    let mut bogus = base.clone();
+    bogus["radii"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<VariableBlendShapeWireTest>(bogus)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+
+    let mut wire = base;
     wire["u_range"] = serde_json::json!([-1.0, null]);
     assert!(serde_json::from_value::<VariableBlendShapeWireTest>(wire).is_err());
+}
+
+#[test]
+fn an_absent_blend_tangent_is_spelled_null_and_no_magic_value() {
+    use crate::geometry::VariableBlendInterpolationPoint;
+    use crate::math::{Point3, Vector3};
+
+    let point = VariableBlendInterpolationPoint {
+        parameter: 0.25,
+        radius: 2.0,
+        tangents: [None, Some(1.0e37)],
+        location: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let wire = serde_json::to_value(&point).unwrap();
+    assert_eq!(wire["tangents"], serde_json::json!([null, 1.0e37]));
+    assert_eq!(
+        serde_json::from_value::<VariableBlendInterpolationPoint>(wire).unwrap(),
+        point
+    );
 }
 
 fn empty_loft_subdata() -> crate::geometry::LoftSubdata {

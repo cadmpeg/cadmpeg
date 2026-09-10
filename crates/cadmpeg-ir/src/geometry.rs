@@ -4447,38 +4447,11 @@ pub struct VariableBlendInterpolationPoint {
     /// Radius in document length units.
     pub radius: f64,
     /// Optional first and second derivative scalars.
-    #[serde(with = "variable_blend_tangents_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "[Option<f64>; 2]"))]
     pub tangents: [Option<f64>; 2],
     /// Model-space control location.
     pub location: Point3,
     /// Control normal.
     pub normal: Vector3,
-}
-
-mod variable_blend_tangents_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    const LEGACY_UNSET_TANGENT: f64 = 1.0e37;
-
-    pub fn serialize<S>(tangents: &[Option<f64>; 2], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        tangents.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[Option<f64>; 2], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(
-            <[Option<f64>; 2]>::deserialize(deserializer)?.map(|value| match value {
-                Some(LEGACY_UNSET_TANGENT) => None,
-                value => value,
-            }),
-        )
-    }
 }
 
 /// Native edge-offset blend-value sub-discriminator.
@@ -4858,7 +4831,7 @@ impl VariableBlendValuePayload {
 /// Radius-law payloads of a variable blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum VariableBlendRadii {
     /// One radius law controls both support sides.
     Single {
@@ -4896,78 +4869,6 @@ impl VariableBlendRadii {
     #[must_use]
     pub const fn is_single(&self) -> bool {
         matches!(self, Self::Single { .. })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum VariableBlendRadiusKindWire {
-    SingleRadius,
-    TwoRadii,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "fields define the variable-blend radii wire schema"
-)]
-struct VariableBlendRadiiSchemaWire {
-    radius_kind: VariableBlendRadiusKindWire,
-    first_value: VariableBlendValue,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    second_value: Option<VariableBlendValue>,
-}
-
-mod variable_blend_radii_wire {
-    use super::{VariableBlendRadii, VariableBlendRadiusKindWire, VariableBlendValue};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        radius_kind: VariableBlendRadiusKindWire,
-        first_value: VariableBlendValue,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        second_value: Option<VariableBlendValue>,
-    }
-
-    pub fn serialize<S>(value: &VariableBlendRadii, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            VariableBlendRadii::Single { value } => Wire {
-                radius_kind: VariableBlendRadiusKindWire::SingleRadius,
-                first_value: value.clone(),
-                second_value: None,
-            },
-            VariableBlendRadii::Two { first, second } => Wire {
-                radius_kind: VariableBlendRadiusKindWire::TwoRadii,
-                first_value: first.clone(),
-                second_value: Some(second.clone()),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<VariableBlendRadii, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.radius_kind, wire.second_value) {
-            (VariableBlendRadiusKindWire::SingleRadius, None) => Ok(VariableBlendRadii::Single {
-                value: wire.first_value,
-            }),
-            (VariableBlendRadiusKindWire::TwoRadii, Some(second)) => Ok(VariableBlendRadii::Two {
-                first: wire.first_value,
-                second,
-            }),
-            _ => Err(serde::de::Error::custom(
-                "variable-blend radius kind conflicts with its payload count",
-            )),
-        }
     }
 }
 
@@ -5171,8 +5072,6 @@ pub struct VariableBlendConstruction {
     /// Two signed support offsets in document length units.
     pub offsets: [f64; 2],
     /// Structurally selected radius-control payloads.
-    #[serde(flatten, with = "variable_blend_radii_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "VariableBlendRadiiSchemaWire"))]
     pub radii: VariableBlendRadii,
     /// Cross-section clause following the complete radius-law sequence.
     /// Absence denotes an elided default circular section; an explicit
