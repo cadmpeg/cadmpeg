@@ -623,15 +623,14 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .into_parts()
         .0;
     let mut wire = serde_json::to_value(&legal.model.procedural_surfaces[0]).unwrap();
-    wire["definition"]["construction"]
+    assert_eq!(wire["definition"]["construction"]["tail"]["kind"], "curve");
+    wire["definition"]["construction"]["tail"]
         .as_object_mut()
         .unwrap()
-        .remove("trailing_curve");
+        .remove("curve");
     let error =
         serde_json::from_value::<cadmpeg_ir::geometry::ProceduralSurface>(wire).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("pairs its trailing curve with both parameter values"));
+    assert!(error.to_string().contains("curve"), "{error}");
 }
 
 #[test]
