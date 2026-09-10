@@ -442,18 +442,21 @@ fn genesis_relation_record(
 }
 
 #[test]
-fn indexed_record_index_requires_a_complete_class_header() {
-    use crate::design::decode::sketch::indexed_record_index;
+fn indexed_record_header_requires_a_complete_class_header() {
+    use crate::design::decode::sketch::indexed_record_header_at;
 
+    let index_at = |bytes: &[u8], at: usize| {
+        indexed_record_header_at(bytes, at).map(|header| header.record_index)
+    };
     let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
-    assert_eq!(indexed_record_index(&header, 0), Some(42));
+    assert_eq!(index_at(&header, 0), Some(42));
     for (offset, byte) in [(0, 2), (4, b'x'), (5, 0), (6, b' ')] {
         let mut invalid = header;
         invalid[offset] = byte;
-        assert_eq!(indexed_record_index(&invalid, 0), None);
+        assert_eq!(index_at(&invalid, 0), None);
     }
     for length in 0..header.len() {
-        assert_eq!(indexed_record_index(&header[..length], 0), None);
+        assert_eq!(index_at(&header[..length], 0), None);
     }
-    assert_eq!(indexed_record_index(&header, usize::MAX), None);
+    assert_eq!(index_at(&header, usize::MAX), None);
 }

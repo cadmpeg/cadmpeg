@@ -3866,7 +3866,7 @@ pub(crate) struct IndexedRecordHeader {
     pub(crate) class_tag: crate::records::DesignClassTag,
 }
 
-fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader> {
+pub(crate) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader> {
     if View::u32_le_at(bytes, at)? != 3 {
         return None;
     }
@@ -3882,13 +3882,6 @@ fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHead
     })
 }
 
-/// The record index carried by the indexed-record header at `at`. The header
-/// spends its first seven bytes on the length-prefixed class tag, so the index
-/// always sits at `at + 7`.
-pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
-    indexed_record_header_at(bytes, at).map(|header| header.record_index)
-}
-
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
     indexed_record_offsets(bytes.get(position..)?)
         .next()
@@ -3899,9 +3892,7 @@ pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Optio
 ///
 /// A class tag is `256` plus an index into the segment's own type table, so a
 /// tag reaches four characters only in a segment registering more than 744
-/// types. No segment registers that many, and `indexed_record_index` reads the
-/// record index at a fixed `at + 7` on the same assumption; both would have to
-/// change together to widen it.
+/// types. No segment registers that many.
 pub(crate) fn indexed_record_offsets(
     bytes: &[u8],
 ) -> impl Iterator<Item = IndexedRecordHeader> + '_ {
@@ -3916,7 +3907,9 @@ pub(crate) fn next_indexed_record_offset_with_index(
 ) -> Option<usize> {
     loop {
         let offset = next_indexed_record_offset(bytes, position)?;
-        if indexed_record_index(bytes, offset) == Some(record_index) {
+        if indexed_record_header_at(bytes, offset)
+            .is_some_and(|header| header.record_index == record_index)
+        {
             return Some(offset);
         }
         position = offset.checked_add(1)?;
