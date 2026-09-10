@@ -232,7 +232,7 @@ impl HoleConstruction {
     }
 }
 
-/// A pair of dimensions of which at least one is present.
+/// A pair of dimensions of which exactly one is present.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PartialPair<A, B> {
@@ -240,25 +240,13 @@ pub enum PartialPair<A, B> {
     First(A),
     /// Only the second dimension is present.
     Second(B),
-    /// Both dimensions are present.
-    Both(A, B),
 }
 
 impl<A, B> PartialPair<A, B> {
-    /// Admit a pair unless both dimensions are absent.
-    pub fn new(first: Option<A>, second: Option<B>) -> Option<Self> {
-        match (first, second) {
-            (Some(first), Some(second)) => Some(Self::Both(first, second)),
-            (Some(first), None) => Some(Self::First(first)),
-            (None, Some(second)) => Some(Self::Second(second)),
-            (None, None) => None,
-        }
-    }
-
     /// The first dimension, when present.
     pub const fn first(&self) -> Option<&A> {
         match self {
-            Self::First(first) | Self::Both(first, _) => Some(first),
+            Self::First(first) => Some(first),
             Self::Second(_) => None,
         }
     }
@@ -266,7 +254,7 @@ impl<A, B> PartialPair<A, B> {
     /// The second dimension, when present.
     pub const fn second(&self) -> Option<&B> {
         match self {
-            Self::Second(second) | Self::Both(_, second) => Some(second),
+            Self::Second(second) => Some(second),
             Self::First(_) => None,
         }
     }
@@ -274,7 +262,7 @@ impl<A, B> PartialPair<A, B> {
     /// Mutable access to the first dimension, when present.
     pub const fn first_mut(&mut self) -> Option<&mut A> {
         match self {
-            Self::First(first) | Self::Both(first, _) => Some(first),
+            Self::First(first) => Some(first),
             Self::Second(_) => None,
         }
     }
@@ -282,9 +270,30 @@ impl<A, B> PartialPair<A, B> {
     /// Mutable access to the second dimension, when present.
     pub const fn second_mut(&mut self) -> Option<&mut B> {
         match self {
-            Self::Second(second) | Self::Both(_, second) => Some(second),
+            Self::Second(second) => Some(second),
             Self::First(_) => None,
         }
+    }
+}
+
+/// How many of an optional pair of dimensions are present.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Split<A, B> {
+    /// Neither dimension is present.
+    Neither,
+    /// Exactly one dimension is present.
+    Partial(PartialPair<A, B>),
+    /// Both dimensions are present.
+    Both(A, B),
+}
+
+/// Classifies an optional pair of dimensions by how many are present.
+pub fn split<A, B>(first: Option<A>, second: Option<B>) -> Split<A, B> {
+    match (first, second) {
+        (Some(first), Some(second)) => Split::Both(first, second),
+        (Some(first), None) => Split::Partial(PartialPair::First(first)),
+        (None, Some(second)) => Split::Partial(PartialPair::Second(second)),
+        (None, None) => Split::Neither,
     }
 }
 
@@ -415,14 +424,30 @@ impl TryFrom<HoleKindWire> for HoleKind {
     fn try_from(value: HoleKindWire) -> Result<Self, Self::Error> {
         Ok(match value {
             HoleKindWire::Unresolved { form } => Self::Unresolved(form),
-            HoleKindWire::PartialCounterbore { diameter, depth } => Self::PartialCounterbore(
-                PartialPair::new(diameter, depth)
-                    .ok_or_else(|| "partial_counterbore carries no dimension".to_string())?,
-            ),
-            HoleKindWire::PartialCountersink { diameter, angle } => Self::PartialCountersink(
-                PartialPair::new(diameter, angle)
-                    .ok_or_else(|| "partial_countersink carries no dimension".to_string())?,
-            ),
+            HoleKindWire::PartialCounterbore { diameter, depth } => match split(diameter, depth) {
+                Split::Partial(pair) => Self::PartialCounterbore(pair),
+                Split::Neither => {
+                    return Err("partial_counterbore carries no dimension".to_string())
+                }
+                Split::Both(..) => {
+                    return Err(
+                        "partial_counterbore carries both dimensions; spell it counterbore"
+                            .to_string(),
+                    )
+                }
+            },
+            HoleKindWire::PartialCountersink { diameter, angle } => match split(diameter, angle) {
+                Split::Partial(pair) => Self::PartialCountersink(pair),
+                Split::Neither => {
+                    return Err("partial_countersink carries no dimension".to_string())
+                }
+                Split::Both(..) => {
+                    return Err(
+                        "partial_countersink carries both dimensions; spell it countersink"
+                            .to_string(),
+                    )
+                }
+            },
             HoleKindWire::Simple => Self::Simple,
             HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKindWire::SimpleDrilled { drill_point_angle } => {

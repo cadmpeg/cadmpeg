@@ -8705,8 +8705,9 @@ pub use edge_treatments::{
 
 mod holes;
 pub use holes::{
-    CounterdrillDiameters, HoleBottom, HoleConstruction, HoleForm, HoleKind, HoleProfileFilter,
-    HoleShape, HoleSpecification, HoleThreadDepth, PartialPair, ThreadHand,
+    split, CounterdrillDiameters, HoleBottom, HoleConstruction, HoleForm, HoleKind,
+    HoleProfileFilter, HoleShape, HoleSpecification, HoleThreadDepth, PartialPair, Split,
+    ThreadHand,
 };
 
 /// Deformation applied by a flex feature.
