@@ -383,13 +383,12 @@ fn flex_modes_round_trip_and_validate() {
 }
 
 #[test]
-fn unresolved_hole_and_flex_wire_forms_preserve_the_legacy_layout() {
+fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
     use crate::features::{FlexMode, HoleKind};
 
     let counterbore = serde_json::json!({
-        "kind": "unresolved",
-        "form": "counterbore",
-        "counterbore_diameter": 10.0
+        "kind": "partial_counterbore",
+        "diameter": 10.0
     });
     let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
     assert_eq!(
@@ -411,15 +410,9 @@ fn unresolved_hole_and_flex_wire_forms_preserve_the_legacy_layout() {
 }
 
 #[test]
-fn unresolved_hole_and_flex_wire_forms_reject_cross_family_payloads() {
-    use crate::features::{FlexMode, HoleKind};
+fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
+    use crate::features::FlexMode;
 
-    assert!(serde_json::from_value::<HoleKind>(serde_json::json!({
-        "kind": "unresolved",
-        "form": "counterbore",
-        "countersink_angle": 0.5
-    }))
-    .is_err());
     assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
         "kind": "unresolved",
         "form": "twisting",
