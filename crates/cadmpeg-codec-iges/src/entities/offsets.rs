@@ -14,7 +14,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
     ProceduralCurveDefinition,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
@@ -290,8 +290,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let source_id = CurveId::mint(format!("iges:model:curve#D{source_sequence}"))
-            .expect("identity grammar");
+        let source_id = crate::ids::curve(&crate::ids::Stem::directory(source_sequence));
         let Some(source_geometry) = ir
             .model
             .curves
@@ -386,11 +385,9 @@ pub(super) fn project(
                 continue;
             };
             normal = placed_normal;
-            offset_source_id = CurveId::mint(format!(
-                "iges:model:curve#D{}-placed-source",
-                entry.sequence
-            ))
-            .expect("identity grammar");
+            offset_source_id = crate::ids::curve(
+                &crate::ids::Stem::directory(entry.sequence).tail(crate::ids::Word::PlacedSource),
+            );
             offset_source_geometry = placed_source_geometry.clone();
         }
         let start = parameter_map.to_neutral(native_start);
@@ -632,8 +629,8 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let function_id = CurveId::mint(format!("iges:model:curve#D{function_sequence}"))
-                    .expect("identity grammar");
+                let function_id =
+                    crate::ids::curve(&crate::ids::Stem::directory(function_sequence));
                 let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
                 else {
                     losses.push(entity_loss(entry, "offset function curve is missing"));
@@ -805,18 +802,20 @@ pub(super) fn project(
             ));
             continue;
         };
-        let curve_id = CurveId::mint(format!("iges:model:curve#D{}", entry.sequence))
-            .expect("identity grammar");
-        let start_point = PointId::mint(format!("iges:model:point#D{}:start", entry.sequence))
-            .expect("identity grammar");
-        let end_point = PointId::mint(format!("iges:model:point#D{}:end", entry.sequence))
-            .expect("identity grammar");
-        let start_vertex = VertexId::mint(format!("iges:model:vertex#D{}:start", entry.sequence))
-            .expect("identity grammar");
-        let end_vertex = VertexId::mint(format!("iges:model:vertex#D{}:end", entry.sequence))
-            .expect("identity grammar");
-        let edge_id =
-            EdgeId::mint(format!("iges:model:edge#D{}", entry.sequence)).expect("identity grammar");
+        let curve_id = crate::ids::curve(&crate::ids::Stem::directory(entry.sequence));
+        let start_point = crate::ids::point(
+            &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
+        );
+        let end_point = crate::ids::point(
+            &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
+        );
+        let start_vertex = crate::ids::vertex(
+            &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
+        );
+        let end_vertex = crate::ids::vertex(
+            &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
+        );
+        let edge_id = crate::ids::edge(&crate::ids::Stem::directory(entry.sequence));
         let procedural =
             match cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
                 offset_source_id.clone(),
@@ -834,11 +833,7 @@ pub(super) fn project(
             )
             .and_then(|admitted_payload| {
                 ProceduralCurve::new(
-                    ProceduralCurveId::mint(format!(
-                        "iges:model:procedural-curve#D{}",
-                        entry.sequence
-                    ))
-                    .expect("identity grammar"),
+                    crate::ids::procedural_curve(&crate::ids::Stem::directory(entry.sequence)),
                     ProceduralCurveDefinition::Offset(admitted_payload),
                 )
             }) {

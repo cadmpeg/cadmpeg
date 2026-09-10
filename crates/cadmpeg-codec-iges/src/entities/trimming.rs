@@ -18,10 +18,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, VertexId,
-};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::LossNote;
@@ -195,7 +192,7 @@ fn cluster_boundary_positions(
 
 fn create_boundary_vertices(
     candidate: &mut ModelDraft,
-    stem: &str,
+    stem: &crate::ids::Stem,
     source_entity: &str,
     boundary: usize,
     source_endpoints: &[BoundaryVertexSourceEndpoint],
@@ -211,10 +208,8 @@ fn create_boundary_vertices(
         .collect::<Vec<Option<VertexId>>>();
     let mut derivations = Vec::new();
     for (index, cluster) in clusters.into_iter().enumerate() {
-        let point_id = PointId::mint(format!("iges:model:point#{stem}:{boundary}:{index}"))
-            .expect("identity grammar");
-        let vertex_id = VertexId::mint(format!("iges:model:vertex#{stem}:{boundary}:{index}"))
-            .expect("identity grammar");
+        let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
+        let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
         candidate.model_mut().points.push(Point {
             source_object: None,
             id: point_id.clone(),
@@ -359,8 +354,7 @@ pub(super) fn pcurve_geometry(
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
-    let curve_id =
-        CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
+    let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
     let (nurbs, range) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
     let source_parameter_map = match procedural_source_parameter_map(ir, support) {
@@ -532,7 +526,9 @@ fn parameter_curve_carrier_id(
     } else {
         sequence
     };
-    Some(CurveId::mint(format!("iges:model:curve#D{carrier_sequence}")).expect("identity grammar"))
+    Some(crate::ids::curve(&crate::ids::Stem::directory(
+        carrier_sequence,
+    )))
 }
 
 fn surface_parameter_bound_intervals(
@@ -1923,8 +1919,7 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
-            .expect("identity grammar");
+        let surface_id = crate::ids::surface(&crate::ids::Stem::directory(surface_sequence));
         let Some(support_geometry) = carrier_index.surfaces(surface_id.as_str()).map(|surface| {
             surface
                 .geometry
@@ -1939,13 +1934,12 @@ pub(super) fn project(
             continue;
         };
         let mut candidate = ModelDraft::new();
-        let stem = format!("D{}", entry.sequence);
-        let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let body_id = crate::ids::body(&stem);
         sequences.record_body(&body_id, entry.sequence);
-        let region_id =
-            RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
-        let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
-        let face_id = FaceId::mint(format!("iges:model:face#{stem}")).expect("identity grammar");
+        let region_id = crate::ids::region(&stem);
+        let shell_id = crate::ids::shell(&stem);
+        let face_id = crate::ids::face(&stem);
         sequences.record_face(&face_id, entry.sequence);
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
@@ -1985,8 +1979,7 @@ pub(super) fn project(
             let mut items = Vec::with_capacity(boundary.segments.len());
             for segment in &boundary.segments {
                 let model_curve_id =
-                    CurveId::mint(format!("iges:model:curve#D{}", segment.model_curve))
-                        .expect("identity grammar");
+                    crate::ids::curve(&crate::ids::Stem::directory(segment.model_curve));
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
                     losses.push(entity_loss(
                         entry,
@@ -2038,8 +2031,7 @@ pub(super) fn project(
                             periodic_parameters,
                         ) && !source_curve_control_polygon_within_bounds(
                             ir,
-                            &CurveId::mint(format!("iges:model:curve#D{sequence}"))
-                                .expect("identity grammar"),
+                            &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
                             &PcurveSupport {
                                 surface_id: &surface_id,
                                 geometry: &support_geometry,
@@ -2160,13 +2152,9 @@ pub(super) fn project(
                 sewing_tolerance,
                 surface_kind,
             ));
-            let loop_id = LoopId::mint(format!("iges:model:loop#{stem}:{boundary_index}"))
-                .expect("identity grammar");
+            let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
             let coedge_ids = (0..items.len())
-                .map(|index| {
-                    CoedgeId::mint(format!("iges:model:coedge#{stem}:{boundary_index}:{index}"))
-                        .expect("identity grammar")
-                })
+                .map(|index| crate::ids::coedge(&stem.slot(boundary_index).slot(index)))
                 .collect::<Vec<_>>();
             let source_endpoints = items
                 .iter()
@@ -2212,10 +2200,7 @@ pub(super) fn project(
             };
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
-                let edge_id = EdgeId::mint(format!(
-                    "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
-                ))
-                .expect("identity grammar");
+                let edge_id = crate::ids::edge(&stem.slot(boundary_index).slot(segment_index));
                 let start_vertex = vertex_ids[segment_index * 2].clone();
                 let end_vertex = vertex_ids[segment_index * 2 + 1].clone();
                 let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
@@ -2241,9 +2226,12 @@ pub(super) fn project(
                     .into_iter()
                     .enumerate()
                     .map(|(pcurve_index, (geometry, parameter_range))| {
-                        let id = PcurveId::mint(format!(
-                            "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
-                        )).expect("identity grammar");
+                        let id = crate::ids::pcurve(
+                            &stem
+                                .slot(boundary_index)
+                                .slot(segment_index)
+                                .slot(pcurve_index),
+                        );
                         if implicit_outer_domain {
                             implicit_boundary_pcurves.push(id.clone());
                         }
@@ -2262,7 +2250,8 @@ pub(super) fn project(
                             parameter_range: None,
                         })
                     })
-                    .collect::<Result<Vec<_>, &'static str>>() {
+                    .collect::<Result<Vec<_>, &'static str>>()
+                {
                     Ok(uses) => uses,
                     Err(error) => {
                         losses.push(entity_loss(entry, error));
@@ -2322,11 +2311,9 @@ pub(super) fn project(
             continue;
         }
         let face_surface_id = if implicit_outer_domain {
-            let derived_surface_id = SurfaceId::mint(format!(
-                "iges:model:surface#D{}:implicit-outer",
-                entry.sequence
-            ))
-            .expect("identity grammar");
+            let derived_surface_id = crate::ids::surface(
+                &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::ImplicitOuter),
+            );
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.clone(),
                 geometry: support_geometry.clone(),
@@ -2341,11 +2328,10 @@ pub(super) fn project(
             let _attached = candidate.model_mut().add_procedural_surface(
                 derived_surface_id.clone(),
                 match ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!(
-                        "iges:model:procedural-surface#D{}:implicit-outer",
-                        entry.sequence
-                    ))
-                    .expect("identity grammar"),
+                    crate::ids::procedural_surface(
+                        &crate::ids::Stem::directory(entry.sequence)
+                            .part(crate::ids::Word::ImplicitOuter),
+                    ),
                     ProceduralSurfaceDefinition::CurveBounded {
                         support: surface_id.clone(),
                         boundaries: implicit_boundary_curves,

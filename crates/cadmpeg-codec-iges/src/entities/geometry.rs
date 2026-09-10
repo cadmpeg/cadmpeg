@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -1499,17 +1499,13 @@ pub(crate) fn project_geometry(
         if angularly_equal(angle, 0.0) {
             angle = std::f64::consts::TAU;
         }
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1594,8 +1590,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "scaled coordinates are not finite"));
             continue;
         }
-        let point = PointId::mint(format!("iges:model:point#D{}", entry.sequence))
-            .expect("identity grammar");
+        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
@@ -1604,8 +1599,7 @@ pub(crate) fn project_geometry(
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
-            let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
-                .expect("identity grammar");
+            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
@@ -1683,8 +1677,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "scaled reference point is not finite"));
             continue;
         }
-        let point = PointId::mint(format!("iges:model:point#D{}", entry.sequence))
-            .expect("identity grammar");
+        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
@@ -1693,8 +1686,7 @@ pub(crate) fn project_geometry(
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
-            let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
-                .expect("identity grammar");
+            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
@@ -1754,8 +1746,8 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let stem = format!("D{}", entry.sequence);
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let curve = crate::ids::curve(&stem);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Line(
@@ -1771,15 +1763,11 @@ pub(crate) fn project_geometry(
             decoded.insert(entry.sequence);
             continue;
         }
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -2115,17 +2103,13 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -2230,9 +2214,9 @@ pub(crate) fn project_geometry(
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
-        let body = BodyId::mint("iges:model:body#free-geometry").expect("identity grammar");
-        let region = RegionId::mint("iges:model:region#free-geometry").expect("identity grammar");
-        let shell = ShellId::mint("iges:model:shell#free-geometry").expect("identity grammar");
+        let body = crate::ids::body(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let region = crate::ids::region(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let shell = crate::ids::shell(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Wire,
@@ -2304,9 +2288,7 @@ pub(crate) fn project_geometry(
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
         .iter()
-        .map(|sequence| {
-            PointId::mint(format!("iges:model:point#D{sequence}")).expect("identity grammar")
-        })
+        .map(|sequence| crate::ids::point(&crate::ids::Stem::directory(*sequence)))
         .collect::<BTreeSet<_>>();
     let vertex_points = ir
         .model

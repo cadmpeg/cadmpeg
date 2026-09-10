@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
     knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     NurbsCurve, ProceduralCurve, ProceduralCurveDefinition,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -190,7 +190,9 @@ pub(super) fn curve_carrier_id(
     } else {
         sequence
     };
-    Some(CurveId::mint(format!("iges:model:curve#D{carrier_sequence}")).expect("identity grammar"))
+    Some(crate::ids::curve(&crate::ids::Stem::directory(
+        carrier_sequence,
+    )))
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
@@ -1306,17 +1308,13 @@ fn project_native_composite(
             },
         })
         .collect::<Vec<_>>();
-    let stem = format!("D{}", entry.sequence);
-    let start_point =
-        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-    let end_point =
-        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-    let start_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-    let end_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-    let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-    let edge_id = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+    let stem = crate::ids::Stem::directory(entry.sequence);
+    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+    let curve_id = crate::ids::curve(&stem);
+    let edge_id = crate::ids::edge(&stem);
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -1711,17 +1709,13 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve_id = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1784,8 +1778,7 @@ fn project_with_type_130_policy(
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
-                ProceduralCurveId::mint(format!("iges:model:procedural-curve#{stem}"))
-                    .expect("identity grammar"),
+                crate::ids::procedural_curve(&stem),
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         boundaries, components,
