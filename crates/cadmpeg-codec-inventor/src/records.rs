@@ -120,7 +120,7 @@ pub(crate) struct MetaTables<'a> {
     pub(crate) prefix: [u16; 7],
     pub(crate) blocks: Vec<BlockDescriptor>,
     pub(crate) types: Vec<TypeDescriptor>,
-    pub(crate) sections: Vec<MetaSection<'a>>,
+    pub(crate) sections: [MetaSection<'a>; SECTION_COUNT],
     pub(crate) terminal_id: [u8; 16],
 }
 
@@ -190,28 +190,28 @@ pub(crate) fn parse_meta_tables<'a>(
             payload_len: encoded & 0x7fff_ffff,
         });
     }
-    let mut sections = vec![MetaSection {
+    let section_1 = MetaSection {
         number: MetaSectionNumber::One,
         discriminator: block_count as u32,
         payload: section_1_payload,
-    }];
+    };
     offset = next;
 
     let (section_2_count, section_2_payload, _, next) =
         counted_section(body, offset, 10, "section 2")?;
-    sections.push(MetaSection {
+    let section_2 = MetaSection {
         number: MetaSectionNumber::Two,
         discriminator: section_2_count as u32,
         payload: section_2_payload,
-    });
+    };
     offset = next;
     let (section_3_count, section_3_payload, _, next) =
         counted_section(body, offset, 28, "section 3")?;
-    sections.push(MetaSection {
+    let section_3 = MetaSection {
         number: MetaSectionNumber::Three,
         discriminator: section_3_count as u32,
         payload: section_3_payload,
-    });
+    };
     offset = next;
     let (type_count, section_4_payload, section_4_footer, _) =
         counted_section(body, offset, type_desc::LEN, "type table")?;
@@ -240,55 +240,34 @@ pub(crate) fn parse_meta_tables<'a>(
         });
     }
 
-    sections.push(MetaSection {
+    let section_4 = MetaSection {
         number: MetaSectionNumber::Four,
         discriminator: type_count as u32,
         payload: section_4_payload,
-    });
+    };
 
     let terminal_start = bytes.len() - TERMINAL_ID_LEN;
     let mut terminal_id = [0; 16];
     terminal_id.copy_from_slice(&bytes[terminal_start..]);
     let mut end = terminal_start;
     let mut payload_len = SECTION_11_PAYLOAD_LEN;
-    let mut reverse_sections = Vec::with_capacity(7);
-    for number in [
-        ReverseSectionNumber::Eleven,
-        ReverseSectionNumber::Ten,
-        ReverseSectionNumber::Nine,
-        ReverseSectionNumber::Eight,
-        ReverseSectionNumber::Seven,
-        ReverseSectionNumber::Six,
-        ReverseSectionNumber::Five,
-    ] {
-        let header = end
-            .checked_sub(payload_len.saturating_add(8))
-            .ok_or_else(|| CodecError::Malformed("RSe metadata section chain underflows".into()))?;
-        let previous_span = read_u32(bytes, header, "metadata section back span")? as usize;
-        let discriminator = read_u32(bytes, header + 4, "metadata section discriminator")?;
-        if previous_span < 4 {
-            return Err(CodecError::malformed(format_args!(
-                "RSe metadata section {number} has invalid back span {previous_span}"
-            )));
-        }
-        let payload = child(body, header + 8, end, "metadata section payload")?;
-        validate_reverse_section(number, discriminator, payload.window().len())?;
-        reverse_sections.push(MetaSection {
-            number: number.into(),
-            discriminator,
-            payload,
-        });
-        end = header;
-        payload_len = previous_span - 4;
-    }
+    let mut reverse = |number| reverse_section(bytes, body, number, &mut end, &mut payload_len);
+    let section_11 = reverse(ReverseSectionNumber::Eleven)?;
+    let section_10 = reverse(ReverseSectionNumber::Ten)?;
+    let section_9 = reverse(ReverseSectionNumber::Nine)?;
+    let section_8 = reverse(ReverseSectionNumber::Eight)?;
+    let section_7 = reverse(ReverseSectionNumber::Seven)?;
+    let section_6 = reverse(ReverseSectionNumber::Six)?;
+    let section_5 = reverse(ReverseSectionNumber::Five)?;
     if end != section_4_footer {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section chain ends at {end}, expected {section_4_footer}"
         )));
     }
-    reverse_sections.reverse();
-    sections.extend(reverse_sections);
-    debug_assert_eq!(sections.len(), SECTION_COUNT);
+    let sections = [
+        section_1, section_2, section_3, section_4, section_5, section_6, section_7, section_8,
+        section_9, section_10, section_11,
+    ];
     debug_assert_eq!(section_1_footer, meta_prefix::LEN + 4 + block_count * 4);
     Ok(MetaTables {
         prefix,
@@ -355,6 +334,34 @@ pub(crate) fn frame_bulk_records<'a>(
     Ok(RseRecordTable {
         records,
         stream_trailer,
+    })
+}
+
+fn reverse_section<'a>(
+    bytes: &[u8],
+    body: View<'a>,
+    number: ReverseSectionNumber,
+    end: &mut usize,
+    payload_len: &mut usize,
+) -> Result<MetaSection<'a>, CodecError> {
+    let header = end
+        .checked_sub(payload_len.saturating_add(8))
+        .ok_or_else(|| CodecError::Malformed("RSe metadata section chain underflows".into()))?;
+    let previous_span = read_u32(bytes, header, "metadata section back span")? as usize;
+    let discriminator = read_u32(bytes, header + 4, "metadata section discriminator")?;
+    if previous_span < 4 {
+        return Err(CodecError::malformed(format_args!(
+            "RSe metadata section {number} has invalid back span {previous_span}"
+        )));
+    }
+    let payload = child(body, header + 8, *end, "metadata section payload")?;
+    validate_reverse_section(number, discriminator, payload.window().len())?;
+    *end = header;
+    *payload_len = previous_span - 4;
+    Ok(MetaSection {
+        number: number.into(),
+        discriminator,
+        payload,
     })
 }
 

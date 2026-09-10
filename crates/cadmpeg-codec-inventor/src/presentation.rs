@@ -2,6 +2,7 @@
 //! Typed `PmApp` document-default and rendering-style records.
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -10,6 +11,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
+use crate::assembly::count_unresolved;
 use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::Located;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -144,7 +146,7 @@ pub(crate) struct PresentationProjection {
     pub(crate) appearances: Vec<Appearance>,
     pub(crate) bindings: Vec<AppearanceBinding>,
     pub(crate) unresolved_defaults: usize,
-    pub(crate) unresolved_face_overrides: BTreeMap<UnresolvedCause, usize>,
+    pub(crate) unresolved_face_overrides: BTreeMap<UnresolvedCause, NonZeroUsize>,
 }
 
 pub(crate) fn project_bindings(
@@ -304,10 +306,10 @@ fn project_face_bindings(
         }
         if matching_faces.len() != 1 {
             if matching_faces.iter().any(|face| face.styles.index != 0) {
-                *projection
-                    .unresolved_face_overrides
-                    .entry(UnresolvedCause::GraphicsFace)
-                    .or_default() += 1;
+                count_unresolved(
+                    &mut projection.unresolved_face_overrides,
+                    UnresolvedCause::GraphicsFace,
+                );
             }
             continue;
         }
@@ -316,10 +318,10 @@ fn project_face_bindings(
             continue;
         };
         if key_counts.get(key) != Some(&1) {
-            *projection
-                .unresolved_face_overrides
-                .entry(UnresolvedCause::FaceKey)
-                .or_default() += 1;
+            count_unresolved(
+                &mut projection.unresolved_face_overrides,
+                UnresolvedCause::FaceKey,
+            );
             continue;
         }
         let collections = inventory
@@ -331,10 +333,10 @@ fn project_face_bindings(
             })
             .collect::<Vec<_>>();
         if collections.len() != 1 {
-            *projection
-                .unresolved_face_overrides
-                .entry(UnresolvedCause::StyleCollection)
-                .or_default() += 1;
+            count_unresolved(
+                &mut projection.unresolved_face_overrides,
+                UnresolvedCause::StyleCollection,
+            );
             continue;
         }
         let collection = collections[0];
@@ -354,19 +356,19 @@ fn project_face_bindings(
             })
             .collect::<Vec<_>>();
         if color_styles.len() != 1 {
-            *projection
-                .unresolved_face_overrides
-                .entry(UnresolvedCause::ColorStyle)
-                .or_default() += 1;
+            count_unresolved(
+                &mut projection.unresolved_face_overrides,
+                UnresolvedCause::ColorStyle,
+            );
             continue;
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1];
         let Some(color) = Color::new(r, g, b, a) else {
-            *projection
-                .unresolved_face_overrides
-                .entry(UnresolvedCause::Color)
-                .or_default() += 1;
+            count_unresolved(
+                &mut projection.unresolved_face_overrides,
+                UnresolvedCause::Color,
+            );
             continue;
         };
         let appearance_id = appearance_ids

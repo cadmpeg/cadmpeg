@@ -379,17 +379,22 @@ pub(crate) fn inventory(
             continue;
         };
         for record in &table.records {
-            let result = match record.type_id {
-                SKETCH_TYPE => parse_sketch(ctx, record.payload, version).map(|value| {
-                    inventory.sketches.push(Located::new(
-                        value,
-                        type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
-                        record.ordinal,
-                    ));
-                }),
-                POINT_TYPE | LINE_TYPE | CIRCLE_TYPE | ELLIPSE_TYPE => {
-                    parse_entity(ctx, record.type_id, record.payload, version).map(|value| {
+            let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
+                continue;
+            };
+            let result = match tag {
+                SketchRecordTag::Sketch => {
+                    parse_sketch(ctx, record.payload, version).map(|value| {
+                        inventory.sketches.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            segment.pair.token.as_str(),
+                            record.ordinal,
+                        ));
+                    })
+                }
+                SketchRecordTag::Entity(entity) => {
+                    parse_entity(ctx, entity, record.payload, version).map(|value| {
                         inventory.entities.push(Located::new(
                             value,
                             type_id_string(record.type_id),
@@ -398,35 +403,28 @@ pub(crate) fn inventory(
                         ));
                     })
                 }
-                TRANSFORM_TYPE => parse_transform(record.payload, version).map(|value| {
-                    inventory.transforms.push(Located::new(
-                        value,
-                        type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
-                        record.ordinal,
-                    ));
-                }),
-                DIRECTION_TYPE => parse_direction(record.payload, version).map(|value| {
-                    inventory.directions.push(Located::new(
-                        value,
-                        type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
-                        record.ordinal,
-                    ));
-                }),
-                COINCIDENT_TYPE
-                | PARALLEL_TYPE
-                | PERPENDICULAR_TYPE
-                | TANGENT_TYPE
-                | HORIZONTAL_TYPE
-                | VERTICAL_TYPE
-                | HORIZONTAL_DISTANCE_TYPE
-                | VERTICAL_DISTANCE_TYPE
-                | RADIUS_TYPE
-                | DIAMETER_TYPE
-                | CIRCLE_CENTER_TYPE
-                | EQUAL_RADIUS_TYPE => {
-                    parse_constraint(ctx, record.type_id, record.payload, version).map(|value| {
+                SketchRecordTag::Transform => {
+                    parse_transform(record.payload, version).map(|value| {
+                        inventory.transforms.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            segment.pair.token.as_str(),
+                            record.ordinal,
+                        ));
+                    })
+                }
+                SketchRecordTag::Direction => {
+                    parse_direction(record.payload, version).map(|value| {
+                        inventory.directions.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            segment.pair.token.as_str(),
+                            record.ordinal,
+                        ));
+                    })
+                }
+                SketchRecordTag::Constraint(constraint) => {
+                    parse_constraint(ctx, constraint, record.payload, version).map(|value| {
                         inventory.constraints.push(Located::new(
                             value,
                             type_id_string(record.type_id),
@@ -435,7 +433,6 @@ pub(crate) fn inventory(
                         ));
                     })
                 }
-                _ => continue,
             };
             if let Err(error) = result {
                 inventory.issues.push(RecordIssue {
@@ -493,9 +490,87 @@ fn parse_sketch(
     })
 }
 
+#[derive(Clone, Copy)]
+enum SketchEntityTag {
+    Point,
+    Line,
+    Circle,
+    Ellipse,
+}
+
+impl SketchEntityTag {
+    fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
+        match type_id {
+            POINT_TYPE => Some(Self::Point),
+            LINE_TYPE => Some(Self::Line),
+            CIRCLE_TYPE => Some(Self::Circle),
+            ELLIPSE_TYPE => Some(Self::Ellipse),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SketchConstraintTag {
+    Coincident,
+    Parallel,
+    Perpendicular,
+    Tangent,
+    Horizontal,
+    Vertical,
+    HorizontalDistance,
+    VerticalDistance,
+    Radius,
+    Diameter,
+    CircleCenter,
+    EqualRadius,
+}
+
+impl SketchConstraintTag {
+    fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
+        match type_id {
+            COINCIDENT_TYPE => Some(Self::Coincident),
+            PARALLEL_TYPE => Some(Self::Parallel),
+            PERPENDICULAR_TYPE => Some(Self::Perpendicular),
+            TANGENT_TYPE => Some(Self::Tangent),
+            HORIZONTAL_TYPE => Some(Self::Horizontal),
+            VERTICAL_TYPE => Some(Self::Vertical),
+            HORIZONTAL_DISTANCE_TYPE => Some(Self::HorizontalDistance),
+            VERTICAL_DISTANCE_TYPE => Some(Self::VerticalDistance),
+            RADIUS_TYPE => Some(Self::Radius),
+            DIAMETER_TYPE => Some(Self::Diameter),
+            CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
+            EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SketchRecordTag {
+    Sketch,
+    Transform,
+    Direction,
+    Entity(SketchEntityTag),
+    Constraint(SketchConstraintTag),
+}
+
+impl SketchRecordTag {
+    fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
+        match type_id {
+            SKETCH_TYPE => Some(Self::Sketch),
+            TRANSFORM_TYPE => Some(Self::Transform),
+            DIRECTION_TYPE => Some(Self::Direction),
+            _ => SketchEntityTag::from_type_id(type_id)
+                .map(Self::Entity)
+                .or_else(|| SketchConstraintTag::from_type_id(type_id).map(Self::Constraint)),
+        }
+    }
+}
+
 fn parse_entity(
     ctx: &DecodeContext<'_>,
-    type_id: [u8; 16],
+    tag: SketchEntityTag,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcSketchEntityPayload, CodecError> {
@@ -503,12 +578,11 @@ fn parse_entity(
     let header = content_header(&mut cursor)?;
     let entity_flags = cursor.u32()?;
     let sketch = cursor.reference()?;
-    let kind = match type_id {
-        POINT_TYPE => parse_point(ctx, &mut cursor)?,
-        LINE_TYPE => parse_line(ctx, &mut cursor)?,
-        CIRCLE_TYPE => parse_circle(ctx, &mut cursor)?,
-        ELLIPSE_TYPE => parse_ellipse(ctx, &mut cursor)?,
-        _ => unreachable!("caller selects a supported sketch entity"),
+    let kind = match tag {
+        SketchEntityTag::Point => parse_point(ctx, &mut cursor)?,
+        SketchEntityTag::Line => parse_line(ctx, &mut cursor)?,
+        SketchEntityTag::Circle => parse_circle(ctx, &mut cursor)?,
+        SketchEntityTag::Ellipse => parse_ellipse(ctx, &mut cursor)?,
     };
     cursor.finish("sketch entity")?;
     Ok(PmDcSketchEntityPayload {
@@ -795,82 +869,78 @@ fn parse_constraint_header(
 
 fn parse_constraint(
     ctx: &DecodeContext<'_>,
-    type_id: [u8; 16],
+    tag: SketchConstraintTag,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcSketchConstraintPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = parse_constraint_header(ctx, &mut cursor, version)?;
-    let kind = match type_id {
-        COINCIDENT_TYPE => PmDcSketchConstraintKind::Coincident {
+    let kind = match tag {
+        SketchConstraintTag::Coincident => PmDcSketchConstraintKind::Coincident {
             first: cursor.reference()?,
             second: cursor.reference()?,
         },
-        PARALLEL_TYPE => PmDcSketchConstraintKind::Parallel {
-            first: cursor.reference()?,
-            second: cursor.reference()?,
-            orientation: cursor.u16()?,
-        },
-        PERPENDICULAR_TYPE => PmDcSketchConstraintKind::Perpendicular {
+        SketchConstraintTag::Parallel => PmDcSketchConstraintKind::Parallel {
             first: cursor.reference()?,
             second: cursor.reference()?,
             orientation: cursor.u16()?,
         },
-        TANGENT_TYPE => PmDcSketchConstraintKind::Tangent {
+        SketchConstraintTag::Perpendicular => PmDcSketchConstraintKind::Perpendicular {
+            first: cursor.reference()?,
+            second: cursor.reference()?,
+            orientation: cursor.u16()?,
+        },
+        SketchConstraintTag::Tangent => PmDcSketchConstraintKind::Tangent {
             first: cursor.reference()?,
             second: cursor.reference()?,
             extension: (cursor.remaining() == 4)
                 .then(|| cursor.u32())
                 .transpose()?,
         },
-        HORIZONTAL_TYPE => PmDcSketchConstraintKind::Horizontal {
+        SketchConstraintTag::Horizontal => PmDcSketchConstraintKind::Horizontal {
             entity: cursor.reference()?,
             state: cursor.u8()?,
         },
-        VERTICAL_TYPE => PmDcSketchConstraintKind::Vertical {
+        SketchConstraintTag::Vertical => PmDcSketchConstraintKind::Vertical {
             entity: cursor.reference()?,
             state: cursor.u8()?,
         },
-        HORIZONTAL_DISTANCE_TYPE | VERTICAL_DISTANCE_TYPE => {
-            let first = cursor.reference()?;
-            let second = cursor.reference()?;
-            let parameter = cursor.reference()?;
-            let values = u32_array::<4>(&mut cursor)?;
-            if type_id == HORIZONTAL_DISTANCE_TYPE {
-                PmDcSketchConstraintKind::HorizontalDistance {
-                    first,
-                    second,
-                    parameter,
-                    values,
-                }
-            } else {
-                PmDcSketchConstraintKind::VerticalDistance {
-                    first,
-                    second,
-                    parameter,
-                    values,
-                }
+        SketchConstraintTag::HorizontalDistance => {
+            let (first, second, parameter, values) = distance_constraint_fields(&mut cursor)?;
+            PmDcSketchConstraintKind::HorizontalDistance {
+                first,
+                second,
+                parameter,
+                values,
             }
         }
-        RADIUS_TYPE => PmDcSketchConstraintKind::Radius {
+        SketchConstraintTag::VerticalDistance => {
+            let (first, second, parameter, values) = distance_constraint_fields(&mut cursor)?;
+            PmDcSketchConstraintKind::VerticalDistance {
+                first,
+                second,
+                parameter,
+                values,
+            }
+        }
+        SketchConstraintTag::Radius => PmDcSketchConstraintKind::Radius {
             state: cursor.u32()?,
             entity: cursor.reference()?,
             values: u32_array::<4>(&mut cursor)?,
         },
-        DIAMETER_TYPE => PmDcSketchConstraintKind::Diameter {
+        SketchConstraintTag::Diameter => PmDcSketchConstraintKind::Diameter {
             reference: cursor.reference()?,
             entity: cursor.reference()?,
             values: u32_array::<4>(&mut cursor)?,
         },
-        CIRCLE_CENTER_TYPE => PmDcSketchConstraintKind::CircleCenter {
+        SketchConstraintTag::CircleCenter => PmDcSketchConstraintKind::CircleCenter {
             entity: cursor.reference()?,
             center: cursor.reference()?,
         },
-        EQUAL_RADIUS_TYPE => PmDcSketchConstraintKind::EqualRadius {
+        SketchConstraintTag::EqualRadius => PmDcSketchConstraintKind::EqualRadius {
             first: cursor.reference()?,
             second: cursor.reference()?,
         },
-        _ => unreachable!("caller selects a supported sketch constraint"),
     };
     cursor.finish("sketch constraint")?;
     Ok(PmDcSketchConstraintPayload {
@@ -878,6 +948,16 @@ fn parse_constraint(
         header,
         kind,
     })
+}
+
+fn distance_constraint_fields(
+    cursor: &mut Cursor<'_>,
+) -> Result<(PmDcReference, PmDcReference, PmDcReference, [u32; 4]), CodecError> {
+    let first = cursor.reference()?;
+    let second = cursor.reference()?;
+    let parameter = cursor.reference()?;
+    let values = u32_array::<4>(cursor)?;
+    Ok((first, second, parameter, values))
 }
 
 fn u32_array<const N: usize>(cursor: &mut Cursor<'_>) -> Result<[u32; N], CodecError> {
@@ -1869,7 +1949,7 @@ mod tests {
     fn parses_generated_planar_geometry_branches() {
         let point = point_bytes(1, 3, [1.25, -2.5]);
         let parsed = parse(&point, |ctx, source| {
-            parse_entity(ctx, POINT_TYPE, source, 22).expect("point")
+            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
         });
         assert!(matches!(
             parsed.kind,
@@ -1881,7 +1961,7 @@ mod tests {
 
         let line = line_bytes(2, 3, [4, 5]);
         let parsed = parse(&line, |ctx, source| {
-            parse_entity(ctx, LINE_TYPE, source, 22).expect("line")
+            parse_entity(ctx, SketchEntityTag::Line, source, 22).expect("line")
         });
         assert!(matches!(
             parsed.kind,
@@ -1896,7 +1976,7 @@ mod tests {
         circle.extend_from_slice(&2.5f64.to_le_bytes());
         circle.push(1);
         let parsed = parse(&circle, |ctx, source| {
-            parse_entity(ctx, CIRCLE_TYPE, source, 22).expect("circle")
+            parse_entity(ctx, SketchEntityTag::Circle, source, 22).expect("circle")
         });
         assert!(matches!(
             parsed.kind,
@@ -1913,7 +1993,7 @@ mod tests {
         ellipse.extend_from_slice(&2.0f64.to_le_bytes());
         ellipse.push(0);
         let parsed = parse(&ellipse, |ctx, source| {
-            parse_entity(ctx, ELLIPSE_TYPE, source, 22).expect("ellipse")
+            parse_entity(ctx, SketchEntityTag::Ellipse, source, 22).expect("ellipse")
         });
         assert!(matches!(
             parsed.kind,
@@ -1928,10 +2008,14 @@ mod tests {
     #[test]
     fn parses_generated_constraint_branches() {
         for (type_id, tail, expected) in [
-            (COINCIDENT_TYPE, vec![4, 5], "coincident"),
-            (PARALLEL_TYPE, vec![4, 5, 0], "parallel"),
-            (PERPENDICULAR_TYPE, vec![4, 5, 0], "perpendicular"),
-            (TANGENT_TYPE, vec![4, 5, 0], "tangent"),
+            (SketchConstraintTag::Coincident, vec![4, 5], "coincident"),
+            (SketchConstraintTag::Parallel, vec![4, 5, 0], "parallel"),
+            (
+                SketchConstraintTag::Perpendicular,
+                vec![4, 5, 0],
+                "perpendicular",
+            ),
+            (SketchConstraintTag::Tangent, vec![4, 5, 0], "tangent"),
         ] {
             let mut bytes = constraint_header(9, 0);
             for (index, value) in tail.into_iter().enumerate() {
@@ -1956,7 +2040,10 @@ mod tests {
             );
         }
 
-        for (type_id, expected) in [(HORIZONTAL_TYPE, true), (VERTICAL_TYPE, false)] {
+        for (type_id, expected) in [
+            (SketchConstraintTag::Horizontal, true),
+            (SketchConstraintTag::Vertical, false),
+        ] {
             let mut bytes = constraint_header(10, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
             bytes.push(1);
@@ -1976,7 +2063,8 @@ mod tests {
         bytes.extend_from_slice(&4u32.to_le_bytes());
         bytes.extend_from_slice(&5u32.to_le_bytes());
         let parsed = parse(&bytes, |ctx, source| {
-            parse_constraint(ctx, COINCIDENT_TYPE, source, 16).expect("legacy coincident")
+            parse_constraint(ctx, SketchConstraintTag::Coincident, source, 16)
+                .expect("legacy coincident")
         });
         assert!(parsed.header.scalar_map.entries().is_empty());
         assert!(parsed.header.reference_map.entries().is_empty());
@@ -1989,7 +2077,10 @@ mod tests {
 
     #[test]
     fn parses_generated_dimensional_constraint_branches() {
-        for type_id in [HORIZONTAL_DISTANCE_TYPE, VERTICAL_DISTANCE_TYPE] {
+        for type_id in [
+            SketchConstraintTag::HorizontalDistance,
+            SketchConstraintTag::VerticalDistance,
+        ] {
             let mut bytes = constraint_header(11, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
             bytes.extend_from_slice(&5u32.to_le_bytes());
@@ -2004,7 +2095,7 @@ mod tests {
         radius.extend_from_slice(&4u32.to_le_bytes());
         radius.extend_from_slice(&[0; 16]);
         parse(&radius, |ctx, source| {
-            parse_constraint(ctx, RADIUS_TYPE, source, 22).expect("radius")
+            parse_constraint(ctx, SketchConstraintTag::Radius, source, 22).expect("radius")
         });
 
         let mut diameter = constraint_header(13, 14);
@@ -2012,10 +2103,13 @@ mod tests {
         diameter.extend_from_slice(&4u32.to_le_bytes());
         diameter.extend_from_slice(&[0; 16]);
         parse(&diameter, |ctx, source| {
-            parse_constraint(ctx, DIAMETER_TYPE, source, 22).expect("diameter")
+            parse_constraint(ctx, SketchConstraintTag::Diameter, source, 22).expect("diameter")
         });
 
-        for type_id in [CIRCLE_CENTER_TYPE, EQUAL_RADIUS_TYPE] {
+        for type_id in [
+            SketchConstraintTag::CircleCenter,
+            SketchConstraintTag::EqualRadius,
+        ] {
             let mut bytes = constraint_header(14, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
             bytes.extend_from_slice(&5u32.to_le_bytes());
@@ -2066,14 +2160,16 @@ mod tests {
             .map(|(index, position)| {
                 parse(
                     &point_bytes(index as u32 + 3, 3, position),
-                    |ctx, source| parse_entity(ctx, POINT_TYPE, source, 22).expect("point"),
+                    |ctx, source| {
+                        parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
+                    },
                 )
             })
             .collect::<Vec<_>>();
         for (index, endpoints) in [[4, 5], [5, 6], [6, 7], [7, 4]].into_iter().enumerate() {
             let mut line = parse(
                 &line_bytes(index as u32 + 7, 3, endpoints),
-                |ctx, source| parse_entity(ctx, LINE_TYPE, source, 22).expect("line"),
+                |ctx, source| parse_entity(ctx, SketchEntityTag::Line, source, 22).expect("line"),
             );
             let start = points[endpoints[0] as usize - 4];
             let end = points[endpoints[1] as usize - 4];
@@ -2131,7 +2227,8 @@ mod tests {
         mapped_constraint.extend_from_slice(&4u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&5u32.to_le_bytes());
         let mapped_constraint = parse(&mapped_constraint, |ctx, source| {
-            parse_constraint(ctx, COINCIDENT_TYPE, source, 22).expect("mapped coincident")
+            parse_constraint(ctx, SketchConstraintTag::Coincident, source, 22)
+                .expect("mapped coincident")
         });
         inventory.constraints.push(Located::new(
             mapped_constraint,
