@@ -114,7 +114,6 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     StageOutcome {
         value: (),
         claims: typed,
-        warnings: Vec::new(),
         notes: notes.into_iter().collect(),
         losses,
     }

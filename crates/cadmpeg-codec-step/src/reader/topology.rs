@@ -219,10 +219,10 @@ pub(super) fn decode(
             vertices_by_source: BTreeMap::new(),
         },
         claims: HashSet::new(),
-        warnings: Vec::new(),
         losses: Vec::new(),
         notes: Vec::new(),
     };
+    let mut warnings = Vec::new();
     for (&id, record) in &exchange.records {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
         else {
@@ -253,13 +253,13 @@ pub(super) fn decode(
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
             ));
             continue;
         };
         if !carrier_index.points.contains_key(&point_id) {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
             ));
         }
@@ -298,13 +298,13 @@ pub(super) fn decode(
             &vertices,
             &edges,
             point_positions,
-            &mut result.warnings,
+            &mut warnings,
         );
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
-                result.warnings.push(topology_commit_error(
+                warnings.push(topology_commit_error(
                     &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
                 ));
@@ -321,11 +321,11 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
             ));
         } else if let Some(failures) = failures {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
                 failures.count
             ));
@@ -343,13 +343,13 @@ pub(super) fn decode(
             &edges,
             point_positions,
             scope_root,
-            &mut result.warnings,
+            &mut warnings,
         );
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
-                result.warnings.push(topology_commit_error(
+                warnings.push(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
                 ));
@@ -371,11 +371,11 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
             ));
         } else if let Some(failures) = failures {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
                 failures.count
             ));
@@ -405,7 +405,7 @@ pub(super) fn decode(
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
             ));
             continue;
@@ -440,7 +440,7 @@ pub(super) fn decode(
             &decoded_pcurves,
             point_positions,
             scope_root,
-            &mut result.warnings,
+            &mut warnings,
             &mut result.losses,
         );
         let (built, failures) = outcome.into_parts();
@@ -453,7 +453,7 @@ pub(super) fn decode(
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &commit_session, ir);
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
-                result.warnings.push(topology_commit_error(
+                warnings.push(topology_commit_error(
                     &format!("STEP topology root #{id}"),
                     &error,
                 ));
@@ -500,7 +500,7 @@ pub(super) fn decode(
                 let detail = failure_message
                     .as_deref()
                     .map_or_else(String::new, |message| format!(": {message}"));
-                result.warnings.push(format!(
+                warnings.push(format!(
                     "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
                     failures.count,
                 ));
@@ -513,7 +513,7 @@ pub(super) fn decode(
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} omitted unsupported or unresolved member(s): {}",
                 omitted
                     .iter()
@@ -523,7 +523,7 @@ pub(super) fn decode(
             ));
         }
         let Some(mut built) =
-            build_geometric_set(id, record, exchange, carrier_index, &mut result.warnings)
+            build_geometric_set(id, record, exchange, carrier_index, &mut warnings)
         else {
             if mark_standalone_geometric_set(
                 id,
@@ -534,13 +534,13 @@ pub(super) fn decode(
             ) {
                 continue;
             }
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
             ));
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft, ir) {
-            result.warnings.push(topology_commit_error(
+            warnings.push(topology_commit_error(
                 &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                 &error,
             ));
@@ -566,7 +566,7 @@ pub(super) fn decode(
         };
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
-            result.warnings.push(format!(
+            warnings.push(format!(
                 "{} #{id} omitted unsupported or unresolved member(s): {}",
                 representation_type,
                 omitted
@@ -638,6 +638,7 @@ pub(super) fn decode(
                 .push(vertex.id.clone());
         }
     }
+    result.losses = super::fold_warnings(result.losses, warnings);
     result
 }
 

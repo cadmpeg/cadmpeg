@@ -413,8 +413,7 @@ pub(super) fn decode(
     Ok(StageOutcome {
         value: (),
         claims: typed,
-        warnings,
-        losses,
+        losses: super::fold_warnings(losses, warnings),
         notes: Vec::new(),
     })
 }
