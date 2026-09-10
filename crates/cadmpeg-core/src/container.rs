@@ -240,10 +240,10 @@ pub enum EntryStorage {
     Compressed {
         /// Compression method.
         method: CompressionMethod,
-        /// Stored size in bytes.
-        stored: Option<u64>,
-        /// Expanded size in bytes.
-        expanded: Option<u64>,
+        /// Stored size in bytes, absent when the codec does not report it.
+        stored: Option<NonZeroU64>,
+        /// Expanded size in bytes, absent when the codec does not report it.
+        expanded: Option<NonZeroU64>,
     },
 }
 
@@ -318,8 +318,8 @@ impl EntryStorage {
             Err(method) => {
                 return Ok(Self::Compressed {
                     method,
-                    stored: (stored != 0).then_some(stored),
-                    expanded: (expanded != 0).then_some(expanded),
+                    stored: NonZeroU64::new(stored),
+                    expanded: NonZeroU64::new(expanded),
                 })
             }
         };
@@ -344,7 +344,10 @@ impl EntryStorage {
                 VerbatimSize::Exact(size) => Some(size.get()),
                 VerbatimSize::Framed(span) => Some(span.stored().get()),
             },
-            Self::Compressed { stored, .. } => *stored,
+            Self::Compressed { stored, .. } => match stored {
+                Some(stored) => Some(stored.get()),
+                None => None,
+            },
         }
     }
 
@@ -360,7 +363,10 @@ impl EntryStorage {
                 }
                 VerbatimSize::Framed(span) => Some(span.payload()),
             },
-            Self::Compressed { expanded, .. } => *expanded,
+            Self::Compressed { expanded, .. } => match expanded {
+                Some(expanded) => Some(expanded.get()),
+                None => None,
+            },
         }
     }
 }
@@ -515,6 +521,7 @@ mod tests {
     use super::{
         CompressionMethod, ContainerEntry, ContainerRole, EntryStorage, VerbatimLabel, VerbatimSize,
     };
+    use std::collections::BTreeMap;
     use std::num::{NonZeroU32, NonZeroU64};
 
     fn wire(compression: &str, compressed: u64, uncompressed: u64) -> serde_json::Value {
@@ -572,17 +579,54 @@ mod tests {
             Ok(EntryStorage::Compressed {
                 method: CompressionMethod::Zlib,
                 stored: None,
-                expanded: Some(99),
+                expanded: NonZeroU64::new(99),
             })
         );
         assert_eq!(
             EntryStorage::from_declared(Err(CompressionMethod::Jpeg), 44, 0),
             Ok(EntryStorage::Compressed {
                 method: CompressionMethod::Jpeg,
-                stored: Some(44),
+                stored: NonZeroU64::new(44),
                 expanded: None,
             })
         );
+    }
+
+    #[test]
+    fn compressed_sizes_spell_unreported_only_as_absence() {
+        for (compressed, uncompressed, stored, expanded) in [
+            (0, 0, None, None),
+            (0, 99, None, Some(nonzero(99))),
+            (44, 0, Some(nonzero(44)), None),
+            (4, 16, Some(nonzero(4)), Some(nonzero(16))),
+        ] {
+            let storage = EntryStorage::Compressed {
+                method: CompressionMethod::Deflate,
+                stored,
+                expanded,
+            };
+            assert_eq!(
+                EntryStorage::from_declared(
+                    Err(CompressionMethod::Deflate),
+                    compressed,
+                    uncompressed
+                ),
+                Ok(storage.clone())
+            );
+            let entry = ContainerEntry {
+                name: "entry".to_string(),
+                role: ContainerRole::Stream,
+                storage: storage.clone(),
+                attributes: BTreeMap::new(),
+            };
+            let mut expected = wire("deflate", compressed, uncompressed);
+            expected["attributes"] = serde_json::json!({});
+            let serialized = serde_json::to_value(&entry).expect("a container entry serializes");
+            assert_eq!(serialized, expected);
+            let read_back: ContainerEntry =
+                serde_json::from_value(serialized).expect("the wire value re-admits");
+            assert_eq!(read_back.storage, storage);
+        }
     }
 
     #[test]

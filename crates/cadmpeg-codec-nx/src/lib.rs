@@ -111,6 +111,7 @@ pub use evaluation::{
 
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
+use std::num::NonZeroU64;
 
 use std::collections::BTreeMap;
 
@@ -304,7 +305,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             container::ContainerLayout::Modern { .. } => EntryStorage::Compressed {
                 method: CompressionMethod::Zlib,
                 stored: None,
-                expanded: Some(inflated_len),
+                expanded: NonZeroU64::new(inflated_len),
             },
             container::ContainerLayout::LegacyCfb { .. } => {
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
