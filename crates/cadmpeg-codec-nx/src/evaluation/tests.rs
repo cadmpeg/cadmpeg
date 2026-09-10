@@ -141,7 +141,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 )
                 .unwrap(),
 
-                extent: Some(LinearTermination::ThroughAll),
+                extent: Some(LinearTermination::ThroughAll {}),
                 bottom: None,
                 taper_angle: None,
                 allow_multi_profile_faces: None,
@@ -205,7 +205,7 @@ fn complete_extrude_feature(
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile.clone()),
             direction: ExtrudeDirection::ProfileNormal {},
-            start: ExtrudeStart::ProfilePlane,
+            start: ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {

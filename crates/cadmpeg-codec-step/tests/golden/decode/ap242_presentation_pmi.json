@@ -27,15 +27,24 @@
           "relationships": {
             "items": [
               {
-                "target": "step:presentation:pmi#8"
+                "target": {
+                  "kind": "local",
+                  "target": "step:presentation:pmi#8"
+                }
               },
               {
-                "target": "step:data:annotation_plane#9"
+                "target": {
+                  "kind": "local",
+                  "target": "step:data:annotation_plane#9"
+                }
               }
             ],
             "presentation_context": [
               {
-                "target": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2"
+                "target": {
+                  "kind": "local",
+                  "target": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2"
+                }
               }
             ]
           },

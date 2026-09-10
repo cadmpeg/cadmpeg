@@ -637,7 +637,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         definition, FeatureDefinition::Hole {
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             placements,
             ..
         } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {

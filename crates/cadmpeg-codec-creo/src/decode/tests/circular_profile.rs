@@ -77,7 +77,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 },
             },
             op: BooleanOp::Join,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

@@ -60,7 +60,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
@@ -86,7 +86,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
@@ -145,7 +145,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
@@ -161,7 +161,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },
@@ -176,7 +176,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },

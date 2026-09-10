@@ -55,7 +55,7 @@ fn decode_extracts_parametric_history() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
@@ -256,7 +256,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },

@@ -1203,8 +1203,8 @@ fn project_extrusion(
         1 if length.get() > 0.0 => LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(length.get())?,
         },
-        4 => LinearTermination::ThroughNext,
-        5 => LinearTermination::ThroughAll,
+        4 => LinearTermination::ThroughNext {},
+        5 => LinearTermination::ThroughAll {},
         _ => return None,
     };
     let side = ExtrudeSide {
@@ -1235,7 +1235,7 @@ fn project_extrusion(
                     vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                     source: Some(ExtrusionDirectionSource::Custom),
                 },
-                start: ExtrudeStart::ProfilePlane,
+                start: ExtrudeStart::ProfilePlane {},
                 extent,
                 op,
                 solid: Some(true),
@@ -1431,8 +1431,8 @@ fn project_hole(
         1 if depth.get() > 0.0 => LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(depth.get())?,
         },
-        4 => LinearTermination::ThroughNext,
-        5 => LinearTermination::ThroughAll,
+        4 => LinearTermination::ThroughNext {},
+        5 => LinearTermination::ThroughAll {},
         _ => return None,
     };
     let transform_reference = source.properties.references().get(8)?;
@@ -2655,7 +2655,7 @@ mod tests {
                 placements,
                 shape,
 
-                extent: Some(LinearTermination::ThroughAll),
+                extent: Some(LinearTermination::ThroughAll {}),
                 ..
             } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                     kind: HoleKind::CounterboreDrilled {

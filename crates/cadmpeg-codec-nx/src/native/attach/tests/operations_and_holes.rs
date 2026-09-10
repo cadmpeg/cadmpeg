@@ -584,7 +584,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             face: None,
             placements: None,
             shape,
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             ..
         } if matches!((shape.construction(), shape.exit_kind(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
@@ -608,7 +608,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ), cadmpeg_ir::features::FeatureDefinition::Hole {
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             ..
         } if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
@@ -642,7 +642,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ), cadmpeg_ir::features::FeatureDefinition::Hole {
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             ..
         } if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
@@ -1073,12 +1073,12 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
                     draft: None,
                 },
             },
             op: BooleanOp::Unresolved,
-            start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
+            start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
             solid: None,
             face_maker: None,
             inner_wire_taper: None,

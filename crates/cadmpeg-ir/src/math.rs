@@ -69,6 +69,7 @@ impl Point3 {
 /// always unit length) or a length-bearing displacement.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Vector3 {
     /// X component.
     pub x: f64,
@@ -151,6 +152,7 @@ impl std::ops::Sub for Vector3 {
 /// A point in 2D surface parameter (u, v) space.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Point2 {
     /// U parameter.
     pub u: f64,

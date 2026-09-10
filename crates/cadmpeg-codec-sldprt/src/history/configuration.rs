@@ -902,7 +902,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
     }
     if extent
         .as_ref()
-        .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
+        .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
     {
         extent.clone_from(base_extent);
     }

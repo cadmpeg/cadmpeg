@@ -1698,10 +1698,10 @@ fn profile_consumers_require_a_regeneration_profile() {
     let mut definition = FeatureDefinition::Extrude {
         profile: ProfileRef::Native("sketch-native".into()),
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: LinearTermination::Unresolved,
+                termination: LinearTermination::Unresolved {},
                 draft: None,
             },
         },

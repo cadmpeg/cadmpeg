@@ -8244,7 +8244,7 @@ pub(crate) fn project_extrude(
             if profile_offset.is_some() {
                 return None;
             }
-            ExtrudeStart::ProfilePlane
+            ExtrudeStart::ProfilePlane {}
         }
         DesignExtrudeStart::OffsetProfilePlane if start_groups.is_empty() => {
             ExtrudeStart::OffsetProfilePlane {
@@ -8402,7 +8402,7 @@ pub(crate) fn project_extrude(
                 && termination_groups.is_empty()
                 && effective_side_one_offset.is_none() =>
         {
-            (ExtentShape::Symmetric(LinearTermination::ThroughAll), false)
+            (ExtentShape::Symmetric(LinearTermination::ThroughAll {}), false)
         }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
             match (
@@ -8440,7 +8440,7 @@ pub(crate) fn project_extrude(
             if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(LinearTermination::ThroughNext),
+                ExtentShape::OneSided(LinearTermination::ThroughNext {}),
                 prologue.direction_reversed(),
             )
         }
@@ -8448,7 +8448,7 @@ pub(crate) fn project_extrude(
             if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(LinearTermination::ThroughAll),
+                ExtentShape::OneSided(LinearTermination::ThroughAll {}),
                 prologue.direction_reversed(),
             )
         }

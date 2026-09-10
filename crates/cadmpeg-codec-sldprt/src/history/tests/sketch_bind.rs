@@ -396,10 +396,10 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("native-alias".into()),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: LinearTermination::Unresolved,
+                        termination: LinearTermination::Unresolved {},
                         draft: None,
                     },
                 },

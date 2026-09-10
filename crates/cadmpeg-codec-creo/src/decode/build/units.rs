@@ -928,7 +928,7 @@ fn scale_extrude_start(
     match start {
         ExtrudeStart::OffsetProfilePlane { offset } => scale_length(offset, scale)?,
         ExtrudeStart::FromFace { offset, .. } => scale_optional_length(offset, scale)?,
-        ExtrudeStart::Unresolved | ExtrudeStart::ProfilePlane => {}
+        ExtrudeStart::Unresolved {} | ExtrudeStart::ProfilePlane {} => {}
     }
     Ok(())
 }
@@ -987,11 +987,11 @@ fn scale_linear_termination(
         LinearTermination::Blind { length } => scale_nonzero_length(length, scale)?,
         LinearTermination::ToFace { offset, .. } => scale_optional_length(offset, scale)?,
         LinearTermination::OffsetFromFace { offset, .. } => scale_positive_length(offset, scale)?,
-        LinearTermination::Unresolved
-        | LinearTermination::ThroughAll
-        | LinearTermination::ThroughNext
-        | LinearTermination::ToFirst
-        | LinearTermination::ToLast
+        LinearTermination::Unresolved {}
+        | LinearTermination::ThroughAll {}
+        | LinearTermination::ThroughNext {}
+        | LinearTermination::ToFirst {}
+        | LinearTermination::ToLast {}
         | LinearTermination::ToVertex { .. }
         | LinearTermination::ToShape { .. } => {}
     }
@@ -1007,11 +1007,11 @@ fn scale_angular_termination(
     match termination {
         AngularTermination::ToFace { offset, .. } => scale_optional_length(offset, scale)?,
         AngularTermination::OffsetFromFace { offset, .. } => scale_positive_length(offset, scale)?,
-        AngularTermination::Unresolved
-        | AngularTermination::ThroughAll
-        | AngularTermination::ThroughNext
-        | AngularTermination::ToFirst
-        | AngularTermination::ToLast
+        AngularTermination::Unresolved {}
+        | AngularTermination::ThroughAll {}
+        | AngularTermination::ThroughNext {}
+        | AngularTermination::ToFirst {}
+        | AngularTermination::ToLast {}
         | AngularTermination::ToVertex { .. }
         | AngularTermination::ToShape { .. }
         | AngularTermination::Angle { .. } => {}

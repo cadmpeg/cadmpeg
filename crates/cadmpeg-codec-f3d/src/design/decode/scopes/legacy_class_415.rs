@@ -157,7 +157,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
     };
     let start_offset = start.checked_add(to_face::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,

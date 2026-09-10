@@ -924,6 +924,7 @@ impl Loop {
 /// One pole-vertex occurrence anchored after a coedge in a ring traversal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AnchoredVertexUse {
     /// Referenced pole vertex.
     pub vertex: VertexId,

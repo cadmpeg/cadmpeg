@@ -1002,7 +1002,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -1062,7 +1062,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
            },
            extent: ExtrudeExtent::OneSided {
                side: ExtrudeSide {
-                   termination: LinearTermination::ThroughAll,
+                   termination: LinearTermination::ThroughAll {},
                    ..
                }
            },
@@ -1124,7 +1124,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                 *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {};
                 *extent = ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: LinearTermination::ThroughAll,
+                        termination: LinearTermination::ThroughAll {},
                         draft: None,
                     },
                 };

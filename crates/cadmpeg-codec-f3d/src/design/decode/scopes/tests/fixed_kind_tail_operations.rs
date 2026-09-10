@@ -869,7 +869,7 @@ pub(super) fn fixed_kind_tail_operations(
                 direction_reversed_offset: 40,
                 solid_operation: true,
                 solid_operation_offset: 41,
-                start: DesignExtrudeStart::ProfilePlane,
+                start: DesignExtrudeStart::ProfilePlane {},
                 start_offset: 42,
             });
     }

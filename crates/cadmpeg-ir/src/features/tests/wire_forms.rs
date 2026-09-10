@@ -129,7 +129,7 @@ fn feature_extents_round_trip_through_json() {
         },
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: LinearTermination::ThroughAll,
+                termination: LinearTermination::ThroughAll {},
                 draft: None,
             },
         },
@@ -1296,4 +1296,34 @@ fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
+}
+
+#[test]
+fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
+    use crate::features::{AngularTermination, ExtrudeStart, LinearTermination};
+
+    for wire in [
+        serde_json::json!({"kind": "profile_plane"}),
+        serde_json::json!({"kind": "unresolved"}),
+    ] {
+        assert!(serde_json::from_value::<ExtrudeStart>(wire.clone()).is_ok(), "{wire}");
+        let mut bogus = wire;
+        bogus["zz_bogus"] = serde_json::json!(1);
+        let error = serde_json::from_value::<ExtrudeStart>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+    }
+
+    for kind in ["unresolved", "through_all", "through_next", "to_first", "to_last"] {
+        let bogus = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<LinearTermination>(bogus.clone())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "linear {kind}: {error}");
+        let error = serde_json::from_value::<AngularTermination>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "angular {kind}: {error}");
+    }
 }

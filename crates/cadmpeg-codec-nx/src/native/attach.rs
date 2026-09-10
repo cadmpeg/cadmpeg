@@ -5125,10 +5125,10 @@ fn extrude_feature_definition(
     FeatureDefinition::Extrude {
         profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-        start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
+        start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: LinearTermination::Unresolved,
+                termination: LinearTermination::Unresolved {},
                 draft: None,
             },
         },
@@ -6303,7 +6303,7 @@ fn non_boolean_feature_definition_with_parameters(
                     };
                     let extent = match extent {
                         crate::native::features::holes::SimpleHoleExtent::Through => {
-                            Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
+                            Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
                         }
                         crate::native::features::holes::SimpleHoleExtent::Blind => None,
                     };
@@ -6395,7 +6395,7 @@ fn non_boolean_feature_definition_with_parameters(
 
             extent: hole
                 .grouped_simple_through
-                .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+                .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             bottom: None,
             taper_angle: None,
             allow_multi_profile_faces: None,

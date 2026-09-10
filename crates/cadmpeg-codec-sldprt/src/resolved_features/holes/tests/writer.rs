@@ -96,7 +96,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Hole {
             shape,
 
-            extent: Some(LinearTermination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll {}),
             ..
         } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
@@ -106,7 +106,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Hole {
             shape,
 
-            extent: Some(LinearTermination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll {}),
             ..
         } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::PartialCounterbore(
@@ -245,7 +245,7 @@ fn semantic_writer_round_trips_hole_placement() {
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
                 .unwrap(),
         }]);
-        *extent = Some(LinearTermination::ThroughAll);
+        *extent = Some(LinearTermination::ThroughAll {});
         updated_ir_evaluation
             .set_definition(updated_ir_definition)
             .unwrap();
@@ -272,7 +272,7 @@ fn semantic_writer_round_trips_hole_placement() {
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(face)),
             placements,
-            extent: Some(LinearTermination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll {}),
             ..
         } if face == "face:13"
             && placements.as_deref() == Some(&[HolePlacement::Directed {
@@ -316,7 +316,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Hole {
             shape,
-            extent: Some(LinearTermination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll {}),
             ..
         } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Countersink {
@@ -342,7 +342,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             diameter: cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap(),
             depth: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
         };
-        *extent = Some(LinearTermination::ThroughAll);
+        *extent = Some(LinearTermination::ThroughAll {});
 
         *shape = cadmpeg_ir::features::HoleShape::new(
             edited_construction,

@@ -169,7 +169,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         direction_reversed_offset: 140,
                         solid_operation: true,
                         solid_operation_offset: 141,
-                        start: DesignExtrudeStart::ProfilePlane,
+                        start: DesignExtrudeStart::ProfilePlane {},
                         start_offset: 142,
                     }),
                     extrude_profile: Some(
@@ -321,7 +321,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 direction_reversed_offset: 139,
                 solid_operation: true,
                 solid_operation_offset: 140,
-                start: DesignExtrudeStart::ProfilePlane,
+                start: DesignExtrudeStart::ProfilePlane {},
                 start_offset: 141,
             });
     }
@@ -365,7 +365,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     draft: Some(actual_draft),
                 },
             },
@@ -389,7 +389,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             direction: ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     draft: Some(actual_draft),
                 },
             },
@@ -1206,7 +1206,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             Some(DesignExtrudeFaceRole::Termination)
         ]
     );
-    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane {});
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -1246,7 +1246,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if actual_offset.get() == 1.0
     ));
-    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane {});
 
     set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
     let against = parameter("AgainstDistance", "mm", -0.05);

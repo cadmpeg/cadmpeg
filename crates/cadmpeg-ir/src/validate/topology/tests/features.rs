@@ -156,7 +156,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),
             direction: ExtrudeDirection::ProfileNormal {},
-            start: crate::features::ExtrudeStart::ProfilePlane,
+            start: crate::features::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -266,7 +266,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 )
                 .expect("valid identity")]),
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: crate::features::ExtrudeStart::ProfilePlane,
+                start: crate::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToFace {
@@ -617,7 +617,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("test:profile".into()),
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: crate::features::ExtrudeStart::ProfilePlane,
+                start: crate::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToVertex {
@@ -858,7 +858,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 )
                 .unwrap(),
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: ExtrudeStart::ProfilePlane,
+                start: ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {

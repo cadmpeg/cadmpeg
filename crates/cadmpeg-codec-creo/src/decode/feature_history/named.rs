@@ -227,7 +227,7 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
 pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     ExtrudeExtent::OneSided {
         side: ExtrudeSide {
-            termination: LinearTermination::Unresolved,
+            termination: LinearTermination::Unresolved {},
             draft: None,
         },
     }

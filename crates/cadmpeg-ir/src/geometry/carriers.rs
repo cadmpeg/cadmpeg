@@ -2733,7 +2733,7 @@ impl TryFrom<OffsetPcurveWire> for OffsetPcurve {
 /// The shape of a parameter-space (u, v) curve on a surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PcurveGeometry {
     /// A straight line in parameter space.
     Line(LinePcurve),

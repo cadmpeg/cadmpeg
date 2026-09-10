@@ -301,7 +301,7 @@ fn exact_compact_shifted_extrude_prologue(
     };
     let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -390,7 +390,7 @@ fn exact_compact_shifted_extrude_mixed_prologue(
     };
     let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -495,7 +495,7 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
     };
     let start_offset = start.checked_add(class_296_to_face::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -600,7 +600,7 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
     };
     let start_offset = start.checked_add(class_296_symmetric::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -694,7 +694,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     };
     let start_offset = start.checked_add(class_296_two_faces::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -868,7 +868,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     };
     let start_offset = start.checked_add(class_296_legacy_scalar_54::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -1138,7 +1138,7 @@ fn exact_current_extrude_prologue(
     };
     let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -1449,7 +1449,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     };
     let start_offset = start.checked_add(shifted_reference_aware::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -1855,7 +1855,7 @@ fn exact_legacy_shifted_extrude_prologue(
     };
     let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
     let start = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
@@ -1951,7 +1951,7 @@ pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
     };
     let start_offset = start.checked_add(class_338_legacy::START_SUPPORT)?;
     let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
+        0 => DesignExtrudeStart::ProfilePlane {},
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,

@@ -134,7 +134,7 @@ pub(in super::super) fn linear_termination_has_unresolved_operands(
     termination: &LinearTermination,
 ) -> bool {
     match termination {
-        LinearTermination::Unresolved => true,
+        LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, .. }
         | LinearTermination::OffsetFromFace { face, .. }
         | LinearTermination::ToShape { target: face } => {
@@ -147,10 +147,10 @@ pub(in super::super) fn linear_termination_has_unresolved_operands(
             )
         }
         LinearTermination::Blind { .. }
-        | LinearTermination::ThroughAll
-        | LinearTermination::ThroughNext
-        | LinearTermination::ToFirst
-        | LinearTermination::ToLast => false,
+        | LinearTermination::ThroughAll {}
+        | LinearTermination::ThroughNext {}
+        | LinearTermination::ToFirst {}
+        | LinearTermination::ToLast {} => false,
     }
 }
 
@@ -158,7 +158,7 @@ pub(in super::super) fn angular_termination_has_unresolved_operands(
     termination: &AngularTermination,
 ) -> bool {
     match termination {
-        AngularTermination::Unresolved => true,
+        AngularTermination::Unresolved {} => true,
         AngularTermination::ToFace { face, .. }
         | AngularTermination::OffsetFromFace { face, .. }
         | AngularTermination::ToShape { target: face } => {
@@ -170,10 +170,10 @@ pub(in super::super) fn angular_termination_has_unresolved_operands(
                 VertexSelection::Unresolved | VertexSelection::Native(_)
             )
         }
-        AngularTermination::ThroughAll
-        | AngularTermination::ThroughNext
-        | AngularTermination::ToFirst
-        | AngularTermination::ToLast
+        AngularTermination::ThroughAll {}
+        | AngularTermination::ThroughNext {}
+        | AngularTermination::ToFirst {}
+        | AngularTermination::ToLast {}
         | AngularTermination::Angle { .. } => false,
     }
 }

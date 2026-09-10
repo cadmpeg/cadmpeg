@@ -105,7 +105,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_diameter.get() == 12.0 && actual_depth.get() == 2.0)));
     assert!(matches!(
         extent,
-        Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
+        Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
     ));
     assert!(matches!(
         bottom,
@@ -870,7 +870,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ToLast,
+                    termination: LinearTermination::ToLast {},
                     ..
                 }
             },
@@ -882,7 +882,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ToFirst,
+                    termination: LinearTermination::ToFirst {},
                     ..
                 }
             },
@@ -921,7 +921,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },
@@ -1360,7 +1360,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },

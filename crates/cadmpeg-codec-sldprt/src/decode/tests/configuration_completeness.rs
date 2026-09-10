@@ -414,7 +414,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     let diameter = &mut edited_diameter;
     *placements = None;
     *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
-    *extent = Some(LinearTermination::ThroughAll);
+    *extent = Some(LinearTermination::ThroughAll {});
     *bottom = None;
 
     *shape = cadmpeg_ir::features::HoleShape::new(
@@ -428,7 +428,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Hole {
             placements,
             shape,
-            extent: Some(LinearTermination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll {}),
             bottom: None,
             ..
         } if matches!((&shape.diameter(),), (Some(actual_diameter),) if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 8.0)));

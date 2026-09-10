@@ -178,7 +178,7 @@ fn axial_profile_resolves_counterdrill_roles() {
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(2.9).unwrap()
     );
-    assert_eq!(construction.extent, LinearTermination::ThroughAll);
+    assert_eq!(construction.extent, LinearTermination::ThroughAll {});
     assert_eq!(
         construction.kind,
         HoleKind::Counterdrill {
@@ -546,7 +546,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
             construction.diameter,
             cadmpeg_ir::scalar::PositiveLength::new(6.4).unwrap()
         );
-        assert_eq!(construction.extent, LinearTermination::ThroughAll);
+        assert_eq!(construction.extent, LinearTermination::ThroughAll {});
         assert_eq!(
             construction.kind,
             HoleKind::Countersink {
@@ -759,7 +759,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Hole {
             shape,
-            extent: Some(LinearTermination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll {}),
 
             ..
         } if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::HoleConstruction::Form {

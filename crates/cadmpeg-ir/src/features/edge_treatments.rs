@@ -58,7 +58,7 @@ impl RadiusSpec {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum RadiusSpecWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -181,6 +181,7 @@ impl JsonSchema for RadiusSpec {
 /// One independently dimensioned group of filleted edges.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FilletGroup {
     /// Edges sharing this radius law.
     pub edges: EdgeSelection,
