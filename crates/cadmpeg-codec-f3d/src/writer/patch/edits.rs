@@ -443,23 +443,25 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
-        if (before.evaluated_slot == EvaluatedToleranceSlot::Absent)
-            != (after.evaluated_slot == EvaluatedToleranceSlot::Absent)
+        if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Absent)
+            != matches!(after.evaluated_slot, EvaluatedToleranceSlot::Absent)
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D tolerant-vertex tail edit changes record width: {id}"
             )));
         }
-        let tolerance = match (
-            target_vertices[after.vertex.as_str()].tolerance,
-            after.evaluated_slot,
-        ) {
-            (Some(tolerance), EvaluatedToleranceSlot::Evaluated) => tolerance.get(),
-            (None, EvaluatedToleranceSlot::Unset) => -1.0,
+        let target_vertex = target_vertices.get(after.vertex.as_str()).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "tolerant vertex {id} tail has no target vertex"
+            ))
+        })?;
+        let tolerance = match (target_vertex.tolerance, after.evaluated_slot) {
+            (Some(tolerance), EvaluatedToleranceSlot::Evaluated { .. }) => tolerance.get(),
+            (None, EvaluatedToleranceSlot::Unset { .. }) => -1.0,
             // The record ends before the slot; there is nothing to patch.
             (None, EvaluatedToleranceSlot::Absent) => continue,
-            (Some(_), EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Unset)
-            | (None, EvaluatedToleranceSlot::Evaluated) => {
+            (Some(_), EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Unset { .. })
+            | (None, EvaluatedToleranceSlot::Evaluated { .. }) => {
                 return Err(CodecError::malformed(format_args!(
                     "tolerant vertex {id} tail disagrees with its vertex tolerance"
                 )))
@@ -474,9 +476,16 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D tolerant vertex {id} has non-finite fields"
             )));
         }
+        let baseline_vertex = baseline_vertices
+            .get(after.vertex.as_str())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "tolerant vertex {id} tail has no baseline vertex"
+                ))
+            })?;
         if tolerance
-            != baseline_vertices[after.vertex.as_str()].tolerance.map_or(
-                if before.evaluated_slot == EvaluatedToleranceSlot::Unset {
+            != baseline_vertex.tolerance.map_or(
+                if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Unset { .. }) {
                     -1.0
                 } else {
                     tolerance
