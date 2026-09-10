@@ -12,10 +12,11 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::num::{NonZeroU32, NonZeroU64};
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
@@ -277,6 +278,9 @@ fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReferen
         target,
     })
 }
+
+/// Tag byte plus one-byte length that precede a length-prefixed ASCII string.
+const LENGTH_PREFIXED_ASCII_HEADER: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
 
 fn length_prefixed_ascii(data: &[u8], at: &mut usize) -> Option<String> {
     (data.get(*at) == Some(&0x34)).then_some(())?;
@@ -1423,9 +1427,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                     d.name.clone()
                 },
                 role: ContainerRole::Stream,
-                compression: EntryCompression::None,
-                compressed_size: phys,
-                uncompressed_size: phys,
+                storage: EntryStorage::verbatim(VerbatimLabel::None, phys),
                 attributes,
             });
         }
@@ -1439,21 +1441,26 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: format!("CATPreview#{index}"),
             role: ContainerRole::Preview,
-            compression: EntryCompression::Jpeg,
-            compressed_size: (preview.range.end - preview.range.start) as u64,
-            uncompressed_size: 0,
+            storage: EntryStorage::Compressed {
+                method: CompressionMethod::Jpeg,
+                stored: NonZeroU64::new((preview.range.end - preview.range.start) as u64),
+                expanded: None,
+            },
             attributes,
         });
     }
     for reference in &scan.external_references {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
+        let storage = EntryStorage::framed_by(
+            VerbatimLabel::None,
+            reference.target.as_str().into(),
+            LENGTH_PREFIXED_ASCII_HEADER,
+        );
         entries.push(ContainerEntry {
             name: reference.target.clone(),
             role: ContainerRole::ExternalReference,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            storage,
             attributes,
         });
     }
@@ -1479,9 +1486,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 .clone()
                 .unwrap_or_else(|| format!("FINJPL#{index}")),
             role: ContainerRole::FinjplSegment,
-            compression: EntryCompression::None,
-            compressed_size: (segment.range.end - segment.range.start) as u64,
-            uncompressed_size: (segment.range.end - segment.range.start) as u64,
+            storage: EntryStorage::verbatim(
+                VerbatimLabel::None,
+                (segment.range.end - segment.range.start) as u64,
+            ),
             attributes,
         });
     }

@@ -1027,7 +1027,7 @@ fn native_procedural_surface_definition(
             let distance = definition_payload.distance();
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
-            let _ = definition_payload.support_extension();
+            let _ = definition_payload.linear_support_extension();
             let extension = definition_payload.extension();
             {
                 let support = target

@@ -871,3 +871,47 @@ fn skips_short_and_long_unknown_table_records() {
         .iter()
         .any(|note| note.contains("unknown bounded record")));
 }
+
+#[test]
+fn a_table_body_must_leave_framing_inside_its_chunk_range() {
+    const INVERTED_BODY: std::ops::Range<usize> = std::ops::Range { start: 30, end: 10 };
+    let empty = || std::collections::BTreeMap::new();
+    let table = crate::container::Table::new(0x1000_0014, 0..40, 4..36, Vec::new(), 0, empty())
+        .expect("a body inside its chunk range");
+    assert_eq!(table.framing().get(), 8);
+    assert_eq!(table.body(), &(4..36));
+    assert_eq!(table.range(), &(0..40));
+    assert!(
+        crate::container::Table::new(0x1000_0014, 0..40, 0..40, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(
+        crate::container::Table::new(0x1000_0014, 4..40, 0..36, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(
+        crate::container::Table::new(0x1000_0014, 0..40, 4..44, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(crate::container::Table::new(
+        0x1000_0014,
+        0..40,
+        INVERTED_BODY,
+        Vec::new(),
+        0,
+        empty()
+    )
+    .is_none());
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn a_table_framing_wider_than_u32_is_rejected() {
+    let range_len = usize::try_from(u64::from(u32::MAX) + 2).expect("64-bit target");
+    assert!(crate::container::Table::new(
+        0x1000_0014,
+        0..range_len,
+        0..0,
+        Vec::new(),
+        0,
+        std::collections::BTreeMap::new()
+    )
+    .is_none());
+}

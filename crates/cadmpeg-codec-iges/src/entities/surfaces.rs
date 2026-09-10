@@ -2515,7 +2515,7 @@ pub(super) fn project(
                 signed_distance,
                 Some(0),
                 Some(0),
-                None,
+                false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy(
                     cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                 ),

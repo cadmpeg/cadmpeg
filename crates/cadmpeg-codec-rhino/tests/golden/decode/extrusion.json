@@ -343,7 +343,6 @@
         {
           "channels": [],
           "id": "rhino:object:tessellation#record-000000-offset-177.cache-0",
-          "normals": [],
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000",

@@ -169,8 +169,7 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         vertices,
         triangles,
         Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        cadmpeg_ir::tessellation::TessellationNormals::None,
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))?

@@ -5332,7 +5332,7 @@ pub(crate) fn append_text_surface(
                     *distance,
                     None,
                     None,
-                    None,
+                    false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),

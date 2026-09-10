@@ -110,7 +110,8 @@ pub use evaluation::{
 };
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
+use std::num::NonZeroU64;
 
 use std::collections::BTreeMap;
 
@@ -175,26 +176,25 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
         attributes.insert("region".to_string(), entry.region.label().to_string());
-        let (compressed, uncompressed) = match entry.file_span() {
+        let storage = match entry.file_span() {
             Some((off, size)) => {
                 attributes.insert("file_offset".to_string(), off.to_string());
-                (size, size)
+                EntryStorage::verbatim(VerbatimLabel::None, size)
             }
             None => {
                 attributes.insert("kind".to_string(), "directory".to_string());
-                (0, 0)
+                EntryStorage::Directory
             }
         };
         entries.push(ContainerEntry {
             name: entry.name.clone(),
             role: entry.content().role(),
-            compression: EntryCompression::None,
-            compressed_size: compressed,
-            uncompressed_size: uncompressed,
+            storage,
             attributes,
         });
     }
 
+    let mut storage_notes: Vec<String> = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
@@ -300,10 +300,24 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             }
         }
-        let (compression, compressed_size) = match scan.container.layout {
-            container::ContainerLayout::Modern { .. } => (EntryCompression::Zlib, 0),
+        let inflated_len = stream.inflated.len() as u64;
+        let storage = match scan.container.layout {
+            container::ContainerLayout::Modern { .. } => EntryStorage::Compressed {
+                method: CompressionMethod::Zlib,
+                stored: None,
+                expanded: NonZeroU64::new(inflated_len),
+            },
             container::ContainerLayout::LegacyCfb { .. } => {
-                (EntryCompression::Stored, stream.consumed)
+                match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
+                    Ok(storage) => storage,
+                    Err(message) => {
+                        storage_notes.push(format!(
+                            "parasolid#{si}: {message}: {}/{inflated_len}",
+                            stream.consumed
+                        ));
+                        EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
+                    }
+                }
             }
         };
         entries.push(ContainerEntry {
@@ -313,14 +327,13 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             } else {
                 ContainerRole::Preview
             },
-            compression,
-            compressed_size,
-            uncompressed_size: stream.inflated.len() as u64,
+            storage,
             attributes,
         });
     }
 
-    let (classification, notes) = decode::summarize(scan);
+    let (classification, mut notes) = decode::summarize(scan);
+    notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
     ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)

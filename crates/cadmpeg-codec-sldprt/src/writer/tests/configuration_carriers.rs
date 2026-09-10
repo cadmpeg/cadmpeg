@@ -319,8 +319,12 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
                 ],
                 vec![[0, 1, 2]],
                 vec![3],
-                vec![Vector3::new(0.0, 0.0, 1.0); 3],
-                Vec::new(),
+                cadmpeg_ir::tessellation::TessellationNormals::per_vertex(vec![
+                    Vector3::new(
+                        0.0, 0.0, 1.0
+                    );
+                    3
+                ]),
                 Vec::new(),
             )
             .expect("valid tessellation")

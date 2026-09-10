@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stream-kind detection and container inspection for bare ASM streams.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
@@ -182,9 +182,7 @@ pub(crate) fn inspect(
                 StreamKind::AcisBinary(_) => ContainerRole::AcisBinary,
                 StreamKind::Text => ContainerRole::BrepText,
             },
-            compression: EntryCompression::Stored,
-            compressed_size: bytes.len() as u64,
-            uncompressed_size: bytes.len() as u64,
+            storage: EntryStorage::verbatim(VerbatimLabel::Stored, bytes.len() as u64),
             attributes,
         }],
         losses,

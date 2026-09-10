@@ -67,7 +67,7 @@
       "compression": "none",
       "name": "Contents/DisplayLists",
       "role": "cache-cell",
-      "uncompressed_size": 0
+      "uncompressed_size": 90
     }
   ],
   "format": "sldprt",

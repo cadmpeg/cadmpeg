@@ -375,12 +375,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(kind) = kind {
                 match kind {
                     HoleKind::Unresolved(_)
-                    | HoleKind::PartialCounterbore { .. }
-                    | HoleKind::PartialCountersink { .. }
+                    | HoleKind::PartialCounterbore(..)
+                    | HoleKind::PartialCountersink(..)
                         if existing.is_some() => {}
                     HoleKind::Unresolved(_)
-                    | HoleKind::PartialCounterbore { .. }
-                    | HoleKind::PartialCountersink { .. } => {
+                    | HoleKind::PartialCounterbore(..)
+                    | HoleKind::PartialCountersink(..) => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved hole entry construction",
                             feature.id

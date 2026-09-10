@@ -1149,7 +1149,7 @@ mod route_tests {
                     2.0,
                     Some(1),
                     Some(1),
-                    None,
+                    false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),

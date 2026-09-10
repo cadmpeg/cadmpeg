@@ -80,7 +80,6 @@
         {
           "channels": [],
           "id": "fcstd:native:property#Mesh:Mesh:mesh",
-          "normals": [],
           "source_object": {
             "format": "fcstd",
             "name": "Mesh",

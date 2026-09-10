@@ -614,8 +614,7 @@ fn mesh_from(
         vertices,
         triangles,
         Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        cadmpeg_ir::tessellation::TessellationNormals::None,
         Vec::new(),
     )
     .expect("valid tessellation")
@@ -844,8 +843,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -890,8 +888,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -924,12 +921,11 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            vec![
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(vec![
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
-            ],
-            Vec::new(),
+            ]),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -961,12 +957,11 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            vec![
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(vec![
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
-            ],
-            Vec::new(),
+            ]),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -997,12 +992,11 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            vec![
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(vec![
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
-            ],
-            Vec::new(),
+            ]),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -1096,8 +1090,7 @@ fn cone_support_binds_display_list_face() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -1158,8 +1151,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
             vertices,
             vec![[0, 1, 2]],
             Vec::new(),
-            normals,
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(normals),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -1199,8 +1191,7 @@ fn conical_trim_uses_scaled_angular_coordinate() {
             vec![point],
             Vec::new(),
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation")
@@ -1287,8 +1278,9 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
                 .collect(),
             vec![[0, 1, 2]],
             Vec::new(),
-            samples.iter().map(|(_, normal)| *normal).collect(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(
+                samples.iter().map(|(_, normal)| *normal).collect(),
+            ),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -1330,8 +1322,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
                 .to_vec(),
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -1379,8 +1370,12 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
                 .to_vec(),
             vec![[0, 1, 2]],
             Vec::new(),
-            vec![Vector3::new(0.0, 0.0, 1.0); 3],
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(vec![
+                Vector3::new(
+                    0.0, 0.0, 1.0
+                );
+                3
+            ]),
             Vec::new(),
         )
         .expect("valid tessellation"),
@@ -1896,8 +1891,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),

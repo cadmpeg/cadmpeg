@@ -122,10 +122,9 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     )
     .is_err());
     assert!(HoleShape::new(
-        HoleConstruction::form(HoleKind::PartialCounterbore {
-            diameter: Some(positive(1.0)),
-            depth: None,
-        }),
+        HoleConstruction::form(HoleKind::PartialCounterbore(
+            crate::features::PartialPair::First(positive(1.0)),
+        )),
         None,
         Some(positive(2.0))
     )

@@ -47,8 +47,6 @@ pub enum LossCategory {
     Material,
     /// Document metadata not transferred.
     Metadata,
-    /// Units/tolerances issues.
-    Units,
     /// Attributes (names, colors, custom attribs) not transferred.
     Attribute,
     /// Features, sketches, parameters, configurations, or design history not transferred.
@@ -66,7 +64,6 @@ impl fmt::Display for LossCategory {
             Self::Topology => "topology",
             Self::Material => "material",
             Self::Metadata => "metadata",
-            Self::Units => "units",
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
             Self::Product => "product",

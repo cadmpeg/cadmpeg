@@ -4648,8 +4648,7 @@ pub(crate) fn display_jt_tessellations(
                     vertices,
                     triangles,
                     Vec::new(),
-                    normal_vectors,
-                    Vec::new(),
+                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex(normal_vectors),
                     channels,
                 )
                 .ok()?

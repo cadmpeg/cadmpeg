@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lazy, budgeted Microsoft Compound File Binary (CFB) snapshots.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -458,9 +458,7 @@ impl<'a> CompoundSnapshot<'a> {
                     CompoundEntry::Storage(_) => ContainerEntry {
                         name: entry.path().into(),
                         role: classify(entry),
-                        compression: EntryCompression::Storage,
-                        compressed_size: 0,
-                        uncompressed_size: 0,
+                        storage: EntryStorage::Directory,
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
@@ -472,9 +470,10 @@ impl<'a> CompoundSnapshot<'a> {
                         ContainerEntry {
                             name: stream.path.clone(),
                             role: classify(entry),
-                            compression: EntryCompression::Stored,
-                            compressed_size: stream.logical_size(),
-                            uncompressed_size: stream.logical_size(),
+                            storage: EntryStorage::verbatim(
+                                VerbatimLabel::Stored,
+                                stream.logical_size(),
+                            ),
                             attributes,
                         }
                     }
@@ -1099,32 +1098,40 @@ impl CompoundState {
                             ChainRole::MiniStream,
                         ),
                     };
-                    let expected = usize::try_from(entry.size)
-                        .map_err(|_| {
-                            CodecError::Malformed("CFB stream size does not fit memory".into())
-                        })?
-                        .div_ceil(width);
-                    let sectors = chain(
-                        Some(ctx),
-                        fat,
-                        count,
-                        entry.start_sector,
-                        NonZeroUsize::new(expected).map(ChainLength::Declared),
-                        role,
-                    )?;
-                    let data = match sectors {
-                        Some(chain) => StreamData::Allocated {
-                            allocation,
-                            logical_size: NonZeroU64::new(entry.size).ok_or_else(|| {
-                                CodecError::Malformed("CFB allocated stream has zero size".into())
-                            })?,
-                            chain,
-                        },
-                        None => StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                    let empty = || {
+                        StreamData::Empty(if entry.start_sector == FREE_SECTOR {
                             EmptyStreamStart::FreeSector
                         } else {
                             EmptyStreamStart::EndOfChain
-                        }),
+                        })
+                    };
+                    let data = match NonZeroU64::new(entry.size) {
+                        None => empty(),
+                        Some(logical_size) => {
+                            let expected = usize::try_from(logical_size.get())
+                                .map_err(|_| {
+                                    CodecError::Malformed(
+                                        "CFB stream size does not fit memory".into(),
+                                    )
+                                })?
+                                .div_ceil(width);
+                            let sectors = chain(
+                                Some(ctx),
+                                fat,
+                                count,
+                                entry.start_sector,
+                                NonZeroUsize::new(expected).map(ChainLength::Declared),
+                                role,
+                            )?;
+                            match sectors {
+                                Some(chain) => StreamData::Allocated {
+                                    allocation,
+                                    logical_size,
+                                    chain,
+                                },
+                                None => empty(),
+                            }
+                        }
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
                         id: CompoundStreamId(id),

@@ -433,7 +433,7 @@ pub(crate) fn try_decode_geometry(
                     offset.state.distance(),
                     None,
                     None,
-                    Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
+                    true,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),
