@@ -17,9 +17,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, UnknownId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::semantic_annotations::{
-    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
-};
+use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
@@ -46,6 +44,7 @@ const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
 const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 
 use crate::container::EntryContent;
+use crate::decode::ids::{extended_id, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
     active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
@@ -106,8 +105,7 @@ fn attach_container_payloads(
         let Some(bytes) = scan.container.data.get(start..end) else {
             continue;
         };
-        let id = UnknownId::mint(format!("nx:container-entry:opaque#{ordinal}"))
-            .expect("identity grammar");
+        let id: UnknownId = IdScope::native("container-entry").id("opaque", ordinal);
         annotations
             .note(&id, &annotation_stream, offset)
             .tag(content.label());
@@ -136,10 +134,8 @@ fn attach_indexed_om_unknowns(
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
-                    let id = UnknownId::mint(format!(
-                        "nx:om-section-{section_index}:record#{record_index}"
-                    ))
-                    .expect("identity grammar");
+                    let id: UnknownId = IdScope::native(format_args!("om-section-{section_index}"))
+                        .id("record", record_index);
                     let offset = entry_offset + record.offset as u64;
                     annotations
                         .note(&id, &annotation_stream, offset)
@@ -159,10 +155,8 @@ fn attach_indexed_om_unknowns(
                 for (record_index, record) in
                     std::iter::once(control).chain(records.iter()).enumerate()
                 {
-                    let id = UnknownId::mint(format!(
-                        "nx:om-section-{section_index}:block#{record_index}"
-                    ))
-                    .expect("identity grammar");
+                    let id: UnknownId = IdScope::native(format_args!("om-section-{section_index}"))
+                        .id("block", record_index);
                     let offset = entry_offset + record.offset as u64;
                     annotations
                         .note(&id, &annotation_stream, offset)
@@ -231,7 +225,7 @@ pub(crate) fn attach(
             .note(&attribute.id, &annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
-        let id = AttributeId::mint(format!("{}:neutral", attribute.id)).expect("identity grammar");
+        let id: AttributeId = extended_id(attribute.id.as_str(), "neutral");
         annotations
             .note(id.as_str(), &annotation_stream, attribute.source_offset)
             .tag("Attribute");
@@ -294,8 +288,7 @@ pub(crate) fn attach(
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
-            let id = ConfigurationId::mint(format!("nx:arrangements:configuration#{ordinal}"))
-                .expect("identity grammar");
+            let id: ConfigurationId = IdScope::native("arrangements").id("configuration", ordinal);
             let active_attribute_use = model
                 .om
                 .configuration_attribute_uses
@@ -585,11 +578,8 @@ fn ensure_rm_color_appearance(
     if let Some(id) = appearances.get(&definition.id) {
         return Ok(id.clone());
     }
-    let id = AppearanceId::mint(format!(
-        "nx:appearance:rmfastload-color#{}",
-        native_entity_key(&definition.id)
-    ))
-    .expect("identity grammar");
+    let id: AppearanceId =
+        IdScope::native("appearance").id("rmfastload-color", native_entity_key(&definition.id));
     annotations
         .note(id.as_str(), annotation_stream, definition.source_offset)
         .tag("RMFASTLOAD_COLOR_APPEARANCE");
@@ -848,7 +838,7 @@ fn attach_jpeg_preview_assets(
             ));
             continue;
         }
-        let id = AssetId::mint(format!("{native_ref}:asset")).expect("identity grammar");
+        let id: AssetId = extended_id(&native_ref, "asset");
         annotations
             .note(id.as_str(), &stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
@@ -920,7 +910,7 @@ fn attach_material_texture_assets(
     for (texture, bytes) in sources {
         assets.push(
             Asset::try_new(
-                AssetId::mint(format!("{}:asset", texture.id)).expect("identity grammar"),
+                extended_id::<AssetId>(texture.id.as_str(), "asset"),
                 Some(texture.name().to_owned()),
                 Some("image/tiff".to_string()),
                 AssetContent::Embedded {
@@ -1130,8 +1120,7 @@ fn attach_initial_segment_bodies(
         return None;
     }
 
-    let id = FeatureId::mint("nx:feature-history:feature#initial-bodies".to_string())
-        .expect("identity grammar");
+    let id: FeatureId = IdScope::native("feature-history").id("feature", "initial-bodies");
     let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
     let source_properties = bindings_by_body
         .values()
@@ -1907,8 +1896,7 @@ fn attach_feature_operations(
                 .unwrap_or(label.id.as_str());
             (
                 label.id.as_str(),
-                FeatureId::mint(format!("nx:feature-history:feature#{key}"))
-                    .expect("identity grammar"),
+                IdScope::native("feature-history").id::<FeatureId>("feature", key),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -3742,11 +3730,10 @@ fn attach_feature_operations(
                 );
                 ir.model.feature_result_topologies.push(
                     FeatureResultTopology::new(
-                        FeatureResultTopologyId::mint(format!(
-                            "nx:feature-history:result-topology#{key}-{:010}",
-                            write.ordinal
-                        ))
-                        .expect("identity grammar"),
+                        IdScope::native("feature-history").id::<FeatureResultTopologyId>(
+                            "result-topology",
+                            format_args!("{key}-{:010}", write.ordinal),
+                        ),
                         id.clone(),
                         vec![format!(
                             "nx:feature-history:body-identity#{:010}",
@@ -3774,10 +3761,8 @@ fn attach_feature_operations(
                     .unwrap_or(label.id.as_str());
                 ir.model.feature_result_topologies.push(
                     FeatureResultTopology::new(
-                        FeatureResultTopologyId::mint(format!(
-                            "nx:feature-history:result-topology#{key}"
-                        ))
-                        .expect("identity grammar"),
+                        IdScope::native("feature-history")
+                            .id::<FeatureResultTopologyId>("result-topology", key),
                         id.clone(),
                         vec![local_id],
                         Vec::new(),
@@ -3983,7 +3968,7 @@ fn attach_sketch_graph(
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id = SketchId::mint(format!("nx:feature-history:sketch#{operation_key}")).ok()?;
+    let sketch_id: SketchId = IdScope::native("feature-history").try_id("sketch", operation_key)?;
     let operation_fixed_points = sources
         .fixed_points
         .iter()
@@ -4024,10 +4009,10 @@ fn attach_sketch_graph(
             entities.push((
                 pair.source_offset,
                 SketchEntity::new(
-                    SketchEntityId::mint(format!(
-                        "nx:feature-history:sketch-entity#coordinate-pair-{pair_key}"
-                    ))
-                    .ok()?,
+                    IdScope::native("feature-history").try_id::<SketchEntityId>(
+                        "sketch-entity",
+                        format_args!("coordinate-pair-{pair_key}"),
+                    )?,
                     sketch_id.clone(),
                     SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(
                         "nx-coordinate-pair",
@@ -4195,10 +4180,10 @@ fn attach_sketch_graph(
         entities.push((
             source_offset,
             SketchEntity::new(
-                SketchEntityId::mint(format!(
-                    "nx:feature-history:sketch-entity#point-{entity_key}"
-                ))
-                .ok()?,
+                IdScope::native("feature-history").try_id::<SketchEntityId>(
+                    "sketch-entity",
+                    format_args!("point-{entity_key}"),
+                )?,
                 sketch_id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(group.coordinates[0], group.coordinates[1]),
@@ -4299,10 +4284,10 @@ fn native_fixed_point_entities(
         entities.push((
             point.source_offset,
             SketchEntity::new(
-                SketchEntityId::mint(format!(
-                    "nx:feature-history:sketch-entity#fixed-point-{point_key}"
-                ))
-                .ok()?,
+                IdScope::native("feature-history").try_id::<SketchEntityId>(
+                    "sketch-entity",
+                    format_args!("fixed-point-{point_key}"),
+                )?,
                 sketch_id.clone(),
                 SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(
                     "nx-fixed-point",
@@ -4754,15 +4739,16 @@ fn topology_attribute_id(
     entity_suffix: Option<&str>,
 ) -> AttributeId {
     let entity_suffix = entity_suffix.map_or_else(String::new, |suffix| format!("-{suffix}"));
-    AttributeId::mint(format!(
-        "nx:s{}:{family}#{}-{}-{}{}",
-        reference.stream_ordinal,
-        reference.topology_type.code(),
-        reference.topology_xmt,
-        reference_ordinal,
-        entity_suffix
-    ))
-    .expect("identity grammar")
+    IdScope::stream(reference.stream_ordinal).id(
+        family,
+        format_args!(
+            "{}-{}-{}{}",
+            reference.topology_type.code(),
+            reference.topology_xmt,
+            reference_ordinal,
+            entity_suffix
+        ),
+    )
 }
 
 fn attach_parasolid_topology_numeric_attributes(
@@ -5071,8 +5057,7 @@ fn text_semantic_annotation(
         return None;
     };
     Some(SemanticAnnotation {
-        id: SemanticAnnotationId::mint(format!("{native_ref}:semantic-text"))
-            .expect("identity grammar"),
+        id: extended_id(native_ref, "semantic-text"),
         object: native_ref.to_string(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "TEXT".to_string(),
@@ -8956,11 +8941,10 @@ pub(crate) fn attach_expression_parameters(
     for (table_ordinal, (table, expressions, dependency_ordered_expressions)) in
         tables.into_iter().enumerate()
     {
-        let feature_id = FeatureId::mint(table.split_once(":expression-table#").map_or_else(
-            || format!("{table}:feature#equations"),
-            |(scope, key)| format!("{scope}:feature#equations-{key}"),
-        ))
-        .expect("identity grammar");
+        let feature_id: FeatureId = table.split_once(":expression-table#").map_or_else(
+            || IdScope::of(&table).id("feature", "equations"),
+            |(scope, key)| IdScope::of(scope).id("feature", format_args!("equations-{key}")),
+        );
         let first_offset = expressions
             .iter()
             .map(|expression| expression.source_offset)
@@ -9224,7 +9208,7 @@ fn attach_block_dimension_parameter_consumers(
 
 fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {
     let (section, key) = expression_id.split_once(":expression#")?;
-    Some(ParameterId::mint(format!("{section}:parameter#{key}")).expect("identity grammar"))
+    Some(IdScope::of(section).id("parameter", key))
 }
 
 #[cfg(test)]
