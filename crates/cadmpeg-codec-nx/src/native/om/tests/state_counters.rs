@@ -208,8 +208,8 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         } if first.value() == 0x42d && second.value() == 0x3e1
     ));
     assert_eq!(groups[2].frame.members().count().declared_count(), 0);
-    assert_eq!(groups[0].table_footer.bytes(), [0x01, 0x01]);
-    assert!(groups[0].table_end_offset > groups[0].frame.offset());
+    assert_eq!(tables[0].table_footer().bytes(), [0x01, 0x01]);
+    assert!(tables[0].table_end_offset() > groups[0].frame.offset());
 
     let result = NxCodec
         .decode(
@@ -356,12 +356,12 @@ fn message_body_rejects_text_length_mismatch() {
 fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
     for (prefix, count) in [("null", 0), ("1", 0), ("1", 1)] {
         let json = format!(
-            r#"{{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}}"#
+            r#"{{"id":"group","opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"source_offset":0}}"#
         );
         let group: OmRollForwardStateGroup = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&group).unwrap(), json);
     }
-    let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}"#;
+    let json = r#"{"id":"group","opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[],"source_offset":0}"#;
     assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
         .unwrap_err()
         .to_string()
@@ -370,7 +370,7 @@ fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
 
 #[test]
 fn roll_forward_group_derives_row_ordinals() {
-    let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}}],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":8}"#;
+    let json = r#"{"id":"group","opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}}],"source_offset":0}"#;
     let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&group).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
