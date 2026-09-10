@@ -899,13 +899,19 @@ fn a_table_body_must_leave_framing_inside_its_chunk_range() {
         empty()
     )
     .is_none());
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn a_table_framing_wider_than_u32_is_rejected() {
+    let range_len = usize::try_from(u64::from(u32::MAX) + 2).expect("64-bit target");
     assert!(crate::container::Table::new(
         0x1000_0014,
-        0..u32::MAX as usize + 2,
+        0..range_len,
         0..0,
         Vec::new(),
         0,
-        empty(),
+        std::collections::BTreeMap::new()
     )
     .is_none());
 }
