@@ -39,6 +39,7 @@ pub(crate) fn transfer(
                     },
                     views: typed_links(&owned, "Views", "App::PropertyLinkList")?
                         .into_iter()
+                        .flatten()
                         .filter_map(|link| link.object().map(str::to_owned))
                         .collect(),
                     template: typed_single_link(&owned, "Template", "App::PropertyLink")?
@@ -101,7 +102,10 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
-        let relationship = |link: &crate::native::LinkTarget| {
+        let relationship = |link: &Option<crate::native::LinkTarget>| {
+            let Some(link) = link.as_ref() else {
+                return Ok(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
+            };
             let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
                     document: document.to_owned(),
@@ -179,6 +183,7 @@ pub(crate) fn transfer_neutral(
                 .relationships
                 .get("Template")
                 .and_then(|targets| targets.first())
+                .and_then(Option::as_ref)
                 .and_then(|link| {
                     if link.document().is_some() {
                         return None;
@@ -331,7 +336,7 @@ fn vector_property(
 fn source_links(
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
+) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
     let Some(property) = unique_property(properties, name)? else {
         return Ok(Vec::new());
     };
@@ -406,7 +411,7 @@ fn typed_links(
     properties: &[&PropertyRecord],
     name: &str,
     type_name: &str,
-) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
+) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
     Ok(typed_property(properties, name, type_name)?
         .map(|property| property.links().to_vec())
         .unwrap_or_default())
@@ -422,7 +427,7 @@ fn typed_single_link(
     };
     match property.links() {
         [] => Ok(None),
-        [link] => Ok(Some(link.clone())),
+        [link] => Ok(link.clone()),
         _ => Err(CodecError::malformed(format_args!(
             "{name} has multiple links"
         ))),

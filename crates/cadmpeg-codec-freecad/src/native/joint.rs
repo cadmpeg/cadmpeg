@@ -260,7 +260,7 @@ mod tests {
     fn missing_first_reference_keeps_second_wire_position() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
         let wire = serde_json::json!({"id":"joint", "object":"object", "kind":"Fixed",
-            "references":[{"document":null,"document_attribute":null,"object":"","subelements":[]}, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
+            "references":[null, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
             "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
         let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
         let JointBody::Pair { connectors, .. } = &record.body else {

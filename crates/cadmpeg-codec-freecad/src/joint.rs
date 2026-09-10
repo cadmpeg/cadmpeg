@@ -39,9 +39,8 @@ pub(crate) fn transfer(
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
                 && property.links().len() == 1
                 && property.links()[0]
-                    .subelements()
-                    .iter()
-                    .all(String::is_empty);
+                    .as_ref()
+                    .is_none_or(|link| link.subelements().iter().all(String::is_empty));
             if !matches!(
                 property.type_name.as_str(),
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
@@ -76,7 +75,10 @@ pub(crate) fn transfer(
                                     offset_name: &str|
              -> Result<JointConnectorRecord, CodecError> {
                 Ok(JointConnectorRecord {
-                    reference: connector(owned, reference_name)?.into_iter().next(),
+                    reference: connector(owned, reference_name)?
+                        .into_iter()
+                        .next()
+                        .flatten(),
                     placement: placement(owned, placement_name)?.unwrap_or_default(),
                     offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
@@ -548,6 +550,7 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
             property
                 .links()
                 .iter()
+                .flatten()
                 .filter(|link| link.document().is_some() || link.object().is_some())
                 .cloned()
                 .collect()
@@ -558,7 +561,7 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
 fn connector(
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
+) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
     let Some(property) = unique_property(properties, name)? else {
         return Err(malformed(format!("joint connector {name} is missing")));
     };
