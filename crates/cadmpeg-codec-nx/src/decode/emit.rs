@@ -748,16 +748,6 @@ pub(super) fn emit_topology(
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
         annotate_node(annotations, &id, source_stream, node, "FIN");
-        let _next = fields
-            .forward
-            .and_then(|target| fin_ids.get(&u32::from(target)))
-            .cloned()
-            .expect("validated FIN ring resolves forward link");
-        let _previous = fields
-            .backward
-            .and_then(|target| fin_ids.get(&u32::from(target)))
-            .cloned()
-            .expect("validated FIN ring resolves backward link");
         let partner = fields
             .other
             .and_then(|target| fin_ids.get(&u32::from(target)))
