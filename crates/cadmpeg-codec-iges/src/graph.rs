@@ -40,6 +40,18 @@ pub(crate) enum Resolution {
 }
 
 impl Resolution {
+    /// The report vocabulary this resolution is named by, everywhere it is named.
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Resolved(_) => "resolved",
+            Self::OutOfRange => "out_of_range",
+            Self::EvenSequence(_) => "even_sequence",
+            Self::Dangling => "dangling",
+            Self::WrongType(_) => "wrong_type",
+            Self::Cyclic(_) => "cyclic",
+        }
+    }
+
     fn target_sequence(self) -> Option<u32> {
         match self {
             Self::Resolved(sequence) | Self::WrongType(sequence) | Self::Cyclic(sequence) => {
@@ -53,14 +65,7 @@ impl Resolution {
 
 impl Serialize for Resolution {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(match self {
-            Self::Resolved(_) => "resolved",
-            Self::OutOfRange => "out_of_range",
-            Self::EvenSequence(_) => "even_sequence",
-            Self::Dangling => "dangling",
-            Self::WrongType(_) => "wrong_type",
-            Self::Cyclic(_) => "cyclic",
-        })
+        serializer.serialize_str(self.key())
     }
 }
 
@@ -527,15 +532,7 @@ pub(crate) fn resolved_structure_sequence(
 pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<String> {
     let mut counts = BTreeMap::<&str, usize>::new();
     for edge in graph.values().flatten() {
-        let key = match edge.resolution {
-            Resolution::Resolved(_) => "resolved",
-            Resolution::OutOfRange => "outofrange",
-            Resolution::EvenSequence(_) => "evensequence",
-            Resolution::Dangling => "dangling",
-            Resolution::WrongType(_) => "wrongtype",
-            Resolution::Cyclic(_) => "cyclic",
-        };
-        *counts.entry(key).or_default() += 1;
+        *counts.entry(edge.resolution.key()).or_default() += 1;
     }
     counts
         .into_iter()
@@ -587,8 +584,11 @@ pub(crate) fn losses(
                             .map(|offset| (offset, format!("D{source}")))
                     });
                     let mut note = IgesLossCode::PointerUnresolved.note(format!(
-                        "IGES Directory Entry D{source} {:?} pointer {} has {:?} resolution; expected {}",
-                        edge.origin, edge.raw_pointer, edge.resolution, edge.expected
+                        "IGES Directory Entry D{source} {:?} pointer {} has {} resolution; expected {}",
+                        edge.origin,
+                        edge.raw_pointer,
+                        edge.resolution.key(),
+                        edge.expected
                     ));
                     if let Some((offset, tag)) = location {
         note = note.with_provenance(
