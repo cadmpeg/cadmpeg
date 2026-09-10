@@ -647,8 +647,10 @@
               "singularity": 11,
               "first_shape": {
                 "kind": "full",
-                "surface": "f3d:brep:procedural_surface#9:g2:first_exact",
-                "tolerance": 0.02
+                "support": {
+                  "surface": "f3d:brep:procedural_surface#9:g2:first_exact",
+                  "tolerance": 0.02
+                }
               },
               "second": {
                 "label": "second",

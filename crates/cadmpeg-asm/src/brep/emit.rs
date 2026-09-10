@@ -2390,7 +2390,7 @@ fn emit_blend_surface(
             slice_range: native.slice_range,
             offsets: native.offsets,
             radius_selector: match native.radius_selector {
-                None => RollingBallRadiusSelector::None,
+                None => RollingBallRadiusSelector::None {},
                 Some(value) => RollingBallRadiusSelector::Value { value },
             },
             u_range: native.u_range,

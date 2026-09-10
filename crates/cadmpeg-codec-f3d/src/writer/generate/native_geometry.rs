@@ -3771,7 +3771,7 @@ fn encode_native_revision_g2_blend(
         native_f64(bytes, radius / LEN_TO_MM);
     }
     match construction.radius_selector {
-        cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::None {} => native_enum(bytes, -1),
         cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
             native_enum(bytes, value.get());
         }
@@ -4121,7 +4121,7 @@ fn encode_complete_native_rolling_ball(
         native_f64(bytes, offset / LEN_TO_MM);
     }
     match construction.radius_selector {
-        cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::None {} => native_enum(bytes, -1),
         cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
             native_f64(bytes, value);
         }

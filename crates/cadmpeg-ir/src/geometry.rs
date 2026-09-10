@@ -3968,8 +3968,7 @@ pub enum G2BlendFirstShape {
     /// Full singularity with an optional BS3 support surface.
     Full {
         /// Exact BS3 support and fit tolerance, when serialized.
-        #[serde(flatten, with = "g2_blend_full_support_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "G2BlendFullSupportSchemaWire"))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<G2BlendFullSupport>,
     },
     /// Non-singular nine-scalar frame and tertiary pcurve.
@@ -3990,70 +3989,12 @@ pub enum G2BlendFirstShape {
 /// Exact support surface and fit tolerance of a full G2 first-side shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct G2BlendFullSupport {
     /// Exact BS3 support surface.
     pub surface: SurfaceId,
     /// Fit tolerance of the support, in document length units.
     pub tolerance: FitTolerance,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the G2 full-support wire schema")]
-struct G2BlendFullSupportSchemaWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    surface: Option<SurfaceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    tolerance: Option<FitTolerance>,
-}
-
-mod g2_blend_full_support_wire {
-    use super::{FitTolerance, G2BlendFullSupport, SurfaceId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        surface: Option<SurfaceId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tolerance: Option<FitTolerance>,
-    }
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(
-        value: &Option<G2BlendFullSupport>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            Some(value) => Wire {
-                surface: Some(value.surface.clone()),
-                tolerance: Some(value.tolerance),
-            },
-            None => Wire {
-                surface: None,
-                tolerance: None,
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<G2BlendFullSupport>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.surface, wire.tolerance) {
-            (Some(surface), Some(tolerance)) => Ok(Some(G2BlendFullSupport { surface, tolerance })),
-            (None, None) => Ok(None),
-            _ => Err(serde::de::Error::custom(
-                "G2 full surface and tolerance must occur together",
-            )),
-        }
-    }
 }
 
 /// Full native G2 blend construction graph.
@@ -4266,10 +4207,10 @@ pub struct RollingBallThirdSide {
 /// Native optional-radius selector in a rolling-ball construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RollingBallRadiusSelector<T = f64> {
-    /// Native `-1` no-radius sentinel.
-    None,
+    /// The construction states no radius.
+    None {},
     /// Explicit native selector scalar.
     Value {
         /// Stored scalar value.
@@ -4321,38 +4262,6 @@ impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
         let value = i64::deserialize(deserializer)?;
         Self::new(value).ok_or_else(|| {
             serde::de::Error::custom("revision G2 radius selector value cannot be -1")
-        })
-    }
-}
-
-mod revision_g2_radius_selector_wire {
-    use super::{RevisionG2RadiusValue, RollingBallRadiusSelector};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        selector: &RollingBallRadiusSelector<RevisionG2RadiusValue>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match selector {
-            RollingBallRadiusSelector::None => (-1_i64).serialize(serializer),
-            RollingBallRadiusSelector::Value { value } => value.get().serialize(serializer),
-        }
-    }
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<RollingBallRadiusSelector<RevisionG2RadiusValue>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(match i64::deserialize(deserializer)? {
-            -1 => RollingBallRadiusSelector::None,
-            value => RollingBallRadiusSelector::Value {
-                value: RevisionG2RadiusValue(value),
-            },
         })
     }
 }
@@ -4872,54 +4781,6 @@ impl VariableBlendRadii {
     }
 }
 
-mod variable_blend_u_range_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(value: &[f64; 2], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        [Some(value[0]), Some(value[1])].serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[f64; 2], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match <[Option<f64>; 2]>::deserialize(deserializer)? {
-            [Some(lower), Some(upper)] => Ok([lower, upper]),
-            _ => Err(serde::de::Error::custom(
-                "variable-blend u_range requires both bounds",
-            )),
-        }
-    }
-}
-
-mod variable_blend_v_range_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        [*value, None].serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match <[Option<f64>; 2]>::deserialize(deserializer)? {
-            [lower, None] => Ok(lower),
-            _ => Err(serde::de::Error::custom(
-                "variable-blend v_range requires an absent upper bound",
-            )),
-        }
-    }
-}
-
 /// Cross-section clause following the variable-radius laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5006,52 +4867,6 @@ pub enum VariableBlendSurfaceSubtype {
     SurfaceCurveFree,
 }
 
-mod variable_blend_secondary_curve_wire {
-    use super::{CurveId, RollingBallSupportCurve};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(bound(deserialize = "C: Deserialize<'de>"))]
-    pub(super) struct Wire<C> {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        secondary_curve: Option<C>,
-        #[serde(default)]
-        secondary_range: [Option<f64>; 2],
-    }
-
-    // Serde's field adapter passes a reference to the complete optional field.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S: Serializer>(
-        curve: &Option<RollingBallSupportCurve>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        Wire {
-            secondary_curve: curve.as_ref().map(|curve| &curve.curve),
-            secondary_range: curve
-                .as_ref()
-                .map_or([None; 2], |curve| curve.parameter_range),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<RollingBallSupportCurve>, D::Error> {
-        let wire = Wire::<CurveId>::deserialize(deserializer)?;
-        match wire.secondary_curve {
-            Some(curve) => Ok(Some(RollingBallSupportCurve {
-                curve,
-                parameter_range: wire.secondary_range,
-            })),
-            None if wire.secondary_range.iter().any(Option::is_some) => Err(
-                serde::de::Error::custom("variable-blend secondary_range requires secondary_curve"),
-            ),
-            None => Ok(None),
-        }
-    }
-}
-
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5080,17 +4895,11 @@ pub struct VariableBlendConstruction {
     pub cross_section: Option<VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`; both bounds present in
     /// every instance.
-    #[serde(with = "variable_blend_u_range_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "[Option<f64>; 2]"))]
     pub u_range: [f64; 2],
     /// Second interval: a lower bound with an unbounded-above marker,
     /// encoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`
     /// upper-bound marker is an interval bound, not a standalone Boolean.
-    #[serde(rename = "v_range", with = "variable_blend_v_range_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(rename = "v_range", with = "[Option<f64>; 2]")
-    )]
+    #[serde(rename = "v_lower", default, skip_serializing_if = "Option::is_none")]
     pub v_lower: Option<f64>,
     /// Requested fit tolerance for the surface cache.
     pub shape_parameter: f64,
@@ -5108,11 +4917,7 @@ pub struct VariableBlendConstruction {
     /// Three ASM integers following the tail Boolean.
     pub tail_extensions: [i64; 3],
     /// Secondary curve and its bounds, absent for `null_curve`.
-    #[serde(flatten, with = "variable_blend_secondary_curve_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "variable_blend_secondary_curve_wire::Wire<CurveId>")
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_curve: Option<RollingBallSupportCurve>,
     /// Blend convexity.
     pub convexity: VariableBlendConvexity,
@@ -5148,8 +4953,6 @@ pub struct RevisionG2BlendConstruction {
     /// Two signed blend radii in document length units.
     pub radii: [f64; 2],
     /// Integer-valued optional-radius selector following the radii.
-    #[serde(with = "revision_g2_radius_selector_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "i64"))]
     pub radius_selector: RollingBallRadiusSelector<RevisionG2RadiusValue>,
     /// Native optional U interval endpoints.
     pub u_range: [Option<f64>; 2],

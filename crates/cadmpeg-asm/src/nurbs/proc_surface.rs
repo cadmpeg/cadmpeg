@@ -702,7 +702,7 @@ fn g2_blend_spl_sur(
         ];
         let radii = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
         let radius_selector = match cur.take_enum()? {
-            -1 => cadmpeg_ir::geometry::RollingBallRadiusSelector::None,
+            -1 => cadmpeg_ir::geometry::RollingBallRadiusSelector::None {},
             value => cadmpeg_ir::geometry::RollingBallRadiusSelector::Value {
                 value: cadmpeg_ir::geometry::RevisionG2RadiusValue::new(value)?,
             },
