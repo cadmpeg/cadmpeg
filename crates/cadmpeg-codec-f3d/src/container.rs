@@ -10,7 +10,7 @@
 //! expose unique or legacy carrier sets for metadata reporting; model decode
 //! uses the typed Design body-map catalog.
 
-use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::container::{ContainerRole, EntryStorage};
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -463,9 +463,11 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         entries.push(ContainerEntry {
             name: name.clone(),
             role,
-            compression,
-            compressed_size,
-            uncompressed_size,
+            storage: EntryStorage::Bytes {
+                compression,
+                compressed_size,
+                uncompressed_size,
+            },
             attributes,
         });
         inflated_entries.insert(name, view);

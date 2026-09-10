@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
@@ -620,9 +620,11 @@ pub(crate) fn summarize(
             Some(ContainerEntry {
                 name: section.name().into(),
                 role: ContainerRole::Section,
-                compression: EntryCompression::None,
-                compressed_size: size,
-                uncompressed_size: size,
+                storage: EntryStorage::Bytes {
+                    compression: EntryCompression::None,
+                    compressed_size: size,
+                    uncompressed_size: size,
+                },
                 attributes,
             })
         })
@@ -649,9 +651,11 @@ pub(crate) fn summarize(
         entries.push(ContainerEntry {
             name: "post-terminate".into(),
             role: ContainerRole::RetainedTrailingRecords,
-            compression: EntryCompression::None,
-            compressed_size: size,
-            uncompressed_size: size,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: size,
+                uncompressed_size: size,
+            },
             attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
         });
     }

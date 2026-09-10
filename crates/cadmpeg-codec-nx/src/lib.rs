@@ -108,7 +108,7 @@ pub use evaluation::{
 };
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use std::collections::BTreeMap;
 
@@ -186,9 +186,11 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         entries.push(ContainerEntry {
             name: entry.name.clone(),
             role: entry.content().role(),
-            compression: EntryCompression::None,
-            compressed_size: compressed,
-            uncompressed_size: uncompressed,
+            storage: EntryStorage::Bytes {
+                compression: EntryCompression::None,
+                compressed_size: compressed,
+                uncompressed_size: uncompressed,
+            },
             attributes,
         });
     }
@@ -311,9 +313,11 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             } else {
                 ContainerRole::Preview
             },
-            compression,
-            compressed_size,
-            uncompressed_size: stream.inflated.len() as u64,
+            storage: EntryStorage::Bytes {
+                compression,
+                compressed_size,
+                uncompressed_size: stream.inflated.len() as u64,
+            },
             attributes,
         });
     }

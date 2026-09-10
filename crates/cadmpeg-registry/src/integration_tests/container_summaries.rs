@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::container::{ContainerEntry, ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerEntry, ContainerRole, EntryCompression, EntryStorage};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -19,7 +19,7 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .iter()
         .find(|entry| entry.role == ContainerRole::Table)
         .expect("native summary witness");
-    assert_eq!(table.compression, EntryCompression::None);
+    assert_eq!(table.compression(), Some(EntryCompression::None));
     let body_offset: u64 = table.attributes["body_offset"]
         .parse()
         .expect("native summary witness");
@@ -27,7 +27,8 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .parse()
         .expect("native summary witness");
     assert_eq!(
-        table.compressed_size - table.uncompressed_size,
+        table.compressed_size().expect("native summary witness")
+            - table.expanded_size().expect("native summary witness"),
         body_offset - offset
     );
     assert!(body_offset > offset);
@@ -41,14 +42,14 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .iter()
         .find(|entry| entry.name == "RSeStorage")
         .expect("native summary witness");
-    assert_eq!(storage.compression, EntryCompression::Storage);
+    assert_eq!(storage.storage, EntryStorage::Directory);
     let stream = inventor
         .entries
         .iter()
         .find(|entry| entry.name == "RSeStorage/RSeSegInfo")
         .expect("native summary witness");
-    assert_eq!(stream.compression, EntryCompression::Stored);
-    assert_eq!(stream.compressed_size, stream.uncompressed_size);
+    assert_eq!(stream.compression(), Some(EntryCompression::Stored));
+    assert_eq!(stream.compressed_size(), stream.expanded_size());
 
     let step: Summary = serde_json::from_str(include_str!(
         "../../../cadmpeg-codec-step/tests/golden/inspect/ap242_ed3_sections.json"
@@ -60,6 +61,6 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .find(|entry| entry.name == "REFERENCE")
         .expect("native summary witness");
     assert_eq!(references.role, ContainerRole::ExternalReferences);
-    assert_eq!(references.compression, EntryCompression::None);
+    assert_eq!(references.compression(), Some(EntryCompression::None));
     assert_eq!(references.attributes["external_count"], "1");
 }

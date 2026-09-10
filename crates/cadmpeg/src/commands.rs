@@ -216,9 +216,14 @@ pub fn inspect(
     }
     println!();
     for entry in &summary.entries {
+        let size =
+            |size: Option<u64>| size.map_or_else(|| "-".to_string(), |size| size.to_string());
         println!(
             "  {:<14} {:>10} → {:<10}  {}",
-            entry.role, entry.compressed_size, entry.uncompressed_size, entry.name
+            entry.role,
+            size(entry.compressed_size()),
+            size(entry.expanded_size()),
+            entry.name
         );
         for (key, value) in &entry.attributes {
             println!("        {key} = {value}");

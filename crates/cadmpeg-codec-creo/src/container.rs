@@ -14,7 +14,7 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryCompression, EntryStorage};
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2811,12 +2811,14 @@ pub fn summarize(
             ContainerEntry {
                 name: s.name().to_string(),
                 role: s.role().into(),
-                compression: expanded
-                    .map_or(EntryCompression::None, |_| EntryCompression::UnixCompress),
-                compressed_size: s.length as u64,
-                uncompressed_size: expanded.map_or(s.length as u64, |expanded| {
-                    (expanded.data.len() + s.raw_name.len() + 2) as u64
-                }),
+                storage: EntryStorage::Bytes {
+                    compression: expanded
+                        .map_or(EntryCompression::None, |_| EntryCompression::UnixCompress),
+                    compressed_size: s.length as u64,
+                    uncompressed_size: expanded.map_or(s.length as u64, |expanded| {
+                        (expanded.data.len() + s.raw_name.len() + 2) as u64
+                    }),
+                },
                 attributes,
             }
         })
