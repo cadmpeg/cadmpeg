@@ -88,7 +88,10 @@ pub(crate) fn decode(
     Ok(Detail {
         source_range: range,
         view_range,
-        boundary: DecodedCurve::leaf(CurveGeometry::Nurbs(geometry), Vec::new()),
+        boundary: DecodedCurve::leaf(
+            CurveGeometry::Nurbs(geometry),
+            crate::loss::Diagnostics::new(),
+        ),
         page_per_model_ratio,
     })
 }

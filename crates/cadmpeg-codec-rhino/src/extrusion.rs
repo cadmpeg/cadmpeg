@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded `ON_Extrusion` parsing and exact profile-plane construction.
 
+use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
@@ -80,7 +81,7 @@ pub(crate) struct DecodedExtrusion {
     /// Valid optional display meshes.
     pub(crate) meshes: Vec<crate::mesh::DecodedMesh>,
     /// Recoverable mesh-cache warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// Returns whether a UUID is `ON_Extrusion`.
@@ -157,7 +158,7 @@ pub(crate) fn decode(
     } else {
         [false, false]
     };
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let mut payload_children = vec![profile_range];
     let meshes = if minor >= 3 {
         let cache_start = reader.position();
@@ -268,7 +269,7 @@ pub(crate) fn decode(
         )?;
         let start_curve = DecodedCurve::leaf(
             CurveGeometry::Nurbs(start_nurbs.clone()),
-            source.warnings().to_vec(),
+            source.warnings().clone(),
         );
         let start_frame = cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?;
         let end_frame = cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?;
@@ -613,7 +614,7 @@ fn read_mesh_cache(
     writer_version: Option<i64>,
     scale: f64,
     mesh_budget: &mut crate::mesh::MeshBudget,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
     let cache = anonymous_chunk(data, reader, archive, "extrusion mesh cache")?;
     let mut cache_reader = BoundedReader::new(data, cache.body().start, cache.body().end)?;
@@ -694,7 +695,7 @@ fn read_v5_mesh_cache(
     scale: f64,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
     let Some(cache) = userdata
         .iter()
@@ -769,7 +770,7 @@ fn finish_anonymous(
     mut child: BoundedReader<'_>,
     children: &[std::ops::Range<usize>],
     name: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
@@ -777,10 +778,10 @@ fn finish_anonymous(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "{name} CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!("{name} CRC mismatch at offset {}", chunk.header_start),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
@@ -791,7 +792,7 @@ fn finish_payload(
     chunk: &Chunk,
     mut reader: BoundedReader<'_>,
     children: &[std::ops::Range<usize>],
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
@@ -799,10 +800,13 @@ fn finish_payload(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "extrusion payload CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "extrusion payload CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     Ok(())
 }
@@ -1229,7 +1233,7 @@ pub(crate) mod tests {
                 )
                 .expect("valid polygon curve"),
             ),
-            Vec::new(),
+            Diagnostics::new(),
         )
     }
 
@@ -1272,7 +1276,7 @@ pub(crate) mod tests {
                 )
                 .expect("valid circle curve"),
             ),
-            Vec::new(),
+            Diagnostics::new(),
         )
     }
 
@@ -1410,7 +1414,7 @@ pub(crate) mod tests {
         let profile = DecodedCurve::Compound {
             children: vec![(0.0, outer), (1.0, inner)],
             end_parameter: 2.0,
-            warnings: Vec::new(),
+            warnings: Diagnostics::new(),
         };
         assert_eq!(
             split_profiles(profile.clone(), 2, 0)
@@ -1586,7 +1590,7 @@ pub(crate) mod tests {
                 1.0,
                 std::slice::from_ref(&descriptor),
                 &mut crate::mesh::MeshBudget::new(),
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
             )
         })
         .expect("V5 mesh cache");
@@ -1619,7 +1623,7 @@ pub(crate) mod tests {
                 1.0,
                 std::slice::from_ref(&descriptor),
                 &mut crate::mesh::MeshBudget::new(),
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
             )
         })
         .expect("V5 mesh cache suffix");
