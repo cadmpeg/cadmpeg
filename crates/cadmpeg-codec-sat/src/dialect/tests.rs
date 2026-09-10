@@ -25,12 +25,12 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &kernel,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &kernel,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Text(None),
     ]
@@ -74,7 +74,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             StreamEvidence::Binary {
                 family: Family::Asm,
                 header: &kernel,
-                framed: true,
+                stream: Some(RecordStreamStart(0)),
             },
             StreamEvidence::Text(Some(TextEvidence {
                 branch: sat::Terminator::Asm,
@@ -89,7 +89,7 @@ fn only_the_acis_kernel_branches_are_banded() {
         let (host, matched) = layers(&StreamEvidence::Binary {
             family: Family::Acis,
             header: &kernel,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         });
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
@@ -143,7 +143,7 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
             StreamEvidence::Binary {
                 family: Family::Asm,
                 header: &kernel,
-                framed: false,
+                stream: None,
             },
             "sat:asm-binary",
         ),
@@ -151,7 +151,7 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
             StreamEvidence::Binary {
                 family: Family::Acis,
                 header: &kernel,
-                framed: false,
+                stream: None,
             },
             "sat:acis-binary",
         ),
@@ -175,32 +175,32 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &verified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &unverified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &verified,
-            framed: false,
+            stream: None,
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &verified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &unverified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &verified,
-            framed: false,
+            stream: None,
         },
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Asm,
@@ -232,7 +232,7 @@ fn the_declared_keys_are_pinned() {
     let binary = classify(&StreamEvidence::Binary {
         family: Family::Acis,
         header: &kernel,
-        framed: true,
+        stream: Some(RecordStreamStart(0)),
     })
     .declared()
     .clone();
@@ -265,7 +265,7 @@ fn the_declared_keys_are_pinned() {
     let silent = classify(&StreamEvidence::Binary {
         family: Family::Asm,
         header: &header(None),
-        framed: true,
+        stream: Some(RecordStreamStart(0)),
     })
     .declared()
     .clone();
