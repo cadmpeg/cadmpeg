@@ -1,6 +1,6 @@
 //! Marker-to-sketch transform selection.
 
-use crate::records::SketchInputEntity;
+use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchLocus};
 use std::collections::{HashMap, HashSet};
@@ -683,6 +683,47 @@ pub(super) fn quantize(point: Point2, quantum: f64) -> (i64, i64) {
         (point.u / quantum).round() as i64,
         (point.v / quantum).round() as i64,
     )
+}
+
+/// A sketch entity's marker loci beside the marker kind they are written as.
+///
+/// Minted only by [`sketch_entity_marker_loci`], which returns nothing for an
+/// entity that has no marker loci, so an empty locus list has no spelling.
+pub(super) struct SketchEntityMarkerLoci {
+    kind: SketchInputKind,
+    loci: Vec<(Point2, SketchLocus)>,
+}
+
+impl SketchEntityMarkerLoci {
+    /// The marker kind every locus in this set is written as.
+    pub(super) const fn kind(&self) -> SketchInputKind {
+        self.kind
+    }
+
+    /// The marker loci, at least one.
+    pub(super) fn loci(&self) -> &[(Point2, SketchLocus)] {
+        &self.loci
+    }
+}
+
+/// The marker loci of `entity`, absent when it contributes no marker.
+pub(super) fn sketch_entity_marker_loci(entity: &SketchEntity) -> Option<SketchEntityMarkerLoci> {
+    let kind = match entity.geometry.definition() {
+        SketchGeometryDefinition::Point { .. } => SketchInputKind::Point,
+        SketchGeometryDefinition::Arc { .. } => SketchInputKind::Arc,
+        SketchGeometryDefinition::Line { .. }
+        | SketchGeometryDefinition::ReferenceLine { .. }
+        | SketchGeometryDefinition::Circle { .. }
+        | SketchGeometryDefinition::Ellipse { .. }
+        | SketchGeometryDefinition::Hyperbola { .. }
+        | SketchGeometryDefinition::Parabola { .. }
+        | SketchGeometryDefinition::Nurbs { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => SketchInputKind::LineOrCircle,
+        SketchGeometryDefinition::Text { .. } => return None,
+    };
+    let loci = sketch_entity_loci(entity);
+    (!loci.is_empty()).then_some(SketchEntityMarkerLoci { kind, loci })
 }
 
 pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {

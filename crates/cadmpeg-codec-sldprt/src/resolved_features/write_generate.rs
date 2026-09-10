@@ -4,7 +4,7 @@ use super::markers::marker_coordinates;
 use super::relation_geometry::is_reference_relation_parameter;
 use super::relation_loci::marker_accepts_locus;
 use super::selections::{operand_accepts_marker, operand_uses_compatible_ordinal};
-use super::transforms::{locus_entity, locus_key, sketch_entity_loci};
+use super::transforms::{locus_entity, locus_key, sketch_entity_loci, sketch_entity_marker_loci};
 use super::write_prepare::{
     arc_angle_relation_kind, binary_marker_relation, ellipse_angle_relation_kind, same_point2,
 };
@@ -14,7 +14,7 @@ use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKin
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+    Sketch, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId,
     SketchGeometryDefinition, SketchLocus,
 };
 use std::collections::HashMap;
@@ -184,7 +184,10 @@ pub(super) fn append_generated_sketch_markers(
         .iter()
         .filter(|entity| entity.sketch == sketch.id)
     {
-        for (point, locus) in sketch_entity_loci(entity) {
+        let Some(markers) = sketch_entity_marker_loci(entity) else {
+            continue;
+        };
+        for (point, locus) in markers.loci() {
             let local_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
@@ -193,7 +196,7 @@ pub(super) fn append_generated_sketch_markers(
             })?;
             append_coordinate_marker(
                 payload,
-                generated_marker_kind(&entity.geometry),
+                markers.kind(),
                 [point.u * 0.001, point.v * 0.001],
                 next_id,
             );
@@ -203,12 +206,7 @@ pub(super) fn append_generated_sketch_markers(
                     second.get_or_insert(local_id);
                 })
                 .or_insert((local_id, None));
-            marker_loci.push((
-                locus,
-                point,
-                generated_marker_kind(&entity.geometry),
-                local_id,
-            ));
+            marker_loci.push((locus.clone(), *point, markers.kind(), local_id));
             next_id += 1;
         }
     }
@@ -748,23 +746,6 @@ fn unique_generated_locus_marker(
     Err(cadmpeg_core::CodecError::NotImplemented(format!(
         "source-less SLDPRT locus relation cannot identify {locus:?} with one unambiguous marker"
     )))
-}
-
-fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
-    match geometry.definition() {
-        SketchGeometryDefinition::Point { .. } => SketchInputKind::Point,
-        SketchGeometryDefinition::Arc { .. } => SketchInputKind::Arc,
-        SketchGeometryDefinition::Line { .. }
-        | SketchGeometryDefinition::ReferenceLine { .. }
-        | SketchGeometryDefinition::Circle { .. }
-        | SketchGeometryDefinition::Ellipse { .. }
-        | SketchGeometryDefinition::Hyperbola { .. }
-        | SketchGeometryDefinition::Parabola { .. }
-        | SketchGeometryDefinition::Nurbs { .. }
-        | SketchGeometryDefinition::ExternalReference { .. }
-        | SketchGeometryDefinition::Native { .. } => SketchInputKind::LineOrCircle,
-        SketchGeometryDefinition::Text { .. } => unreachable!("sketch text has no marker loci"),
-    }
 }
 
 pub(super) fn append_coordinate_marker(

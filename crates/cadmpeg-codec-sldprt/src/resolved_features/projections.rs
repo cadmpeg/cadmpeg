@@ -731,41 +731,38 @@ pub(crate) fn project_compact_edge_selections(
                     None => EdgeSelection::Native(native),
                 }
             };
-            let unresolved_variable_fillet = match &definition {
-                FeatureDefinition::Fillet { groups } => {
-                    matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
-                }
-                _ => false,
+            let sole_unresolved_fillet_group = match &definition {
+                FeatureDefinition::Fillet { groups } => match groups.as_slice() {
+                    [group] if group.radius.is_unresolved() => {
+                        Some((group.edges.clone(), group.tangency_weight))
+                    }
+                    _ => None,
+                },
+                _ => None,
             };
-            if unresolved_variable_fillet {
+            if let Some((existing_edges, tangency_weight)) = sole_unresolved_fillet_group {
                 if let Some(radius_groups) =
                     variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
                 {
-                    let FeatureDefinition::Fillet { groups } = &mut definition else {
-                        unreachable!("checked fillet definition")
-                    };
-                    let [group] = groups.as_slice() else {
-                        unreachable!("checked one fillet group")
-                    };
-                    let existing_edges = group.edges.clone();
                     if matches!(&existing_edges, EdgeSelection::Unresolved)
                         || radius_groups.len() == 1
                     {
-                        let tangency_weight = group.tangency_weight;
-                        *groups = radius_groups
-                            .into_iter()
-                            .map(|(radius, selections)| FilletGroup {
-                                edges: if matches!(&existing_edges, EdgeSelection::Unresolved) {
-                                    projected_edges(&selections)
-                                } else {
-                                    existing_edges.clone()
-                                },
-                                radius,
-                                tangency_weight,
-                            })
-                            .collect::<Vec<_>>()
-                            .try_into()
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        definition = FeatureDefinition::Fillet {
+                            groups: radius_groups
+                                .into_iter()
+                                .map(|(radius, selections)| FilletGroup {
+                                    edges: if matches!(&existing_edges, EdgeSelection::Unresolved) {
+                                        projected_edges(&selections)
+                                    } else {
+                                        existing_edges.clone()
+                                    },
+                                    radius,
+                                    tangency_weight,
+                                })
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                        };
                     }
                 }
             }
@@ -1315,9 +1312,8 @@ pub(crate) fn project_compact_surface_selections(
                 else {
                     break 'feature_edit;
                 };
-                let face_selections = [center_faces, side_one_faces, side_two_faces]
-                    .into_iter()
-                    .map(|selection| {
+                let [center_faces, side_one_faces, side_two_faces] =
+                    [center_faces, side_one_faces, side_two_faces].map(|selection| {
                         let native = compact_surface_selection_value(&selection.components);
                         let generated = selection
                             .terminal_feature_ref
@@ -1359,22 +1355,13 @@ pub(crate) fn project_compact_surface_selections(
                             }
                         }
                         face
-                    })
-                    .collect::<Vec<_>>();
-                let [center_faces, side_one_faces, side_two_faces] = face_selections.as_slice()
-                else {
-                    unreachable!("full-round candidate has three face selections")
-                };
+                    });
                 definition = FeatureDefinition::FullRoundFillet {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(
                         cadmpeg_ir::features::FullRoundFilletGroup::new(
-                            center_faces.clone(),
-                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(
-                                side_one_faces.clone(),
-                            ),
-                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(
-                                side_two_faces.clone(),
-                            ),
+                            center_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(side_one_faces),
+                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(side_two_faces),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),

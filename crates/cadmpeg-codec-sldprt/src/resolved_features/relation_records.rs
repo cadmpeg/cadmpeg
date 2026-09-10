@@ -2221,22 +2221,19 @@ fn bind_dynamic_point_line_relation(
     entities: &[&crate::records::SketchInputEntity],
     target: f64,
 ) {
-    if relation.operands.len() != 2 {
+    let Ok([point_operand, line_operand]) =
+        <&mut [FeatureInputOperand; 2]>::try_from(relation.operands.as_mut_slice())
+    else {
         clear_relation_operands(relation);
         return;
-    }
-    let line_reference = relation.operands[1].entity_ref.clone();
-    if dynamic_curve_reference_is_valid(entities, line_reference.as_deref()) {
+    };
+    if dynamic_curve_reference_is_valid(entities, line_operand.entity_ref.as_deref()) {
         return;
     }
-    if line_reference.is_some() {
-        relation.operands[1].entity_ref = None;
-    }
-    let [point_operand, line_operand] = relation.operands.as_slice() else {
-        unreachable!("checked binary relation operands");
-    };
+    line_operand.entity_ref = None;
+    let line_index = line_operand.entity_index;
     let point_candidates = dynamic_point_candidates(entities, point_operand);
-    let Some(line_markers) = dynamic_solver_line(entities, line_operand.entity_index) else {
+    let Some(line_markers) = dynamic_solver_line(entities, line_index) else {
         clear_relation_operands(relation);
         return;
     };
@@ -2277,34 +2274,31 @@ fn bind_dynamic_line_relation(
     target: f64,
     angle: bool,
 ) {
-    if relation.operands.len() != 2 {
-        clear_relation_operands(relation);
-        return;
-    }
-    let first_reference = relation.operands[0].entity_ref.clone();
-    let second_reference = relation.operands[1].entity_ref.clone();
-    let first_valid = dynamic_curve_reference_is_valid(entities, first_reference.as_deref());
-    let second_valid = dynamic_curve_reference_is_valid(entities, second_reference.as_deref());
-    if first_valid && second_valid {
-        return;
-    }
-    if first_reference.is_some() && !first_valid {
-        relation.operands[0].entity_ref = None;
-    }
-    if second_reference.is_some() && !second_valid {
-        relation.operands[1].entity_ref = None;
-    }
-    let [first_operand, second_operand] = relation.operands.as_slice() else {
-        unreachable!("checked binary relation operands");
-    };
-    if first_operand.entity_ref.is_some() || second_operand.entity_ref.is_some() {
-        return;
-    }
-    let Some(first_markers) = dynamic_solver_line(entities, first_operand.entity_index) else {
+    let Ok([first_operand, second_operand]) =
+        <&mut [FeatureInputOperand; 2]>::try_from(relation.operands.as_mut_slice())
+    else {
         clear_relation_operands(relation);
         return;
     };
-    let Some(second_markers) = dynamic_solver_line(entities, second_operand.entity_index) else {
+    let first_valid =
+        dynamic_curve_reference_is_valid(entities, first_operand.entity_ref.as_deref());
+    let second_valid =
+        dynamic_curve_reference_is_valid(entities, second_operand.entity_ref.as_deref());
+    if !first_valid {
+        first_operand.entity_ref = None;
+    }
+    if !second_valid {
+        second_operand.entity_ref = None;
+    }
+    if first_valid || second_valid {
+        return;
+    }
+    let (first_index, second_index) = (first_operand.entity_index, second_operand.entity_index);
+    let Some(first_markers) = dynamic_solver_line(entities, first_index) else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let Some(second_markers) = dynamic_solver_line(entities, second_index) else {
         clear_relation_operands(relation);
         return;
     };
@@ -2485,4 +2479,61 @@ pub(super) fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> boo
             .get(trailer_offset + 7..trailer_offset + 24)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
         && payload.get(trailer_offset + 24..trailer_offset + 30) == Some(&[0x0f, 0, 0, 0, 2, 0])
+}
+
+#[cfg(test)]
+mod binary_relation_operand_tests {
+    use super::{
+        bind_dynamic_line_relation, bind_dynamic_point_line_relation, FeatureInputOperand,
+        FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    };
+
+    fn operand(entity_index: u16) -> FeatureInputOperand {
+        FeatureInputOperand {
+            offset: u64::from(entity_index),
+            reference_ref: format!("reference#{entity_index}"),
+            kind: FeatureInputOperandKind::D6,
+            entity_index,
+            entity_ref: Some(format!("entity#{entity_index}")),
+        }
+    }
+
+    fn relation(operands: Vec<FeatureInputOperand>) -> FeatureInputRelationInstance {
+        FeatureInputRelationInstance {
+            id: "relation#0".to_string(),
+            parent: "lane#0".to_string(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class#0".to_string(),
+            feature_ref: "feature#0".to_string(),
+            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
+                std::iter::empty(),
+            ),
+            operands,
+        }
+    }
+
+    #[test]
+    fn a_relation_that_is_not_binary_is_cleared_rather_than_indexed() {
+        for operands in [
+            vec![],
+            vec![operand(0)],
+            vec![operand(0), operand(1), operand(2)],
+        ] {
+            let mut point_line = relation(operands.clone());
+            bind_dynamic_point_line_relation(&mut point_line, &[], 1.0);
+            assert!(point_line
+                .operands
+                .iter()
+                .all(|operand| operand.entity_ref.is_none()));
+
+            let mut line = relation(operands);
+            bind_dynamic_line_relation(&mut line, &[], 1.0, false);
+            assert!(line
+                .operands
+                .iter()
+                .all(|operand| operand.entity_ref.is_none()));
+        }
+    }
 }

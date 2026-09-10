@@ -1342,18 +1342,19 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         endpoints: Some(["start".into(), "end".into()]),
     };
 
-    let (geometry, endpoint_refs) =
-        super::transformed_dimensioned_arc(transform, &arc, 1000.0, 1.0e-8)
-            .expect("valid dimensioned arc");
-    assert_eq!(endpoint_refs, vec!["end", "start"]);
+    let arc = super::transformed_dimensioned_arc(transform, &arc, 1000.0, 1.0e-8)
+        .expect("valid dimensioned arc");
+    assert_eq!(arc.endpoint_refs, vec!["end", "start"]);
     let SketchGeometryDefinition::Arc {
         start_angle,
         end_angle,
+        radius,
         ..
-    } = geometry.definition()
+    } = arc.geometry.definition()
     else {
         panic!("dimensioned carrier should remain an arc");
     };
+    assert!((radius.get() - arc.radius).abs() < 1.0e-9);
     let sweep = (end_angle.get() - start_angle.get()).rem_euclid(std::f64::consts::TAU);
     assert!(sweep <= std::f64::consts::PI + 1.0e-9);
 }
