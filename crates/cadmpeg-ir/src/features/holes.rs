@@ -54,9 +54,11 @@ pub struct HoleShape {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct HoleShapeWire {
-    #[serde(flatten)]
-    construction: HoleConstruction,
+    kind: HoleKindWire,
+    #[serde(default)]
+    specification: Option<Box<HoleSpecification>>,
     #[serde(default)]
     exit_kind: Option<HoleKind>,
     #[serde(default)]
@@ -132,8 +134,12 @@ impl HoleShape {
 impl<'de> Deserialize<'de> for HoleShape {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = HoleShapeWire::deserialize(deserializer)?;
-        Self::new(wire.construction, wire.exit_kind, wire.diameter)
-            .map_err(serde::de::Error::custom)
+        let construction = HoleConstruction::try_from(HoleConstructionWire {
+            kind: wire.kind,
+            specification: wire.specification,
+        })
+        .map_err(serde::de::Error::custom)?;
+        Self::new(construction, wire.exit_kind, wire.diameter).map_err(serde::de::Error::custom)
     }
 }
 
@@ -321,7 +327,7 @@ impl HoleKind {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleKindWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -483,6 +489,7 @@ impl TryFrom<HoleKindWire> for HoleKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HoleConstructionWire {
     kind: HoleKindWire,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -572,6 +579,7 @@ pub enum HoleProfileFilter {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HoleProfileFilterWire {
     points: bool,
     circles: bool,
@@ -617,7 +625,7 @@ impl From<HoleProfileFilter> for HoleProfileFilterWire {
 /// Blind-end construction of a drilled hole.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HoleBottom {
     /// Flat-bottomed cylindrical end.
     Flat,
@@ -681,6 +689,7 @@ pub enum HoleSpecification {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HoleSpecificationWire {
     #[serde(deserialize_with = "deserialize_local_standard")]
     standard: NonEmptyString,
@@ -827,7 +836,7 @@ pub enum ThreadHand {
 /// Axial extent rule for a hole thread.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HoleThreadDepth {
     /// Thread follows the complete hole depth.
     HoleDepth,
