@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
-use std::num::NonZeroU64;
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -65,8 +64,8 @@ impl ZipCompression {
         };
         Ok(EntryStorage::Compressed {
             method,
-            stored: NonZeroU64::new(compressed_size),
-            expanded: NonZeroU64::new(uncompressed_size),
+            stored: Some(compressed_size),
+            expanded: Some(uncompressed_size),
         })
     }
 }
@@ -927,7 +926,6 @@ fn declared_storage(
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Write as _};
-    use std::num::NonZeroU64;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use zip::write::SimpleFileOptions;
@@ -1004,7 +1002,7 @@ mod tests {
             stored.storage,
             cadmpeg_core::container::EntryStorage::Verbatim {
                 label: VerbatimLabel::Stored,
-                size: VerbatimSize::PayloadOnly(NonZeroU64::new(9).expect("nine is nonzero")),
+                size: VerbatimSize::PayloadOnly(9),
             }
         );
         assert_eq!(stored.storage.stored_size(), None);

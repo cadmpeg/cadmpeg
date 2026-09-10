@@ -30,21 +30,17 @@
       "attributes": {
         "directory_id": "1"
       },
-      "compressed_size": 0,
       "compression": "storage",
       "name": "RSeStorage",
-      "role": "rse-storage",
-      "uncompressed_size": 0
+      "role": "rse-storage"
     },
     {
       "attributes": {
         "directory_id": "2"
       },
-      "compressed_size": 0,
       "compression": "storage",
       "name": "RSeStorage/V1",
-      "role": "storage",
-      "uncompressed_size": 0
+      "role": "storage"
     },
     {
       "attributes": {

@@ -158,7 +158,6 @@
           "file_offset": "76",
           "kind": "preview"
         },
-        "compressed_size": 0,
         "compression": "zlib",
         "name": "parasolid#0",
         "role": "preview",

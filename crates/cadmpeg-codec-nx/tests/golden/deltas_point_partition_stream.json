@@ -361,7 +361,6 @@
           "records.vertex": "0",
           "schema": "SCH_TEST_1_9999"
         },
-        "compressed_size": 0,
         "compression": "zlib",
         "name": "parasolid#0",
         "role": "parasolid-stream",

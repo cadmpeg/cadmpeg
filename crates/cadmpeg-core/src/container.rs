@@ -133,16 +133,19 @@ const VERBATIM_SPAN_UNDER_PAYLOAD: &str =
 
 /// What a container reports about the size of a verbatim payload.
 ///
-/// Every value maps to a distinct declared `(stored, expanded)` pair, so an
-/// unreported size is absent rather than spelled zero.
+/// Every value maps to a distinct declared `(stored, expanded)` pair, and an
+/// unreported size is absent on the wire, so a reported zero is an ordinary
+/// size rather than a second spelling of [`VerbatimSize::Unreported`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerbatimSize {
     /// Neither the payload nor its stored span is reported.
     Unreported,
     /// The payload size; its stored span is not reported.
-    PayloadOnly(NonZeroU64),
+    PayloadOnly(u64),
+    /// The stored span; the payload it expands to is not reported.
+    StoredOnly(u64),
     /// The payload occupies exactly this many stored bytes.
-    Exact(NonZeroU64),
+    Exact(u64),
     /// The payload, plus the container framing counted in its stored span.
     Framed(FramedSpan),
 }
@@ -240,13 +243,10 @@ impl VerbatimSize {
             return None;
         }
         match NonZeroU64::new(stored) {
-            None => Some(Self::Unreported),
+            None => Some(Self::Exact(0)),
             Some(stored) => match FramedSpan::new(payload, stored) {
                 Some(span) => Some(Self::Framed(span)),
-                None => match NonZeroU64::new(payload) {
-                    Some(payload) => Some(Self::Exact(payload)),
-                    None => Some(Self::Unreported),
-                },
+                None => Some(Self::Exact(payload)),
             },
         }
     }
@@ -274,33 +274,28 @@ pub enum EntryStorage {
         /// Compression method.
         method: CompressionMethod,
         /// Stored size in bytes, absent when the codec does not report it.
-        stored: Option<NonZeroU64>,
+        stored: Option<u64>,
         /// Expanded size in bytes, absent when the codec does not report it.
-        expanded: Option<NonZeroU64>,
+        expanded: Option<u64>,
     },
 }
 
 impl EntryStorage {
     /// Verbatim bytes occupying exactly `size` stored bytes.
-    ///
-    /// A zero `size` is the container reporting nothing, which is the only
-    /// reading the wire admits: an empty payload and an unreported one are the
-    /// same declared pair.
     #[must_use]
-    pub fn verbatim(label: VerbatimLabel, size: u64) -> Self {
+    pub const fn verbatim(label: VerbatimLabel, size: u64) -> Self {
         Self::Verbatim {
             label,
-            size: NonZeroU64::new(size).map_or(VerbatimSize::Unreported, VerbatimSize::Exact),
+            size: VerbatimSize::Exact(size),
         }
     }
 
     /// Verbatim bytes whose payload is known and whose stored span is not reported.
     #[must_use]
-    pub fn payload_only(label: VerbatimLabel, payload: u64) -> Self {
+    pub const fn payload_only(label: VerbatimLabel, payload: u64) -> Self {
         Self::Verbatim {
             label,
-            size: NonZeroU64::new(payload)
-                .map_or(VerbatimSize::Unreported, VerbatimSize::PayloadOnly),
+            size: VerbatimSize::PayloadOnly(payload),
         }
     }
 
@@ -345,29 +340,30 @@ impl EntryStorage {
 
     /// Admit storage from a declared method label and the two declared sizes.
     ///
-    /// A zero declared size means the producer did not report it. A verbatim
-    /// entry whose stored span is smaller than its payload is rejected.
+    /// An absent declared size is one the producer did not report; a zero one
+    /// is a reported zero. A verbatim entry whose stored span is smaller than
+    /// its payload is rejected.
     pub fn from_declared(
         label: Result<VerbatimLabel, CompressionMethod>,
-        stored: u64,
-        expanded: u64,
+        stored: Option<u64>,
+        expanded: Option<u64>,
     ) -> Result<Self, &'static str> {
         let label = match label {
             Ok(label) => label,
             Err(method) => {
                 return Ok(Self::Compressed {
                     method,
-                    stored: NonZeroU64::new(stored),
-                    expanded: NonZeroU64::new(expanded),
+                    stored,
+                    expanded,
                 })
             }
         };
-        let size = match (NonZeroU64::new(stored), NonZeroU64::new(expanded)) {
+        let size = match (stored, expanded) {
             (None, None) => VerbatimSize::Unreported,
             (None, Some(payload)) => VerbatimSize::PayloadOnly(payload),
-            (Some(stored), payload) => {
-                VerbatimSize::declared(payload.map_or(0, NonZeroU64::get), stored.get())
-                    .ok_or(VERBATIM_SPAN_UNDER_PAYLOAD)?
+            (Some(stored), None) => VerbatimSize::StoredOnly(stored),
+            (Some(stored), Some(payload)) => {
+                VerbatimSize::declared(payload, stored).ok_or(VERBATIM_SPAN_UNDER_PAYLOAD)?
             }
         };
         Ok(Self::Verbatim { label, size })
@@ -380,13 +376,10 @@ impl EntryStorage {
             Self::Directory => None,
             Self::Verbatim { size, .. } => match size {
                 VerbatimSize::Unreported | VerbatimSize::PayloadOnly(_) => None,
-                VerbatimSize::Exact(size) => Some(size.get()),
+                VerbatimSize::StoredOnly(size) | VerbatimSize::Exact(size) => Some(*size),
                 VerbatimSize::Framed(span) => Some(span.stored().get()),
             },
-            Self::Compressed { stored, .. } => match stored {
-                Some(stored) => Some(stored.get()),
-                None => None,
-            },
+            Self::Compressed { stored, .. } => *stored,
         }
     }
 
@@ -396,16 +389,11 @@ impl EntryStorage {
         match self {
             Self::Directory => None,
             Self::Verbatim { size, .. } => match size {
-                VerbatimSize::Unreported => None,
-                VerbatimSize::PayloadOnly(payload) | VerbatimSize::Exact(payload) => {
-                    Some(payload.get())
-                }
+                VerbatimSize::Unreported | VerbatimSize::StoredOnly(_) => None,
+                VerbatimSize::PayloadOnly(payload) | VerbatimSize::Exact(payload) => Some(*payload),
                 VerbatimSize::Framed(span) => Some(span.payload()),
             },
-            Self::Compressed { expanded, .. } => match expanded {
-                Some(expanded) => Some(expanded.get()),
-                None => None,
-            },
+            Self::Compressed { expanded, .. } => *expanded,
         }
     }
 }
@@ -502,16 +490,18 @@ struct ContainerEntryWire {
     name: String,
     role: ContainerRole,
     compression: EntryCompressionWire,
-    compressed_size: u64,
-    uncompressed_size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compressed_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uncompressed_size: Option<u64>,
     #[serde(default)]
     attributes: BTreeMap<String, String>,
 }
 
 impl From<ContainerEntry> for ContainerEntryWire {
     fn from(entry: ContainerEntry) -> Self {
-        let stored = entry.stored_size().unwrap_or(0);
-        let expanded = entry.expanded_size().unwrap_or(0);
+        let stored = entry.stored_size();
+        let expanded = entry.expanded_size();
         let compression = match entry.storage {
             EntryStorage::Directory => EntryCompressionWire::Storage,
             EntryStorage::Verbatim { label, .. } => EntryCompressionWire::from_verbatim(label),
@@ -534,7 +524,7 @@ impl TryFrom<ContainerEntryWire> for ContainerEntry {
     fn try_from(wire: ContainerEntryWire) -> Result<Self, Self::Error> {
         let storage = match wire.compression.label() {
             None => {
-                if wire.compressed_size != 0 || wire.uncompressed_size != 0 {
+                if wire.compressed_size.is_some() || wire.uncompressed_size.is_some() {
                     return Err(
                         "container entry compression \"storage\" declares a byte size".to_string(),
                     );
@@ -563,22 +553,35 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::{NonZeroU32, NonZeroU64};
 
-    fn wire(compression: &str, compressed: u64, uncompressed: u64) -> serde_json::Value {
-        serde_json::json!({
+    fn wire(
+        compression: &str,
+        compressed: Option<u64>,
+        uncompressed: Option<u64>,
+    ) -> serde_json::Value {
+        let mut value = serde_json::json!({
             "name": "entry",
             "role": "stream",
             "compression": compression,
-            "compressed_size": compressed,
-            "uncompressed_size": uncompressed,
-        })
+        });
+        if let Some(compressed) = compressed {
+            value["compressed_size"] = compressed.into();
+        }
+        if let Some(uncompressed) = uncompressed {
+            value["uncompressed_size"] = uncompressed.into();
+        }
+        value
     }
 
-    fn admit(compression: &str, compressed: u64, uncompressed: u64) -> ContainerEntry {
+    fn admit(
+        compression: &str,
+        compressed: Option<u64>,
+        uncompressed: Option<u64>,
+    ) -> ContainerEntry {
         serde_json::from_value(wire(compression, compressed, uncompressed))
             .expect("the declared sizes are admissible")
     }
 
-    fn reject(compression: &str, compressed: u64, uncompressed: u64) -> String {
+    fn reject(compression: &str, compressed: Option<u64>, uncompressed: Option<u64>) -> String {
         serde_json::from_value::<ContainerEntry>(wire(compression, compressed, uncompressed))
             .expect_err("the declared sizes are inadmissible")
             .to_string()
@@ -591,15 +594,23 @@ mod tests {
     #[test]
     fn declared_verbatim_sizes_admit_one_shape_each() {
         for (compressed, uncompressed, expected) in [
-            (0, 0, VerbatimSize::Unreported),
-            (0, 12, VerbatimSize::PayloadOnly(nonzero(12))),
-            (7, 7, VerbatimSize::Exact(nonzero(7))),
+            (None, None, VerbatimSize::Unreported),
+            (None, Some(12), VerbatimSize::PayloadOnly(12)),
+            (None, Some(0), VerbatimSize::PayloadOnly(0)),
+            (Some(5), None, VerbatimSize::StoredOnly(5)),
+            (Some(0), None, VerbatimSize::StoredOnly(0)),
+            (Some(7), Some(7), VerbatimSize::Exact(7)),
+            (Some(0), Some(0), VerbatimSize::Exact(0)),
             (
-                30,
-                10,
+                Some(30),
+                Some(10),
                 VerbatimSize::declared(10, 30).expect("a framed span"),
             ),
-            (5, 0, VerbatimSize::declared(0, 5).expect("a framed span")),
+            (
+                Some(5),
+                Some(0),
+                VerbatimSize::declared(0, 5).expect("a framed span"),
+            ),
         ] {
             assert_eq!(
                 EntryStorage::from_declared(Ok(VerbatimLabel::None), compressed, uncompressed),
@@ -612,20 +623,20 @@ mod tests {
     }
 
     #[test]
-    fn declared_compressed_sizes_drop_the_unreported_zero() {
+    fn declared_compressed_sizes_keep_absence_and_zero_apart() {
         assert_eq!(
-            EntryStorage::from_declared(Err(CompressionMethod::Zlib), 0, 99),
+            EntryStorage::from_declared(Err(CompressionMethod::Zlib), None, Some(99)),
             Ok(EntryStorage::Compressed {
                 method: CompressionMethod::Zlib,
                 stored: None,
-                expanded: NonZeroU64::new(99),
+                expanded: Some(99),
             })
         );
         assert_eq!(
-            EntryStorage::from_declared(Err(CompressionMethod::Jpeg), 44, 0),
+            EntryStorage::from_declared(Err(CompressionMethod::Jpeg), Some(44), None),
             Ok(EntryStorage::Compressed {
                 method: CompressionMethod::Jpeg,
-                stored: NonZeroU64::new(44),
+                stored: Some(44),
                 expanded: None,
             })
         );
@@ -634,10 +645,11 @@ mod tests {
     #[test]
     fn compressed_sizes_spell_unreported_only_as_absence() {
         for (compressed, uncompressed, stored, expanded) in [
-            (0, 0, None, None),
-            (0, 99, None, Some(nonzero(99))),
-            (44, 0, Some(nonzero(44)), None),
-            (4, 16, Some(nonzero(4)), Some(nonzero(16))),
+            (None, None, None, None),
+            (None, Some(99), None, Some(99)),
+            (Some(44), None, Some(44), None),
+            (Some(4), Some(16), Some(4), Some(16)),
+            (Some(0), Some(0), Some(0), Some(0)),
         ] {
             let storage = EntryStorage::Compressed {
                 method: CompressionMethod::Deflate,
@@ -671,7 +683,7 @@ mod tests {
     #[test]
     fn a_verbatim_entry_cannot_store_fewer_bytes_than_it_expands_to() {
         assert_eq!(
-            EntryStorage::from_declared(Ok(VerbatimLabel::Stored), 5, 9),
+            EntryStorage::from_declared(Ok(VerbatimLabel::Stored), Some(5), Some(9)),
             Err("verbatim container entry stores fewer bytes than it expands to")
         );
         assert_eq!(
@@ -700,7 +712,7 @@ mod tests {
             Some(u64::MAX)
         );
         for label in ["none", "stored"] {
-            assert!(reject(label, 5, 9)
+            assert!(reject(label, Some(5), Some(9))
                 .contains("verbatim container entry stores fewer bytes than it expands to"));
         }
     }
@@ -733,29 +745,75 @@ mod tests {
     }
 
     #[test]
+    fn a_reported_zero_size_is_not_an_unreported_one() {
+        let reported = admit("none", Some(0), Some(0));
+        let unreported = admit("none", None, None);
+        assert_eq!(
+            reported.storage,
+            EntryStorage::Verbatim {
+                label: VerbatimLabel::None,
+                size: VerbatimSize::Exact(0),
+            }
+        );
+        assert_eq!(
+            unreported.storage,
+            EntryStorage::Verbatim {
+                label: VerbatimLabel::None,
+                size: VerbatimSize::Unreported,
+            }
+        );
+        assert_ne!(reported.storage, unreported.storage);
+        assert_eq!(reported.stored_size(), Some(0));
+        assert_eq!(reported.expanded_size(), Some(0));
+        assert_eq!(unreported.stored_size(), None);
+        assert_eq!(unreported.expanded_size(), None);
+        let serialized = serde_json::to_value(&unreported).expect("a container entry serializes");
+        assert_eq!(serialized.get("compressed_size"), None);
+        assert_eq!(serialized.get("uncompressed_size"), None);
+        let serialized = serde_json::to_value(&reported).expect("a container entry serializes");
+        assert_eq!(
+            serialized.get("uncompressed_size"),
+            Some(&serde_json::json!(0))
+        );
+    }
+
+    #[test]
     fn a_storage_label_cannot_declare_a_byte_size() {
-        for (compressed, uncompressed) in [(4, 0), (0, 7), (4, 7)] {
+        for (compressed, uncompressed) in [
+            (Some(4), None),
+            (None, Some(7)),
+            (Some(4), Some(7)),
+            (Some(0), Some(0)),
+        ] {
             assert!(reject("storage", compressed, uncompressed)
                 .contains("container entry compression \"storage\" declares a byte size"));
         }
-        assert_eq!(admit("storage", 0, 0).storage, EntryStorage::Directory);
+        assert_eq!(
+            admit("storage", None, None).storage,
+            EntryStorage::Directory
+        );
     }
 
     #[test]
     fn every_legal_shape_round_trips_through_the_wire() {
         for (compression, compressed, uncompressed) in [
-            ("storage", 0, 0),
-            ("none", 0, 0),
-            ("none", 0, 12),
-            ("none", 7, 7),
-            ("none", 30, 10),
-            ("none", 5, 0),
-            ("stored", 9, 9),
-            ("deflate", 4, 16),
-            ("zlib", 0, 99),
-            ("jpeg", 44, 0),
-            ("zstd", 8, 20),
-            ("unix-compress", 15, 18),
+            ("storage", None, None),
+            ("none", None, None),
+            ("none", None, Some(12)),
+            ("none", None, Some(0)),
+            ("none", Some(5), None),
+            ("none", Some(0), None),
+            ("none", Some(7), Some(7)),
+            ("none", Some(0), Some(0)),
+            ("none", Some(30), Some(10)),
+            ("none", Some(5), Some(0)),
+            ("stored", Some(9), Some(9)),
+            ("deflate", Some(4), Some(16)),
+            ("zlib", None, Some(99)),
+            ("jpeg", Some(44), None),
+            ("zstd", Some(8), Some(20)),
+            ("unix-compress", Some(15), Some(18)),
+            ("deflate", Some(0), Some(0)),
         ] {
             let entry = admit(compression, compressed, uncompressed);
             let mut expected = wire(compression, compressed, uncompressed);
@@ -763,21 +821,21 @@ mod tests {
             assert_eq!(
                 serde_json::to_value(&entry).expect("a container entry serializes"),
                 expected,
-                "{compression} {compressed}/{uncompressed}"
+                "{compression} {compressed:?}/{uncompressed:?}"
             );
         }
     }
 
     #[test]
     fn reported_sizes_are_absent_rather_than_zero() {
-        assert_eq!(admit("none", 0, 0).stored_size(), None);
-        assert_eq!(admit("none", 0, 0).expanded_size(), None);
-        assert_eq!(admit("none", 0, 12).stored_size(), None);
-        assert_eq!(admit("none", 0, 12).expanded_size(), Some(12));
-        assert_eq!(admit("none", 30, 10).stored_size(), Some(30));
-        assert_eq!(admit("none", 30, 10).expanded_size(), Some(10));
-        assert_eq!(admit("zlib", 0, 99).stored_size(), None);
-        let directory = admit("storage", 0, 0);
+        assert_eq!(admit("none", None, None).stored_size(), None);
+        assert_eq!(admit("none", None, None).expanded_size(), None);
+        assert_eq!(admit("none", None, Some(12)).stored_size(), None);
+        assert_eq!(admit("none", None, Some(12)).expanded_size(), Some(12));
+        assert_eq!(admit("none", Some(30), Some(10)).stored_size(), Some(30));
+        assert_eq!(admit("none", Some(30), Some(10)).expanded_size(), Some(10));
+        assert_eq!(admit("zlib", None, Some(99)).stored_size(), None);
+        let directory = admit("storage", None, None);
         assert_eq!(directory.stored_size(), None);
         assert_eq!(directory.expanded_size(), None);
         assert_eq!(directory.role, ContainerRole::Stream);
