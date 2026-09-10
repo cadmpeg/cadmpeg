@@ -120,7 +120,7 @@ fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
             native_tail_flags,
             parameter_range,
             fit_tolerance,
-        } => AsmPcurveEdit::Inline(InlinePcurveEdit {
+        } => AsmPcurveEdit::Inline(InlinePcurveEdit::PcurveWrapper {
             native_geometry,
             periodic: *periodic,
             wrapper_reversed: *wrapper_reversed,
@@ -218,12 +218,9 @@ fn patch_asm_geometry(
             let target = usize::try_from(record.ref_at(4)?).ok()?;
             Some((
                 target,
-                AsmPcurveEdit::Inline(InlinePcurveEdit {
+                AsmPcurveEdit::Inline(InlinePcurveEdit::IntcurveCache {
                     native_geometry,
                     periodic: *periodic,
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: None,
                     fit_tolerance: None,
                 }),
             ))
