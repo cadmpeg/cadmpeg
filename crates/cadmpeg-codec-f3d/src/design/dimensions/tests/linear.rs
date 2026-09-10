@@ -881,7 +881,6 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             byte_offset: 0,
             coordinate_offset: 0,
             companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
                 incident_curves: Vec::new(),
             },
             record_form: crate::records::SketchPointRecordForm::version11(

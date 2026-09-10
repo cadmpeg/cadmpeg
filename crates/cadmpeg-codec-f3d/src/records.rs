@@ -7413,6 +7413,8 @@ pub enum SketchPointRecordForm {
         entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
+        /// Whether the paired companion record carries the fixed present-zero prefix.
+        companion_prefix_present_zero: bool,
         persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
@@ -7425,6 +7427,8 @@ pub enum SketchPointRecordForm {
         entity_genesis: Option<u64>,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
+        /// Whether the paired companion record carries the fixed present-zero prefix.
+        companion_prefix_present_zero: bool,
         persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
@@ -7443,6 +7447,7 @@ impl SketchPointRecordForm {
             depth,
             entity_genesis,
             padded_paired_reference: false,
+            companion_prefix_present_zero: false,
             persistent_id: std::num::NonZeroU64::new(persistent_id).unwrap(),
             flags: [false; 8],
             closure,
@@ -7466,6 +7471,65 @@ impl SketchPointRecordForm {
             Self::Version8 { .. } => 8,
             Self::Version10 { .. } | Self::Version10InlineTyped { .. } => 10,
             Self::Version11 { .. } | Self::Version11InlineTyped { .. } => 11,
+        }
+    }
+
+    pub(crate) fn companion_prefix_present_zero(&self) -> bool {
+        match *self {
+            Self::Version11 {
+                companion_prefix_present_zero,
+                ..
+            }
+            | Self::Version11InlineTyped {
+                companion_prefix_present_zero,
+                ..
+            } => companion_prefix_present_zero,
+            Self::Version0 { .. }
+            | Self::Version8 { .. }
+            | Self::Version10 { .. }
+            | Self::Version10InlineTyped { .. } => false,
+        }
+    }
+
+    /// Return this form with the companion prefix observed on the paired record,
+    /// or `None` when the form has no member for a present-zero prefix.
+    pub(crate) fn with_companion_prefix_present_zero(self, present_zero: bool) -> Option<Self> {
+        match self {
+            Self::Version11 {
+                depth,
+                entity_genesis,
+                padded_paired_reference,
+                persistent_id,
+                flags,
+                closure,
+                ..
+            } => Some(Self::Version11 {
+                depth,
+                entity_genesis,
+                padded_paired_reference,
+                companion_prefix_present_zero: present_zero,
+                persistent_id,
+                flags,
+                closure,
+            }),
+            Self::Version11InlineTyped {
+                depth,
+                entity_genesis,
+                trailing_reference,
+                persistent_id,
+                flags,
+                closure,
+                ..
+            } => Some(Self::Version11InlineTyped {
+                depth,
+                entity_genesis,
+                trailing_reference,
+                companion_prefix_present_zero: present_zero,
+                persistent_id,
+                flags,
+                closure,
+            }),
+            other => (!present_zero).then_some(other),
         }
     }
 
@@ -7516,30 +7580,34 @@ impl SketchPointRecordForm {
 }
 
 /// Encoding of every reference owned by a point companion.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SketchPointCompanionReferenceEncoding {
     /// Target entity ID followed directly by the same-segment flags.
-    #[default]
     SameSegment,
     /// Target entity ID followed by the target type GUID and same-segment flags.
     InlineTyped,
 }
 
+impl SketchPointCompanionReferenceEncoding {
+    /// Return the reference encoding the point record form dictates.
+    pub(crate) fn for_form(form: &SketchPointRecordForm) -> Self {
+        if form.uses_inline_typed_references() {
+            Self::InlineTyped
+        } else {
+            Self::SameSegment
+        }
+    }
+}
+
 /// Reverse curve-incidence record paired with a version-11 sketch point.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SketchPointCompanion {
-    /// Whether the companion prefix carries the fixed present-zero member.
-    pub prefix_present_zero: bool,
     /// Incident sketch-curve record indexes in serialized order.
     pub incident_curves: Vec<u32>,
 }
 
 impl SketchPointCompanion {
-    fn validate_for(&self, form: &SketchPointRecordForm) -> Result<(), String> {
-        if self.prefix_present_zero && form.class_version() != 11 {
-            return Err("sketch point companion.prefix_present_zero requires version 11".into());
-        }
+    fn validate(&self) -> Result<(), String> {
         let unique: std::collections::HashSet<_> = self.incident_curves.iter().collect();
         if unique.len() != self.incident_curves.len() {
             return Err("sketch point companion.incident_curves must be distinct".into());
@@ -7557,9 +7625,6 @@ pub(crate) struct SketchPointCompanionRef<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SketchPointCompanionWire {
-    prefix_present_zero: bool,
-    #[serde(default)]
-    reference_encoding: SketchPointCompanionReferenceEncoding,
     #[serde(default)]
     incident_curves: Vec<u32>,
 }
@@ -7628,7 +7693,7 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
         if !draft.record_form.depth().is_finite() {
             return Err("sketch point depth must be finite".into());
         }
-        draft.companion.validate_for(&draft.record_form)?;
+        draft.companion.validate()?;
         Ok(Self {
             id: draft.id,
             record_index: draft.record_index,
@@ -7666,7 +7731,6 @@ impl SketchPoint {
         if !record_form.depth().is_finite() {
             return Err("sketch point depth must be finite".into());
         }
-        self.companion.validate_for(&record_form)?;
         self.record_form = record_form;
         Ok(())
     }
@@ -7676,13 +7740,13 @@ impl SketchPoint {
         &mut self,
         companion: SketchPointCompanion,
     ) -> Result<(), String> {
-        companion.validate_for(&self.record_form)?;
+        companion.validate()?;
         self.companion = companion;
         Ok(())
     }
     pub(crate) fn companion(&self) -> SketchPointCompanionRef<'_> {
         SketchPointCompanionRef {
-            prefix_present_zero: self.companion.prefix_present_zero,
+            prefix_present_zero: self.record_form.companion_prefix_present_zero(),
             incident_curves: &self.companion.incident_curves,
         }
     }
@@ -7721,9 +7785,19 @@ enum SketchPointRecordFormSerde {
     Version0,
     Version8,
     Version10,
-    Version10InlineTyped { trailing_reference: u32 },
-    Version11 { padded_paired_reference: bool },
-    Version11InlineTyped { trailing_reference: u32 },
+    Version10InlineTyped {
+        trailing_reference: u32,
+    },
+    Version11 {
+        padded_paired_reference: bool,
+        #[serde(default)]
+        companion_prefix_present_zero: bool,
+    },
+    Version11InlineTyped {
+        trailing_reference: u32,
+        #[serde(default)]
+        companion_prefix_present_zero: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7749,14 +7823,14 @@ struct SketchPointSerde {
     depth: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     closure: Option<SketchPointClosureSerde>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    companion: Option<SketchPointCompanionWire>,
+    companion: SketchPointCompanionWire,
 }
 
 impl Default for SketchPointRecordFormSerde {
     fn default() -> Self {
         Self::Version11 {
             padded_paired_reference: false,
+            companion_prefix_present_zero: false,
         }
     }
 }
@@ -7836,6 +7910,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             (
                 SketchPointRecordFormSerde::Version11 {
                     padded_paired_reference,
+                    companion_prefix_present_zero,
                 },
                 Some(persistent_id),
                 Some(closure),
@@ -7843,18 +7918,23 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 padded_paired_reference,
+                companion_prefix_present_zero,
                 persistent_id,
                 flags,
                 closure,
             },
             (
-                SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
+                SketchPointRecordFormSerde::Version11InlineTyped {
+                    trailing_reference,
+                    companion_prefix_present_zero,
+                },
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11InlineTyped {
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 trailing_reference,
+                companion_prefix_present_zero,
                 persistent_id,
                 flags,
                 closure,
@@ -7870,17 +7950,8 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         {
             return Err("sketch point flags beyond the form width must be zero".into());
         }
-        let companion = wire.companion.ok_or("sketch point companion is required")?;
-        let inline_typed =
-            companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
-        if inline_typed != record_form.uses_inline_typed_references() {
-            return Err(
-                "sketch point companion.reference_encoding disagrees with record_form".into(),
-            );
-        }
         let companion = SketchPointCompanion {
-            prefix_present_zero: companion.prefix_present_zero,
-            incident_curves: companion.incident_curves,
+            incident_curves: wire.companion.incident_curves,
         };
         Self::try_from(SketchPointDraft {
             id: wire.id,
@@ -7899,11 +7970,6 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
 
 impl From<SketchPoint> for SketchPointSerde {
     fn from(point: SketchPoint) -> Self {
-        let reference_encoding = if point.record_form.uses_inline_typed_references() {
-            SketchPointCompanionReferenceEncoding::InlineTyped
-        } else {
-            SketchPointCompanionReferenceEncoding::SameSegment
-        };
         let depth = point.depth();
         let entity_genesis = point.entity_genesis();
         let persistent_id = point.persistent_id();
@@ -7918,19 +7984,24 @@ impl From<SketchPoint> for SketchPointSerde {
             } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
             SketchPointRecordForm::Version11 {
                 padded_paired_reference,
+                companion_prefix_present_zero,
                 ..
             } => SketchPointRecordFormSerde::Version11 {
                 padded_paired_reference,
+                companion_prefix_present_zero,
             },
             SketchPointRecordForm::Version11InlineTyped {
-                trailing_reference, ..
-            } => SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
+                trailing_reference,
+                companion_prefix_present_zero,
+                ..
+            } => SketchPointRecordFormSerde::Version11InlineTyped {
+                trailing_reference,
+                companion_prefix_present_zero,
+            },
         };
-        let companion = Some(SketchPointCompanionWire {
-            prefix_present_zero: point.companion.prefix_present_zero,
-            reference_encoding,
+        let companion = SketchPointCompanionWire {
             incident_curves: point.companion.incident_curves,
-        });
+        };
         Self {
             id: point.id,
             record_index: point.record_index,

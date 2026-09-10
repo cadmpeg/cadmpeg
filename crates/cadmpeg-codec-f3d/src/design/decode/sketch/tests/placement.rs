@@ -215,7 +215,6 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         byte_offset: 0,
         coordinate_offset: 141,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -839,7 +838,6 @@ fn sketch_member_run_backfills_relation_free_owners() {
             byte_offset: u64::from(record_index),
             coordinate_offset: 141,
             companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
                 incident_curves: Vec::new(),
             },
             record_form: crate::records::SketchPointRecordForm::version11(

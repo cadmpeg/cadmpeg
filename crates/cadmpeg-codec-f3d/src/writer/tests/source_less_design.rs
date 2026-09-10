@@ -626,7 +626,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         coordinate_offset: 89,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -988,6 +987,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 depth: 7.5,
                 entity_genesis: point.entity_genesis(),
                 padded_paired_reference: true,
+                companion_prefix_present_zero: true,
                 persistent_id,
                 flags: [true, false, false, true, false, true, false, true],
                 closure: crate::records::SketchPointClosure::Selector4State0,
@@ -995,7 +995,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
         point
             .try_set_companion(crate::records::SketchPointCompanion {
-                prefix_present_zero: true,
                 incident_curves: vec![600],
             })
             .unwrap();

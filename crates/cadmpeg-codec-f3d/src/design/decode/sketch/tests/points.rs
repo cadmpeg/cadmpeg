@@ -127,6 +127,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
                     depth: 0.25 * 10.0,
                     entity_genesis: None,
                     padded_paired_reference,
+                    companion_prefix_present_zero: false,
                     persistent_id: std::num::NonZeroU64::new(500).unwrap(),
                     flags: [false; 8],
                     closure: SketchPointClosure::from_pair(selector, state).unwrap(),
@@ -184,10 +185,19 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
         (72, (ARC, 0, "Geometry")),
     ]);
     for prefix_present_zero in [false, true] {
-        for reference_encoding in [
-            SketchPointCompanionReferenceEncoding::SameSegment,
-            SketchPointCompanionReferenceEncoding::InlineTyped,
+        for record_form in [
+            SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0),
+            SketchPointRecordForm::Version11InlineTyped {
+                depth: 0.0,
+                entity_genesis: None,
+                trailing_reference: OWNER,
+                companion_prefix_present_zero: false,
+                persistent_id: std::num::NonZeroU64::new(500).unwrap(),
+                flags: [false; 8],
+                closure: SketchPointClosure::Selector0State0,
+            },
         ] {
+            let reference_encoding = SketchPointCompanionReferenceEncoding::for_form(&record_form);
             if prefix_present_zero
                 && reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped
             {
@@ -213,11 +223,16 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
                 inline_typed.then_some(SKETCH_POINT_TYPE_GUID),
             );
             assert_eq!(
-                decode_sketch_point_companion(&payload, POINT, reference_encoding, true, &types,),
-                Some(SketchPointCompanion {
-                    prefix_present_zero,
-                    incident_curves: vec![71, 72],
-                })
+                decode_sketch_point_companion(&payload, POINT, record_form.clone(), &types),
+                Some((
+                    record_form
+                        .clone()
+                        .with_companion_prefix_present_zero(prefix_present_zero)
+                        .expect("version-11 form carries the companion prefix"),
+                    SketchPointCompanion {
+                        incident_curves: vec![71, 72],
+                    }
+                ))
             );
         }
     }
