@@ -2406,7 +2406,7 @@ fn validate_gui_cosmetic_edge_record(
     Ok(())
 }
 
-/// A TechDraw `GeomType` discriminant supported by the GUI validator.
+/// A `TechDraw` `GeomType` discriminant supported by the GUI validator.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TechDrawGeometryType {
     Circle,
