@@ -487,17 +487,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let faces = face_selection_value(faces);
-            if existing.is_some_and(|record| !feature_family(record, "DeleteFace"))
-                || faces.is_none()
-            {
+            let unsupported = existing.is_some_and(|record| !feature_family(record, "DeleteFace"));
+            let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported delete-face semantics",
                     feature.id
                 )));
-            }
+            };
             let mut properties = feature.source_properties.clone();
-            properties.insert("Faces".into(), faces.expect("checked above"));
+            properties.insert("Faces".into(), faces);
             properties.insert("Heal".into(), heal.to_string());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
@@ -517,23 +515,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let targets = face_selection_value(targets);
-            let replacements = face_selection_value(replacements);
-            if existing.is_some_and(|record| !feature_family(record, "ReplaceFace"))
-                || targets.is_none()
-                || replacements.is_none()
-            {
+            let unsupported = existing.is_some_and(|record| !feature_family(record, "ReplaceFace"));
+            let (Some(targets), Some(replacements), false) = (
+                face_selection_value(targets),
+                face_selection_value(replacements),
+                unsupported,
+            ) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported replace-face semantics",
                     feature.id
                 )));
-            }
+            };
             let mut properties = feature.source_properties.clone();
-            properties.insert("Faces".into(), targets.expect("checked above"));
-            properties.insert(
-                "ReplacementFaces".into(),
-                replacements.expect("checked above"),
-            );
+            properties.insert("Faces".into(), targets);
+            properties.insert("ReplacementFaces".into(), replacements);
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
                 parameters: existing
@@ -552,19 +547,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let faces = face_selection_value(faces);
-            if existing.is_some_and(|record| !feature_family(record, "MoveFace")) || faces.is_none()
-            {
+            let unsupported = existing.is_some_and(|record| !feature_family(record, "MoveFace"));
+            let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported move-face semantics",
                     feature.id
                 )));
-            }
+            };
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             let mut properties = feature.source_properties.clone();
-            properties.insert("Faces".into(), faces.expect("checked above"));
+            properties.insert("Faces".into(), faces);
             parameters.remove("Distance");
             parameters.remove("Angle");
             properties.remove("Direction");

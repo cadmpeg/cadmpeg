@@ -531,7 +531,7 @@ fn encoder_writes_source_less_line_sketches() {
     assert!(marker_relations
         .iter()
         .all(|marker| marker.links().len() == 2
-            && marker.links.as_ref().map(|links| links.selector) == Some(0)));
+            && marker.links.as_ref().map(|links| links.selector()) == Some(0)));
     assert!(marker_relations
         .iter()
         .all(|marker| marker.links().iter().all(|link| marker_lane

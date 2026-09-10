@@ -1133,13 +1133,18 @@ pub(crate) struct SketchInputEntityWire {
 /// A selector paired with a nonempty collection of resolved marker links.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SketchInputLinks {
-    pub(crate) selector: u16,
+    selector: u16,
     entries: Vec<SketchInputLink>,
 }
 
 impl SketchInputLinks {
     pub(crate) fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
         (!entries.is_empty()).then_some(Self { selector, entries })
+    }
+
+    /// The layout selector this marker's links were read under.
+    pub(crate) fn selector(&self) -> u16 {
+        self.selector
     }
 
     pub(crate) fn entries(&self) -> &[SketchInputLink] {

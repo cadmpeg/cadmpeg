@@ -88,7 +88,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
         lane.sketch_entities[0]
             .links
             .as_ref()
-            .map(|links| links.selector),
+            .map(|links| links.selector()),
         Some(1)
     );
     assert_eq!(

@@ -1554,28 +1554,23 @@ pub(crate) fn project_hole_position_sketches(
             let v_axis = normal.cross(u_axis);
             let mut resolved = Vec::with_capacity(authored_markers.len());
             for marker in &authored_markers {
-                let mut entities = sketch_entities.iter().filter(|entity| {
-                    entity.sketch == *sketch_id
-                        && entity.native_ref.as_deref() == Some(marker.id.as_str())
-                        && matches!(
-                            entity.geometry.definition(),
-                            SketchGeometryDefinition::Point { .. }
-                        )
+                let mut positions = sketch_entities.iter().filter_map(|entity| {
+                    let SketchGeometryDefinition::Point { position } =
+                        *entity.geometry.definition()
+                    else {
+                        return None;
+                    };
+                    (entity.sketch == *sketch_id
+                        && entity.native_ref.as_deref() == Some(marker.id.as_str()))
+                    .then_some(position)
                 });
-                let entity = entities.next();
-                if entities.next().is_some() {
+                let entity = positions.next();
+                if positions.next().is_some() {
                     resolved.clear();
                     break;
                 }
                 let position = match entity {
-                    Some(entity) => {
-                        let SketchGeometryDefinition::Point { position } =
-                            *entity.geometry.definition()
-                        else {
-                            unreachable!("point geometry was filtered above");
-                        };
-                        position
-                    }
+                    Some(position) => position,
                     None if paired_marker_ids.contains(marker.id.as_str())
                         || unindexed_marker_ids.contains(marker.id.as_str()) =>
                     {
@@ -1636,11 +1631,9 @@ fn paired_object_locus_markers<'a>(
     // unindexed zero point. The adjacent anchor distinguishes object loci from
     // the dimension and display handles in the same feature object.
     lane.sketch_entities
-        .windows(2)
-        .filter_map(|pair| {
-            let [object, anchor] = pair else {
-                unreachable!("two-record window");
-            };
+        .iter()
+        .zip(lane.sketch_entities.iter().skip(1))
+        .filter_map(|(object, anchor)| {
             (object.feature_ref.as_deref() == Some(feature)
                 && anchor.feature_ref.as_deref() == Some(feature)
                 && object.object_index().is_some()
