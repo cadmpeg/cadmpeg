@@ -4148,7 +4148,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                 "IGES native curve entity has no directory sequence".into(),
             ));
         };
-        let object_id = format!("D{sequence}");
+        let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
         if !ir.model.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
                 source.format == cadmpeg_ir::CodecFormat::Iges
@@ -4209,7 +4209,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                 "IGES native surface entity has no directory sequence".into(),
             ));
         };
-        let object_id = format!("D{sequence}");
+        let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
         if !ir.model.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
                 source.format == cadmpeg_ir::CodecFormat::Iges

@@ -1698,9 +1698,11 @@ fn plane_boundary_edge(
 
 fn plane_face_draft(
     surface_sequence: u32,
+    source_sequence: u32,
     stem: &str,
     boundary_edges: Vec<Edge>,
     resolution: f64,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ModelDraft, &'static str> {
     let tolerance = if resolution > 0.0 {
         Some(
@@ -1711,9 +1713,11 @@ fn plane_face_draft(
         None
     };
     let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+    sequences.record_body(&body_id, source_sequence);
     let region_id = RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
     let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
     let face_id = FaceId::mint(format!("iges:model:face#{stem}")).expect("identity grammar");
+    sequences.record_face(&face_id, source_sequence);
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::with_capacity(boundary_edges.len());
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
@@ -1788,6 +1792,7 @@ fn legacy_single_parent_face(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<(ModelDraft, Vec<u32>)>, &'static str> {
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
         return Ok(None);
@@ -1861,7 +1866,14 @@ fn legacy_single_parent_face(
     }
     let stem = format!("legacy-single-parent-D{}", entry.sequence);
     Ok(Some((
-        plane_face_draft(parent_sequence, &stem, boundary_edges, resolution)?,
+        plane_face_draft(
+            parent_sequence,
+            entry.sequence,
+            &stem,
+            boundary_edges,
+            resolution,
+            sequences,
+        )?,
         std::iter::once(parent_sequence).chain(children).collect(),
     )))
 }
@@ -2065,6 +2077,7 @@ pub(super) fn project(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> (ProjectionOutcome, BTreeMap<u32, PlacementRejection>) {
     let records = parameters
         .iter()
@@ -2588,7 +2601,9 @@ pub(super) fn project(
         if valid {
             decoded.insert(entry.sequence);
             if entry.form == 9 {
-                match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
+                match legacy_single_parent_face(
+                    ir, entry, record, &entries, &records, global, sequences,
+                ) {
                     Ok(Some((candidate, plane_sequences))) => {
                         legacy_plane_sequences.extend(plane_sequences);
                         legacy_face_candidates.push((entry, candidate));
@@ -2638,9 +2653,11 @@ pub(super) fn project(
                     let stem = format!("bounded-plane-D{}", entry.sequence);
                     let candidate = plane_face_draft(
                         entry.sequence,
+                        entry.sequence,
                         &stem,
                         vec![edge],
                         global.minimum_resolution_mm(),
+                        sequences,
                     );
                     match candidate {
                         Ok(candidate) => legacy_face_candidates.push((entry, candidate)),

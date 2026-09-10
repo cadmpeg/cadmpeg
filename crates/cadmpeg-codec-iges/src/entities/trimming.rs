@@ -1554,6 +1554,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> (ProjectionOutcome, Vec<BoundaryVertexDerivation>) {
     let records = parameters
         .iter()
@@ -1940,10 +1941,12 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+        sequences.record_body(&body_id, entry.sequence);
         let region_id =
             RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
         let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
         let face_id = FaceId::mint(format!("iges:model:face#{stem}")).expect("identity grammar");
+        sequences.record_face(&face_id, entry.sequence);
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
         let support_parameter_intervals = surface_parameter_bound_intervals(

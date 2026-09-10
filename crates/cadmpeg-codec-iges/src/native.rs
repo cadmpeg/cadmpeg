@@ -5142,8 +5142,8 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
-            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(crate::entities::geometry::SourceObjectId::of)
+            .map(crate::entities::geometry::SourceObjectId::sequence)
         {
             occurrence_neutral_links
                 .entry(sequence)
@@ -5156,8 +5156,8 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
-            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(crate::entities::geometry::SourceObjectId::of)
+            .map(crate::entities::geometry::SourceObjectId::sequence)
         {
             occurrence_neutral_links
                 .entry(sequence)
