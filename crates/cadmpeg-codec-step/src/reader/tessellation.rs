@@ -373,8 +373,7 @@ pub(super) fn decode(
             local_vertices,
             local_triangles,
             strip_lengths,
-            normals,
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(normals),
             Vec::new(),
         ) {
             Ok(mesh) => mesh,

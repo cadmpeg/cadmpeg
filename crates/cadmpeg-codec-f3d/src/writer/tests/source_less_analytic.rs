@@ -1090,8 +1090,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationNormals::None,
             Vec::new(),
         )
         .expect("valid tessellation"),

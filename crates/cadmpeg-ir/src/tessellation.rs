@@ -42,6 +42,28 @@ pub enum TessellationNormals {
     PerCorner(Vec<Vector3>),
 }
 
+impl TessellationNormals {
+    /// Per-vertex normals, or [`Self::None`] when the source carried none.
+    #[must_use]
+    pub fn per_vertex(normals: Vec<Vector3>) -> Self {
+        if normals.is_empty() {
+            Self::None
+        } else {
+            Self::PerVertex(normals)
+        }
+    }
+
+    /// Per-corner normals, or [`Self::None`] when the source carried none.
+    #[must_use]
+    pub fn per_corner(normals: Vec<Vector3>) -> Self {
+        if normals.is_empty() {
+            Self::None
+        } else {
+            Self::PerCorner(normals)
+        }
+    }
+}
+
 /// Triangle storage selected by the source mesh.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TessellationTopology {
@@ -283,36 +305,6 @@ fn require_triangle_indices(
         ));
     }
     Ok(())
-}
-
-fn shading_from_parts(
-    vertices: &[Point3],
-    triangles: &[[u32; 3]],
-    normals: Vec<Vector3>,
-    corner_normals: Vec<Vector3>,
-) -> Result<TessellationNormals, TessellationError> {
-    match (normals.is_empty(), corner_normals.is_empty()) {
-        (true, true) => Ok(TessellationNormals::None),
-        (false, true) => {
-            if normals.len() != vertices.len() {
-                return Err(tessellation_error(
-                    "tessellation normals do not match vertex count",
-                ));
-            }
-            Ok(TessellationNormals::PerVertex(normals))
-        }
-        (true, false) => {
-            if triangles.len().checked_mul(3) != Some(corner_normals.len()) {
-                return Err(tessellation_error(
-                    "tessellation corner normals do not match triangle corners",
-                ));
-            }
-            Ok(TessellationNormals::PerCorner(corner_normals))
-        }
-        (false, false) => Err(tessellation_error(
-            "tessellation cannot store both vertex normals and corner normals",
-        )),
-    }
 }
 
 fn shading_from_wire(
@@ -564,17 +556,15 @@ impl Tessellation {
         })
     }
 
-    /// Build from the CADIR-parallel shading and strip arrays.
+    /// Build from the CADIR strip array and decoded shading.
     pub fn from_decoded(
         id: impl Into<String>,
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         strip_lengths: Vec<u32>,
-        normals: Vec<Vector3>,
-        corner_normals: Vec<Vector3>,
+        shading: TessellationNormals,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
-        let shading = shading_from_parts(&vertices, &triangles, normals, corner_normals)?;
         let topology = topology_from_parts(&vertices, &triangles, strip_lengths)?;
         Self::new(id, vertices, triangles, topology, shading, channels)
     }
