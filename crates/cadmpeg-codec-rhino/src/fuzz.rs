@@ -5,6 +5,7 @@
 //! result. The contract is that no input may panic.
 #![doc(hidden)]
 
+use crate::loss::Diagnostics;
 use std::mem::size_of;
 
 use crate::chunks::{self, ArchiveVersion};
@@ -81,7 +82,7 @@ pub fn object_record(data: &[u8]) {
         return;
     }
     let record = Record::long(0x2000_8070, 1..data.len(), 1..data.len());
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let _ = crate::objects::parse_object_record(
         data,
         &record,

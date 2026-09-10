@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Built-in history-record decoding.
 
+use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
@@ -331,7 +332,7 @@ fn geometries(
     for _ in 0..count {
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (class, userdata) = parse_class_wrapper_with_userdata(
             nested.backing_bytes(),
             start..wrapper.next_offset(),
@@ -448,7 +449,7 @@ fn subd_edge_chain(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 1 {
@@ -462,7 +463,8 @@ fn subd_edge_chain(
     let edge_ids = array(&mut reader, 4, BoundedReader::u32)?;
     let orientations = array(&mut reader, 1, BoundedReader::u8)?;
     let edges = if edge_ids.len() != count || orientations.len() != count {
-        warnings.push(
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
             "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
         );
         Vec::new()
@@ -483,7 +485,7 @@ fn subd_edge_chain(
 fn subd_edge_chains(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Vec<SubdEdgeChain>, FramingError> {
     let (mut nested, next, minor) = anonymous(
         reader.backing_bytes(),
@@ -522,7 +524,7 @@ fn parse_value(
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     parse_value_with_warnings(bytes, offset, end, archive, &mut warnings)
 }
 
@@ -531,7 +533,7 @@ fn parse_value_with_warnings(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(HistoryValue, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let type_code = reader.i32()?;
@@ -568,7 +570,7 @@ fn parse_record(
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<HistoryRecord, FramingError> {
     if record.typecode != HISTORY_RECORD || record.is_short() {
         return Err(FramingError::structural(
@@ -641,7 +643,7 @@ pub(crate) fn parse_records(
     bytes: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     table_typecode: u32,
 ) -> HistoryScan {
     let mut result = HistoryScan::default();
@@ -807,7 +809,7 @@ fn extended_geometry_json(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: f64,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Option<String> {
     let data = expand.data();
     let semantic = if crate::mesh::supported_class(value.class_id) {
@@ -1037,9 +1039,21 @@ fn extended_geometry_json(
             scale,
             archive,
         )
+        .map_err(|error| {
+            warnings.push(format!(
+                "embedded history dimension at offset {}: {error}",
+                value.class_data_range.start
+            ));
+        })
         .ok()?;
         let mut dimension = dimension;
         crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
+            .map_err(|error| {
+                warnings.push(format!(
+                    "embedded history dimension userdata at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+            })
             .ok()?;
         return crate::dimensions::semantic_json(&dimension)
             .map_err(|error| {
@@ -1050,8 +1064,14 @@ fn extended_geometry_json(
             })
             .ok();
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
-        let polyedge =
-            crate::polyedge::decode(expand, value.class_data_range.clone(), archive).ok()?;
+        let polyedge = crate::polyedge::decode(expand, value.class_data_range.clone(), archive)
+            .map_err(|error| {
+                warnings.push(format!(
+                    "embedded history polyedge at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+            })
+            .ok()?;
         return crate::polyedge::semantic_json(&polyedge);
     } else {
         return None;
@@ -1064,7 +1084,7 @@ fn extended_geometry_json(
 /// History curves/surfaces are stringified into native properties; putting them
 /// in `model.curves`/`surfaces` fails `Check::CarrierReachability`.
 struct GeometrySink<'a> {
-    warnings: &'a mut Vec<String>,
+    warnings: &'a mut Diagnostics,
     untyped: usize,
     failed: usize,
     redundant_repairs: usize,
@@ -1221,7 +1241,7 @@ pub(crate) fn project(
         f64,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> (usize, usize, usize, usize) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 

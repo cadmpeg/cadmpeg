@@ -23,3 +23,25 @@ fn rejects_transform_that_step_operator_cannot_represent() {
 
     assert!(!curve_is_supported(&curve));
 }
+
+#[test]
+fn a_transformed_composite_curve_is_an_omitted_carrier() {
+    let composite = CurveGeometry::Composite {
+        segments: vec![cadmpeg_ir::geometry::CompositeCurveSegment {
+            curve: cadmpeg_ir::ids::CurveId::mint("step:data:curve#1").expect("curve id"),
+            same_sense: true,
+            transition: cadmpeg_ir::geometry::CompositeCurveTransition::Continuous,
+        }]
+        .try_into()
+        .expect("nonempty composite segments"),
+        self_intersect: None,
+    };
+    let transformed = CurveGeometry::Transformed {
+        basis: Box::new(composite),
+        transform: Transform::identity(),
+    };
+
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(curve(&mut emitter, &transformed).is_none());
+    assert!(!curve_is_supported(&transformed));
+}

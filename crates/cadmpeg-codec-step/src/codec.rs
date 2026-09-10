@@ -298,14 +298,14 @@ fn inspect_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
-    let (archive, root_view) = archive::open_root(ctx, root)?;
+    let archive::OpenedRoot {
+        archive,
+        view: root_view,
+        data_start: root_data_offset,
+    } = archive::open_root(ctx, root)?;
     let mut inspected = inspect_exchange(&StepCodec::default(), ctx, root_view)?;
     let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
     let entry_count = archive.entries().len();
-    let root_entry = archive
-        .entry(archive::ROOT_NAME)
-        .expect("validated STEP ZIP root");
-    let root_data_offset = root_entry.data_start;
     let logical_entries = inspected
         .entries
         .iter()
@@ -344,13 +344,13 @@ fn decode_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<Decoded, CodecError> {
-    let (archive, root_view) = archive::open_root(ctx, root)?;
+    let archive::OpenedRoot {
+        archive,
+        view: root_view,
+        data_start: root_data_offset,
+    } = archive::open_root(ctx, root)?;
     let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
     let entry_count = archive.entries().len();
-    let root_entry = archive
-        .entry(archive::ROOT_NAME)
-        .expect("validated STEP ZIP root");
-    let root_data_offset = root_entry.data_start;
     let mut decoded = reader::decode(
         root_view.window(),
         ctx,

@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::ids::kind;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -235,7 +236,8 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     );
 
     for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
-        let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
+        let construction_id =
+            ids::construction(kind!("trimmed_curve"), curve_id.trim_start_matches('#'));
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
                 && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), (parameter_range,) if *parameter_range == expected), _ => false }

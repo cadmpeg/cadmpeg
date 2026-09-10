@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved and active Rhino view presentation records.
 
+use crate::loss::Diagnostics;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
@@ -117,7 +118,7 @@ fn serialize_view_attributes<S: serde::Serializer>(
 struct ViewportUserdataScan {
     children: Vec<std::ops::Range<usize>>,
     has_untyped_content: bool,
-    checksum_warnings: Vec<String>,
+    checksum_warnings: Diagnostics,
 }
 
 #[derive(Debug, Serialize)]
@@ -302,7 +303,7 @@ fn image_reference<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
-    let value = crate::instances::file_reference(data, reader, archive, &mut Vec::new())?;
+    let value = crate::instances::file_reference(data, reader, archive, &mut Diagnostics::new())?;
     let source_range = value.source_range.clone();
     Ok((
         ImageReference {
@@ -858,7 +859,7 @@ fn scan_viewport_userdata(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let mut children = Vec::new();
     let mut has_untyped_content = false;
-    let mut checksum_warnings = Vec::new();
+    let mut checksum_warnings = Diagnostics::new();
     loop {
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
@@ -884,7 +885,7 @@ fn scan_viewport_userdata(
                         "view viewport userdata item must be a long chunk",
                     ));
                 }
-                let mut warnings = Vec::new();
+                let mut warnings = Diagnostics::new();
                 parse_userdata(data, &child, archive, &mut warnings)?;
                 checksum_warnings.extend(warnings);
                 has_untyped_content = true;
@@ -1059,7 +1060,10 @@ fn parse_view(
                             }
                             for warning in scan.checksum_warnings {
                                 checksum_warnings.push(
-                                    crate::loss::RhinoLossCode::IntegrityFailure.note(warning),
+                                    warning
+                                        .code
+                                        .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure)
+                                        .note(warning.message),
                                 );
                             }
                             if scan.has_untyped_content {
