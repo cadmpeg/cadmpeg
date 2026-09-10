@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! AP242 indexed tessellation decoding.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
@@ -346,7 +347,7 @@ pub(super) fn decode(
             }
         }
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
-            let surface_id = ids::data("surface", surface_step);
+            let surface_id = ids::data(kind!("surface"), surface_step);
             if let Some(surface) = ir
                 .model
                 .surfaces
@@ -359,7 +360,7 @@ pub(super) fn decode(
             }
         }
         let mesh = match Tessellation::from_decoded(
-            ids::tessellation("mesh", id).into_string(),
+            ids::tessellation(kind!("mesh"), id).into_string(),
             local_vertices,
             local_triangles,
             strip_lengths,

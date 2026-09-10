@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product prototypes, occurrence identity, and relative placement.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -312,7 +313,7 @@ pub(super) fn decode(
             continue;
         };
         let id = OccurrenceId::from(ids::product(
-            "occurrence",
+            kind!("occurrence"),
             format!("definition-{definition}"),
         ));
         ir.model.occurrences.push(Occurrence {
@@ -417,7 +418,10 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId::from(ids::product("occurrence", format!("{usage_id}{suffix}")));
+            let id = OccurrenceId::from(ids::product(
+                kind!("occurrence"),
+                format!("{usage_id}{suffix}"),
+            ));
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
                 warnings.push(format!(
@@ -1178,7 +1182,7 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId::from(ids::product("product", id))
+    ProductDefinitionId::from(ids::product(kind!("product"), id))
 }
 
 fn product_definition_ir_id(
@@ -1190,7 +1194,7 @@ fn product_definition_ir_id(
         product_ir_id(product)
     } else {
         ProductDefinitionId::from(ids::product(
-            "product",
+            kind!("product"),
             format!("{product}-definition-{definition}"),
         ))
     }
