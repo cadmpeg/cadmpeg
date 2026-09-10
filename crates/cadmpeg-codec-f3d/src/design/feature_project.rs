@@ -3771,7 +3771,7 @@ pub(crate) fn project_edge_flange(
     let edges = if selections.len() == 1 {
         selections.into_iter().next()?
     } else {
-        merge_edge_selections(scope, selections)
+        merge_edge_selections(scope, &selections)
     };
 
     Some(FeatureDefinition::SheetMetalEdgeFlange {
@@ -4077,7 +4077,7 @@ pub(crate) fn project_ruled_surface(
             )
         })
         .collect::<Vec<_>>();
-    let edges = merge_edge_selections(scope, selections);
+    let edges = merge_edge_selections(scope, &selections);
     Some(FeatureDefinition::RuledSurface {
         edges,
         support_faces: FaceSelection::Native(scope.id.clone()),
@@ -4093,7 +4093,7 @@ pub(crate) fn project_ruled_surface(
 
 fn merge_edge_selections(
     scope: &DesignParameterScope,
-    selections: Vec<cadmpeg_ir::features::EdgeSelection>,
+    selections: &[cadmpeg_ir::features::EdgeSelection],
 ) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
 
