@@ -410,11 +410,88 @@ pub(crate) struct RawBrep {
     pub(crate) source_range: Range<usize>,
 }
 
+/// One vertex's references, resolved to array positions by validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedVertex {
+    /// Incident edge positions.
+    pub(crate) edges: Vec<usize>,
+}
+
+/// One edge's references, resolved to array positions by validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedEdge {
+    /// C3 child slot position.
+    pub(crate) curve: usize,
+    /// Start and end vertex positions.
+    pub(crate) vertices: [usize; 2],
+    /// Trim positions using this edge.
+    pub(crate) trims: Vec<usize>,
+}
+
+/// One trim's references, resolved to array positions by validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedTrim {
+    /// C2 child slot position, absent on a point-on-surface trim.
+    pub(crate) curve: Option<usize>,
+    /// Edge position, absent on a singular or point-on-surface trim.
+    pub(crate) edge: Option<usize>,
+    /// Start and end vertex positions.
+    pub(crate) vertices: [usize; 2],
+    /// Owning loop position.
+    pub(crate) loop_index: usize,
+}
+
+/// One loop's references, resolved to array positions by validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedLoop {
+    /// Directed trim ring positions.
+    pub(crate) trims: Vec<usize>,
+    /// Owning face position.
+    pub(crate) face: usize,
+}
+
+/// One face's references, resolved to array positions by validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedFace {
+    /// Surface child slot position.
+    pub(crate) surface: usize,
+    /// Boundary loop positions, outer first.
+    pub(crate) loops: Vec<usize>,
+}
+
+/// One region face side, resolved to array positions by validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedFaceSide {
+    /// Face position this side belongs to.
+    pub(crate) face: usize,
+    /// Region position, absent when the side is unassigned.
+    pub(crate) region: Option<usize>,
+}
+
+/// Every B-rep reference, resolved to an array position by validation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ResolvedBrep {
+    /// Resolved vertex references, positionally aligned with the raw vertices.
+    pub(crate) vertices: Vec<ResolvedVertex>,
+    /// Resolved edge references, positionally aligned with the raw edges.
+    pub(crate) edges: Vec<ResolvedEdge>,
+    /// Resolved trim references, positionally aligned with the raw trims.
+    pub(crate) trims: Vec<ResolvedTrim>,
+    /// Resolved loop references, positionally aligned with the raw loops.
+    pub(crate) loops: Vec<ResolvedLoop>,
+    /// Resolved face references, positionally aligned with the raw faces.
+    pub(crate) faces: Vec<ResolvedFace>,
+    /// Resolved region face sides, empty when region topology was discarded.
+    pub(crate) face_sides: Vec<ResolvedFaceSide>,
+}
+
 /// A semantically validated raw Brep.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ValidatedRawBrep {
     /// Validated Brep payload.
     raw: RawBrep,
+    /// Every reference of the payload, resolved to an array position.
+    resolved: ResolvedBrep,
     /// Warnings for repaired positional fields or discarded optional data.
     warnings: Diagnostics,
 }
@@ -429,51 +506,21 @@ pub(crate) enum BrepBodyKind {
 }
 
 impl ValidatedRawBrep {
-    /// Validates and normalizes one structurally decoded Brep.
+    /// Validates one structurally decoded Brep, resolving every reference.
     pub(crate) fn try_new(mut raw: RawBrep) -> Result<Self, GeometryError> {
         let mut warnings = Diagnostics::new();
         for (label, mismatch) in [
             (
                 "vertex",
-                raw.vertices
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
+                positions_drifted(&raw.vertices, |value| value.index),
             ),
-            (
-                "edge",
-                raw.edges
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
-            ),
-            (
-                "trim",
-                raw.trims
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
-            ),
-            (
-                "loop",
-                raw.loops
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
-            ),
-            (
-                "face",
-                raw.faces
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
-            ),
+            ("edge", positions_drifted(&raw.edges, |value| value.index)),
+            ("trim", positions_drifted(&raw.trims, |value| value.index)),
+            ("loop", positions_drifted(&raw.loops, |value| value.index)),
+            ("face", positions_drifted(&raw.faces, |value| value.index)),
             (
                 "region face-side",
-                raw.face_sides
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| value.index != index as i32),
+                positions_drifted(&raw.face_sides, |value| value.index),
             ),
         ] {
             if mismatch {
@@ -485,54 +532,66 @@ impl ValidatedRawBrep {
                 );
             }
         }
+        let mut resolved = ResolvedBrep::default();
         for vertex in &raw.vertices {
-            refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
+            let edges = slots(&vertex.edges, raw.edges.len(), "vertex edge")?;
             finite_tolerance(vertex.tolerance, "vertex tolerance")?;
+            resolved.vertices.push(ResolvedVertex { edges });
         }
         for (index, edge) in raw.edges.iter().enumerate() {
-            if !typed_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) {
+            let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
                 return Err(error(
                     edge.source_range.start,
                     "edge C3 reference is invalid",
                 ));
-            }
-            refs(&edge.vertices, raw.vertices.len(), "edge vertex")?;
-            refs(&edge.trims, raw.trims.len(), "edge trim")?;
+            };
+            let vertices = slot_pair(edge.vertices, raw.vertices.len(), "edge vertex")?;
+            let trims = slots(&edge.trims, raw.trims.len(), "edge trim")?;
             unique(&edge.trims, "edge trim")?;
             finite_interval(edge.proxy_domain, "edge proxy domain")?;
             finite_interval(edge.domain, "edge domain")?;
             finite_tolerance(edge.tolerance, "edge tolerance")?;
-            for trim in &edge.trims {
-                if raw.trims[*trim as usize].edge != Some(index as i32) {
+            for trim in &trims {
+                if position(raw.trims[*trim].edge) != Some(index) {
                     return Err(error(
                         edge.source_range.start,
                         "edge/trim reciprocity mismatch",
                     ));
                 }
             }
+            resolved.edges.push(ResolvedEdge {
+                curve,
+                vertices,
+                trims,
+            });
         }
         for (trim_index, trim) in raw.trims.iter().enumerate() {
-            if trim.trim_type == RawTrimKind::PointOnSurface {
+            let curve = if trim.trim_type == RawTrimKind::PointOnSurface {
                 if trim.curve.is_some() {
                     return Err(error(
                         trim.source_range.start,
                         "point-on-surface trim must not require C2",
                     ));
                 }
-            } else if !trim
-                .curve
-                .is_some_and(|curve| typed_slot(&raw.c2, curve, RawBrepBaseType::Curve))
-            {
-                return Err(error(
-                    trim.source_range.start,
-                    "trim C2 reference is invalid",
-                ));
-            }
-            refs(&trim.vertices, raw.vertices.len(), "trim vertex")?;
-            refs(&[trim.loop_index], raw.loops.len(), "trim loop")?;
-            if !raw.loops[trim.loop_index as usize]
+                None
+            } else {
+                let Some(curve) = trim
+                    .curve
+                    .and_then(|curve| child_slot(&raw.c2, curve, RawBrepBaseType::Curve))
+                else {
+                    return Err(error(
+                        trim.source_range.start,
+                        "trim C2 reference is invalid",
+                    ));
+                };
+                Some(curve)
+            };
+            let vertices = slot_pair(trim.vertices, raw.vertices.len(), "trim vertex")?;
+            let loop_index = slot(trim.loop_index, raw.loops.len(), "trim loop")?;
+            if !raw.loops[loop_index]
                 .trims
-                .contains(&(trim_index as i32))
+                .iter()
+                .any(|value| position(Some(*value)) == Some(trim_index))
             {
                 return Err(error(
                     trim.source_range.start,
@@ -544,7 +603,7 @@ impl ValidatedRawBrep {
             for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
                 finite_tolerance(tolerance, "trim tolerance")?;
             }
-            if matches!(
+            let edge = if matches!(
                 trim.trim_type,
                 RawTrimKind::Singular | RawTrimKind::PointOnSurface
             ) {
@@ -554,6 +613,7 @@ impl ValidatedRawBrep {
                         "singular trim endpoints are invalid",
                     ));
                 }
+                None
             } else {
                 let Some(edge) = trim.edge else {
                     return Err(error(
@@ -561,27 +621,34 @@ impl ValidatedRawBrep {
                         "trim edge reference is out of range",
                     ));
                 };
-                refs(&[edge], raw.edges.len(), "trim edge")?;
-            }
+                Some(slot(edge, raw.edges.len(), "trim edge")?)
+            };
+            resolved.trims.push(ResolvedTrim {
+                curve,
+                edge,
+                vertices,
+                loop_index,
+            });
         }
-        validate_edge_incidences(&raw)?;
-        for (index, vertex) in raw.vertices.iter().enumerate() {
+        validate_edge_incidences(&raw, &resolved)?;
+        for (index, vertex) in resolved.vertices.iter().enumerate() {
             for edge in &vertex.edges {
-                if !raw.edges[*edge as usize].vertices.contains(&(index as i32)) {
+                if !resolved.edges[*edge].vertices.contains(&index) {
                     return Err(error(
-                        vertex.source_range.start,
+                        raw.vertices[index].source_range.start,
                         "vertex/edge reciprocity mismatch",
                     ));
                 }
             }
         }
         for (index, loop_record) in raw.loops.iter().enumerate() {
-            refs(&loop_record.trims, raw.trims.len(), "loop trim")?;
+            let trims = slots(&loop_record.trims, raw.trims.len(), "loop trim")?;
             unique(&loop_record.trims, "loop trim")?;
-            refs(&[loop_record.face], raw.faces.len(), "loop face")?;
-            if !raw.faces[loop_record.face as usize]
+            let face = slot(loop_record.face, raw.faces.len(), "loop face")?;
+            if !raw.faces[face]
                 .loops
-                .contains(&(index as i32))
+                .iter()
+                .any(|value| position(Some(*value)) == Some(index))
             {
                 return Err(error(
                     loop_record.source_range.start,
@@ -589,16 +656,14 @@ impl ValidatedRawBrep {
                 ));
             }
             if loop_record.loop_type == RawLoopKind::Outer
-                && raw.faces[loop_record.face as usize]
-                    .loops
-                    .first()
-                    .is_none_or(|first| *first != index as i32)
+                && position(raw.faces[face].loops.first().copied()) != Some(index)
             {
                 return Err(error(
                     loop_record.source_range.start,
                     "outer loop is not first",
                 ));
             }
+            resolved.loops.push(ResolvedLoop { trims, face });
         }
         for face in &mut raw.faces {
             if face.material_channel < 0 {
@@ -606,24 +671,25 @@ impl ValidatedRawBrep {
             }
         }
         for (index, face) in raw.faces.iter().enumerate() {
-            if !typed_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface) {
+            let Some(surface) = child_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface)
+            else {
                 return Err(error(
                     face.source_range.start,
                     "face surface reference is invalid",
                 ));
-            }
-            refs(&face.loops, raw.loops.len(), "face loop")?;
-            if face.loops.is_empty() {
+            };
+            let loops = slots(&face.loops, raw.loops.len(), "face loop")?;
+            let Some(outer) = loops.first() else {
                 return Err(error(face.source_range.start, "face has no loops"));
-            }
-            if raw.loops[face.loops[0] as usize].loop_type != RawLoopKind::Outer {
+            };
+            if raw.loops[*outer].loop_type != RawLoopKind::Outer {
                 return Err(error(
                     face.source_range.start,
                     "face first loop is not outer",
                 ));
             }
-            for loop_index in face.loops.iter().skip(1) {
-                let loop_type = raw.loops[*loop_index as usize].loop_type;
+            for loop_index in loops.iter().skip(1) {
+                let loop_type = raw.loops[*loop_index].loop_type;
                 if matches!(loop_type, RawLoopKind::Unknown | RawLoopKind::Outer) {
                     return Err(error(
                         face.source_range.start,
@@ -631,28 +697,40 @@ impl ValidatedRawBrep {
                     ));
                 }
             }
-            for loop_index in &face.loops {
-                if raw.loops[*loop_index as usize].face != index as i32 {
+            for loop_index in &loops {
+                if resolved.loops[*loop_index].face != index {
                     return Err(error(
                         face.source_range.start,
                         "face/loop reciprocity mismatch",
                     ));
                 }
             }
+            resolved.faces.push(ResolvedFace { surface, loops });
         }
-        validate_rings(&raw)?;
-        if raw.minor >= 3
-            && (!raw.face_sides.is_empty() || !raw.regions.is_empty())
-            && validate_regions(&raw).is_err()
-        {
-            raw.face_sides.clear();
-            raw.regions.clear();
-            warnings.push_coded(
-                crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                "invalid optional Brep region topology discarded".to_string(),
-            );
+        validate_rings(&raw, &resolved)?;
+        if raw.minor >= 3 && (!raw.face_sides.is_empty() || !raw.regions.is_empty()) {
+            match validate_regions(&raw) {
+                Ok(face_sides) => resolved.face_sides = face_sides,
+                Err(_) => {
+                    raw.face_sides.clear();
+                    raw.regions.clear();
+                    warnings.push_coded(
+                        crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                        "invalid optional Brep region topology discarded".to_string(),
+                    );
+                }
+            }
         }
-        Ok(Self { raw, warnings })
+        Ok(Self {
+            raw,
+            resolved,
+            warnings,
+        })
+    }
+
+    /// Returns every reference of the payload, resolved to an array position.
+    pub(crate) fn resolved(&self) -> &ResolvedBrep {
+        &self.resolved
     }
 
     /// Returns the validated and normalized raw payload.
@@ -670,20 +748,22 @@ impl ValidatedRawBrep {
         &self,
         writer_version: Option<i64>,
     ) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
-        body_kind(&self.raw, writer_version)
+        body_kind(&self.raw, &self.resolved, writer_version)
     }
 }
 
 /// Classifies one B-rep body, reporting whether a missing stamp decided it.
 fn body_kind(
     raw: &RawBrep,
+    resolved: &ResolvedBrep,
     writer_version: Option<i64>,
 ) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
     let closed = !raw.faces.is_empty()
-        && raw.edges.iter().enumerate().all(|(edge, _)| {
-            raw.trims
+        && (0..resolved.edges.len()).all(|edge| {
+            resolved
+                .trims
                 .iter()
-                .filter(|trim| trim.edge == Some(edge as i32))
+                .filter(|trim| trim.edge == Some(edge))
                 .count()
                 == 2
         });
@@ -1052,27 +1132,29 @@ fn parse_legacy_major2(
                 let _mono = reader.i32()?;
                 let tolerance_3d = reader.f64()?;
                 let tolerance_2d = reader.f64()?;
-                let trim_index = i32::try_from(trims.len())
+                let trim_position = trims.len();
+                let trim_index = i32::try_from(trim_position)
                     .map_err(|_| error(trim_source_start, "legacy Brep trim index overflow"))?;
                 if stored_trim_index != trim_index {
                     warnings.push(format!(
                         "legacy Brep trim index {stored_trim_index} disagrees with array position {trim_index}"
                     ));
                 }
-                let edge = if edge_index >= 0 && (edge_index as usize) < edge_count {
-                    edge_index
-                } else {
-                    if has_edge != 0 {
-                        return Err(error(
-                            trim_source_start,
-                            "legacy Brep managed trim edge is out of range",
-                        ));
+                let edge = match position(Some(edge_index)).filter(|edge| *edge < edge_count) {
+                    Some(_) => Some(edge_index),
+                    None => {
+                        if has_edge != 0 {
+                            return Err(error(
+                                trim_source_start,
+                                "legacy Brep managed trim edge is out of range",
+                            ));
+                        }
+                        None
                     }
-                    -1
                 };
                 let curve = trim_index;
                 let domain = c2_meta
-                    .get(trim_index as usize)
+                    .get(trim_position)
                     .ok_or_else(|| {
                         error(trim_source_start, "legacy Brep C2 index is out of range")
                     })?
@@ -1081,10 +1163,10 @@ fn parse_legacy_major2(
                     index: trim_index,
                     curve: Some(curve),
                     proxy_domain: domain,
-                    edge: (edge >= 0).then_some(edge),
+                    edge,
                     vertices: [-1, -1],
                     reversed_3d: reversed_3d != 0,
-                    trim_type: if edge < 0 {
+                    trim_type: if edge.is_none() {
                         RawTrimKind::Singular
                     } else {
                         RawTrimKind::Unknown
@@ -1133,8 +1215,11 @@ fn parse_legacy_major2(
         .map(|edge_index| {
             trims
                 .iter()
-                .filter_map(|trim| (trim.edge == Some(edge_index as i32)).then_some(trim.index))
-                .collect::<Vec<_>>()
+                .enumerate()
+                .filter_map(|(trim_index, trim)| {
+                    (position(trim.edge) == Some(edge_index)).then_some(trim_index)
+                })
+                .collect::<Vec<usize>>()
         })
         .collect::<Vec<_>>();
     let endpoint_count = trim_count.checked_mul(2).ok_or_else(|| {
@@ -1150,10 +1235,12 @@ fn parse_legacy_major2(
             .iter()
             .zip(loop_record.trims.iter().cycle().skip(1))
         {
+            let last = slot(*last, trims.len(), "legacy Brep loop trim")?;
+            let first = slot(*first, trims.len(), "legacy Brep loop trim")?;
             legacy_union(
                 &mut endpoint_parent,
-                legacy_trim_endpoint(*last, 1),
-                legacy_trim_endpoint(*first, 0),
+                legacy_trim_endpoint(last, 1),
+                legacy_trim_endpoint(first, 0),
             );
         }
     }
@@ -1161,8 +1248,8 @@ fn parse_legacy_major2(
         if trim.edge.is_none() {
             legacy_union(
                 &mut endpoint_parent,
-                legacy_trim_endpoint(trim_index as i32, 0),
-                legacy_trim_endpoint(trim_index as i32, 1),
+                legacy_trim_endpoint(trim_index, 0),
+                legacy_trim_endpoint(trim_index, 1),
             );
         }
     }
@@ -1174,8 +1261,8 @@ fn parse_legacy_major2(
             for edge_endpoint in 0..2 {
                 legacy_union(
                     &mut endpoint_parent,
-                    legacy_trim_endpoint_for_edge(&trims[*first as usize], edge_endpoint),
-                    legacy_trim_endpoint_for_edge(&trims[*trim_index as usize], edge_endpoint),
+                    legacy_trim_endpoint_for_edge(&trims[*first], *first, edge_endpoint),
+                    legacy_trim_endpoint_for_edge(&trims[*trim_index], *trim_index, edge_endpoint),
                 );
             }
         }
@@ -1188,9 +1275,10 @@ fn parse_legacy_major2(
         let index = match root_vertices.entry(root) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
-                let index = i32::try_from(vertices.len())
+                let position_in_array = vertices.len();
+                let index = i32::try_from(position_in_array)
                     .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
-                entry.insert(index);
+                entry.insert(position_in_array);
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
                         index,
@@ -1202,7 +1290,7 @@ fn parse_legacy_major2(
                     point_sum: [0.0; 3],
                     point_count: 0,
                 });
-                index
+                position_in_array
             }
         };
         endpoint_vertices.push(index);
@@ -1210,10 +1298,10 @@ fn parse_legacy_major2(
     let mut edges = Vec::with_capacity(edge_count);
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
-            let trim = &trims[*trim_index as usize];
+            let trim = &trims[*trim_index];
             [
-                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, 0)],
-                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, 1)],
+                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 0)],
+                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 1)],
             ]
         } else {
             let start = legacy_vertex(&mut vertices, curve.endpoints[0]);
@@ -1224,7 +1312,7 @@ fn parse_legacy_major2(
             .into_iter()
             .zip([curve.endpoints[0], curve.endpoints[1]])
         {
-            let vertex = &mut vertices[vertex as usize];
+            let vertex = &mut vertices[vertex];
             vertex.point_sum[0] += point.0[0];
             vertex.point_sum[1] += point.0[1];
             vertex.point_sum[2] += point.0[2];
@@ -1232,12 +1320,25 @@ fn parse_legacy_major2(
         }
         let edge_index_i32 = i32::try_from(edge_index)
             .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
-        let trim_indexes = edge_trim_indexes[edge_index].clone();
+        let trim_indexes = &edge_trim_indexes[edge_index];
         let tolerance = trim_indexes
             .iter()
-            .map(|trim| trims[*trim as usize].legacy_tolerances[1])
+            .map(|trim| trims[*trim].legacy_tolerances[1])
             .filter(|value| value.is_finite() && *value >= 0.0)
             .fold(0.0, f64::max);
+        let trim_indexes = trim_indexes
+            .iter()
+            .map(|trim| {
+                i32::try_from(*trim)
+                    .map_err(|_| error(curve.range.start, "legacy Brep trim index overflow"))
+            })
+            .collect::<Result<Vec<i32>, GeometryError>>()?;
+        let endpoints = [
+            i32::try_from(endpoints[0])
+                .map_err(|_| error(curve.range.start, "legacy Brep vertex index overflow"))?,
+            i32::try_from(endpoints[1])
+                .map_err(|_| error(curve.range.start, "legacy Brep vertex index overflow"))?,
+        ];
         edges.push(RawBrepEdge {
             index: edge_index_i32,
             curve: edge_index_i32,
@@ -1264,26 +1365,31 @@ fn parse_legacy_major2(
             accumulated.vertex
         })
         .collect::<Vec<_>>();
-    for trim in &mut trims {
+    for (trim_index, trim) in trims.iter_mut().enumerate() {
         trim.vertices = [
-            endpoint_vertices[legacy_trim_endpoint(trim.index, 0)],
-            endpoint_vertices[legacy_trim_endpoint(trim.index, 1)],
+            i32::try_from(endpoint_vertices[legacy_trim_endpoint(trim_index, 0)])
+                .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?,
+            i32::try_from(endpoint_vertices[legacy_trim_endpoint(trim_index, 1)])
+                .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?,
         ];
     }
     for edge in &edges {
         for vertex in edge.vertices {
-            vertices[vertex as usize].edges.push(edge.index);
+            let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
+            vertices[vertex].edges.push(edge.index);
         }
     }
     for edge in &edges {
         for trim_index in &edge.trims {
-            let loop_index = trims[*trim_index as usize].loop_index;
+            let trim_index = slot(*trim_index, trims.len(), "legacy Brep edge trim")?;
+            let loop_index = trims[trim_index].loop_index;
             let same_loop = edge
                 .trims
                 .iter()
-                .filter(|other| trims[**other as usize].loop_index == loop_index)
+                .filter_map(|other| position(Some(*other)))
+                .filter(|other| trims[*other].loop_index == loop_index)
                 .count();
-            trims[*trim_index as usize].trim_type = if edge.trims.len() == 1 {
+            trims[trim_index].trim_type = if edge.trims.len() == 1 {
                 RawTrimKind::Boundary
             } else if same_loop > 1 {
                 RawTrimKind::Seam
@@ -1295,16 +1401,18 @@ fn parse_legacy_major2(
     for (vertex_index, vertex) in vertices.iter_mut().enumerate() {
         let mut tolerance: f64 = 0.0;
         for edge_index in &vertex.edges {
-            let edge = &edges[*edge_index as usize];
+            let edge_index = slot(*edge_index, edges.len(), "legacy Brep vertex edge")?;
+            let edge = &edges[edge_index];
             tolerance = tolerance.max(edge.tolerance);
-            let endpoint = if edge.vertices[0] == vertex_index as i32 {
+            let endpoint = if position(Some(edge.vertices[0])) == Some(vertex_index) {
                 0
-            } else if edge.vertices[1] == vertex_index as i32 {
+            } else if position(Some(edge.vertices[1])) == Some(vertex_index) {
                 1
             } else {
                 continue;
             };
-            let expected = c3_meta[edge.curve as usize].endpoints[endpoint];
+            let curve = slot(edge.curve, c3_meta.len(), "legacy Brep edge curve")?;
+            let expected = c3_meta[curve].endpoints[endpoint];
             let delta = [
                 vertex.point.0[0] - expected.0[0],
                 vertex.point.0[1] - expected.0[1],
@@ -1460,17 +1568,21 @@ fn legacy_decoded_curve_endpoints(
     }
 }
 
-fn legacy_trim_endpoint(trim_index: i32, endpoint: usize) -> usize {
-    trim_index as usize * 2 + endpoint
+fn legacy_trim_endpoint(trim_index: usize, endpoint: usize) -> usize {
+    trim_index * 2 + endpoint
 }
 
-fn legacy_trim_endpoint_for_edge(trim: &RawBrepTrim, edge_endpoint: usize) -> usize {
+fn legacy_trim_endpoint_for_edge(
+    trim: &RawBrepTrim,
+    trim_index: usize,
+    edge_endpoint: usize,
+) -> usize {
     let trim_endpoint = if trim.reversed_3d {
         1 - edge_endpoint
     } else {
         edge_endpoint
     };
-    legacy_trim_endpoint(trim.index, trim_endpoint)
+    legacy_trim_endpoint(trim_index, trim_endpoint)
 }
 
 fn legacy_find(parent: &mut [usize], mut index: usize) -> usize {
@@ -1489,18 +1601,18 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
-fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> i32 {
+fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> usize {
     if let Some((index, _)) = vertices
         .iter()
         .enumerate()
         .find(|(_, value)| value.vertex.point == point)
     {
-        return index as i32;
+        return index;
     }
     let index = vertices.len();
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
-            index: index as i32,
+            index: i32::try_from(index).unwrap_or(i32::MAX),
             point,
             edges: Vec::new(),
             tolerance: 0.0,
@@ -1509,7 +1621,7 @@ fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> i32 {
         point_sum: [0.0; 3],
         point_count: 0,
     });
-    index as i32
+    index
 }
 
 fn read_legacy_mesh_sides(
@@ -2275,22 +2387,23 @@ fn region_element(
     }
 }
 
-fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
-    for loop_record in &raw.loops {
-        if loop_record.trims.is_empty() {
+fn validate_rings(raw: &RawBrep, resolved: &ResolvedBrep) -> Result<(), GeometryError> {
+    for (loop_index, loop_record) in raw.loops.iter().enumerate() {
+        let ring = &resolved.loops[loop_index].trims;
+        let Some(first_trim) = ring.first() else {
             return Err(error(loop_record.source_range.start, "loop ring is empty"));
-        }
+        };
         if matches!(
             loop_record.loop_type,
             RawLoopKind::CurveOnSurface | RawLoopKind::PointOnSurface
         ) {
-            let trim = &raw.trims[loop_record.trims[0] as usize];
+            let trim = &raw.trims[*first_trim];
             let expected_trim_type = if loop_record.loop_type == RawLoopKind::CurveOnSurface {
                 RawTrimKind::CurveOnSurface
             } else {
                 RawTrimKind::PointOnSurface
             };
-            if loop_record.trims.len() != 1 || trim.trim_type != expected_trim_type {
+            if ring.len() != 1 || trim.trim_type != expected_trim_type {
                 return Err(error(
                     loop_record.source_range.start,
                     "procedural Brep loop must contain its matching single trim",
@@ -2298,9 +2411,9 @@ fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
             }
             continue;
         }
-        for pair in loop_record.trims.windows(2) {
-            let left = &raw.trims[pair[0] as usize];
-            let right = &raw.trims[pair[1] as usize];
+        for pair in ring.windows(2) {
+            let left = &resolved.trims[pair[0]];
+            let right = &resolved.trims[pair[1]];
             let left_end = left.vertices[1];
             let right_start = right.vertices[0];
             if left_end != right_start {
@@ -2313,8 +2426,8 @@ fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
                 ));
             }
         }
-        let first = &raw.trims[loop_record.trims[0] as usize];
-        let last = &raw.trims[*loop_record.trims.last().expect("nonempty") as usize];
+        let first = &resolved.trims[*first_trim];
+        let last = &resolved.trims[*ring.last().expect("nonempty ring")];
         let first_start = first.vertices[0];
         let last_end = last.vertices[1];
         if first_start != last_end {
@@ -2327,7 +2440,7 @@ fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
     Ok(())
 }
 
-fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
+fn validate_regions(raw: &RawBrep) -> Result<Vec<ResolvedFaceSide>, GeometryError> {
     if raw.face_sides.len() != raw.faces.len().saturating_mul(2) {
         return Err(error(
             raw.source_range.start,
@@ -2335,13 +2448,14 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
         ));
     }
     let mut infinite = 0;
+    let mut sides = Vec::with_capacity(raw.face_sides.len());
     for (index, side) in raw.face_sides.iter().enumerate() {
-        if side.face < 0 || side.face as usize >= raw.faces.len() {
+        let Some(face) = position(Some(side.face)).filter(|face| *face < raw.faces.len()) else {
             return Err(error(
                 side.source_range.start,
                 "region face-side index is invalid",
             ));
-        }
+        };
         let expected = if index % 2 == 0 { 1 } else { -1 };
         if side.direction != expected {
             return Err(error(
@@ -2349,18 +2463,27 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
                 "region side direction is invalid",
             ));
         }
-        if side.face != (index / 2) as i32 {
+        if face != index / 2 {
             return Err(error(
                 side.source_range.start,
                 "region side face position is invalid",
             ));
         }
-        if side.region < -1 || side.region as usize >= raw.regions.len() {
-            return Err(error(
-                side.source_range.start,
-                "region membership is invalid",
-            ));
-        }
+        let region = match side.region {
+            -1 => None,
+            value => {
+                let Some(region) =
+                    position(Some(value)).filter(|region| *region < raw.regions.len())
+                else {
+                    return Err(error(
+                        side.source_range.start,
+                        "region membership is invalid",
+                    ));
+                };
+                Some(region)
+            }
+        };
+        sides.push(ResolvedFaceSide { face, region });
     }
     let mut listed_sides = BTreeSet::new();
     for (index, region) in raw.regions.iter().enumerate() {
@@ -2371,9 +2494,8 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
             infinite += 1;
         }
         for side in &region.sides {
-            refs(&[*side], raw.face_sides.len(), "region side")?;
-            if !listed_sides.insert(*side) || raw.face_sides[*side as usize].region != index as i32
-            {
+            let side = slot(*side, raw.face_sides.len(), "region side")?;
+            if !listed_sides.insert(side) || sides[side].region != Some(index) {
                 return Err(error(
                     region.source_range.start,
                     "region membership is not reciprocal",
@@ -2381,11 +2503,10 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
             }
         }
     }
-    if raw
-        .face_sides
+    if sides
         .iter()
         .enumerate()
-        .any(|(index, side)| side.region >= 0 && !listed_sides.contains(&(index as i32)))
+        .any(|(index, side)| side.region.is_some() && !listed_sides.contains(&index))
     {
         return Err(error(
             raw.source_range.start,
@@ -2398,7 +2519,7 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
             "region topology needs one infinite region",
         ));
     }
-    Ok(())
+    Ok(sides)
 }
 
 fn raw_array_start(
@@ -2465,36 +2586,61 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
     Ok(count)
 }
 
-fn refs(values: &[i32], len: usize, label: &str) -> Result<(), GeometryError> {
-    if values
+/// The array position a stored reference names, or `None` when it names none.
+fn position(value: Option<i32>) -> Option<usize> {
+    value.and_then(|value| usize::try_from(value).ok())
+}
+
+/// Resolves one stored reference against an array of `len` records.
+fn slot(value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
+    position(Some(value))
+        .filter(|slot| *slot < len)
+        .ok_or_else(|| error(0, &format!("{label} reference is out of range")))
+}
+
+/// Resolves a list of stored references against an array of `len` records.
+fn slots(values: &[i32], len: usize, label: &str) -> Result<Vec<usize>, GeometryError> {
+    values
         .iter()
-        .any(|value| *value < 0 || (*value as usize) >= len)
-    {
-        return Err(error(0, &format!("{label} reference is out of range")));
-    }
-    Ok(())
+        .map(|value| slot(*value, len, label))
+        .collect()
 }
 
-fn typed_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) -> bool {
-    index >= 0
-        && array
-            .slots
-            .get(index as usize)
-            .and_then(Option::as_ref)
-            .is_some_and(|child| child.base_type() == expected)
+/// Resolves an endpoint pair against an array of `len` records.
+fn slot_pair(values: [i32; 2], len: usize, label: &str) -> Result<[usize; 2], GeometryError> {
+    Ok([slot(values[0], len, label)?, slot(values[1], len, label)?])
 }
 
-fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
-    for (edge_index, edge) in raw.edges.iter().enumerate() {
+/// Resolves one child slot reference, requiring the expected base type.
+fn child_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) -> Option<usize> {
+    let slot = position(Some(index))?;
+    array
+        .slots
+        .get(slot)
+        .and_then(Option::as_ref)
+        .filter(|child| child.base_type() == expected)
+        .map(|_| slot)
+}
+
+/// Reports whether any stored positional index disagrees with the array order.
+fn positions_drifted<T>(values: &[T], index: impl Fn(&T) -> i32) -> bool {
+    values
+        .iter()
+        .enumerate()
+        .any(|(position_in_array, value)| position(Some(index(value))) != Some(position_in_array))
+}
+
+fn validate_edge_incidences(raw: &RawBrep, resolved: &ResolvedBrep) -> Result<(), GeometryError> {
+    for (edge_index, edge) in resolved.edges.iter().enumerate() {
         for trim_index in &edge.trims {
-            let trim = &raw.trims[*trim_index as usize];
+            let trim = &resolved.trims[*trim_index];
             if trim.edge.is_some()
                 && !((trim.vertices[0] == edge.vertices[0] && trim.vertices[1] == edge.vertices[1])
                     || (trim.vertices[0] == edge.vertices[1]
                         && trim.vertices[1] == edge.vertices[0]))
             {
                 return Err(error(
-                    edge.source_range.start,
+                    raw.edges[edge_index].source_range.start,
                     "edge/trim endpoint incidence mismatch",
                 ));
             }
@@ -2505,14 +2651,14 @@ fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
             } else {
                 1
             };
-            let count = raw.vertices[*vertex as usize]
+            let count = resolved.vertices[*vertex]
                 .edges
                 .iter()
-                .filter(|value| **value == edge_index as i32)
+                .filter(|value| **value == edge_index)
                 .count();
             if count != expected {
                 return Err(GeometryError::malformed(
-                    edge.source_range.start,
+                    raw.edges[edge_index].source_range.start,
                     if edge.vertices[0] == edge.vertices[1] && endpoint == 1 {
                         format!("closed edge incidence is duplicated incorrectly for edge {edge_index} ({},{}): expected {expected}, got {count}", edge.vertices[0], edge.vertices[1])
                     } else {
@@ -2729,7 +2875,11 @@ mod tests {
         body.extend(0_i32.to_le_bytes());
         body.extend(index.to_le_bytes());
         body.extend(region_type.to_le_bytes());
-        body.extend((sides.len() as i32).to_le_bytes());
+        body.extend(
+            i32::try_from(sides.len())
+                .expect("side count")
+                .to_le_bytes(),
+        );
         body.extend(sides.iter().flat_map(|value| value.to_le_bytes()));
         body.extend(bounds.into_iter().flat_map(f64::to_le_bytes));
         anonymous(&body)
@@ -3383,19 +3533,42 @@ mod tests {
         assert!(finite_interval(Interval([0.0, 0.0]), "interval").is_err());
     }
 
+    /// The one-trim fixture resolved the way validation resolves it.
+    fn degenerate_trim_resolved(curve: Option<usize>) -> ResolvedBrep {
+        ResolvedBrep {
+            vertices: vec![ResolvedVertex { edges: Vec::new() }],
+            edges: Vec::new(),
+            trims: vec![ResolvedTrim {
+                curve,
+                edge: None,
+                vertices: [0, 0],
+                loop_index: 0,
+            }],
+            loops: vec![ResolvedLoop {
+                trims: vec![0],
+                face: 0,
+            }],
+            faces: vec![ResolvedFace {
+                surface: 0,
+                loops: vec![0],
+            }],
+            face_sides: Vec::new(),
+        }
+    }
+
     #[test]
     fn procedural_loops_use_one_matching_trim_without_ring_closure() {
         let mut curve_loop = degenerate_trim_raw(RawTrimKind::CurveOnSurface, Some(0));
         curve_loop.loops[0].loop_type = RawLoopKind::CurveOnSurface;
-        assert!(validate_rings(&curve_loop).is_ok());
+        assert!(validate_rings(&curve_loop, &degenerate_trim_resolved(Some(0))).is_ok());
 
         let mut point_loop = degenerate_trim_raw(RawTrimKind::PointOnSurface, None);
         point_loop.loops[0].loop_type = RawLoopKind::PointOnSurface;
-        assert!(validate_rings(&point_loop).is_ok());
+        assert!(validate_rings(&point_loop, &degenerate_trim_resolved(None)).is_ok());
 
         let mut mismatched = degenerate_trim_raw(RawTrimKind::PointOnSurface, None);
         mismatched.loops[0].loop_type = RawLoopKind::CurveOnSurface;
-        assert!(validate_rings(&mismatched).is_err());
+        assert!(validate_rings(&mismatched, &degenerate_trim_resolved(None)).is_err());
     }
 
     #[test]

@@ -107,6 +107,25 @@ fn body_instance_transform_composes_before_existing_body_transform() {
     );
 }
 
+/// The region fixture resolved the way validation resolves it.
+fn region_resolved(raw: &crate::brep::RawBrep) -> crate::brep::ResolvedBrep {
+    crate::brep::ResolvedBrep {
+        faces: vec![crate::brep::ResolvedFace {
+            surface: 0,
+            loops: Vec::new(),
+        }],
+        face_sides: raw
+            .face_sides
+            .iter()
+            .map(|side| crate::brep::ResolvedFaceSide {
+                face: usize::try_from(side.face).expect("face position"),
+                region: usize::try_from(side.region).ok(),
+            })
+            .collect(),
+        ..crate::brep::ResolvedBrep::default()
+    }
+}
+
 fn region_raw(
     face_sides: Vec<crate::brep::RawBrepFaceSide>,
     regions: Vec<crate::brep::RawBrepRegion>,
@@ -711,14 +730,19 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
         domain: crate::settings::Interval([100.0, 200.0]),
         source_range: 0..0,
     };
+    let resolved = crate::brep::ResolvedEdge {
+        curve: 0,
+        vertices: [0, 1],
+        trims: Vec::new(),
+    };
     assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
-    assert_eq!(edge_vertices(&edge), [0, 1]);
+    assert_eq!(edge_vertices(&edge, &resolved), [0, 1]);
     let reversed = crate::brep::RawBrepEdge {
         proxy_reversed: true,
         ..edge
     };
     assert_eq!(edge_param_range(&reversed), [3.0, 7.0]);
-    assert_eq!(edge_vertices(&reversed), [1, 0]);
+    assert_eq!(edge_vertices(&reversed, &resolved), [1, 0]);
 }
 
 #[test]
@@ -771,7 +795,8 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
         ],
         vec![region(0), region(1)],
     );
-    let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
+    let grouping =
+        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
     assert_eq!(
@@ -813,7 +838,8 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
         ],
         vec![region(0), region(1), region(1)],
     );
-    let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
+    let grouping =
+        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
     assert!(grouping.fallback);
     assert_eq!(
         grouping
