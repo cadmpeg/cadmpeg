@@ -2,6 +2,7 @@
 //! `SolidWorks` parametric construction-history records.
 #![deny(clippy::disallowed_methods)]
 
+use crate::brep::feature_source::FeatureSourceId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -141,14 +142,77 @@ fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
 
+/// A native feature-object identifier, or the reserved marker the source writes on records
+/// that carry no object identity of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(crate) enum FeatureSource {
+    /// The reserved `-1` marker.
+    Reserved,
+    /// A native feature-object identifier.
+    Id(FeatureSourceId),
+}
+
+impl FeatureSource {
+    /// The native identifier, when this source is not the reserved marker.
+    pub(crate) fn id(self) -> Option<FeatureSourceId> {
+        match self {
+            Self::Reserved => None,
+            Self::Id(id) => Some(id),
+        }
+    }
+
+    /// The native identifier value, when this source is not the reserved marker.
+    pub(crate) fn value(self) -> Option<u32> {
+        self.id().map(FeatureSourceId::value)
+    }
+
+    /// The source for a native identifier value, when the value is a real identifier.
+    pub(crate) fn from_value(value: u32) -> Option<Self> {
+        FeatureSourceId::try_from(value).ok().map(Self::Id)
+    }
+}
+
+impl TryFrom<&str> for FeatureSource {
+    type Error = &'static str;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value == RESERVED_FEATURE_SOURCE {
+            return Ok(Self::Reserved);
+        }
+        value
+            .parse::<u32>()
+            .map_err(|_| "source_id is not a native feature-object identifier")
+            .and_then(|value| FeatureSourceId::try_from(value).map(Self::Id))
+    }
+}
+
+impl TryFrom<String> for FeatureSource {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_str())
+    }
+}
+
+impl From<FeatureSource> for String {
+    fn from(value: FeatureSource) -> Self {
+        match value {
+            FeatureSource::Reserved => RESERVED_FEATURE_SOURCE.to_string(),
+            FeatureSource::Id(id) => id.value().to_string(),
+        }
+    }
+}
+
+/// The wire spelling of the reserved feature-source marker.
+const RESERVED_FEATURE_SOURCE: &str = "-1";
+
 /// A construction-tree parent reference.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TreeParent {
     Record {
         record_id: String,
-        source_id: Option<String>,
+        source_id: Option<FeatureSource>,
     },
-    Source(String),
+    Source(FeatureSource),
 }
 
 impl TreeParent {
@@ -159,10 +223,10 @@ impl TreeParent {
         }
     }
 
-    pub(crate) fn source_id(&self) -> Option<&str> {
+    pub(crate) fn source_id(&self) -> Option<FeatureSource> {
         match self {
-            Self::Record { source_id, .. } => source_id.as_deref(),
-            Self::Source(source_id) => Some(source_id),
+            Self::Record { source_id, .. } => *source_id,
+            Self::Source(source_id) => Some(*source_id),
         }
     }
 }
@@ -176,7 +240,7 @@ mod tree_parent_wire {
         #[serde(default)]
         tree_parent: Option<String>,
         #[serde(default)]
-        parent_source_id: Option<String>,
+        parent_source_id: Option<super::FeatureSource>,
     }
 
     // Serde's field adapter borrows the complete optional parent field.
@@ -191,7 +255,7 @@ mod tree_parent_wire {
                 map.serialize_entry("tree_parent", record)?;
             }
             if let Some(source) = parent.source_id() {
-                map.serialize_entry("parent_source_id", source)?;
+                map.serialize_entry("parent_source_id", &source)?;
             }
         }
         map.end()
@@ -217,8 +281,13 @@ impl Feature {
         self.tree_parent.as_ref().and_then(TreeParent::record_id)
     }
 
-    pub(crate) fn parent_source_id(&self) -> Option<&str> {
+    pub(crate) fn parent_source_id(&self) -> Option<FeatureSource> {
         self.tree_parent.as_ref().and_then(TreeParent::source_id)
+    }
+
+    /// The native identifier of this feature, when it carries a real one.
+    pub(crate) fn source_value(&self) -> Option<u32> {
+        self.source_id.and_then(FeatureSource::value)
     }
 }
 
@@ -237,7 +306,7 @@ pub(crate) struct Feature {
     pub(crate) tree_parent: Option<TreeParent>,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source_id: Option<String>,
+    pub(crate) source_id: Option<FeatureSource>,
     /// Position of this feature in the construction-history timeline, in
     /// regeneration order.
     pub(crate) ordinal: u32,
@@ -316,6 +385,7 @@ pub(crate) struct FeatureHistory {
 
 /// Native feature-input stream retained for parametric replay and rewrite.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureInputLaneWire")]
 pub(crate) struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
     pub(crate) id: String,
@@ -360,6 +430,81 @@ pub(crate) struct FeatureInputLane {
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub(crate) sketch_entities: Vec<SketchInputEntity>,
+}
+
+/// Deserialization mirror admitting every sketch-entity marker against this lane's payload.
+#[derive(Deserialize)]
+struct FeatureInputLaneWire {
+    /// Stable source-derived identifier for this feature-input record.
+    id: String,
+    /// Configuration this input lane applies to, when the source scoped inputs
+    /// per configuration; `None` when the lane applies to all configurations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    configuration: Option<String>,
+    /// Complete native feature-input byte stream, retained undecoded for
+    /// parametric replay and native rewrite.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    native_payload: Vec<u8>,
+    /// Class declarations used by object instances in this lane.
+    #[serde(default)]
+    classes: Vec<FeatureInputClass>,
+    /// Serialized object names in this lane.
+    #[serde(default)]
+    names: Vec<FeatureInputName>,
+    /// Named scalar values in this lane.
+    #[serde(default)]
+    scalars: Vec<FeatureInputScalar>,
+    /// Relation-class declarations bound to their attached scalar records.
+    #[serde(default)]
+    relation_bindings: Vec<FeatureInputRelationBinding>,
+    /// Compact relation instances grouped by feature and operand identity.
+    #[serde(default)]
+    relation_instances: Vec<FeatureInputRelationInstance>,
+    /// Compact body-selection vectors owned by feature objects in this lane.
+    #[serde(default)]
+    body_selections: Vec<FeatureInputBodySelection>,
+    /// Compact edge-selection vectors owned by feature objects in this lane.
+    #[serde(default)]
+    edge_selections: Vec<FeatureInputEdgeSelection>,
+    /// Compact surface-component selections owned by feature objects in this lane.
+    #[serde(default)]
+    surface_selections: Vec<FeatureInputSurfaceSelection>,
+    /// Persistent identities of surfaces produced by regenerated features.
+    #[serde(default)]
+    generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity>,
+    /// Native entity-reference cells in byte order.
+    #[serde(default)]
+    references: Vec<FeatureInputReference>,
+    /// Typed sketch-entity markers located within `native_payload`.
+    #[serde(default)]
+    sketch_entities: Vec<SketchInputEntityWire>,
+}
+
+impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
+    type Error = String;
+    fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
+        let sketch_entities = wire
+            .sketch_entities
+            .into_iter()
+            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            id: wire.id,
+            configuration: wire.configuration,
+            native_payload: wire.native_payload,
+            classes: wire.classes,
+            names: wire.names,
+            scalars: wire.scalars,
+            relation_bindings: wire.relation_bindings,
+            relation_instances: wire.relation_instances,
+            body_selections: wire.body_selections,
+            edge_selections: wire.edge_selections,
+            surface_selections: wire.surface_selections,
+            generated_surface_identities: wire.generated_surface_identities,
+            references: wire.references,
+            sketch_entities,
+        })
+    }
 }
 
 /// One compact feature-local body-selection vector.
@@ -643,7 +788,7 @@ pub(crate) struct FeatureInputReference {
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputName {
     /// Globally unique deterministic identifier for this name record.
     pub(crate) id: String,
@@ -653,11 +798,64 @@ pub(crate) struct FeatureInputName {
     pub(crate) ordinal: u32,
     /// Byte offset of the name marker.
     pub(crate) offset: u64,
-    /// Native object identifier stored after the UTF-16 name.
+    /// Native object identifier stored after the UTF-16 name; `None` when the
+    /// record has no identifier trailer at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) object_id: Option<u32>,
+    pub(crate) object_id: Option<ObjectId>,
     /// Decoded object name.
     pub(crate) value: String,
+}
+
+/// The native object identifier trailing a serialized object name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub(crate) enum ObjectId {
+    /// The trailer holds the wire's absent-identifier marker.
+    Absent,
+    /// The trailer holds a native object identifier.
+    Id(FeatureSourceId),
+}
+
+impl ObjectId {
+    /// The identifier, when the trailer names a native object.
+    pub(crate) fn id(self) -> Option<FeatureSourceId> {
+        match self {
+            Self::Absent => None,
+            Self::Id(id) => Some(id),
+        }
+    }
+
+    /// The identifier value, when the trailer names a native object.
+    pub(crate) fn value(self) -> Option<u32> {
+        self.id().map(FeatureSourceId::value)
+    }
+
+    /// The trailer for a raw identifier value.
+    #[cfg(test)]
+    pub(crate) fn from_value(value: u32) -> Option<Self> {
+        FeatureSourceId::try_from(value).ok().map(Self::Id)
+    }
+}
+
+impl TryFrom<u32> for ObjectId {
+    type Error = &'static str;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value == u32::MAX {
+            return Ok(Self::Absent);
+        }
+        FeatureSourceId::try_from(value)
+            .map(Self::Id)
+            .map_err(|_| "object_id is not a native object identifier")
+    }
+}
+
+impl From<ObjectId> for u32 {
+    fn from(value: ObjectId) -> Self {
+        match value {
+            ObjectId::Absent => u32::MAX,
+            ObjectId::Id(id) => id.value(),
+        }
+    }
 }
 
 /// One named scalar serialized in native SI units.
@@ -868,12 +1066,12 @@ pub(crate) enum FeatureInputClassRole {
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
+    id: String,
     /// Owning feature-input lane record id.
-    pub(crate) parent: String,
+    parent: String,
     /// Native history feature whose serialized object interval contains this marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) feature_ref: Option<String>,
@@ -888,7 +1086,7 @@ pub(crate) struct SketchInputEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
-    pub(crate) kind: SketchInputKind,
+    kind: SketchInputKind,
     /// Finite little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<f64>,
@@ -900,16 +1098,54 @@ pub(crate) struct SketchInputEntity {
     pub(crate) links: Option<SketchInputLinks>,
 }
 
+/// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
+#[derive(Deserialize)]
+pub(crate) struct SketchInputEntityWire {
+    /// Globally unique deterministic identifier for this native record.
+    pub(crate) id: String,
+    /// Owning feature-input lane record id.
+    pub(crate) parent: String,
+    /// Native history feature whose serialized object interval contains this marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    feature_ref: Option<String>,
+    /// Position of this marker within the owning `FeatureInputLane`, in stream order.
+    ordinal: u32,
+    /// Byte offset of this marker within `FeatureInputLane::native_payload`.
+    offset: u64,
+    /// Feature-local object index stored immediately before the marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_index: Option<u32>,
+    /// Feature-local object identifier stored in the marker trailer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    local_id: Option<u32>,
+    /// Sketch-entity kind this marker identifies.
+    kind: SketchInputKind,
+    /// Finite little-endian state scalar at the marker layout's state slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_value: Option<f64>,
+    /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    coordinates_m: Option<[f64; 2]>,
+    /// Resolved links and their selector from the reference-bearing layout.
+    #[serde(flatten, with = "sketch_input_links_wire")]
+    links: Option<SketchInputLinks>,
+}
+
 /// A selector paired with a nonempty collection of resolved marker links.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SketchInputLinks {
-    pub(crate) selector: u16,
+    selector: u16,
     entries: Vec<SketchInputLink>,
 }
 
 impl SketchInputLinks {
     pub(crate) fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
         (!entries.is_empty()).then_some(Self { selector, entries })
+    }
+
+    /// The layout selector this marker's links were read under.
+    pub(crate) fn selector(&self) -> u16 {
+        self.selector
     }
 
     pub(crate) fn entries(&self) -> &[SketchInputLink] {
@@ -943,7 +1179,7 @@ mod sketch_input_links_wire {
         let mut map = serializer.serialize_map(Some(if links.is_some() { 2 } else { 0 }))?;
         if let Some(links) = links {
             map.serialize_entry("links", links.entries())?;
-            map.serialize_entry("link_selector", &links.selector)?;
+            map.serialize_entry("link_selector", &links.selector())?;
         }
         map.end()
     }
@@ -965,6 +1201,39 @@ mod sketch_input_links_wire {
 impl SketchInputEntity {
     pub(crate) fn links(&self) -> &[SketchInputLink] {
         self.links.as_ref().map_or(&[], SketchInputLinks::entries)
+    }
+
+    /// Globally unique deterministic identifier for this native record.
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Owning feature-input lane record id.
+    pub(crate) fn parent(&self) -> &str {
+        &self.parent
+    }
+
+    /// Sketch-entity kind this marker identifies.
+    pub(crate) fn kind(&self) -> SketchInputKind {
+        self.kind
+    }
+
+    /// Reclassifies this marker once its payload neighbourhood identifies a
+    /// narrower entity family than the marker prefix alone.
+    pub(crate) fn reclassify(&mut self, kind: SketchInputKind) {
+        self.kind = kind;
+    }
+
+    #[cfg(test)]
+    /// Sets the record identity on a cloned fixture.
+    pub(crate) fn set_test_id(&mut self, id: impl Into<String>) {
+        self.id = id.into();
+    }
+
+    #[cfg(test)]
+    /// Sets the owning lane on a cloned fixture.
+    pub(crate) fn set_test_parent(&mut self, parent: impl Into<String>) {
+        self.parent = parent.into();
     }
 
     pub(crate) fn ordinal(&self) -> u32 {
@@ -996,6 +1265,36 @@ impl SketchInputEntity {
         updated.object_index = object_index;
         updated.local_id = local_id;
         updated
+    }
+
+    pub(crate) fn try_from_wire(
+        wire: SketchInputEntityWire,
+        payload: &[u8],
+    ) -> Result<Self, String> {
+        let mut entity = Self::try_new(
+            wire.id,
+            wire.parent,
+            wire.ordinal,
+            wire.offset,
+            wire.kind,
+            payload,
+        )
+        .map_err(str::to_string)?;
+        if wire.object_index != entity.object_index {
+            return Err(
+                "SolidWorks feature-input object index does not match its native payload".into(),
+            );
+        }
+        if wire.local_id != entity.local_id {
+            return Err(
+                "SolidWorks feature-input local object id does not match its native payload".into(),
+            );
+        }
+        entity.feature_ref = wire.feature_ref;
+        entity.state_value = wire.state_value;
+        entity.coordinates_m = wire.coordinates_m;
+        entity.links = wire.links;
+        Ok(entity)
     }
 
     pub(crate) fn try_new(
@@ -1667,30 +1966,88 @@ mod tests {
 
     #[test]
     fn sketch_links_preserve_flat_wire_and_reject_split_pairs() {
-        use super::{SketchInputEntity, SketchInputLinks};
-        let wire = serde_json::json!({
-            "id": "marker", "parent": "lane", "ordinal": 0, "offset": 0,
-            "kind": "point",
-            "links": [{ "local_id": 7, "entity_ref": "target" }],
-            "link_selector": 3
-        });
-        let entity: SketchInputEntity = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+        use super::{
+            FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink, SketchInputLinks,
+        };
+        let mut payload = vec![0u8; 39];
+        payload[..5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        let mut entity = SketchInputEntity::try_new(
+            "marker".into(),
+            "lane".into(),
+            0,
+            0,
+            SketchInputKind::Point,
+            &payload,
+        )
+        .expect("marker fixture");
+        entity.links = SketchInputLinks::new(
+            3,
+            vec![SketchInputLink {
+                local_id: 7,
+                entity_ref: "target".into(),
+            }],
+        );
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![entity],
+        };
+        let wire = serde_json::to_value(&lane).expect("lane JSON");
+        assert_eq!(
+            serde_json::from_value::<FeatureInputLane>(wire.clone()).expect("lane round trip"),
+            lane
+        );
+        assert_eq!(wire["sketch_entities"][0]["link_selector"], 3);
         for missing in ["links", "link_selector"] {
             let mut split = wire.clone();
-            split.as_object_mut().unwrap().remove(missing);
-            let error = serde_json::from_value::<SketchInputEntity>(split).unwrap_err();
+            split["sketch_entities"][0]
+                .as_object_mut()
+                .expect("entity object")
+                .remove(missing);
+            let error = serde_json::from_value::<FeatureInputLane>(split).unwrap_err();
             assert!(error.to_string().contains("links and link_selector"));
         }
         let mut empty = wire.clone();
-        empty["links"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<SketchInputEntity>(empty).is_err());
-        let mut absent = wire;
-        absent.as_object_mut().unwrap().remove("links");
-        absent.as_object_mut().unwrap().remove("link_selector");
-        let entity: SketchInputEntity = serde_json::from_value(absent.clone()).unwrap();
-        assert!(entity.links.is_none());
-        assert_eq!(serde_json::to_value(entity).unwrap(), absent);
+        empty["sketch_entities"][0]["links"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<FeatureInputLane>(empty).is_err());
+        let mut moved = wire.clone();
+        moved["sketch_entities"][0]["offset"] = serde_json::json!(3);
+        let error = serde_json::from_value::<FeatureInputLane>(moved).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("is not a marker in native_payload"));
+        let mut absent = wire.clone();
+        let entity = absent["sketch_entities"][0]
+            .as_object_mut()
+            .expect("entity object");
+        entity.remove("links");
+        entity.remove("link_selector");
+        let restored: FeatureInputLane =
+            serde_json::from_value(absent.clone()).expect("linkless round trip");
+        assert!(restored.sketch_entities[0].links.is_none());
+        assert_eq!(
+            serde_json::to_value(&restored).expect("lane JSON"),
+            absent,
+            "an entity with no links round-trips with both keys absent"
+        );
+
+        let mut renamed = wire;
+        renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
+        let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
+        assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }
 

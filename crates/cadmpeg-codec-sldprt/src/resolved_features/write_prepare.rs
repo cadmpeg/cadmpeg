@@ -156,22 +156,17 @@ fn patch_spatial_sketches(
         let point_entities = entities
             .iter()
             .copied()
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Point { .. }
-                )
+            .filter_map(|entity| match *entity.geometry.definition() {
+                SpatialSketchGeometryDefinition::Point { position } => Some((entity, position)),
+                _ => None,
             })
             .collect::<Vec<_>>();
-        for entity in &point_entities {
-            let SpatialSketchGeometryDefinition::Point { position } = *entity.geometry.definition()
-            else {
-                unreachable!("spatial point filter establishes the geometry family");
-            };
+        for (entity, position) in &point_entities {
+            let position = *position;
             let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
                 cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} requires a retained native marker",
-                    entity.id().as_str()
+                    entity.id()
                 ))
             })?;
             let candidates = native
@@ -182,7 +177,7 @@ fn patch_spatial_sketches(
                     let marker = lane
                         .sketch_entities
                         .iter()
-                        .find(|marker| marker.id == native_ref)?;
+                        .find(|marker| marker.id() == native_ref)?;
                     let offset = usize::try_from(marker.offset()).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
@@ -198,7 +193,7 @@ fn patch_spatial_sketches(
             let [(lane_index, offset, coordinate_offset)] = candidates.as_slice() else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} does not resolve to one native marker",
-                    entity.id().as_str()
+                    entity.id()
                 )));
             };
             if coordinate_offset.is_some() {
@@ -507,17 +502,9 @@ fn validate_generated_marker_constraint(
         }
         _ => {}
     }
-    let dimension_parameter = match constraint.definition.kind() {
-        SketchConstraintDefinitionInput::Distance { parameter, .. }
-        | SketchConstraintDefinitionInput::DistanceLoci { parameter, .. }
-        | SketchConstraintDefinitionInput::HorizontalDistance { parameter, .. }
-        | SketchConstraintDefinitionInput::VerticalDistance { parameter, .. }
-        | SketchConstraintDefinitionInput::Angle { parameter, .. }
-        | SketchConstraintDefinitionInput::Radius { parameter, .. }
-        | SketchConstraintDefinitionInput::Diameter { parameter, .. } => Some(parameter),
-        _ => None,
-    };
-    if let Some(parameter_id) = dimension_parameter {
+    if let Some((dimension, parameter_id)) =
+        DimensionDefinition::from_definition(constraint.definition.kind())
+    {
         let parameter = ir
             .model
             .parameters
@@ -530,34 +517,13 @@ fn validate_generated_marker_constraint(
                     parameter_id.as_str()
                 ))
             })?;
-        let compatible = match constraint.definition.kind() {
-            SketchConstraintDefinitionInput::Angle { .. } => {
-                matches!(
-                    parameter.value,
-                    Some(cadmpeg_ir::features::ParameterValue::Angle(_))
-                )
-            }
-            _ => matches!(
-                parameter.value,
-                Some(cadmpeg_ir::features::ParameterValue::Length(_))
-            ),
-        };
-        if !compatible {
+        let Some(expected) = dimension.magnitude(parameter.value.as_ref()) else {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
                 parameter.id.as_str()
             )));
-        }
-        let expected_display = match constraint.definition.kind() {
-            SketchConstraintDefinitionInput::Radius { .. } => {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius)
-            }
-            SketchConstraintDefinitionInput::Diameter { .. } => {
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter)
-            }
-            _ => None,
         };
-        if parameter.display != expected_display {
+        if parameter.display != dimension.display() {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "source-less SLDPRT dimension parameter {} has incompatible display semantics",
                 parameter.id.as_str()
@@ -577,7 +543,7 @@ fn validate_generated_marker_constraint(
             )));
         }
         if constraint.active != Some(false) {
-            validate_solved_dimension(ir, constraint, parameter)?;
+            validate_solved_dimension(ir, constraint, &dimension, expected)?;
         }
         return Ok(());
     }
@@ -679,52 +645,143 @@ fn validate_generated_marker_constraint(
     Ok(())
 }
 
+/// A sketch constraint definition narrowed to the dimension forms, which are exactly the
+/// forms carrying a driving parameter.
+enum DimensionDefinition<'a> {
+    Distance {
+        entities: &'a [SketchEntityId],
+    },
+    DistanceLoci {
+        first: &'a SketchLocus,
+        second: &'a SketchLocus,
+    },
+    HorizontalDistance {
+        first: &'a SketchLocus,
+        second: &'a SketchLocus,
+    },
+    VerticalDistance {
+        first: &'a SketchLocus,
+        second: &'a SketchLocus,
+    },
+    Angle {
+        first: &'a SketchEntityId,
+        second: &'a SketchEntityId,
+    },
+    Radius {
+        entity: &'a SketchEntityId,
+    },
+    Diameter {
+        entity: &'a SketchEntityId,
+    },
+}
+
+impl<'a> DimensionDefinition<'a> {
+    /// The dimension form of a constraint definition, with its driving parameter.
+    fn from_definition(
+        definition: &'a SketchConstraintDefinitionInput,
+    ) -> Option<(Self, &'a cadmpeg_ir::features::ParameterId)> {
+        Some(match definition {
+            SketchConstraintDefinitionInput::Distance {
+                entities,
+                parameter,
+            } => (
+                Self::Distance {
+                    entities: entities.as_slice(),
+                },
+                parameter,
+            ),
+            SketchConstraintDefinitionInput::DistanceLoci {
+                first,
+                second,
+                parameter,
+            } => (Self::DistanceLoci { first, second }, parameter),
+            SketchConstraintDefinitionInput::HorizontalDistance {
+                first,
+                second,
+                parameter,
+            } => (Self::HorizontalDistance { first, second }, parameter),
+            SketchConstraintDefinitionInput::VerticalDistance {
+                first,
+                second,
+                parameter,
+            } => (Self::VerticalDistance { first, second }, parameter),
+            SketchConstraintDefinitionInput::Angle {
+                first,
+                second,
+                parameter,
+            } => (Self::Angle { first, second }, parameter),
+            SketchConstraintDefinitionInput::Radius { entity, parameter } => {
+                (Self::Radius { entity }, parameter)
+            }
+            SketchConstraintDefinitionInput::Diameter { entity, parameter } => {
+                (Self::Diameter { entity }, parameter)
+            }
+            _ => return None,
+        })
+    }
+
+    /// The display semantics a driving parameter must carry for this form.
+    fn display(&self) -> Option<cadmpeg_ir::features::DimensionDisplay> {
+        match self {
+            Self::Radius { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Radius),
+            Self::Diameter { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Diameter),
+            _ => None,
+        }
+    }
+
+    /// The evaluated magnitude this form measures, when the parameter carries a compatible value.
+    fn magnitude(&self, value: Option<&cadmpeg_ir::features::ParameterValue>) -> Option<f64> {
+        match (self, value) {
+            (Self::Angle { .. }, Some(cadmpeg_ir::features::ParameterValue::Angle(angle))) => {
+                Some(angle.get())
+            }
+            (Self::Angle { .. }, _) => None,
+            (_, Some(cadmpeg_ir::features::ParameterValue::Length(length))) => Some(length.get()),
+            (_, _) => None,
+        }
+    }
+}
+
 fn validate_solved_dimension(
     ir: &cadmpeg_ir::CadIr,
     constraint: &SketchConstraint,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    dimension: &DimensionDefinition<'_>,
+    expected: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let expected = match parameter.value {
-        Some(cadmpeg_ir::features::ParameterValue::Length(value)) => value.get(),
-        Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.get(),
-        _ => unreachable!("dimension parameter compatibility was checked by the caller"),
-    };
-    let mut measured = match constraint.definition.kind() {
-        SketchConstraintDefinitionInput::DistanceLoci { first, second, .. } => {
-            match (first, second) {
-                (SketchLocus::Entity(first), SketchLocus::Entity(second))
-                    if !generated_locus_is_point(ir, first)
-                        && !generated_locus_is_point(ir, second) =>
-                {
-                    line_line_dimension(
-                        constraint,
-                        sketch_constraint_entity(ir, constraint, first)?,
-                        sketch_constraint_entity(ir, constraint, second)?,
-                    )?
-                }
-                (SketchLocus::Entity(line), point) if !generated_locus_is_point(ir, line) => {
-                    point_line_dimension(
-                        constraint_locus_point(ir, constraint, point)?,
-                        sketch_constraint_entity(ir, constraint, line)?,
-                        constraint,
-                    )?
-                }
-                (point, SketchLocus::Entity(line)) if !generated_locus_is_point(ir, line) => {
-                    point_line_dimension(
-                        constraint_locus_point(ir, constraint, point)?,
-                        sketch_constraint_entity(ir, constraint, line)?,
-                        constraint,
-                    )?
-                }
-                _ => {
-                    let first = constraint_locus_point(ir, constraint, first)?;
-                    let second = constraint_locus_point(ir, constraint, second)?;
-                    vector2_length([second.u - first.u, second.v - first.v])
-                }
+    let mut measured = match dimension {
+        DimensionDefinition::DistanceLoci { first, second } => match (first, second) {
+            (SketchLocus::Entity(first), SketchLocus::Entity(second))
+                if !generated_locus_is_point(ir, first)
+                    && !generated_locus_is_point(ir, second) =>
+            {
+                line_line_dimension(
+                    constraint,
+                    sketch_constraint_entity(ir, constraint, first)?,
+                    sketch_constraint_entity(ir, constraint, second)?,
+                )?
             }
-        }
-        SketchConstraintDefinitionInput::Distance { entities, .. } => {
-            let [first, second] = entities.as_slice() else {
+            (SketchLocus::Entity(line), point) if !generated_locus_is_point(ir, line) => {
+                point_line_dimension(
+                    constraint_locus_point(ir, constraint, point)?,
+                    sketch_constraint_entity(ir, constraint, line)?,
+                    constraint,
+                )?
+            }
+            (point, SketchLocus::Entity(line)) if !generated_locus_is_point(ir, line) => {
+                point_line_dimension(
+                    constraint_locus_point(ir, constraint, point)?,
+                    sketch_constraint_entity(ir, constraint, line)?,
+                    constraint,
+                )?
+            }
+            _ => {
+                let first = constraint_locus_point(ir, constraint, first)?;
+                let second = constraint_locus_point(ir, constraint, second)?;
+                vector2_length([second.u - first.u, second.v - first.v])
+            }
+        },
+        DimensionDefinition::Distance { entities } => {
+            let [first, second] = entities else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "source-less SLDPRT distance dimension {} requires exactly two lines",
                     constraint.id.as_str()
@@ -736,17 +793,17 @@ fn validate_solved_dimension(
                 sketch_constraint_entity(ir, constraint, second)?,
             )?
         }
-        SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. } => {
+        DimensionDefinition::HorizontalDistance { first, second } => {
             let first = constraint_locus_point(ir, constraint, first)?;
             let second = constraint_locus_point(ir, constraint, second)?;
             (second.u - first.u).abs()
         }
-        SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
+        DimensionDefinition::VerticalDistance { first, second } => {
             let first = constraint_locus_point(ir, constraint, first)?;
             let second = constraint_locus_point(ir, constraint, second)?;
             (second.v - first.v).abs()
         }
-        SketchConstraintDefinitionInput::Angle { first, second, .. } => {
+        DimensionDefinition::Angle { first, second } => {
             let first = sketch_constraint_entity(ir, constraint, first)?;
             let second = sketch_constraint_entity(ir, constraint, second)?;
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
@@ -774,8 +831,7 @@ fn validate_solved_dimension(
                 .clamp(-1.0, 1.0)
                 .acos()
         }
-        SketchConstraintDefinitionInput::Radius { entity, .. }
-        | SketchConstraintDefinitionInput::Diameter { entity, .. } => {
+        DimensionDefinition::Radius { entity } | DimensionDefinition::Diameter { entity } => {
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
             let radius = match entity.geometry.definition() {
                 SketchGeometryDefinition::Circle { radius, .. }
@@ -787,21 +843,14 @@ fn validate_solved_dimension(
                     )));
                 }
             };
-            if matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Diameter { .. }
-            ) {
+            if matches!(dimension, DimensionDefinition::Diameter { .. }) {
                 radius * 2.0
             } else {
                 radius
             }
         }
-        _ => unreachable!("only dimension definitions are passed"),
     };
-    if matches!(
-        constraint.definition.kind(),
-        SketchConstraintDefinitionInput::Angle { .. }
-    ) {
+    if matches!(dimension, DimensionDefinition::Angle { .. }) {
         let supplement = std::f64::consts::PI - measured;
         if (supplement - expected).abs() < (measured - expected).abs() {
             measured = supplement;
@@ -905,30 +954,57 @@ fn constraint_locus_point(
         })
 }
 
+/// The binary sketch relations generated marker writing emits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum GeneratedBinaryKind {
+    Parallel,
+    Perpendicular,
+    Equal,
+    Collinear,
+    Concentric,
+    Coradial,
+    Tangent,
+}
+
+impl GeneratedBinaryKind {
+    /// The sketch relation this kind names.
+    pub(super) fn relation(self) -> SketchRelationKind {
+        match self {
+            Self::Parallel => SketchRelationKind::Parallel,
+            Self::Perpendicular => SketchRelationKind::Perpendicular,
+            Self::Equal => SketchRelationKind::Equal,
+            Self::Collinear => SketchRelationKind::Collinear,
+            Self::Concentric => SketchRelationKind::Concentric,
+            Self::Coradial => SketchRelationKind::Coradial,
+            Self::Tangent => SketchRelationKind::Tangent,
+        }
+    }
+}
+
 pub(super) fn binary_marker_relation(
     definition: &SketchConstraintDefinitionInput,
-) -> Option<(SketchRelationKind, &SketchEntityId, &SketchEntityId)> {
+) -> Option<(GeneratedBinaryKind, &SketchEntityId, &SketchEntityId)> {
     Some(match definition {
         SketchConstraintDefinitionInput::Parallel { first, second } => {
-            (SketchRelationKind::Parallel, first, second)
+            (GeneratedBinaryKind::Parallel, first, second)
         }
         SketchConstraintDefinitionInput::Perpendicular { first, second } => {
-            (SketchRelationKind::Perpendicular, first, second)
+            (GeneratedBinaryKind::Perpendicular, first, second)
         }
         SketchConstraintDefinitionInput::Equal { first, second } => {
-            (SketchRelationKind::Equal, first, second)
+            (GeneratedBinaryKind::Equal, first, second)
         }
         SketchConstraintDefinitionInput::Collinear { first, second } => {
-            (SketchRelationKind::Collinear, first, second)
+            (GeneratedBinaryKind::Collinear, first, second)
         }
         SketchConstraintDefinitionInput::Concentric { first, second } => {
-            (SketchRelationKind::Concentric, first, second)
+            (GeneratedBinaryKind::Concentric, first, second)
         }
         SketchConstraintDefinitionInput::Coradial { first, second } => {
-            (SketchRelationKind::Coradial, first, second)
+            (GeneratedBinaryKind::Coradial, first, second)
         }
         SketchConstraintDefinitionInput::Tangent { first, second } => {
-            (SketchRelationKind::Tangent, first, second)
+            (GeneratedBinaryKind::Tangent, first, second)
         }
         _ => return None,
     })
@@ -955,11 +1031,11 @@ fn sketch_constraint_entity<'a>(
 
 fn validate_solved_binary_relation(
     constraint: &SketchConstraint,
-    kind: SketchRelationKind,
+    kind: GeneratedBinaryKind,
     first: &SketchEntity,
     second: &SketchEntity,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use SketchRelationKind::{
+    use GeneratedBinaryKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
     let solved = match kind {
@@ -1050,7 +1126,6 @@ fn validate_solved_binary_relation(
                 constraint.id.as_str()
             ))
         })?,
-        _ => unreachable!("only generated binary relation kinds are passed"),
     };
     if !solved {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -1276,15 +1351,11 @@ fn generated_sketch_owner_id(
     owner: &crate::records::Feature,
     sketch: &str,
 ) -> Result<u32, cadmpeg_core::CodecError> {
-    owner
-        .source_id
-        .as_deref()
-        .and_then(|source_id| source_id.parse::<u32>().ok())
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "source-less SLDPRT sketch {sketch} has no numeric feature source id"
-            ))
-        })
+    owner.source_value().ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "source-less SLDPRT sketch {sketch} has no numeric feature source id"
+        ))
+    })
 }
 
 fn source_less_lanes(

@@ -92,21 +92,16 @@ pub(crate) fn apply_feature_name_changes(
             .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
             .collect::<Vec<_>>();
         let aliases = expression_identifier_tokens(&parameter.expression)
-            .identifiers
             .into_iter()
+            .flatten()
             .filter_map(|token| {
                 dependency_changes
                     .iter()
                     .find_map(|(old_owner, new_owner)| {
                         token
-                            .value(&parameter.expression)
+                            .value()
                             .strip_suffix(&format!("@{old_owner}"))
-                            .map(|base| {
-                                (
-                                    token.value(&parameter.expression).into_owned(),
-                                    format!("{base}@{new_owner}"),
-                                )
-                            })
+                            .map(|base| (token.value().to_owned(), format!("{base}@{new_owner}")))
                     })
             })
             .collect::<HashMap<_, _>>();

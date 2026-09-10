@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::records::FeatureSource;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -26,7 +27,8 @@ fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: source_id.map(str::to_string),
+        source_id: source_id
+            .map(|source_id| FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal,
         name: id.into(),
         kind: "Custom".into(),

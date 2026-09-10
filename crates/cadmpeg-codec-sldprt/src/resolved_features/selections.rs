@@ -41,6 +41,8 @@ use crate::layout::{
     cosmetic_thread_component_edge_wrapper_prefix as component_edge,
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
 };
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 
 pub(super) fn compact_body_selections(
     histories: &[crate::records::FeatureHistory],
@@ -606,9 +608,13 @@ pub(super) fn compact_surface_selections(
             NativeClassKind::PlanarSurface => {
                 planar_surface_selection_candidates(&lane.native_payload, start, end)
             }
-            NativeClassKind::Operation(operation) => {
-                operation_surface_selection_candidates(operation, lane, start, end, name.object_id)
-            }
+            NativeClassKind::Operation(operation) => operation_surface_selection_candidates(
+                operation,
+                lane,
+                start,
+                end,
+                name.object_id.and_then(ObjectId::value),
+            ),
             _ => continue,
         };
         let expected_count = match kind {
@@ -1015,14 +1021,14 @@ pub(crate) fn enrich_feature_object_sources(
     {
         let sources = lanes
             .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id)
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
             .collect::<HashSet<_>>();
         if sources.len() == 1 {
             let source = sources
                 .iter()
                 .next()
                 .expect("singleton source set has one member");
-            feature.source_id = Some(source.to_string());
+            feature.source_id = FeatureSource::from_value(*source);
         }
     }
 }
@@ -1239,7 +1245,7 @@ pub(super) fn cosmetic_thread_diameter_child_tail(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
 ) -> Option<std::ops::Range<usize>> {
-    let source_id = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+    let source_id = feature.source_value()?;
     let diameter_id = source_id.checked_sub(1)?;
     let names = lane
         .names
@@ -1264,7 +1270,7 @@ pub(super) fn cosmetic_thread_diameter_child_tail(
         .chain(
             lane.names
                 .iter()
-                .filter(|name| name.object_id != Some(u32::MAX))
+                .filter(|name| name.object_id != Some(ObjectId::Absent))
                 .map(|name| name.offset),
         )
         .filter(|offset| *offset >= start as u64)
@@ -2445,9 +2451,9 @@ pub(crate) fn compact_edge_owner_feature_at(
     };
     owner_source
         .and_then(|source| {
-            features.iter().find(|feature| {
-                feature.source_id.as_deref().and_then(|id| id.parse().ok()) == Some(source)
-            })
+            features
+                .iter()
+                .find(|feature| feature.source_value() == Some(source))
         })
         .filter(|feature| feature_precedes_consumer(feature, features, consumer_ref))
         .map(|feature| feature.id.clone())
@@ -2481,13 +2487,9 @@ pub(crate) fn surface_selection_terminal_feature_at(
     compact_single_face_reference_record_at(payload, marker)
         .and_then(|(_, source)| source)
         .and_then(|source| {
-            let mut matches = features.iter().filter(|candidate| {
-                candidate
-                    .source_id
-                    .as_deref()
-                    .and_then(|value| value.parse::<u32>().ok())
-                    == Some(source)
-            });
+            let mut matches = features
+                .iter()
+                .filter(|candidate| candidate.source_value() == Some(source));
             let feature = matches.next()?;
             matches.next().is_none().then(|| feature.id.clone())
         })

@@ -157,7 +157,7 @@ fn extended_geometry_locus_construction_line_uses_direct_point_object_ids() {
     assert_eq!(
         super::roster_curve_endpoint_markers(&payload, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -674,7 +674,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
     assert_eq!(
         roster_curve_endpoint_markers(&extended_code_one_104, &curve, &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         vec!["start", "end"]
     );
@@ -725,8 +725,8 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
         ],
     };
     normalize_indexed_curve_entities(&mut lane);
-    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
-    assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Point);
+    assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
+    assert_eq!(lane.sketch_entities[2].kind(), SketchInputKind::Point);
     assert_eq!(
         super::extended_compact_indexed_curve_endpoint_indices(&extended(valid_compact_104), 0,),
         None
@@ -837,7 +837,7 @@ fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &entities[0], &markers)
             .into_iter()
-            .map(|marker| marker.id.as_str())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
         vec!["point-14", "point-2"]
     );
@@ -939,8 +939,8 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
         ],
     };
     normalize_indexed_curve_entities(&mut lane);
-    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
-    assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Point);
+    assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
+    assert_eq!(lane.sketch_entities[2].kind(), SketchInputKind::Point);
 
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
@@ -985,13 +985,13 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
         Some([-1.0, 0.0])
     );
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -1008,7 +1008,7 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
     coordinate_line[74..82].copy_from_slice(&0.0f64.to_le_bytes());
     coordinate_line[134..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        sketch_input_entities(&coordinate_line, "lane")[0].kind,
+        sketch_input_entities(&coordinate_line, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
@@ -1130,7 +1130,7 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["start", "end"]
     );
@@ -1183,7 +1183,7 @@ fn wide_line_uses_direct_point_ids_after_one_based_resolution_fails() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["start", "end"]
     );
@@ -1194,7 +1194,7 @@ fn wide_line_uses_direct_point_ids_after_one_based_resolution_fails() {
     let extended = [&entities[0], &zero, &entities[2]];
     let endpoints = wide_direct_line_endpoint_markers(&payload, &entities[0], &extended)
         .expect("unique zero-identity point");
-    assert_eq!(endpoints[0].id, "zero");
+    assert_eq!(endpoints[0].id(), "zero");
 
     let other_zero = entity("other-zero", None, Some([2.0, 0.0]), SketchInputKind::Point);
     let ambiguous = [&entities[0], &zero, &other_zero, &entities[2]];
@@ -1263,7 +1263,7 @@ fn extended_marker104_arc_prefers_point_roster_endpoints() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["point-6", "point-8"]
     );
@@ -1313,7 +1313,7 @@ fn extended_geometry_104_arc_uses_zero_based_roster_and_center_index() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["start", "end"]
     );
@@ -1449,7 +1449,7 @@ fn extended_terminal_102_profile_arc_uses_object_center_fallback() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["end", "start"]
     );
@@ -1644,12 +1644,12 @@ fn legacy_compact_geometry_locus_code_two_is_a_profile_line() {
     assert!(legacy_compact_profile_line(&payload, 0));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     assert!(!legacy_compact_profile_line(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -1662,7 +1662,7 @@ fn legacy_compact_geometry_locus_code_two_is_a_profile_line() {
     payload[96..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert!(legacy_compact_profile_line(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
@@ -1718,14 +1718,14 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["start", "end"]
     );
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &entities[0], &markers)
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["start", "end"]
     );
@@ -1743,7 +1743,7 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
     let endpoints =
         legacy_marker104_arc_endpoints(&payload, &entities[0], &markers).expect("endpoints");
     assert_eq!(
-        endpoints.map(|endpoint| endpoint.id.as_str()),
+        endpoints.map(crate::records::SketchInputEntity::id),
         ["start", "end"]
     );
     assert_eq!(

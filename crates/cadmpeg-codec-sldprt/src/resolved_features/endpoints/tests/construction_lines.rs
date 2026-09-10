@@ -52,7 +52,7 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
     assert_eq!(
         roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second-curve"]
     );

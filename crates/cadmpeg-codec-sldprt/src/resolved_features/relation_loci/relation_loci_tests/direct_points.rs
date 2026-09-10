@@ -78,7 +78,7 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 1]);
 
@@ -121,9 +121,9 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
         Point2::new(-10.0, 2.0),
         Point2::new(10.0, 2.0),
     );
-    let markers_by_id = HashMap::from([(point_marker.id.as_str(), &point_marker)]);
+    let markers_by_id = HashMap::from([(point_marker.id(), &point_marker)]);
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 9]);
-    relation.operands[0].entity_ref = Some(point_marker.id.clone());
+    relation.operands[0].entity_ref = Some(point_marker.id().to_string());
 
     assert_eq!(
         typed_relation_definition(
@@ -153,7 +153,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
         Some([0.0, 0.001]),
     );
     let mut arc_marker = marker("arc-marker", 1, 1, SketchInputKind::Arc, None);
-    let arc_marker_id = arc_marker.id.clone();
+    let arc_marker_id = arc_marker.id().to_string();
     arc_marker.links = crate::records::SketchInputLinks::new(
         0,
         arc_marker
@@ -162,7 +162,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
             .cloned()
             .chain(std::iter::once(SketchInputLink {
                 local_id: 15,
-                entity_ref: point_marker.id.clone(),
+                entity_ref: point_marker.id().to_string(),
             }))
             .collect(),
     );
@@ -170,7 +170,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     let point = point_entity(
         "synthetic:test:id#point",
         &sketch,
-        &point_marker.id,
+        point_marker.id(),
         Point2::new(0.0, 1.0),
     );
     let line = line_entity(
@@ -187,7 +187,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
         })
         .unwrap(),
     );
-    qualified_proxy.geometry_ref = Some(arc_marker_id.clone());
+    qualified_proxy.geometry_ref = Some(arc_marker_id.clone().clone());
     let markers = [
         point_marker.clone(),
         arc_marker.clone(),
@@ -195,15 +195,15 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
-            point_marker.id.clone(),
+            point_marker.id().to_string(),
             vec![SketchLocus::Entity(point.id().clone())],
         ),
         (
-            line_marker.id.clone(),
+            line_marker.id().to_string(),
             vec![SketchLocus::Entity(line.id().clone())],
         ),
         (
@@ -213,9 +213,9 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     ]);
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
     relation.operands[0].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B);
-    relation.operands[0].entity_ref = Some(arc_marker.id);
+    relation.operands[0].entity_ref = Some(arc_marker.id().to_string());
     relation.operands[1].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
-    relation.operands[1].entity_ref = Some(line_marker.id);
+    relation.operands[1].entity_ref = Some(line_marker.id().to_string());
 
     assert_eq!(
         typed_relation_definition(

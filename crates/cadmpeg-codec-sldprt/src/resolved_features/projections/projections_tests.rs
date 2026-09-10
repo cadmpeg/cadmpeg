@@ -1,6 +1,8 @@
 //! Tests for the `projections` module.
 
 use super::*;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputSurfaceSelection,
@@ -278,7 +280,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: id.into(),
         kind: "Feature".into(),
@@ -462,7 +464,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: id.into(),
         kind: "Feature".into(),
@@ -991,7 +993,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: id.into(),
         kind: "Feature".into(),
@@ -1144,7 +1146,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: id.into(),
         kind: "Feature".into(),
@@ -1327,7 +1329,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("10".into()),
+        source_id: FeatureSource::from_value(10),
         ordinal: 0,
         name: "Variable fillet".into(),
         kind: "VarFillet".into(),
@@ -1341,7 +1343,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     };
     let mut next = feature.clone();
     next.id = "next".into();
-    next.source_id = Some("11".into());
+    next.source_id = FeatureSource::from_value(11);
     next.ordinal = 1;
     next.name = "Next".into();
     let history = FeatureHistory {
@@ -1357,7 +1359,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         parent: "lane".into(),
         ordinal: 0,
         offset,
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
     let lane = FeatureInputLane {
@@ -1461,7 +1463,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("10".into()),
+        source_id: FeatureSource::from_value(10),
         ordinal: 0,
         name: "Variable fillet".into(),
         kind: "VarFillet".into(),
@@ -1475,7 +1477,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     };
     let mut next = feature.clone();
     next.id = "next".into();
-    next.source_id = Some("11".into());
+    next.source_id = FeatureSource::from_value(11);
     next.ordinal = 1;
     next.name = "Next".into();
     let history = FeatureHistory {
@@ -1491,7 +1493,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         parent: "lane".into(),
         ordinal: 0,
         offset,
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
     let lane = FeatureInputLane {
@@ -1566,7 +1568,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("10".into()),
+        source_id: FeatureSource::from_value(10),
         ordinal: 0,
         name: "Variable fillet".into(),
         kind: "VarFillet".into(),

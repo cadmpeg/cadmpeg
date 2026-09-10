@@ -33,6 +33,7 @@ use crate::layout::coordinate_system_two_point_tail as two_pt_tail;
 use crate::layout::coordinate_system_xy_tail as xy_tail;
 use crate::layout::reference_point_long_solved_cache as pt_long;
 use crate::layout::reference_point_short_solved_cache as pt_short;
+use crate::records::ObjectId;
 
 const EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9: f64 = 1e-9;
 const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9: f64 = 1e-9;
@@ -96,7 +97,7 @@ pub(crate) fn enrich_history_reference_planes(
             history
                 .features
                 .iter()
-                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .filter_map(crate::records::Feature::source_value)
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
@@ -106,12 +107,7 @@ pub(crate) fn enrich_history_reference_planes(
             history
                 .features
                 .iter()
-                .filter_map(|feature| {
-                    Some((
-                        feature.source_id.as_deref()?.parse::<u32>().ok()?,
-                        feature.id.clone(),
-                    ))
-                })
+                .filter_map(|feature| Some((feature.source_value()?, feature.id.clone())))
                 .collect::<HashMap<_, _>>()
         })
         .collect::<Vec<_>>();
@@ -122,7 +118,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .features
                 .iter()
                 .filter(|feature| classify(feature) == Some(FeatureClass::ReferencePlane))
-                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .filter_map(crate::records::Feature::source_value)
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
@@ -161,10 +157,7 @@ pub(crate) fn enrich_history_reference_planes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let self_source = feature
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok());
+            let self_source = feature.source_value();
             if let Some(source) = offset_plane_reference_source(
                 bytes,
                 &known_sources[history_index],
@@ -345,8 +338,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .filter_map(move |(feature_index, feature)| {
                     let reference = feature
                         .source_id
-                        .clone()
-                        .unwrap_or_else(|| feature.id.clone());
+                        .map_or_else(|| feature.id.clone(), String::from);
                     Some((
                         reference,
                         (history_index, feature_index),
@@ -363,8 +355,7 @@ pub(crate) fn enrich_history_reference_planes(
         (
             feature
                 .source_id
-                .clone()
-                .unwrap_or_else(|| feature.id.clone()),
+                .map_or_else(|| feature.id.clone(), String::from),
             *index,
             *frame,
         )
@@ -587,7 +578,7 @@ fn resolved_reference_point(
     const HEADER_PREFIX: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0xc0];
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let object_id = name.object_id?;
+    let object_id = name.object_id.and_then(ObjectId::value)?;
     let name_start = usize::try_from(name.offset).ok()?;
     let name_end = name_start
         .checked_add(NAME_MARKER.len() + 1)?
@@ -1303,11 +1294,7 @@ pub(crate) fn enrich_history_sketch_block_references(
     for history in histories {
         let mut by_source = HashMap::<u32, Option<(usize, NativeClassKind)>>::new();
         for (feature_index, feature) in history.features.iter().enumerate() {
-            let Some(source) = feature
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
-            else {
+            let Some(source) = feature.source_value() else {
                 continue;
             };
             let identity = (
@@ -1327,7 +1314,7 @@ pub(crate) fn enrich_history_sketch_block_references(
             let instance_names = names
                 .iter()
                 .filter_map(|name| {
-                    let source = name.object_id?;
+                    let source = name.object_id.and_then(ObjectId::value)?;
                     let (feature_index, kind) = by_source.get(&source).and_then(|entry| *entry)?;
                     (kind == NativeClassKind::SketchBlockInstance).then_some((*name, feature_index))
                 })
@@ -1337,12 +1324,14 @@ pub(crate) fn enrich_history_sketch_block_references(
                 let Some(next) = names.iter().find(|next| next.offset > name.offset) else {
                     continue;
                 };
-                let Some(definition_source) = next.object_id.filter(|source| {
-                    by_source
-                        .get(source)
-                        .and_then(|entry| *entry)
-                        .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
-                }) else {
+                let Some(definition_source) =
+                    next.object_id.and_then(ObjectId::value).filter(|source| {
+                        by_source
+                            .get(source)
+                            .and_then(|entry| *entry)
+                            .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
+                    })
+                else {
                     continue;
                 };
                 let end = instance_names
@@ -1381,9 +1370,10 @@ pub(crate) fn enrich_history_sketch_block_references(
                 }
             }
             for pair in names.windows(2) {
-                let (Some(instance_source), Some(definition_source)) =
-                    (pair[0].object_id, pair[1].object_id)
-                else {
+                let (Some(instance_source), Some(definition_source)) = (
+                    pair[0].object_id.and_then(ObjectId::value),
+                    pair[1].object_id.and_then(ObjectId::value),
+                ) else {
                     continue;
                 };
                 let Some((instance_index, NativeClassKind::SketchBlockInstance)) =
@@ -1573,7 +1563,7 @@ pub(crate) fn enrich_history_reference_axes(
     let known_sources = histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .filter_map(crate::records::Feature::source_value)
         .collect::<HashSet<_>>();
     for lane in lanes {
         let mut starts =
@@ -1914,11 +1904,7 @@ pub(super) fn legacy_reference_axis_triads(
 ) -> Vec<([usize; 3], [[u32; 2]; 3])> {
     let mut by_source = HashMap::<u32, Option<usize>>::new();
     for (index, feature) in features.iter().enumerate() {
-        let Some(source) = feature
-            .source_id
-            .as_deref()
-            .and_then(|value| value.parse::<u32>().ok())
-        else {
+        let Some(source) = feature.source_value() else {
             continue;
         };
         by_source
@@ -1929,7 +1915,7 @@ pub(super) fn legacy_reference_axis_triads(
     features
         .iter()
         .filter_map(|first| {
-            let source = first.source_id.as_deref()?.parse::<u32>().ok()?;
+            let source = first.source_value()?;
             let indices = (0..6)
                 .map(|offset| {
                     by_source
@@ -1959,7 +1945,7 @@ pub(super) fn legacy_reference_axis_triads(
             }
             let sources = records
                 .iter()
-                .map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .map(|feature| feature.source_value())
                 .collect::<Option<Vec<_>>>()?;
             Some((
                 [indices[3], indices[4], indices[5]],

@@ -48,7 +48,7 @@ fn compact_legacy_142_profile_curve_selects_arc_or_line_from_radii() {
     );
     assert_eq!(marker_coordinates(&arc, 0), Some([2.0, 3.0]));
     assert_eq!(
-        sketch_input_entities(&arc, "lane")[0].kind,
+        sketch_input_entities(&arc, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -78,7 +78,7 @@ fn compact_legacy_142_profile_curve_selects_arc_or_line_from_radii() {
     assert_eq!(inline_arc_coordinates(&line, 0), None);
     assert_eq!(marker_coordinates(&line, 0), None);
     assert_eq!(
-        sketch_input_entities(&line, "lane")[0].kind,
+        sketch_input_entities(&line, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 

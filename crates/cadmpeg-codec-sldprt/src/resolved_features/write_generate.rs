@@ -107,7 +107,13 @@ pub(super) fn generated_marker_relations(
                 .unwrap_or_default()
         }
         definition => binary_marker_relation(definition)
-            .map(|(kind, first, second)| vec![GeneratedMarkerRelation::Binary(kind, first, second)])
+            .map(|(kind, first, second)| {
+                vec![GeneratedMarkerRelation::Binary(
+                    kind.relation(),
+                    first,
+                    second,
+                )]
+            })
             .unwrap_or_default(),
     }
 }

@@ -11,6 +11,7 @@ use crate::records::{
 use cadmpeg_core::decode::View;
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
+use crate::records::ObjectId;
 
 pub(crate) fn named_scalars(
     payload: &[u8],
@@ -180,15 +181,11 @@ pub(crate) fn feature_object_name<'a>(
     feature: &crate::records::Feature,
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputName> {
-    if let Some(source_id) = feature
-        .source_id
-        .as_deref()
-        .and_then(|value| value.parse::<u32>().ok())
-    {
+    if let Some(source_id) = feature.source_value() {
         let mut matches = lane
             .names
             .iter()
-            .filter(|name| name.object_id == Some(source_id));
+            .filter(|name| name.object_id.and_then(ObjectId::value) == Some(source_id));
         if let Some(first) = matches.next() {
             if matches.next().is_none() {
                 return Some(first);

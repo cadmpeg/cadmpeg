@@ -5,6 +5,8 @@ use super::super::{CLASS_MARKER, NAME_MARKER};
 use super::*;
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
@@ -45,7 +47,7 @@ fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInp
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(2080),
+            object_id: ObjectId::from_value(2080),
             value: name.into(),
         }],
         scalars: Vec::new(),
@@ -72,7 +74,7 @@ fn reference_point_history() -> FeatureHistory {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("2080".into()),
+            source_id: FeatureSource::from_value(2080),
             ordinal: 0,
             name: "Point1".into(),
             kind: "3DPoint".into(),
@@ -161,7 +163,7 @@ fn coordinate_system_record(
                 parent: lane_id.into(),
                 ordinal: 0,
                 offset: 0,
-                object_id: Some(500),
+                object_id: ObjectId::from_value(500),
                 value: name.into(),
             }],
             scalars: Vec::new(),
@@ -192,7 +194,7 @@ fn coordinate_system_history() -> FeatureHistory {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("500".into()),
+            source_id: FeatureSource::from_value(500),
             ordinal: 0,
             name: "CS1".into(),
             kind: "Coordinate System".into(),
@@ -725,7 +727,7 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.to_string()),
+        source_id: FeatureSource::from_value(source),
         ordinal,
         name: String::new(),
         kind: String::new(),
@@ -752,7 +754,7 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
         vec![([4, 5, 6], [[40, 41], [40, 42], [42, 41]])]
     );
 
-    features[5].source_id = Some("99".into());
+    features[5].source_id = FeatureSource::from_value(99);
     assert!(legacy_reference_axis_triads(&features).is_empty());
 }
 
@@ -875,7 +877,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("2080".into()),
+            source_id: FeatureSource::from_value(2080),
             ordinal: 0,
             name: "Axis1".into(),
             kind: String::new(),
@@ -904,7 +906,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(2080),
+            object_id: ObjectId::from_value(2080),
             value: "Axis1".into(),
         }],
         scalars: Vec::new(),
@@ -1462,7 +1464,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("2080".into()),
+            source_id: FeatureSource::from_value(2080),
             ordinal: 0,
             name: "MidPlane".into(),
             kind: "Plane".into(),
@@ -1485,7 +1487,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(2080),
+            object_id: ObjectId::from_value(2080),
             value: "MidPlane".into(),
         }],
         scalars: Vec::new(),

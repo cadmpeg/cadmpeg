@@ -3,6 +3,8 @@
 use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
@@ -129,16 +131,16 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     ];
     let hint_a = marker("hint-a", Some([0.0, 0.0]));
     let hint_b = marker("hint-b", Some([0.002, 0.0]));
-    let markers = HashMap::from([(hint_a.id.as_str(), &hint_a), (hint_b.id.as_str(), &hint_b)]);
+    let markers = HashMap::from([(hint_a.id(), &hint_a), (hint_b.id(), &hint_b)]);
     let mut loci = HashMap::from([
         (
-            hint_a.id.clone(),
+            hint_a.id().to_string(),
             vec![SketchLocus::Entity(
                 SketchEntityId::mint("synthetic:test:id#hint-a").unwrap(),
             )],
         ),
         (
-            hint_b.id.clone(),
+            hint_b.id().to_string(),
             vec![SketchLocus::Entity(
                 SketchEntityId::mint("synthetic:test:id#hint-b").unwrap(),
             )],
@@ -164,14 +166,14 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
                 reference_ref: "reference-a".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
-                entity_ref: Some(hint_a.id.clone()),
+                entity_ref: Some(hint_a.id().to_string()),
             },
             FeatureInputOperand {
                 offset: 2,
                 reference_ref: "reference-b".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 1,
-                entity_ref: Some(hint_b.id.clone()),
+                entity_ref: Some(hint_b.id().to_string()),
             },
         ],
     };
@@ -234,13 +236,13 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C);
     }
     loci.insert(
-        super::qualified_point_marker_key(&hint_a.id),
+        super::qualified_point_marker_key(hint_a.id()),
         vec![SketchLocus::Entity(
             SketchEntityId::mint("synthetic:test:id#hint-a").unwrap(),
         )],
     );
     loci.insert(
-        super::qualified_point_marker_key(&hint_b.id),
+        super::qualified_point_marker_key(hint_b.id()),
         vec![SketchLocus::Entity(
             SketchEntityId::mint("synthetic:test:id#hint-b").unwrap(),
         )],
@@ -813,13 +815,13 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         ),
     ];
     let mut horizontal = marker("horizontal-marker", Some([0.020, 0.020]));
-    horizontal.kind = SketchInputKind::LineOrCircle;
+    horizontal.reclassify(SketchInputKind::LineOrCircle);
     horizontal = horizontal.with_test_position(horizontal.ordinal(), 0);
     let mut vertical = marker("vertical-marker", Some([0.035, 0.030]));
-    vertical.kind = SketchInputKind::LineOrCircle;
+    vertical.reclassify(SketchInputKind::LineOrCircle);
     vertical = vertical.with_test_position(vertical.ordinal(), 32);
     let mut center = marker("circle-center", Some([0.040, 0.015]));
-    center.kind = SketchInputKind::LineOrCircle;
+    center.reclassify(SketchInputKind::LineOrCircle);
     center = center.with_test_position(center.ordinal(), 64);
     let mut native_payload = vec![0; 96];
     for offset in [0, 32, 64] {
@@ -909,7 +911,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         5.0,
     )
     .expect("implicit circle pair");
-    assert_eq!(resolved.id, "implicit-center");
+    assert_eq!(resolved.id(), "implicit-center");
     assert!((radius - 5.0).abs() < 1.0e-12);
     assert!(implicit_circle_marker(
         std::slice::from_ref(&implicit_lane),
@@ -935,17 +937,17 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     let mut relation = marker("circle-owner", None);
     relation = relation.with_test_position(relation.ordinal(), 40);
     relation = relation.with_test_identity(Some(1), relation.local_id());
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Distance));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 11,
-                entity_ref: center.id.clone(),
+                entity_ref: center.id().to_string(),
             },
             SketchInputLink {
                 local_id: 11,
-                entity_ref: center.id.clone(),
+                entity_ref: center.id().to_string(),
             },
         ],
     );
@@ -976,7 +978,7 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     )
     .expect("solver-owned implicit circle");
 
-    assert_eq!(resolved.id, "center");
+    assert_eq!(resolved.id(), "center");
     assert!((radius - 5.0).abs() < 1.0e-12);
 }
 
@@ -1021,7 +1023,7 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
     )
     .expect("unique terminal radial pair");
 
-    assert_eq!(resolved.id, "center");
+    assert_eq!(resolved.id(), "center");
     assert!((radius - 5.0).abs() < 1.0e-12);
 }
 
@@ -1083,12 +1085,12 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     )
     .expect("declared entity-handle circle");
 
-    assert_eq!(resolved.id, "center");
+    assert_eq!(resolved.id(), "center");
     assert!((radius - 5.0).abs() < 1.0e-12);
 
     for kind in [SketchInputKind::LineOrCircle, SketchInputKind::Arc] {
         let mut lane = lane.clone();
-        lane.sketch_entities[0].kind = kind;
+        lane.sketch_entities[0].reclassify(kind);
         assert!(declared_entity_handle_circular_marker(
             std::slice::from_ref(&lane),
             "feature-native",
@@ -1098,7 +1100,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         .is_some());
     }
     let mut invalid_radial = lane.clone();
-    invalid_radial.sketch_entities[1].kind = SketchInputKind::Arc;
+    invalid_radial.sketch_entities[1].reclassify(SketchInputKind::Arc);
     assert!(declared_entity_handle_circular_marker(
         std::slice::from_ref(&invalid_radial),
         "feature-native",
@@ -1186,7 +1188,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("7".into()),
+        source_id: FeatureSource::from_value(7),
         ordinal: 7,
         name: "Sketch1".into(),
         kind: String::new(),
@@ -1269,7 +1271,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
             ordinal: 0,
             offset: 100,
             value: "Sketch1".into(),
-            object_id: Some(7),
+            object_id: ObjectId::from_value(7),
         }],
         scalars: Vec::new(),
         relation_bindings: Vec::new(),

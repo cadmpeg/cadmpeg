@@ -59,7 +59,7 @@ pub(super) fn linked_single_arc_entity(
             !matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
-                    .map(|marker| marker.kind),
+                    .map(|marker| marker.kind()),
                 Some(SketchInputKind::Arc)
             )
         })
@@ -113,7 +113,7 @@ pub(super) fn linked_midpoint_operands(
     for link in [*first, *second] {
         let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
         let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
-        match linked_marker.kind {
+        match linked_marker.kind() {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint if point.is_none() => {
                 point = Some(locus);
             }
@@ -137,7 +137,7 @@ pub(super) fn relation_operand_loci(
         .iter()
         .filter(|link| relation_link_is_geometric_operand(relation, link, markers_by_id))
         .map(|link| link.entity_ref.as_str())
-        .chain(owners.iter().map(|owner| owner.id.as_str()))
+        .chain(owners.iter().map(|owner| owner.id()))
         .map(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
         .collect::<Option<Vec<_>>>()?;
     let loci = loci.into_iter().fold(Vec::new(), |mut unique, locus| {
@@ -922,7 +922,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let operand_marker = |index: usize| {
                 relation_operand_marker(relation, index, sketch, markers_by_id).or_else(|| {
                     relation_line_point_marker(relation, index, markers_by_id)
-                        .map(|marker| marker.id.as_str())
+                        .map(super::super::records::SketchInputEntity::id)
                 })
             };
             let first = curve(0).or_else(|| {
@@ -958,7 +958,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         if let Some(marker) = relation_line_point_marker(relation, 1, markers_by_id)
                         {
                             unique_marker_line_distance_entity(
-                                &marker.id,
+                                marker.id(),
                                 sketch,
                                 &known,
                                 parameter,
@@ -979,7 +979,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         if let Some(marker) = relation_line_point_marker(relation, 0, markers_by_id)
                         {
                             unique_marker_line_distance_entity(
-                                &marker.id,
+                                marker.id(),
                                 sketch,
                                 &known,
                                 parameter,
@@ -1444,9 +1444,9 @@ pub(super) fn doubled_profile_distance_loci(
     }
     let center_is_distance_handle = markers_by_id.values().any(|marker| {
         marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
-            && marker.kind
+            && marker.kind()
                 == SketchInputKind::Relation(crate::records::SketchRelationKind::Distance)
-            && matches!(marker.links(), [link] if link.entity_ref == center_marker.id)
+            && matches!(marker.links(), [link] if link.entity_ref == center_marker.id())
     });
     if !center_is_distance_handle {
         return None;
@@ -1976,7 +1976,7 @@ fn unique_dynamic_direct_point_roster_pair(
             && marker.coordinates_m.is_some()
             && marker.links().is_empty()
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
     };
@@ -1990,7 +1990,7 @@ fn unique_dynamic_direct_point_roster_pair(
     let direct_marker_ids = markers_by_id
         .values()
         .filter(|marker| is_direct_point(marker))
-        .map(|marker| marker.id.as_str())
+        .map(|marker| marker.id())
         .collect::<HashSet<_>>();
     let mut loci = sketch_entities
         .iter()
@@ -2056,6 +2056,24 @@ fn deduplicate_physical_loci(candidates: &mut Vec<SketchLocus>, sketch_entities:
     });
 }
 
+/// The point-line operands a dynamic roster relation already knows.
+enum KnownOperands {
+    Point(SketchLocus),
+    Line(SketchEntityId),
+    Both(SketchLocus, SketchEntityId),
+}
+
+impl KnownOperands {
+    fn resolve(point: Option<SketchLocus>, line: Option<SketchEntityId>) -> Option<Self> {
+        match (point, line) {
+            (Some(point), Some(line)) => Some(Self::Both(point, line)),
+            (Some(point), None) => Some(Self::Point(point)),
+            (None, Some(line)) => Some(Self::Line(line)),
+            (None, None) => None,
+        }
+    }
+}
+
 fn unique_dynamic_roster_point_line_pair(
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
@@ -2075,18 +2093,19 @@ fn unique_dynamic_roster_point_line_pair(
     if (explicit_point && known_point.is_none()) || (explicit_line && known_line.is_none()) {
         return None;
     }
-    let known_point = explicit_point.then_some(known_point).flatten();
-    let known_line = explicit_line.then_some(known_line).flatten();
     // A family-local tag without an explicit reference is not an identity;
     // let the complete geometry roster arbitrate it instead of trusting a
     // provisional ordinal or a colliding solver-line alias. A single
     // explicitly referenced operand narrows that roster to the other operand.
-    if known_point.is_none() && known_line.is_none() {
+    let Some(known) = KnownOperands::resolve(
+        explicit_point.then_some(known_point).flatten(),
+        explicit_line.then_some(known_line).flatten(),
+    ) else {
         if explicit_point || explicit_line {
             return None;
         }
         return unique_roster_point_line_pair(sketch, parameter, sketch_entities);
-    }
+    };
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
@@ -2108,8 +2127,8 @@ fn unique_dynamic_roster_point_line_pair(
         .collect::<Vec<_>>();
     deduplicate_physical_loci(&mut points, sketch_entities);
     let mut candidates = Vec::new();
-    match (known_point, known_line) {
-        (Some(point), None) => {
+    match known {
+        KnownOperands::Point(point) => {
             let position = profile_locus_point(&point, sketch_entities)?;
             candidates.extend(lines.iter().filter_map(|line| {
                 point_line_distance_value(position, line)
@@ -2117,7 +2136,7 @@ fn unique_dynamic_roster_point_line_pair(
                     .map(|_| (point.clone(), line.id().clone()))
             }));
         }
-        (None, Some(line)) => {
+        KnownOperands::Line(line) => {
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             candidates.extend(points.into_iter().filter_map(|point| {
                 let position = profile_locus_point(&point, sketch_entities)?;
@@ -2126,7 +2145,7 @@ fn unique_dynamic_roster_point_line_pair(
                     .map(|_| (point, line.clone()))
             }));
         }
-        (Some(point), Some(line)) => {
+        KnownOperands::Both(point, line) => {
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             let position = profile_locus_point(&point, sketch_entities)?;
             if point_line_distance_value(position, line_entity)
@@ -2135,7 +2154,6 @@ fn unique_dynamic_roster_point_line_pair(
                 candidates.push((point, line));
             }
         }
-        (None, None) => unreachable!("the complete roster path returned above"),
     }
     candidates.sort_by(|(left_point, left_line), (right_point, right_line)| {
         locus_key(left_point)
@@ -2350,7 +2368,7 @@ fn dynamic_line_operand_candidates(
             let marker =
                 relation_operand_marker(relation, index, sketch, markers_by_id).or_else(|| {
                     relation_line_point_marker(relation, index, markers_by_id)
-                        .map(|marker| marker.id.as_str())
+                        .map(super::super::records::SketchInputEntity::id)
                 })?;
             Some(dynamic_marker_line_candidates(
                 marker,
@@ -2475,7 +2493,7 @@ fn dynamic_marker_center_candidates(
     let has_arc_marker = marker_ids.iter().any(|marker_id| {
         markers_by_id
             .get(marker_id.as_str())
-            .is_some_and(|marker| matches!(marker.kind, SketchInputKind::Arc))
+            .is_some_and(|marker| matches!(marker.kind(), SketchInputKind::Arc))
     });
     if !has_arc_marker {
         return None;
@@ -2484,7 +2502,7 @@ fn dynamic_marker_center_candidates(
         .iter()
         .filter_map(|marker_id| {
             let marker = markers_by_id.get(marker_id.as_str())?;
-            if !matches!(marker.kind, SketchInputKind::Arc) {
+            if !matches!(marker.kind(), SketchInputKind::Arc) {
                 return None;
             }
             let locus = marker_point_locus(marker_id, markers_by_id, loci_by_marker)?;
@@ -2567,7 +2585,7 @@ fn collect_marker_identity_ids(
     };
     for link in marker.links().iter().filter(|link| {
         link.entity_ref != marker_id
-            && (!matches!(marker.kind, SketchInputKind::Relation(_))
+            && (!matches!(marker.kind(), SketchInputKind::Relation(_))
                 || !relation_link_identifies_owner(marker, link))
     }) {
         collect_marker_identity_ids(&link.entity_ref, markers_by_id, marker_ids, visited);
@@ -2834,7 +2852,7 @@ pub(super) fn relation_operand_marker<'a>(
             .filter(|marker| marker.coordinates_m.is_some())
             .filter(|marker| {
                 matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             })
@@ -2842,7 +2860,7 @@ pub(super) fn relation_operand_marker<'a>(
         coordinate_handles.sort_unstable_by_key(|marker| marker.offset());
         return coordinate_handles
             .get(usize::from(operand.entity_index))
-            .map(|marker| marker.id.as_str());
+            .map(|marker| marker.id());
     }
     operand
         .entity_ref
@@ -2886,20 +2904,20 @@ fn dynamic_relation_marker<'a>(
     let direct_kind = |marker: &SketchInputEntity| {
         if point_role {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         } else {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
         }
     };
     let address_kind = |marker: &SketchInputEntity| {
         direct_kind(marker)
-            || (point_role && matches!(marker.kind, SketchInputKind::Arc))
-            || matches!(marker.kind, SketchInputKind::Relation(_))
+            || (point_role && matches!(marker.kind(), SketchInputKind::Arc))
+            || matches!(marker.kind(), SketchInputKind::Relation(_))
     };
     let mut by_object = markers_by_id
         .values()
@@ -2920,7 +2938,7 @@ fn dynamic_relation_marker<'a>(
             let mut arcs = by_object
                 .iter()
                 .copied()
-                .filter(|marker| matches!(marker.kind, SketchInputKind::Arc))
+                .filter(|marker| matches!(marker.kind(), SketchInputKind::Arc))
                 .collect::<Vec<_>>();
             if let Some(marker) = unique_dynamic_marker(&mut arcs) {
                 return Some(marker);
@@ -2947,7 +2965,7 @@ fn dynamic_relation_marker<'a>(
             let mut arcs = by_local
                 .iter()
                 .copied()
-                .filter(|marker| matches!(marker.kind, SketchInputKind::Arc))
+                .filter(|marker| matches!(marker.kind(), SketchInputKind::Arc))
                 .collect::<Vec<_>>();
             if let Some(marker) = unique_dynamic_marker(&mut arcs) {
                 return Some(marker);
@@ -2965,20 +2983,20 @@ fn dynamic_relation_marker<'a>(
         left.offset()
             .cmp(&right.offset())
             .then_with(|| left.ordinal().cmp(&right.ordinal()))
-            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| left.id().cmp(right.id()))
     });
     ordinal
         .get(usize::from(operand.entity_index))
-        .map(|marker| marker.id.as_str())
+        .map(|marker| marker.id())
 }
 
 fn unique_dynamic_marker<'a>(candidates: &mut Vec<&'a SketchInputEntity>) -> Option<&'a str> {
-    candidates.sort_unstable_by(|left, right| left.id.cmp(&right.id));
-    candidates.dedup_by(|left, right| left.id == right.id);
+    candidates.sort_unstable_by(|left, right| left.id().cmp(right.id()));
+    candidates.dedup_by(|left, right| left.id() == right.id());
     let [candidate] = candidates.as_slice() else {
         return None;
     };
-    Some(candidate.id.as_str())
+    Some(candidate.id())
 }
 
 fn relation_line_point_marker<'a>(
@@ -3000,7 +3018,7 @@ fn relation_line_point_marker<'a>(
         .filter(|marker| marker.coordinates_m.is_some())
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         })
@@ -3151,7 +3169,7 @@ fn qualified_or_linked_point_locus(
 ) -> Option<SketchLocus> {
     let marker = markers_by_id.get(marker_id)?;
     if matches!(
-        marker.kind,
+        marker.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) {
         let mut linked = marker
@@ -3162,7 +3180,7 @@ fn qualified_or_linked_point_locus(
                 !matches!(
                     markers_by_id
                         .get(link.entity_ref.as_str())
-                        .map(|marker| marker.kind),
+                        .map(|marker| marker.kind()),
                     Some(SketchInputKind::Relation(_))
                 )
             })
@@ -3234,7 +3252,7 @@ pub(super) fn resolved_marker_locus(
             !matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
-                    .map(|marker| marker.kind),
+                    .map(|marker| marker.kind()),
                 Some(SketchInputKind::Relation(_))
             )
         })
@@ -3324,7 +3342,7 @@ pub(super) fn single_marker_line_entity(
         .iter()
         .filter(|link| {
             link.entity_ref != marker_id
-                && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                && (!matches!(marker.kind(), SketchInputKind::Relation(_))
                     || !relation_link_identifies_owner(marker, link))
         })
         .collect::<Vec<_>>();
@@ -3427,7 +3445,7 @@ fn unique_line_containing_marker_point(
 ) -> Option<SketchEntityId> {
     let marker = markers_by_id.get(marker_id)?;
     if !matches!(
-        marker.kind,
+        marker.kind(),
         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
     ) {
         return None;
@@ -3492,7 +3510,7 @@ fn marker_line_entities_inner(
         .iter()
         .filter(|link| {
             link.entity_ref != marker_id
-                && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                && (!matches!(marker.kind(), SketchInputKind::Relation(_))
                     || !relation_link_identifies_owner(marker, link))
         })
         .map(|link| {
@@ -3572,7 +3590,7 @@ pub(super) fn profile_loci_by_marker(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let native_point_markers_with_nonpoint_carrier = sketch_entities
         .iter()
@@ -3630,7 +3648,7 @@ pub(super) fn profile_loci_by_marker(
                     SketchLocus::Start(entity.id().clone())
                 } else if markers_by_id.get(marker.as_str()).is_some_and(|marker| {
                     matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
                 }) && matches!(
@@ -3716,11 +3734,11 @@ pub(super) fn profile_loci_by_marker(
                 },
             );
             for marker in markers {
-                let qualified_point = qualified_point_markers.contains(marker.id.as_str());
+                let qualified_point = qualified_point_markers.contains(marker.id());
                 let result_key = if qualified_point {
-                    qualified_point_marker_key(&marker.id)
+                    qualified_point_marker_key(marker.id())
                 } else {
-                    marker.id.clone()
+                    marker.id().to_string()
                 };
                 if result.contains_key(&result_key) {
                     continue;
@@ -3748,13 +3766,13 @@ pub(super) fn profile_loci_by_marker(
                             .flatten()
                             .filter(|locus| {
                                 geometry_by_entity.get(&locus_entity(locus)).is_some_and(
-                                    |geometry| marker_accepts_locus(marker.kind, geometry),
+                                    |geometry| marker_accepts_locus(marker.kind(), geometry),
                                 )
                             })
                             .map(|locus| {
                                 if !qualified_point
                                     && matches!(
-                                        marker.kind,
+                                        marker.kind(),
                                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                                     )
                                 {
@@ -3764,7 +3782,8 @@ pub(super) fn profile_loci_by_marker(
                                 }
                             })
                             .collect::<Vec<_>>();
-                        if marker_loci.is_empty() && marker.kind == SketchInputKind::LineOrCircle {
+                        if marker_loci.is_empty() && marker.kind() == SketchInputKind::LineOrCircle
+                        {
                             marker_loci.extend(
                                 line_midpoints.get(sketch).into_iter().flatten().filter_map(
                                     |(point, locus)| {
@@ -3776,7 +3795,7 @@ pub(super) fn profile_loci_by_marker(
                         }
                         if marker_loci.is_empty()
                             && primary_geometry_locus
-                            && marker.kind == SketchInputKind::LineOrCircle
+                            && marker.kind() == SketchInputKind::LineOrCircle
                         {
                             marker_loci.extend(sketch_entities.iter().filter_map(|entity| {
                                 if entity.sketch != **sketch {
@@ -3816,10 +3835,10 @@ pub(super) fn profile_loci_by_marker(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     for marker in markers_by_id.values().copied() {
-        if marker.kind != SketchInputKind::LineOrCircle || result.contains_key(&marker.id) {
+        if marker.kind() != SketchInputKind::LineOrCircle || result.contains_key(marker.id()) {
             continue;
         }
         let endpoints = line_endpoint_markers(marker, &markers_by_id);
@@ -3886,7 +3905,10 @@ pub(super) fn profile_loci_by_marker(
         }
         if complete {
             if let [entity] = matches.into_iter().collect::<Vec<_>>().as_slice() {
-                result.insert(marker.id.clone(), vec![SketchLocus::Entity(entity.clone())]);
+                result.insert(
+                    marker.id().to_string(),
+                    vec![SketchLocus::Entity(entity.clone())],
+                );
             }
         }
     }
@@ -3900,10 +3922,10 @@ pub(super) fn profile_loci_by_marker(
             .filter(|marker| {
                 marker.coordinates_m.is_none()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
-                    && !result.contains_key(&marker.id)
+                    && !result.contains_key(marker.id())
             })
             .filter_map(|marker| {
                 unique_linked_endpoint_locus(
@@ -3913,7 +3935,7 @@ pub(super) fn profile_loci_by_marker(
                     &entities_by_id,
                     QUANTUM,
                 )
-                .map(|locus| (marker.id.clone(), vec![locus]))
+                .map(|locus| (marker.id().to_string(), vec![locus]))
             })
             .collect::<Vec<_>>();
         if additions.is_empty() {
@@ -4046,12 +4068,11 @@ pub(super) fn marker_transform_candidates_by_feature(
                 };
                 let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                 for entity in sketch_entities.iter().filter(|entity| {
-                    entity.sketch == **sketch
-                        && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                    entity.sketch == **sketch && entity.native_ref.as_deref() == Some(marker.id())
                 }) {
                     let anchors = match *entity.geometry.definition() {
                         SketchGeometryDefinition::Point { position } => vec![position],
-                        _ => marker_geometry_anchors(marker.kind, &entity.geometry),
+                        _ => marker_geometry_anchors(marker.kind(), &entity.geometry),
                     };
                     for anchor in anchors {
                         directly_bound
@@ -4065,7 +4086,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                 let mut points = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
                 for marker in &markers {
                     if !matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::LineOrCircle
                             | SketchInputKind::Arc
@@ -4093,13 +4114,13 @@ pub(super) fn marker_transform_candidates_by_feature(
                                 sketch_entity_loci(entity)
                                     .into_iter()
                                     .filter_map(|(point, locus)| {
-                                        marker_accepts_locus(marker.kind, &entity.geometry)
+                                        marker_accepts_locus(marker.kind(), &entity.geometry)
                                             .then_some((point, locus))
                                     })
                                     .map(|(point, _)| point)
                                     .collect::<Vec<_>>()
                             } else {
-                                marker_geometry_anchors(marker.kind, &entity.geometry)
+                                marker_geometry_anchors(marker.kind(), &entity.geometry)
                             }
                         });
                     for point in anchors {

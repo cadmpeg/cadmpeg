@@ -256,7 +256,7 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
     assert_eq!(
         extended_wide_selected_axis_endpoints(&payload, &curve, &markers)
             .expect("object-index endpoints")
-            .map(|endpoint| endpoint.id.as_str()),
+            .map(crate::records::SketchInputEntity::id),
         ["first", "second"]
     );
 
@@ -264,7 +264,7 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
     assert_eq!(
         extended_wide_selected_axis_endpoints(&payload, &curve, &markers)
             .expect("one-based roster endpoints")
-            .map(|endpoint| endpoint.id.as_str()),
+            .map(crate::records::SketchInputEntity::id),
         ["third", "second"]
     );
 }
@@ -309,7 +309,7 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
     let endpoints = one_based_point_roster_line_endpoint_markers(&payload, &curve, &markers)
         .expect("one-based point roster");
     assert_eq!(
-        endpoints.map(|endpoint| endpoint.id.as_str()),
+        endpoints.map(crate::records::SketchInputEntity::id),
         ["second", "fourth"]
     );
 
@@ -372,7 +372,7 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
     let endpoints = legacy_point_roster_line_endpoint_markers(&payload, &curve, &markers)
         .expect("zero-based point roster");
     assert_eq!(
-        endpoints.map(|endpoint| endpoint.id.as_str()),
+        endpoints.map(crate::records::SketchInputEntity::id),
         ["second", "fourth"]
     );
 
@@ -439,15 +439,12 @@ fn native_owner_operand_keeps_a_missing_source_index() {
         0,
         vec![SketchInputLink {
             local_id: 4,
-            entity_ref: relation.id.clone(),
+            entity_ref: relation.id().to_string(),
         }],
     );
     for index in [None, Some(7)] {
         owner = owner.with_test_identity(owner.object_index(), index);
-        let markers = HashMap::from([
-            (relation.id.as_str(), &relation),
-            (owner.id.as_str(), &owner),
-        ]);
+        let markers = HashMap::from([(relation.id(), &relation), (owner.id(), &owner)]);
         let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
             typed_marker_relation_definition(&relation, &markers, &HashMap::new())
         else {

@@ -17,6 +17,7 @@ use cadmpeg_ir::{
 use std::collections::{BTreeMap, HashMap};
 
 use crate::history::literals::{parse_point3_mm, parse_vector3};
+use crate::records::FeatureSource;
 
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
@@ -627,11 +628,7 @@ fn history_feature_sources(
     crate::resolved_features::selections::enrich_feature_object_sources(&mut features, lanes);
     let mut sources = HashMap::new();
     for feature in features {
-        let source = feature
-            .source_id
-            .as_deref()
-            .and_then(|value| value.parse::<u32>().ok())
-            .and_then(|value| FeatureSourceId::try_from(value).ok());
+        let source = feature.source_id.and_then(FeatureSource::id);
         match sources.entry(feature.id.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(source);

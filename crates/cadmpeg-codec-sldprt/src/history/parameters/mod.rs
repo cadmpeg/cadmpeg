@@ -131,12 +131,12 @@ pub(crate) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterV
     {
         return None;
     }
-    let identifiers = expression_identifier_tokens(expression);
-    if identifiers.unclosed_quote
-        || identifiers
-            .identifiers
-            .iter()
-            .any(|identifier| definite_parameter_reference(expression, identifier))
+    let Ok(identifiers) = expression_identifier_tokens(expression) else {
+        return None;
+    };
+    if identifiers
+        .iter()
+        .any(|identifier| definite_parameter_reference(identifier))
     {
         return None;
     }
@@ -582,23 +582,19 @@ pub(crate) fn parameters_with_unresolved_references(
         .iter()
         .filter(|parameter| {
             let aliases = aliases.for_owner(parameter.owner.as_ref());
-            let parsed = expression_identifier_tokens(&parameter.expression);
-            parsed.unclosed_quote
-                || parsed
-                    .identifiers
-                    .into_iter()
-                    .filter(|identifier| {
-                        !expression_identifier_is_syntax(&parameter.expression, identifier)
-                    })
-                    .filter(|identifier| {
-                        definite_parameter_reference(&parameter.expression, identifier)
-                    })
-                    .any(|identifier| {
-                        aliases
-                            .get(identifier.value(&parameter.expression).as_ref())
-                            .and_then(Clone::clone)
-                            .is_none_or(|dependency| dependency == parameter.id)
-                    })
+            let Ok(parsed) = expression_identifier_tokens(&parameter.expression) else {
+                return true;
+            };
+            parsed
+                .into_iter()
+                .filter(|identifier| !identifier.is_syntax())
+                .filter(|identifier| definite_parameter_reference(identifier))
+                .any(|identifier| {
+                    aliases
+                        .get(identifier.value())
+                        .and_then(Clone::clone)
+                        .is_none_or(|dependency| dependency == parameter.id)
+                })
         })
         .count()
 }
@@ -724,79 +720,115 @@ pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &Paramet
     }
 }
 
-pub(crate) fn definite_parameter_reference(
-    expression: &str,
-    identifier: &ExpressionIdentifier,
-) -> bool {
-    identifier.quoted
-        || identifier.value(expression).contains('@')
-        || identifier
-            .value(expression)
-            .strip_prefix('D')
-            .is_some_and(|ordinal| {
-                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-            })
+pub(crate) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>) -> bool {
+    identifier.is_quoted()
+        || identifier.value().contains('@')
+        || identifier.value().strip_prefix('D').is_some_and(|ordinal| {
+            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 pub(crate) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
     expression_identifier_tokens(expression)
-        .identifiers
         .into_iter()
-        .filter(|token| !expression_identifier_is_syntax(expression, token))
-        .map(|token| token.value(expression).into_owned())
+        .flatten()
+        .filter(|token| !token.is_syntax())
+        .map(|token| token.value().to_owned())
 }
 
-pub(crate) fn expression_identifier_is_syntax(
-    expression: &str,
-    identifier: &ExpressionIdentifier,
-) -> bool {
-    if identifier.quoted {
-        return false;
-    }
-    if identifier
-        .value(expression)
-        .starts_with(|character: char| character.is_ascii_digit() || character == '.')
-    {
-        return true;
-    }
-    if identifier.value(expression).eq_ignore_ascii_case("pi")
-        || identifier.value(expression).eq_ignore_ascii_case("true")
-        || identifier.value(expression).eq_ignore_ascii_case("false")
-    {
-        return true;
-    }
-    let is_function = eval::ParameterFunction::parse(&identifier.value(expression)).is_some();
-    is_function && expression[identifier.end..].trim_start().starts_with('(')
+/// An expression whose quoted identifier is never closed.
+#[derive(Debug)]
+pub(crate) struct UnclosedQuote;
+
+/// One identifier token of the expression it borrows from.
+pub(crate) struct ExpressionIdentifier<'a> {
+    raw: &'a str,
+    following: &'a str,
+    value: std::borrow::Cow<'a, str>,
+    quoted: bool,
 }
 
-pub(crate) struct ParsedExpressionIdentifiers {
-    pub(crate) identifiers: Vec<ExpressionIdentifier>,
-    pub(crate) unclosed_quote: bool,
-}
-
-pub(crate) struct ExpressionIdentifier {
-    pub(crate) start: usize,
-    pub(crate) end: usize,
-    pub(crate) quoted: bool,
-}
-
-impl ExpressionIdentifier {
-    pub(crate) fn value<'a>(&self, expression: &'a str) -> std::borrow::Cow<'a, str> {
-        let raw = &expression[self.start..self.end];
-        if self.quoted {
-            let raw = &raw[1..raw.len() - 1];
-            if raw.contains("\"\"") {
-                std::borrow::Cow::Owned(raw.replace("\"\"", "\""))
-            } else {
-                std::borrow::Cow::Borrowed(raw)
-            }
+impl<'a> ExpressionIdentifier<'a> {
+    /// The token spanning `start..end`, which must be a quoted run around a nonempty name.
+    fn quoted(expression: &'a str, start: usize, end: usize) -> Option<Self> {
+        let raw = expression.get(start..end)?;
+        let following = expression.get(end..)?;
+        let inner = raw
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .filter(|inner| !inner.is_empty())?;
+        let value = if inner.contains("\"\"") {
+            std::borrow::Cow::Owned(inner.replace("\"\"", "\""))
         } else {
-            std::borrow::Cow::Borrowed(raw)
+            std::borrow::Cow::Borrowed(inner)
+        };
+        Some(Self {
+            raw,
+            following,
+            value,
+            quoted: true,
+        })
+    }
+
+    /// The unquoted token spanning `start..end`.
+    fn plain(expression: &'a str, start: usize, end: usize) -> Option<Self> {
+        let raw = expression.get(start..end)?;
+        Some(Self {
+            raw,
+            following: expression.get(end..)?,
+            value: std::borrow::Cow::Borrowed(raw),
+            quoted: false,
+        })
+    }
+
+    /// The identifier text, with the quotes and doubled quotes resolved.
+    pub(crate) fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Whether the source spelled this identifier in quotes.
+    pub(crate) fn is_quoted(&self) -> bool {
+        self.quoted
+    }
+
+    /// Whether the token is expression syntax — a literal, a constant, or a function name
+    /// applied to a following argument list — rather than a name to resolve.
+    pub(crate) fn is_syntax(&self) -> bool {
+        if self.quoted {
+            return false;
         }
+        if self
+            .value()
+            .starts_with(|character: char| character.is_ascii_digit() || character == '.')
+        {
+            return true;
+        }
+        if self.value().eq_ignore_ascii_case("pi")
+            || self.value().eq_ignore_ascii_case("true")
+            || self.value().eq_ignore_ascii_case("false")
+        {
+            return true;
+        }
+        eval::ParameterFunction::parse(self.value()).is_some()
+            && self.following.trim_start().starts_with('(')
+    }
+
+    /// The expression text that follows this token.
+    pub(crate) fn following(&self) -> &'a str {
+        self.following
+    }
+
+    /// The text of `tail` that precedes this token, where `tail` is the not-yet-consumed
+    /// remainder of the expression this token was cut from.
+    pub(crate) fn preceding(&self, tail: &'a str) -> Option<&'a str> {
+        tail.strip_suffix(self.following)
+            .and_then(|head| head.strip_suffix(self.raw))
     }
 }
 
-pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpressionIdentifiers {
+pub(crate) fn expression_identifier_tokens(
+    expression: &str,
+) -> Result<Vec<ExpressionIdentifier<'_>>, UnclosedQuote> {
     let mut identifiers = Vec::new();
     let mut at = 0;
     while at < expression.len() {
@@ -818,20 +850,13 @@ pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpression
                 }
             }
             if closed {
-                if cursor > at + 2 {
-                    identifiers.push(ExpressionIdentifier {
-                        start: at,
-                        end: cursor,
-                        quoted: true,
-                    });
+                if let Some(identifier) = ExpressionIdentifier::quoted(expression, at, cursor) {
+                    identifiers.push(identifier);
                 }
                 at = cursor;
                 continue;
             }
-            return ParsedExpressionIdentifiers {
-                identifiers,
-                unclosed_quote: true,
-            };
+            return Err(UnclosedQuote);
         }
 
         let Some(character) = rest.chars().next() else {
@@ -844,18 +869,13 @@ pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpression
                         || matches!(candidate, '_' | '@' | '$' | '.'))
                 })
                 .unwrap_or(rest.len());
-            identifiers.push(ExpressionIdentifier {
-                start: at,
-                end: at + end,
-                quoted: false,
-            });
+            if let Some(identifier) = ExpressionIdentifier::plain(expression, at, at + end) {
+                identifiers.push(identifier);
+            }
             at += end;
         } else {
             at += character.len_utf8();
         }
     }
-    ParsedExpressionIdentifiers {
-        identifiers,
-        unclosed_quote: false,
-    }
+    Ok(identifiers)
 }

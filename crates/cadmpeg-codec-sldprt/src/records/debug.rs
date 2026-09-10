@@ -14,8 +14,11 @@ impl Debug for super::Feature {
             .field("parent", &self.parent)
             .field("xml_tag", &self.xml_tag)
             .field("tree_parent", &self.tree_parent_record_id())
-            .field("source_id", &self.source_id)
-            .field("parent_source_id", &self.parent_source_id())
+            .field("source_id", &self.source_id.map(String::from))
+            .field(
+                "parent_source_id",
+                &self.parent_source_id().map(String::from),
+            )
             .field("ordinal", &self.ordinal)
             .field("name", &self.name)
             .field("kind", &self.kind)
@@ -26,6 +29,20 @@ impl Debug for super::Feature {
             .field("properties", &self.properties)
             .field("text", &self.text)
             .field("content", &self.content)
+            .finish()
+    }
+}
+
+impl Debug for super::FeatureInputName {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter
+            .debug_struct("FeatureInputName")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("ordinal", &self.ordinal)
+            .field("offset", &self.offset)
+            .field("object_id", &self.object_id.map(u32::from))
+            .field("value", &self.value)
             .finish()
     }
 }
@@ -122,7 +139,7 @@ impl Debug for super::SketchInputEntity {
             .field("links", &self.links())
             .field(
                 "link_selector",
-                &self.links.as_ref().map(|links| links.selector),
+                &self.links.as_ref().map(super::SketchInputLinks::selector),
             )
             .finish()
     }

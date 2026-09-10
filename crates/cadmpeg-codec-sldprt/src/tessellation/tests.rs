@@ -637,14 +637,32 @@ fn framed_surface_reference(text: &str) -> Vec<u8> {
 }
 
 #[test]
+fn overlapping_display_face_tables_narrow_to_an_empty_metadata_range() {
+    // Display-face metadata is narrowed to where the following table starts. Two
+    // overlapping tables put that end below the metadata start; the range then
+    // collapses at its own start instead of inverting and silently reading nothing.
+    assert!(ByteRange::new(64, 32).is_none());
+    let metadata = ByteRange::new(64, 128).expect("ordered range");
+    let overlapped = metadata.truncated(32);
+    assert_eq!((overlapped.start(), overlapped.end()), (64, 64));
+    let mut payload = vec![0; 192];
+    let reference = framed_surface_reference("moPlaneSurfIdRep_c,7,3,");
+    payload[64..64 + reference.len()].copy_from_slice(&reference);
+    assert!(persistent_surface_references(&payload, overlapped).is_empty());
+    let narrowed = metadata.truncated(120);
+    assert_eq!((narrowed.start(), narrowed.end()), (64, 120));
+    assert_eq!(
+        persistent_surface_references(&payload, narrowed).len(),
+        persistent_surface_references(&payload, metadata).len()
+    );
+}
+
+#[test]
 fn persistent_surface_reference_decodes_signed_tail() {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
     let references = persistent_surface_references(
         &payload,
-        ByteRange {
-            start: 0,
-            end: payload.len(),
-        },
+        ByteRange::new(0, payload.len()).expect("ordered range"),
     );
     assert_eq!(
         references,
@@ -661,10 +679,7 @@ fn opaque_surface_suffix_remains_source_only() {
     let payload = framed_surface_reference("moFromSktEntSurfIdRep_c,7,3,opaque");
     let references = persistent_surface_references(
         &payload,
-        ByteRange {
-            start: 0,
-            end: payload.len(),
-        },
+        ByteRange::new(0, payload.len()).expect("ordered range"),
     );
     assert_eq!(
         references,
@@ -675,8 +690,8 @@ fn opaque_surface_suffix_remains_source_only() {
     );
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table: ByteRange { start: 0, end: 1 },
-        metadata: ByteRange { start: 1, end: 2 },
+        table: ByteRange::new(0, 1).expect("ordered range"),
+        metadata: ByteRange::new(1, 2).expect("ordered range"),
         surface_references: references,
     };
     assert_eq!(
@@ -690,8 +705,8 @@ fn opaque_surface_suffix_remains_source_only() {
 fn persistent_surface_identity_requires_agreeing_duplicates() {
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table: ByteRange { start: 0, end: 1 },
-        metadata: ByteRange { start: 1, end: 2 },
+        table: ByteRange::new(0, 1).expect("ordered range"),
+        metadata: ByteRange::new(1, 2).expect("ordered range"),
         surface_references: vec![
             PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
             PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
@@ -1943,10 +1958,7 @@ fn persistent_surface_source_sentinels_are_absent() {
         let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
         let references = persistent_surface_references(
             &payload,
-            ByteRange {
-                start: 0,
-                end: payload.len(),
-            },
+            ByteRange::new(0, payload.len()).expect("ordered range"),
         );
         assert!(references.is_empty());
     }

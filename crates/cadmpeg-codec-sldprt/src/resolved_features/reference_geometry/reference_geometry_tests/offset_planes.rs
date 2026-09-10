@@ -1,5 +1,6 @@
 use super::super::*;
 use super::*;
+use crate::records::FeatureSource;
 use crate::resolved_features::curves::sketch_plane_frames;
 use std::collections::HashSet;
 
@@ -170,7 +171,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: source.parse().expect("required invariant"),
         name: id.into(),
         kind: String::new(),

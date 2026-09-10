@@ -230,7 +230,7 @@ impl SldprtNative {
         let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
         let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
-        let entities: Vec<crate::records::SketchInputEntity> =
+        let entity_wires: Vec<crate::records::SketchInputEntityWire> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
         let body_selections: Vec<FeatureInputBodySelection> =
@@ -286,7 +286,7 @@ impl SldprtNative {
             .iter()
             .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice()))
             .collect::<std::collections::HashMap<_, _>>();
-        if let Some(record) = entities
+        if let Some(record) = entity_wires
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
@@ -295,6 +295,17 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        let entities = entity_wires
+            .into_iter()
+            .map(|wire| {
+                let payload = lane_payloads
+                    .get(wire.parent.as_str())
+                    .copied()
+                    .unwrap_or_default();
+                crate::records::SketchInputEntity::try_from_wire(wire, payload)
+                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         if let Some(record) = classes
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
@@ -708,7 +719,7 @@ impl SldprtNative {
             }
             lane.sketch_entities = entities
                 .iter()
-                .filter(|record| record.parent == lane.id)
+                .filter(|record| record.parent() == lane.id)
                 .cloned()
                 .collect();
             lane.sketch_entities
@@ -933,7 +944,7 @@ impl SldprtNative {
             let sketch_entities = lane
                 .sketch_entities
                 .iter()
-                .map(|record| (record.id.as_str(), record))
+                .map(|record| (record.id(), record))
                 .collect::<std::collections::HashMap<_, _>>();
             for scalar in &lane.scalars {
                 let resolved_operands =
@@ -977,7 +988,7 @@ impl SldprtNative {
                 }
             }
             if let Some(record) = lane.sketch_entities.iter().find(|record| {
-                record.parent != lane.id
+                record.parent() != lane.id
                     || record
                         .feature_ref
                         .as_deref()
@@ -985,7 +996,7 @@ impl SldprtNative {
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "sketch input entity {} has inconsistent lane or feature ownership",
-                    record.id
+                    record.id()
                 )));
             }
             if let Some(record) = lane.sketch_entities.iter().find(|record| {
@@ -995,7 +1006,7 @@ impl SldprtNative {
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "sketch input entity {} has non-finite coordinates",
-                    record.id
+                    record.id()
                 )));
             }
             for record in &lane.sketch_entities {
@@ -1003,7 +1014,8 @@ impl SldprtNative {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                             "sketch input entity {} references missing local-link target {}",
-                            record.id, link.entity_ref
+                            record.id(),
+                            link.entity_ref
                         )));
                     };
                     if target.feature_ref != record.feature_ref
@@ -1011,7 +1023,8 @@ impl SldprtNative {
                     {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                             "sketch input entity {} has inconsistent local-link target {}",
-                            record.id, link.entity_ref
+                            record.id(),
+                            link.entity_ref
                         )));
                     }
                 }

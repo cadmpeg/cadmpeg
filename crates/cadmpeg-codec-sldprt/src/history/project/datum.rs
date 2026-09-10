@@ -28,7 +28,7 @@ pub(crate) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
 
 pub(crate) fn project_offset_plane(
     feature: &Feature,
-    by_source: &HashMap<&str, FeatureId>,
+    by_source: &HashMap<String, FeatureId>,
 ) -> Option<FeatureDefinition> {
     let distance = Length::new(parse_dimension_length_mm(feature.parameters.get("D1")?)?)?;
     let reference = feature
@@ -112,7 +112,7 @@ pub(crate) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinit
 
 pub(crate) fn project_projected_curve(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
     let source = feature.properties.get("Source")?;
     let source = native_by_source
@@ -140,7 +140,7 @@ pub(crate) fn project_projected_curve(
 
 pub(crate) fn project_composite_curve(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
     let segments = feature
         .properties
@@ -232,7 +232,7 @@ pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
 
 pub(crate) fn project_wrap(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
     let profile = feature.properties.get("Profile")?;
     let profile = native_by_source

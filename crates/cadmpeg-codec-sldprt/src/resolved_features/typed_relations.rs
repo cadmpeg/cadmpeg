@@ -43,6 +43,188 @@ const EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12: f64 = 1.0e-12;
 const EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12: f64 = 1.0e-12;
 const EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9: f64 = 1.0e-9;
 
+/// A relation kind narrowed to the single-entity forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SingleEntityRelation {
+    Horizontal,
+    Vertical,
+    Fixed,
+}
+
+impl SingleEntityRelation {
+    /// The constrained coordinate and the profile axis it is measured along, when this
+    /// relation is axis-aligned.
+    fn axes(self) -> Option<(SketchCoordinateAxis, ProfileAxis)> {
+        match self {
+            Self::Horizontal => Some((SketchCoordinateAxis::V, ProfileAxis::U)),
+            Self::Vertical => Some((SketchCoordinateAxis::U, ProfileAxis::V)),
+            Self::Fixed => None,
+        }
+    }
+
+    fn definition(self, entity: &SketchEntityId) -> SketchConstraintDefinitionInput {
+        let entity = entity.clone();
+        match self {
+            Self::Horizontal => SketchConstraintDefinitionInput::Horizontal { entity },
+            Self::Vertical => SketchConstraintDefinitionInput::Vertical { entity },
+            Self::Fixed => SketchConstraintDefinitionInput::Fixed { entity },
+        }
+    }
+}
+
+/// A quarter-turn sweep named by an arc- or ellipse-angle relation kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuarterTurn {
+    Quarter,
+    Half,
+    ThreeQuarters,
+}
+
+impl QuarterTurn {
+    fn angle(self) -> f64 {
+        match self {
+            Self::Quarter => std::f64::consts::FRAC_PI_2,
+            Self::Half => std::f64::consts::PI,
+            Self::ThreeQuarters => 3.0 * std::f64::consts::FRAC_PI_2,
+        }
+    }
+}
+
+/// A relation kind narrowed to the two-entity forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BinaryRelation {
+    Parallel,
+    Perpendicular,
+    Tangent,
+    Equal,
+    Collinear,
+    Concentric,
+    Coradial,
+}
+
+impl BinaryRelation {
+    fn definition(
+        self,
+        first: &SketchEntityId,
+        second: &SketchEntityId,
+    ) -> SketchConstraintDefinitionInput {
+        let (first, second) = (first.clone(), second.clone());
+        match self {
+            Self::Parallel => SketchConstraintDefinitionInput::Parallel { first, second },
+            Self::Perpendicular => SketchConstraintDefinitionInput::Perpendicular { first, second },
+            Self::Tangent => SketchConstraintDefinitionInput::Tangent { first, second },
+            Self::Equal => SketchConstraintDefinitionInput::Equal { first, second },
+            Self::Collinear => SketchConstraintDefinitionInput::Collinear { first, second },
+            Self::Concentric => SketchConstraintDefinitionInput::Concentric { first, second },
+            Self::Coradial => SketchConstraintDefinitionInput::Coradial { first, second },
+        }
+    }
+}
+
+/// The relation-kind groups the typed marker projection handles as one shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkerRelationGroup {
+    SingleEntity(SingleEntityRelation),
+    Dimensional,
+    ArcQuarter(QuarterTurn),
+    EllipseQuarter(QuarterTurn),
+    Binary(BinaryRelation),
+    Coincidence,
+    AxisPoints,
+    AtIntersection,
+    Symmetric,
+    Midpoint,
+    Other,
+}
+
+impl MarkerRelationGroup {
+    fn of(kind: crate::records::SketchRelationKind) -> Self {
+        use crate::records::SketchRelationKind as Kind;
+        match kind {
+            Kind::Horizontal => Self::SingleEntity(SingleEntityRelation::Horizontal),
+            Kind::Vertical => Self::SingleEntity(SingleEntityRelation::Vertical),
+            Kind::Fixed => Self::SingleEntity(SingleEntityRelation::Fixed),
+            Kind::ArcAngle90 => Self::ArcQuarter(QuarterTurn::Quarter),
+            Kind::ArcAngle180 => Self::ArcQuarter(QuarterTurn::Half),
+            Kind::ArcAngle270 => Self::ArcQuarter(QuarterTurn::ThreeQuarters),
+            Kind::EllipseAngle90 => Self::EllipseQuarter(QuarterTurn::Quarter),
+            Kind::EllipseAngle180 => Self::EllipseQuarter(QuarterTurn::Half),
+            Kind::EllipseAngle270 => Self::EllipseQuarter(QuarterTurn::ThreeQuarters),
+            Kind::Parallel => Self::Binary(BinaryRelation::Parallel),
+            Kind::Perpendicular => Self::Binary(BinaryRelation::Perpendicular),
+            Kind::Tangent => Self::Binary(BinaryRelation::Tangent),
+            Kind::Equal => Self::Binary(BinaryRelation::Equal),
+            Kind::Collinear => Self::Binary(BinaryRelation::Collinear),
+            Kind::Concentric => Self::Binary(BinaryRelation::Concentric),
+            Kind::Coradial => Self::Binary(BinaryRelation::Coradial),
+            Kind::Coincident | Kind::MergePoints => Self::Coincidence,
+            Kind::HorizontalPoints | Kind::VerticalPoints => Self::AxisPoints,
+            Kind::AtIntersection => Self::AtIntersection,
+            Kind::Symmetric => Self::Symmetric,
+            Kind::Midpoint => Self::Midpoint,
+            Kind::Distance | Kind::Angle | Kind::Radius | Kind::Diameter => Self::Dimensional,
+            Kind::OffsetEdge
+            | Kind::ArcAngleTop
+            | Kind::ArcAngleBottom
+            | Kind::ArcAngleLeft
+            | Kind::ArcAngleRight
+            | Kind::SnapGrid
+            | Kind::SnapLength
+            | Kind::SnapAngle
+            | Kind::UseEdge
+            | Kind::EllipseAngleTop
+            | Kind::EllipseAngleBottom
+            | Kind::EllipseAngleLeft
+            | Kind::EllipseAngleRight
+            | Kind::AtPierce
+            | Kind::DoubleDistance
+            | Kind::AngleThreePoint
+            | Kind::ArcLength
+            | Kind::Normal
+            | Kind::NormalPoints
+            | Kind::SketchOffset
+            | Kind::AlongX
+            | Kind::AlongY
+            | Kind::AlongZ
+            | Kind::AlongXPoints
+            | Kind::AlongYPoints
+            | Kind::AlongZPoints
+            | Kind::ParallelYz
+            | Kind::ParallelZx
+            | Kind::Intersection
+            | Kind::Patterned
+            | Kind::IsoByPoint
+            | Kind::SameIsoparametric
+            | Kind::FitSpline
+            | Kind::EqualCurvature
+            | Kind::EqualTangent
+            | Kind::TangentFace
+            | Kind::AlongX3d
+            | Kind::AlongY3d
+            | Kind::AlongXPoints3d
+            | Kind::AlongYPoints3d
+            | Kind::Traction
+            | Kind::BeltTraction
+            | Kind::BlockFixedLock
+            | Kind::BlockNormalLock
+            | Kind::BlockRotateLock
+            | Kind::FakeSlotConstraint
+            | Kind::FixedSlot
+            | Kind::SameSlots
+            | Kind::LinearPatternCount
+            | Kind::CircularPatternCount
+            | Kind::RadialOffset
+            | Kind::PlanarOffset
+            | Kind::EqualCurvature3dAligned
+            | Kind::FlangeFaceDistance
+            | Kind::ConicRho
+            | Kind::C3Touch
+            | Kind::DoubleAngle
+            | Kind::SameCurveLength => Self::Other,
+        }
+    }
+}
+
 #[cfg(test)]
 pub(super) fn typed_marker_relation_definition(
     marker: &SketchInputEntity,
@@ -96,13 +278,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinitionInput> {
-    use crate::records::SketchRelationKind::{
-        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
-        HorizontalPoints, MergePoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
-        Vertical, VerticalPoints,
-    };
-    let kind = match marker.kind {
+    use crate::records::SketchRelationKind::HorizontalPoints;
+    let kind = match marker.kind() {
         SketchInputKind::Relation(kind) => Some(kind),
         SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_) => None,
         _ => return None,
@@ -123,7 +300,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         entities.extend(
             owners
                 .iter()
-                .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker)),
+                .flat_map(|owner| marker_entities(owner.id(), markers_by_id, loci_by_marker)),
         );
         entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         entities.dedup();
@@ -141,18 +318,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             native_kind: nonempty_literal!("sldprt:marker-constraint-owner"),
             field: None,
             object_index: owner.object_index().or(owner.local_id()),
-            native_ref: Some(owner.id.clone()),
+            native_ref: Some(owner.id().to_string()),
         }));
         SketchConstraintDefinitionInput::Native {
-            native_kind: match marker.kind {
-                SketchInputKind::Relation(kind) => {
-                    nonempty_literal!("sldprt:marker-relation:{}", kind.native_code())
-                }
-                kind @ (SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)) => {
-                    nonempty_literal!("sldprt:marker-relation:{}", kind.native_code())
-                }
-                _ => unreachable!("non-relation markers were rejected"),
-            },
+            native_kind: nonempty_literal!(
+                "sldprt:marker-relation:{}",
+                marker.kind().native_code()
+            ),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -164,89 +336,93 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     let Some(kind) = kind else {
         return Some(native());
     };
-    if kind == Fixed {
-        if let Some(entity) = unique_entity_from_link_intersection(
-            marker,
-            sketch,
-            sketch_entities,
-            markers_by_id,
-            loci_by_marker,
-        ) {
-            return Some(SketchConstraintDefinitionInput::Fixed { entity });
+    let group = MarkerRelationGroup::of(kind);
+    if let MarkerRelationGroup::SingleEntity(single) = group {
+        if single == SingleEntityRelation::Fixed {
+            if let Some(entity) = unique_entity_from_link_intersection(
+                marker,
+                sketch,
+                sketch_entities,
+                markers_by_id,
+                loci_by_marker,
+            ) {
+                return Some(SketchConstraintDefinitionInput::Fixed { entity });
+            }
         }
-    }
-    if matches!(kind, Horizontal | Vertical) {
-        // Point targets disambiguate these operands when a local/object index
-        // happens to collide with the relation handle's index.
-        // Forward point links are explicit operands. Reverse incidences are
-        // ownership metadata and must not suppress those operands.
-        let point_links = marker
-            .links()
-            .iter()
-            .filter(|link| {
-                link.entity_ref != marker.id
-                    && !matches!(
-                        markers_by_id
-                            .get(link.entity_ref.as_str())
-                            .map(|linked| linked.kind),
-                        Some(SketchInputKind::Relation(_))
-                    )
-            })
-            .collect::<Vec<_>>();
-        if let [first_link, second_link] = point_links.as_slice() {
-            let point_locus = |link: &SketchInputLink| {
-                let linked = markers_by_id.get(link.entity_ref.as_str())?;
-                if !matches!(
-                    linked.kind,
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                ) {
-                    return None;
-                }
-                let mut candidates = sketch_entities.iter().filter(|entity| {
-                    entity.sketch == *sketch
-                        && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
-                        && matches!(
-                            *entity.geometry.definition(),
-                            SketchGeometryDefinition::Point { .. }
+        if let Some((same_coordinate, _)) = single.axes() {
+            // Point targets disambiguate these operands when a local/object index
+            // happens to collide with the relation handle's index.
+            // Forward point links are explicit operands. Reverse incidences are
+            // ownership metadata and must not suppress those operands.
+            let point_links = marker
+                .links()
+                .iter()
+                .filter(|link| {
+                    link.entity_ref != marker.id()
+                        && !matches!(
+                            markers_by_id
+                                .get(link.entity_ref.as_str())
+                                .map(|linked| linked.kind()),
+                            Some(SketchInputKind::Relation(_))
                         )
-                });
-                match (candidates.next(), candidates.next()) {
-                    (Some(entity), None) => Some(SketchLocus::Entity(entity.id().clone())),
-                    (None, None) => {
-                        let locus =
-                            marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker)?;
-                        sketch_entities
-                            .iter()
-                            .any(|entity| {
-                                entity.sketch == *sketch && entity.id() == &locus_entity(&locus)
-                            })
-                            .then_some(locus)
+                })
+                .collect::<Vec<_>>();
+            if let [first_link, second_link] = point_links.as_slice() {
+                let point_locus = |link: &SketchInputLink| {
+                    let linked = markers_by_id.get(link.entity_ref.as_str())?;
+                    if !matches!(
+                        linked.kind(),
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    ) {
+                        return None;
                     }
-                    _ => None,
-                }
-            };
-            if let (Some(first), Some(second)) = (point_locus(first_link), point_locus(second_link))
-            {
-                if first != second {
-                    return Some(SketchConstraintDefinitionInput::SameCoordinate {
-                        relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                            first,
-                            second,
-                            if kind == Horizontal {
-                                SketchCoordinateAxis::V
-                            } else {
-                                SketchCoordinateAxis::U
-                            },
-                        )
-                        .ok()?,
+                    let mut candidates = sketch_entities.iter().filter(|entity| {
+                        entity.sketch == *sketch
+                            && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
+                            && matches!(
+                                *entity.geometry.definition(),
+                                SketchGeometryDefinition::Point { .. }
+                            )
                     });
+                    match (candidates.next(), candidates.next()) {
+                        (Some(entity), None) => Some(SketchLocus::Entity(entity.id().clone())),
+                        (None, None) => {
+                            let locus = marker_point_locus(
+                                &link.entity_ref,
+                                markers_by_id,
+                                loci_by_marker,
+                            )?;
+                            sketch_entities
+                                .iter()
+                                .any(|entity| {
+                                    entity.sketch == *sketch && entity.id() == &locus_entity(&locus)
+                                })
+                                .then_some(locus)
+                        }
+                        _ => None,
+                    }
+                };
+                if let (Some(first), Some(second)) =
+                    (point_locus(first_link), point_locus(second_link))
+                {
+                    if first != second {
+                        return Some(SketchConstraintDefinitionInput::SameCoordinate {
+                            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                first,
+                                second,
+                                same_coordinate,
+                            )
+                            .ok()?,
+                        });
+                    }
                 }
             }
         }
     }
-    Some(match kind {
-        Horizontal | Vertical | Fixed => {
-            if matches!(kind, Horizontal | Vertical) {
+    Some(match group {
+        MarkerRelationGroup::SingleEntity(single) => {
+            let axes = single.axes();
+            if let Some((same_coordinate, _)) = axes {
                 if let Some([first, second]) = axis_relation_point_loci(
                     marker,
                     sketch,
@@ -258,17 +434,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                             first,
                             second,
-                            if kind == Horizontal {
-                                SketchCoordinateAxis::V
-                            } else {
-                                SketchCoordinateAxis::U
-                            },
+                            same_coordinate,
                         )
                         .ok()?,
                     });
                 }
             }
-            if matches!(kind, Horizontal | Vertical) {
+            if let Some((same_coordinate, _)) = axes {
                 let point_links = marker
                     .links()
                     .iter()
@@ -280,7 +452,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         matches!(
                             markers_by_id
                                 .get(link.entity_ref.as_str())
-                                .map(|linked| linked.kind),
+                                .map(|linked| linked.kind()),
                             Some(SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
                         )
                     }) {
@@ -292,11 +464,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                                     relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                         first.clone(),
                                         second.clone(),
-                                        if kind == Horizontal {
-                                            SketchCoordinateAxis::V
-                                        } else {
-                                            SketchCoordinateAxis::U
-                                        },
+                                        same_coordinate,
                                     )
                                     .ok()?,
                                 });
@@ -305,8 +473,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     }
                 }
             }
-            let inferred_entities =
-                marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+            let inferred_entities = marker_entities(marker.id(), markers_by_id, loci_by_marker);
             let mut exact_entities = marker
                 .links()
                 .iter()
@@ -315,9 +482,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
                         return Vec::new();
                     };
-                    if kind == Fixed
+                    if single == SingleEntityRelation::Fixed
                         && matches!(
-                            linked.kind,
+                            linked.kind(),
                             SketchInputKind::Point
                                 | SketchInputKind::ConstrainedPoint
                                 | SketchInputKind::LineOrCircle
@@ -327,7 +494,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         return marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
                     }
                     if !matches!(
-                        linked.kind,
+                        linked.kind(),
                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                     ) {
                         return Vec::new();
@@ -353,11 +520,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             };
             let relation_owners = relation_owner_markers(marker, markers_by_id);
             let point_owner_pair = matches!(relation_owners.as_slice(), [first, second]
-                if matches!(first.kind, SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
-                    && matches!(second.kind, SketchInputKind::Point | SketchInputKind::ConstrainedPoint));
+                if matches!(first.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+                    && matches!(second.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint));
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
-            let entities = if point_owner_pair && matches!(kind, Horizontal | Vertical) {
+            let entities = if point_owner_pair && axes.is_some() {
                 Vec::new()
             } else {
                 match owner_entities.as_slice() {
@@ -373,25 +540,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 }
             };
             if let [entity] = entities.as_slice() {
-                if matches!(kind, Horizontal | Vertical)
+                if axes.is_some()
                     && sketch_entities.is_empty()
                     && entity.as_str().contains("sketch-entity#relation-point:")
                 {
                     return Some(native());
                 }
-                match kind {
-                    Horizontal => SketchConstraintDefinitionInput::Horizontal {
-                        entity: entity.clone(),
-                    },
-                    Vertical => SketchConstraintDefinitionInput::Vertical {
-                        entity: entity.clone(),
-                    },
-                    Fixed => SketchConstraintDefinitionInput::Fixed {
-                        entity: entity.clone(),
-                    },
-                    _ => unreachable!("relation kind was filtered above"),
-                }
-            } else if matches!(kind, Horizontal | Vertical) {
+                single.definition(entity)
+            } else if let Some((same_coordinate, profile_axis)) = axes {
                 let loci =
                     relation_operand_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
                         unique_axis_aligned_linked_loci(
@@ -400,11 +556,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             sketch_entities,
                             markers_by_id,
                             loci_by_marker,
-                            if kind == Horizontal {
-                                ProfileAxis::U
-                            } else {
-                                ProfileAxis::V
-                            },
+                            profile_axis,
                         )
                     });
                 let Some(loci) = loci else {
@@ -416,11 +568,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                     first.clone(),
                     second.clone(),
-                    if kind == Horizontal {
-                        SketchCoordinateAxis::V
-                    } else {
-                        SketchCoordinateAxis::U
-                    },
+                    same_coordinate,
                 )
                 .map_or_else(
                     |_| native(),
@@ -430,17 +578,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Some(native());
             }
         }
-        ArcAngle90 | ArcAngle180 | ArcAngle270 => {
+        MarkerRelationGroup::ArcQuarter(quarter) => {
             let Some(entity) = linked_single_arc_entity(marker, markers_by_id, loci_by_marker)
             else {
                 return Some(native());
             };
-            let angle = match kind {
-                ArcAngle90 => std::f64::consts::FRAC_PI_2,
-                ArcAngle180 => std::f64::consts::PI,
-                ArcAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
-                _ => unreachable!("relation kind was filtered above"),
-            };
+            let angle = quarter.angle();
             if !sketch_entities.is_empty() {
                 let Some(SketchGeometryDefinition::Arc {
                     start_angle,
@@ -470,7 +613,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 angle: cadmpeg_ir::scalar::Angle::new(angle)?,
             }
         }
-        EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => {
+        MarkerRelationGroup::EllipseQuarter(quarter) => {
             let Some(entity) = linked_single_ellipse_entity(
                 marker,
                 markers_by_id,
@@ -479,12 +622,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             ) else {
                 return Some(native());
             };
-            let angle = match kind {
-                EllipseAngle90 => std::f64::consts::FRAC_PI_2,
-                EllipseAngle180 => std::f64::consts::PI,
-                EllipseAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
-                _ => unreachable!("relation kind was filtered above"),
-            };
+            let angle = quarter.angle();
             let Some(SketchGeometryDefinition::Ellipse {
                 bounds: Some([start, end]),
                 ..
@@ -510,7 +648,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 angle: cadmpeg_ir::scalar::Angle::new(angle)?,
             }
         }
-        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
+        MarkerRelationGroup::Binary(binary) => {
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
             let forward_entities = marker
@@ -555,11 +693,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             else {
                                 return false;
                             };
-                            binary_relation_matches_evaluated_geometry(
-                                kind,
-                                first_entity,
-                                second_entity,
-                            )
+                            binary.matches_evaluated_geometry(first_entity, second_entity)
                         })
                         .map(|(first, second)| (first.clone(), second.clone()))
                         .collect::<Vec<_>>();
@@ -607,39 +741,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 };
             }
-            match kind {
-                Parallel => SketchConstraintDefinitionInput::Parallel {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Perpendicular => SketchConstraintDefinitionInput::Perpendicular {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Tangent => SketchConstraintDefinitionInput::Tangent {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Equal => SketchConstraintDefinitionInput::Equal {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Collinear => SketchConstraintDefinitionInput::Collinear {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Concentric => SketchConstraintDefinitionInput::Concentric {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                Coradial => SketchConstraintDefinitionInput::Coradial {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                _ => unreachable!("relation kind was filtered above"),
-            }
+            binary.definition(first, second)
         }
-        Coincident | MergePoints => {
+        MarkerRelationGroup::Coincidence => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
@@ -655,7 +759,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::CoincidentLoci { loci }
         }
-        HorizontalPoints | VerticalPoints => {
+        MarkerRelationGroup::AxisPoints => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
@@ -676,7 +780,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 |relation| SketchConstraintDefinitionInput::SameCoordinate { relation },
             )
         }
-        AtIntersection => {
+        MarkerRelationGroup::AtIntersection => {
             if sketch_entities.is_empty() {
                 return Some(native());
             }
@@ -728,7 +832,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 second: second.clone(),
             }
         }
-        Symmetric => {
+        MarkerRelationGroup::Symmetric => {
             if sketch_entities.is_empty() {
                 return Some(native());
             }
@@ -781,7 +885,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 axis,
             }
         }
-        Midpoint => {
+        MarkerRelationGroup::Midpoint => {
             let Some((point, entity)) =
                 linked_midpoint_operands(marker, markers_by_id, loci_by_marker)
             else {
@@ -806,11 +910,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::Midpoint { point, entity }
         }
-        crate::records::SketchRelationKind::Distance
-        | crate::records::SketchRelationKind::Angle
-        | crate::records::SketchRelationKind::Radius
-        | crate::records::SketchRelationKind::Diameter => return None,
-        _ => native(),
+        MarkerRelationGroup::Dimensional => return None,
+        MarkerRelationGroup::Other => native(),
     })
 }
 
@@ -1007,36 +1108,46 @@ pub(super) fn binary_relation_matches_evaluated_geometry(
     first: &SketchEntity,
     second: &SketchEntity,
 ) -> bool {
-    use crate::records::SketchRelationKind::{
-        Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
-    };
-    match kind {
-        Parallel => line_relation_value(first, second, |cross, _dot, lengths| {
-            cross.abs() <= SKETCH_POINT_TOLERANCE * lengths
-        }),
-        Perpendicular => line_relation_value(first, second, |_cross, dot, lengths| {
-            dot.abs() <= SKETCH_POINT_TOLERANCE * lengths
-        }),
-        Collinear => line_line_distance(first, second)
-            .is_some_and(|distance| same_dimension_length(distance, 0.0)),
-        Concentric => centered_geometry(first)
-            .zip(centered_geometry(second))
-            .is_some_and(|(first, second)| {
-                same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v)
-            }),
-        Coradial => centered_geometry(first)
-            .zip(circular_radius(first))
-            .zip(centered_geometry(second).zip(circular_radius(second)))
-            .is_some_and(
-                |((first_center, first_radius), (second_center, second_radius))| {
-                    same_dimension_length(first_center.u, second_center.u)
-                        && same_dimension_length(first_center.v, second_center.v)
-                        && same_dimension_length(first_radius, second_radius)
-                },
-            ),
-        Equal => equal_geometry_size(first, second),
-        Tangent => tangent_geometry(first, second),
+    match MarkerRelationGroup::of(kind) {
+        MarkerRelationGroup::Binary(binary) => binary.matches_evaluated_geometry(first, second),
         _ => false,
+    }
+}
+
+impl BinaryRelation {
+    /// Whether the evaluated geometry of the two entities satisfies this relation.
+    fn matches_evaluated_geometry(self, first: &SketchEntity, second: &SketchEntity) -> bool {
+        use BinaryRelation::{
+            Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
+        };
+        match self {
+            Parallel => line_relation_value(first, second, |cross, _dot, lengths| {
+                cross.abs() <= SKETCH_POINT_TOLERANCE * lengths
+            }),
+            Perpendicular => line_relation_value(first, second, |_cross, dot, lengths| {
+                dot.abs() <= SKETCH_POINT_TOLERANCE * lengths
+            }),
+            Collinear => line_line_distance(first, second)
+                .is_some_and(|distance| same_dimension_length(distance, 0.0)),
+            Concentric => centered_geometry(first)
+                .zip(centered_geometry(second))
+                .is_some_and(|(first, second)| {
+                    same_dimension_length(first.u, second.u)
+                        && same_dimension_length(first.v, second.v)
+                }),
+            Coradial => centered_geometry(first)
+                .zip(circular_radius(first))
+                .zip(centered_geometry(second).zip(circular_radius(second)))
+                .is_some_and(
+                    |((first_center, first_radius), (second_center, second_radius))| {
+                        same_dimension_length(first_center.u, second_center.u)
+                            && same_dimension_length(first_center.v, second_center.v)
+                            && same_dimension_length(first_radius, second_radius)
+                    },
+                ),
+            Equal => equal_geometry_size(first, second),
+            Tangent => tangent_geometry(first, second),
+        }
     }
 }
 
@@ -1259,7 +1370,7 @@ fn axis_relation_point_loci(
             && matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
-                    .map(|marker| marker.kind),
+                    .map(|marker| marker.kind()),
                 Some(SketchInputKind::Relation(_))
             )
     }) {
@@ -1315,7 +1426,7 @@ fn collect_axis_relation_point_loci(
     loci: &mut Vec<SketchLocus>,
     include_reverse_owners: bool,
 ) {
-    if !visited.insert(relation.id.clone()) {
+    if !visited.insert(relation.id().to_string()) {
         return;
     }
     for link in relation
@@ -1326,10 +1437,10 @@ fn collect_axis_relation_point_loci(
         let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
             continue;
         };
-        match linked.kind {
+        match linked.kind() {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                 append_axis_relation_point_locus(
-                    &linked.id,
+                    linked.id(),
                     sketch,
                     sketch_entities,
                     markers_by_id,
@@ -1353,11 +1464,11 @@ fn collect_axis_relation_point_loci(
     if include_reverse_owners {
         for owner in relation_owner_markers(relation, markers_by_id) {
             if matches!(
-                owner.kind,
+                owner.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) {
                 append_axis_relation_point_locus(
-                    &owner.id,
+                    owner.id(),
                     sketch,
                     sketch_entities,
                     markers_by_id,
@@ -1412,7 +1523,7 @@ pub(super) fn relation_owner_markers<'a>(
         .filter(|marker| marker.feature_ref == relation.feature_ref)
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point
                     | SketchInputKind::LineOrCircle
                     | SketchInputKind::Arc
@@ -1423,7 +1534,7 @@ pub(super) fn relation_owner_markers<'a>(
             marker
                 .links()
                 .iter()
-                .any(|link| link.entity_ref == relation.id)
+                .any(|link| link.entity_ref == relation.id())
         })
         .collect::<Vec<_>>();
     owners.sort_unstable_by_key(|marker| marker.offset());
@@ -1437,17 +1548,17 @@ pub(crate) fn marker_owns_constraint(
     let mut axis_point_links = marker
         .links()
         .iter()
-        .filter(|link| link.entity_ref != marker.id)
+        .filter(|link| link.entity_ref != marker.id())
         .filter(|link| {
             !matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
-                    .map(|linked| linked.kind),
+                    .map(|linked| linked.kind()),
                 Some(SketchInputKind::Relation(_))
             )
         });
     let axis_point_pair = matches!(
-        marker.kind,
+        marker.kind(),
         SketchInputKind::Relation(
             crate::records::SketchRelationKind::Horizontal
                 | crate::records::SketchRelationKind::Vertical
@@ -1458,11 +1569,11 @@ pub(crate) fn marker_owns_constraint(
             matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
-                    .map(|linked| linked.kind),
+                    .map(|linked| linked.kind()),
                 Some(SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
             )
         });
-    marker.kind.owns_constraint()
+    marker.kind().owns_constraint()
         && (axis_point_pair
             || marker
                 .links()
@@ -1475,7 +1586,7 @@ pub(super) fn relation_link_identifies_owner(
     relation: &SketchInputEntity,
     link: &crate::records::SketchInputLink,
 ) -> bool {
-    link.entity_ref == relation.id || relation.local_id() == Some(u32::from(link.local_id))
+    link.entity_ref == relation.id() || relation.local_id() == Some(u32::from(link.local_id))
 }
 
 pub(super) fn relation_link_is_geometric_operand(
@@ -1489,7 +1600,7 @@ pub(super) fn relation_link_is_geometric_operand(
         && !matches!(
             markers_by_id
                 .get(link.entity_ref.as_str())
-                .map(|marker| marker.kind),
+                .map(|marker| marker.kind()),
             Some(SketchInputKind::Relation(_))
         )
 }
@@ -1570,7 +1681,7 @@ pub(super) fn marker_relation_is_inactive(
         Tangent, Vertical,
     };
 
-    let SketchInputKind::Relation(kind) = marker.kind else {
+    let SketchInputKind::Relation(kind) = marker.kind() else {
         return false;
     };
     if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities) {
@@ -1677,11 +1788,11 @@ fn relation_owner_curve_entities(
         .into_iter()
         .filter(|owner| {
             matches!(
-                owner.kind,
+                owner.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
         })
-        .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker))
+        .flat_map(|owner| marker_entities(owner.id(), markers_by_id, loci_by_marker))
         .collect::<Vec<_>>();
     entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     entities.dedup();
@@ -1700,19 +1811,19 @@ pub(super) fn line_endpoint_markers<'a>(
             candidate
                 .links()
                 .iter()
-                .any(|link| link.entity_ref == line.id)
+                .any(|link| link.entity_ref == line.id())
         }))
         .filter(|endpoint| {
             endpoint.feature_ref == line.feature_ref
                 && endpoint.coordinates_m.is_some()
                 && matches!(
-                    endpoint.kind,
+                    endpoint.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
         .collect::<Vec<_>>();
     endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
-    endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
+    endpoints.dedup_by_key(|endpoint| endpoint.id());
     endpoints
 }
 
@@ -1748,7 +1859,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
                     owned.get(index).copied().filter(|marker| {
                         marker.coordinates_m.is_some()
                             && matches!(
-                                marker.kind,
+                                marker.kind(),
                                 SketchInputKind::Point
                                     | SketchInputKind::ConstrainedPoint
                                     | SketchInputKind::LineOrCircle
@@ -1828,7 +1939,7 @@ fn coordinate_profile_line_endpoints<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind != SketchInputKind::LineOrCircle
+    if curve.kind() != SketchInputKind::LineOrCircle
         || curve.coordinates_m.is_none()
         || !matches!(
             payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()),
@@ -1845,13 +1956,13 @@ fn coordinate_profile_line_endpoints<'a>(
     for link in curve
         .links()
         .iter()
-        .filter(|link| link.entity_ref != curve.id)
+        .filter(|link| link.entity_ref != curve.id())
     {
         let linked = markers_by_id.get(link.entity_ref.as_str()).copied()?;
         if linked.feature_ref != curve.feature_ref {
             return None;
         }
-        match linked.kind {
+        match linked.kind() {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                 if linked.coordinates_m.is_none() || point.replace(linked).is_some() {
                     return None;
@@ -1873,7 +1984,7 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    if curve.kind != SketchInputKind::LineOrCircle {
+    if curve.kind() != SketchInputKind::LineOrCircle {
         return None;
     }
     let offset = usize::try_from(curve.offset()).ok()?;
@@ -1883,7 +1994,7 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && if id == 0 {
@@ -1896,7 +2007,8 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
         candidates.next().is_none().then_some(marker)
     };
     let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
-    (endpoints[0].id != endpoints[1].id && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+    (endpoints[0].id() != endpoints[1].id()
+        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
         .then_some(endpoints)
 }
 
@@ -1913,7 +2025,7 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
                 && marker.object_index() == Some(id)
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         });
@@ -1921,7 +2033,8 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
         candidates.next().is_none().then_some(marker)
     };
     let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
-    (endpoints[0].id != endpoints[1].id && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+    (endpoints[0].id() != endpoints[1].id()
+        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
         .then_some(endpoints)
 }
 
@@ -1931,7 +2044,7 @@ pub(super) fn extended_wide_selected_axis_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind != SketchInputKind::LineOrCircle
+    if curve.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -1963,7 +2076,7 @@ pub(super) fn extended_wide_selected_axis_endpoints<'a>(
                 && marker.object_index() == Some(index)
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         });
@@ -1972,7 +2085,7 @@ pub(super) fn extended_wide_selected_axis_endpoints<'a>(
     };
     let object_endpoints = encoded.map(|index| resolve_object(index + 1));
     if let [Some(first), Some(second)] = object_endpoints {
-        if first.id != second.id && first.coordinates_m != second.coordinates_m {
+        if first.id() != second.id() && first.coordinates_m != second.coordinates_m {
             return Some([first, second]);
         }
     }
@@ -1987,14 +2100,15 @@ pub(super) fn extended_wide_selected_axis_endpoints<'a>(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
     let endpoints = [*points.get(first_index)?, *points.get(second_index)?];
-    (endpoints[0].id != endpoints[1].id && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+    (endpoints[0].id() != endpoints[1].id()
+        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
         .then_some(endpoints)
 }
 
@@ -2004,7 +2118,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind != SketchInputKind::Arc
+    if curve.kind() != SketchInputKind::Arc
         || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
         || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
@@ -2028,7 +2142,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
                 && marker.object_index() == Some(id)
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         });
@@ -2069,7 +2183,7 @@ pub(super) fn one_based_point_roster_line_endpoint_markers<'a>(
         return None;
     }
     if markers.iter().any(|marker| {
-        marker.feature_ref == curve.feature_ref && marker.kind == SketchInputKind::Arc
+        marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
     }) {
         return None;
     }
@@ -2080,14 +2194,14 @@ pub(super) fn one_based_point_roster_line_endpoint_markers<'a>(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
     let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
-    (endpoints[0].id != endpoints[1].id).then_some(endpoints)
+    (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
 }
 
 pub(super) fn legacy_point_roster_line_endpoint_markers<'a>(
@@ -2096,7 +2210,7 @@ pub(super) fn legacy_point_roster_line_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind != SketchInputKind::LineOrCircle
+    if curve.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -2133,14 +2247,15 @@ pub(super) fn legacy_point_roster_line_endpoint_markers<'a>(
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
     let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
-    (endpoints[0].id != endpoints[1].id && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+    (endpoints[0].id() != endpoints[1].id()
+        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
         .then_some(endpoints)
 }
 
@@ -2160,7 +2275,7 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && marker.coordinates_m.is_some()
@@ -2174,7 +2289,7 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
     let [Some(first), Some(second)] = resolved else {
         return None;
     };
-    (first.id != second.id).then_some([first, second])
+    (first.id() != second.id()).then_some([first, second])
 }
 
 fn inline_arc_endpoint_markers<'a>(
@@ -2188,7 +2303,7 @@ fn inline_arc_endpoint_markers<'a>(
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == arc.feature_ref
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && marker.coordinates_m.is_some_and(|point| {
@@ -2200,7 +2315,7 @@ fn inline_arc_endpoint_markers<'a>(
         candidates.next().is_none().then_some(candidate)
     };
     let endpoints = [endpoint(start)?, endpoint(end)?];
-    (endpoints[0].id != endpoints[1].id).then_some(endpoints)
+    (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
 }
 
 fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
@@ -2208,7 +2323,7 @@ fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    if curve.kind != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
+    if curve.kind() != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
         return None;
     }
     let offset = usize::try_from(curve.offset()).ok()?;
@@ -2217,7 +2332,7 @@ fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && marker.coordinates_m.is_some_and(|point| {
@@ -2229,7 +2344,7 @@ fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
         candidates.next().is_none().then_some(candidate)
     };
     let endpoints = [resolve(start)?, resolve(end)?];
-    (endpoints[0].id != endpoints[1].id).then_some(endpoints)
+    (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
 }
 
 pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bool {
@@ -2300,11 +2415,11 @@ pub(super) fn current_coordinate_linked_line_endpoints<'a>(
     // its own two endpoints.
     let mut endpoints = markers.iter().copied().filter(|marker| {
         marker.feature_ref == line.feature_ref
-            && marker.id != line.id
+            && marker.id() != line.id()
             && marker.local_id() == Some(local_id)
             && marker.coordinates_m.is_some()
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point
                     | SketchInputKind::ConstrainedPoint
                     | SketchInputKind::LineOrCircle
@@ -2392,7 +2507,7 @@ pub(super) fn consecutive_legacy_profile_line_endpoints<'a>(
     let Some(offset) = usize::try_from(line.offset()).ok() else {
         return Vec::new();
     };
-    if line.kind != SketchInputKind::LineOrCircle
+    if line.kind() != SketchInputKind::LineOrCircle
         || line.coordinates_m.is_none()
         || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(1)
@@ -2411,7 +2526,7 @@ pub(super) fn consecutive_legacy_profile_line_endpoints<'a>(
     };
     if next.coordinates_m.is_none()
         || !matches!(
-            next.kind,
+            next.kind(),
             SketchInputKind::Point
                 | SketchInputKind::ConstrainedPoint
                 | SketchInputKind::LineOrCircle
@@ -2455,7 +2570,7 @@ pub(super) fn legacy_terminal_indexed_profile_line(
         };
         sibling.feature_ref == curve.feature_ref
             && sibling.offset() < curve.offset()
-            && sibling.kind == SketchInputKind::LineOrCircle
+            && sibling.kind() == SketchInputKind::LineOrCircle
             && marker_native_code(payload, sibling_offset) == Some(0)
             && legacy_extended_profile_curve_kind(payload, sibling_offset)
                 == Some(SketchInputKind::LineOrCircle)

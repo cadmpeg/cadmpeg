@@ -10,6 +10,7 @@ use cadmpeg_ir::sketches::{
 };
 
 use super::super::*;
+use crate::records::FeatureSource;
 
 #[test]
 fn axial_profile_resolves_counterbore_roles() {
@@ -626,7 +627,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         .insert("DissectableChildren".into(), "6,9".into());
     let mut profile = history.features[0].clone();
     profile.id = "native-profile".into();
-    profile.source_id = Some("9".into());
+    profile.source_id = FeatureSource::from_value(9);
     profile.ordinal = 1;
     profile.xml_tag = "Sketch".into();
     profile.kind = "Sketch".into();
@@ -642,7 +643,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     history.features.push(profile);
     let mut position = history.features[0].clone();
     position.id = "native-position".into();
-    position.source_id = Some("6".into());
+    position.source_id = FeatureSource::from_value(6);
     position.ordinal = 2;
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();
@@ -775,11 +776,11 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     let mut history = native_history();
     let mut second_hole = history.features[0].clone();
     second_hole.id = "second-hole".into();
-    second_hole.source_id = Some("8".into());
+    second_hole.source_id = FeatureSource::from_value(8);
     second_hole.ordinal = 1;
     let mut claimed_hole = history.features[0].clone();
     claimed_hole.id = "claimed-hole".into();
-    claimed_hole.source_id = Some("11".into());
+    claimed_hole.source_id = FeatureSource::from_value(11);
     claimed_hole.ordinal = 2;
     claimed_hole
         .properties
@@ -787,7 +788,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     let profile = |id: &str, source: &str, ordinal, diameter: &str, depth: &str| {
         let mut profile = history.features[0].clone();
         profile.id = id.into();
-        profile.source_id = Some(source.into());
+        profile.source_id = Some(FeatureSource::try_from(source).expect("test feature source id"));
         profile.ordinal = ordinal;
         profile.xml_tag = "Sketch".into();
         profile.kind = "Sketch".into();

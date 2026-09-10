@@ -166,55 +166,55 @@ fn locus_relations_require_matching_evaluated_geometry() {
     let mut first_marker = marker("first-marker", None);
     let second_marker = marker("second-marker", None);
     let mut line_marker = marker("line-marker", None);
-    line_marker.kind = SketchInputKind::LineOrCircle;
+    line_marker.reclassify(SketchInputKind::LineOrCircle);
     let mut arc_marker = marker("arc-marker", None);
-    arc_marker.kind = SketchInputKind::Arc;
+    arc_marker.reclassify(SketchInputKind::Arc);
     let symmetric_first_marker = marker("symmetric-first-marker", None);
     let symmetric_second_marker = marker("symmetric-second-marker", None);
     let mut symmetry_axis_marker = marker("symmetry-axis-marker", None);
-    symmetry_axis_marker.kind = SketchInputKind::LineOrCircle;
+    symmetry_axis_marker.reclassify(SketchInputKind::LineOrCircle);
     let mut coincident = marker("coincident", None);
-    coincident.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
+    coincident.reclassify(SketchInputKind::Relation(SketchRelationKind::Coincident));
     coincident.links = crate::records::SketchInputLinks::new(
         0,
         [(&first_marker, 1), (&second_marker, 2)]
             .map(|(marker, local_id)| SketchInputLink {
                 local_id,
-                entity_ref: marker.id.clone(),
+                entity_ref: marker.id().to_string(),
             })
             .to_vec(),
     );
     let mut merge_points = coincident.clone();
-    merge_points.id = "merge-points".into();
-    merge_points.kind = SketchInputKind::Relation(SketchRelationKind::MergePoints);
+    merge_points.set_test_id("merge-points");
+    merge_points.reclassify(SketchInputKind::Relation(SketchRelationKind::MergePoints));
     let mut midpoint = marker("midpoint", None);
-    midpoint.kind = SketchInputKind::Relation(SketchRelationKind::Midpoint);
+    midpoint.reclassify(SketchInputKind::Relation(SketchRelationKind::Midpoint));
     midpoint.links = crate::records::SketchInputLinks::new(
         0,
         [(&first_marker, 1), (&line_marker, 3)]
             .map(|(marker, local_id)| SketchInputLink {
                 local_id,
-                entity_ref: marker.id.clone(),
+                entity_ref: marker.id().to_string(),
             })
             .to_vec(),
     );
     let mut arc_angle = marker("arc-angle", None);
-    arc_angle.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
+    arc_angle.reclassify(SketchInputKind::Relation(SketchRelationKind::ArcAngle90));
     arc_angle.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 4,
-            entity_ref: arc_marker.id.clone(),
+            entity_ref: arc_marker.id().to_string(),
         }],
     );
     let mut symmetric = marker("symmetric", None);
-    symmetric.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
+    symmetric.reclassify(SketchInputKind::Relation(SketchRelationKind::Symmetric));
     symmetric.links = crate::records::SketchInputLinks::new(
         0,
         [(&symmetric_first_marker, 5), (&symmetric_second_marker, 6)]
             .map(|(marker, local_id)| SketchInputLink {
                 local_id,
-                entity_ref: marker.id.clone(),
+                entity_ref: marker.id().to_string(),
             })
             .to_vec(),
     );
@@ -226,18 +226,20 @@ fn locus_relations_require_matching_evaluated_geometry() {
             .cloned()
             .chain(std::iter::once(SketchInputLink {
                 local_id: 7,
-                entity_ref: symmetric.id.clone(),
+                entity_ref: symmetric.id().to_string(),
             }))
             .collect(),
     );
     let mut at_intersection = marker("at-intersection", None);
-    at_intersection.kind = SketchInputKind::Relation(SketchRelationKind::AtIntersection);
+    at_intersection.reclassify(SketchInputKind::Relation(
+        SketchRelationKind::AtIntersection,
+    ));
     at_intersection.links = crate::records::SketchInputLinks::new(
         0,
         [(&line_marker, 9), (&symmetry_axis_marker, 10)]
             .map(|(marker, local_id)| SketchInputLink {
                 local_id,
-                entity_ref: marker.id.clone(),
+                entity_ref: marker.id().to_string(),
             })
             .to_vec(),
     );
@@ -249,55 +251,52 @@ fn locus_relations_require_matching_evaluated_geometry() {
             .cloned()
             .chain(std::iter::once(SketchInputLink {
                 local_id: 8,
-                entity_ref: at_intersection.id.clone(),
+                entity_ref: at_intersection.id().to_string(),
             }))
             .collect(),
     );
     let markers = HashMap::from([
-        (first_marker.id.as_str(), &first_marker),
-        (second_marker.id.as_str(), &second_marker),
-        (line_marker.id.as_str(), &line_marker),
-        (arc_marker.id.as_str(), &arc_marker),
-        (symmetric_first_marker.id.as_str(), &symmetric_first_marker),
-        (
-            symmetric_second_marker.id.as_str(),
-            &symmetric_second_marker,
-        ),
-        (symmetry_axis_marker.id.as_str(), &symmetry_axis_marker),
-        (coincident.id.as_str(), &coincident),
-        (merge_points.id.as_str(), &merge_points),
-        (midpoint.id.as_str(), &midpoint),
-        (arc_angle.id.as_str(), &arc_angle),
-        (symmetric.id.as_str(), &symmetric),
-        (at_intersection.id.as_str(), &at_intersection),
+        (first_marker.id(), &first_marker),
+        (second_marker.id(), &second_marker),
+        (line_marker.id(), &line_marker),
+        (arc_marker.id(), &arc_marker),
+        (symmetric_first_marker.id(), &symmetric_first_marker),
+        (symmetric_second_marker.id(), &symmetric_second_marker),
+        (symmetry_axis_marker.id(), &symmetry_axis_marker),
+        (coincident.id(), &coincident),
+        (merge_points.id(), &merge_points),
+        (midpoint.id(), &midpoint),
+        (arc_angle.id(), &arc_angle),
+        (symmetric.id(), &symmetric),
+        (at_intersection.id(), &at_intersection),
     ]);
     let loci = HashMap::from([
         (
-            first_marker.id.clone(),
+            first_marker.id().to_string(),
             vec![SketchLocus::Entity(first.id().clone())],
         ),
         (
-            second_marker.id.clone(),
+            second_marker.id().to_string(),
             vec![SketchLocus::Entity(second.id().clone())],
         ),
         (
-            line_marker.id.clone(),
+            line_marker.id().to_string(),
             vec![SketchLocus::Entity(line.id().clone())],
         ),
         (
-            arc_marker.id.clone(),
+            arc_marker.id().to_string(),
             vec![SketchLocus::Entity(arc.id().clone())],
         ),
         (
-            symmetric_first_marker.id.clone(),
+            symmetric_first_marker.id().to_string(),
             vec![SketchLocus::Entity(symmetric_first.id().clone())],
         ),
         (
-            symmetric_second_marker.id.clone(),
+            symmetric_second_marker.id().to_string(),
             vec![SketchLocus::Entity(symmetric_second.id().clone())],
         ),
         (
-            symmetry_axis_marker.id.clone(),
+            symmetry_axis_marker.id().to_string(),
             vec![SketchLocus::Entity(symmetry_axis.id().clone())],
         ),
     ]);
@@ -988,7 +987,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     let second = marker("second-marker", None);
     let collision = marker("collision-marker", Some([8.0, 9.0]));
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     relation = relation.with_test_identity(relation.object_index(), Some(7));
     relation = relation.with_test_identity(Some(7), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
@@ -996,25 +995,25 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
         vec![
             SketchInputLink {
                 local_id: 7,
-                entity_ref: collision.id.clone(),
+                entity_ref: collision.id().to_string(),
             },
             SketchInputLink {
                 local_id: 1,
-                entity_ref: first.id.clone(),
+                entity_ref: first.id().to_string(),
             },
             SketchInputLink {
                 local_id: 2,
-                entity_ref: second.id.clone(),
+                entity_ref: second.id().to_string(),
             },
         ],
     );
     let markers = HashMap::from([
-        (first.id.as_str(), &first),
-        (second.id.as_str(), &second),
-        (collision.id.as_str(), &collision),
+        (first.id(), &first),
+        (second.id(), &second),
+        (collision.id(), &collision),
     ]);
     let loci = HashMap::from([(
-        first.id.clone(),
+        first.id().to_string(),
         vec![SketchLocus::Entity(first_entity.id().clone())],
     )]);
     assert_eq!(
@@ -1053,7 +1052,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
 #[test]
 fn fixed_relation_ignores_self_identifying_geometry_link() {
     let mut relation = marker("fixed", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Fixed));
     relation = relation.with_test_identity(relation.object_index(), Some(7));
     relation = relation.with_test_identity(Some(7), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
@@ -1070,17 +1069,17 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
         ],
     );
     let mut collision = marker("collision", Some([3.0, 4.0]));
-    collision.kind = SketchInputKind::Point;
+    collision.reclassify(SketchInputKind::Point);
     let mut point = marker("point", Some([1.0, 2.0]));
-    point.kind = SketchInputKind::Point;
+    point.reclassify(SketchInputKind::Point);
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (collision.id.as_str(), &collision),
-        (point.id.as_str(), &point),
+        (relation.id(), &relation),
+        (collision.id(), &collision),
+        (point.id(), &point),
     ]);
     let point_id = SketchEntityId::mint("synthetic:test:id#point-entity").unwrap();
     let loci = HashMap::from([(
-        point.id.clone(),
+        point.id().to_string(),
         vec![SketchLocus::Entity(point_id.clone())],
     )]);
     let point_entity = SketchEntity::new(
@@ -1091,7 +1090,7 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
         })
         .unwrap(),
     )
-    .with_native_ref(Some(point.id.clone()));
+    .with_native_ref(Some(point.id().to_string()));
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
@@ -1131,7 +1130,7 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
     let first_entity = point_entity(first_id.clone(), Point2::new(0.0, 0.0));
     let second_entity = point_entity(second_id.clone(), Point2::new(2.0, 0.0));
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Distance));
     relation = relation.with_test_identity(relation.object_index(), Some(7));
     relation = relation.with_test_identity(Some(7), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
@@ -1155,22 +1154,25 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
     let first_marker = marker("first-marker", Some([0.0, 0.0]));
     let second_marker = marker("second-marker", Some([2.0, 0.0]));
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (collision.id.as_str(), &collision),
-        (first_marker.id.as_str(), &first_marker),
-        (second_marker.id.as_str(), &second_marker),
+        (relation.id(), &relation),
+        (collision.id(), &collision),
+        (first_marker.id(), &first_marker),
+        (second_marker.id(), &second_marker),
     ]);
     let loci = HashMap::from([
-        (first_marker.id.clone(), vec![SketchLocus::Entity(first_id)]),
         (
-            second_marker.id.clone(),
+            first_marker.id().to_string(),
+            vec![SketchLocus::Entity(first_id)],
+        ),
+        (
+            second_marker.id().to_string(),
             vec![SketchLocus::Entity(second_id)],
         ),
     ]);
 
     assert_eq!(
         single_marker_line_entity(
-            &relation.id,
+            relation.id(),
             &markers,
             &loci,
             &[line, first_entity, second_entity],
@@ -1190,28 +1192,25 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
         }],
     );
     let linked = marker("linked", None);
-    let markers = HashMap::from([
-        (ambiguous.id.as_str(), &ambiguous),
-        (linked.id.as_str(), &linked),
-    ]);
+    let markers = HashMap::from([(ambiguous.id(), &ambiguous), (linked.id(), &linked)]);
     let expected = SketchLocus::Start(SketchEntityId::mint("synthetic:test:id#line-a").unwrap());
     let loci = HashMap::from([
         (
-            ambiguous.id.clone(),
+            ambiguous.id().to_string(),
             vec![
                 expected.clone(),
                 SketchLocus::End(SketchEntityId::mint("synthetic:test:id#line-b").unwrap()),
             ],
         ),
-        (linked.id.clone(), vec![expected.clone()]),
+        (linked.id().to_string(), vec![expected.clone()]),
     ]);
 
     assert_eq!(
-        resolved_marker_locus(&ambiguous.id, &markers, &loci, &mut HashSet::new()),
+        resolved_marker_locus(ambiguous.id(), &markers, &loci, &mut HashSet::new()),
         Some(expected)
     );
     assert_eq!(
-        marker_entities(&ambiguous.id, &markers, &loci),
+        marker_entities(ambiguous.id(), &markers, &loci),
         vec![SketchEntityId::mint("synthetic:test:id#line-a").unwrap()]
     );
 }
@@ -1227,13 +1226,13 @@ fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
         }],
     );
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Distance));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 1,
-                entity_ref: point.id.clone(),
+                entity_ref: point.id().to_string(),
             },
             SketchInputLink {
                 local_id: 3,
@@ -1243,19 +1242,19 @@ fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
     );
     let known = marker("known", None);
     let markers = HashMap::from([
-        (point.id.as_str(), &point),
-        (relation.id.as_str(), &relation),
-        (known.id.as_str(), &known),
+        (point.id(), &point),
+        (relation.id(), &relation),
+        (known.id(), &known),
     ]);
     let loci = HashMap::from([(
-        known.id.clone(),
+        known.id().to_string(),
         vec![SketchLocus::Start(
             SketchEntityId::mint("synthetic:test:id#line").unwrap(),
         )],
     )]);
 
     assert_eq!(
-        resolved_marker_locus(&point.id, &markers, &loci, &mut HashSet::new()),
+        resolved_marker_locus(point.id(), &markers, &loci, &mut HashSet::new()),
         None
     );
 }
