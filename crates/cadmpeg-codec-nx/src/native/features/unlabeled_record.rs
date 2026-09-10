@@ -11,9 +11,9 @@ pub(crate) struct FeatureUnlabeledOperationRecord {
     pub(crate) id: String,
     ordinal: u32,
     header: OperationHeader<u64>,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     payload_byte_len: u64,
-    payload_sha256: String,
+    payload_sha256: crate::native::hex::Sha256Hex,
 }
 
 impl FeatureUnlabeledOperationRecord {
@@ -33,9 +33,9 @@ impl FeatureUnlabeledOperationRecord {
             id,
             ordinal,
             header,
-            sha256: cadmpeg_ir::hash::sha256_hex(record.bytes()),
+            sha256: crate::native::hex::Sha256Hex::digest(record.bytes()),
             payload_byte_len,
-            payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload()),
+            payload_sha256: crate::native::hex::Sha256Hex::digest(record.payload()),
         })
     }
 
@@ -51,9 +51,9 @@ struct UnlabeledRecordWire {
     object_indices: [Option<u32>; 4],
     object_index_source_offsets: [u64; 4],
     byte_len: u64,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     payload_byte_len: u64,
-    payload_sha256: String,
+    payload_sha256: crate::native::hex::Sha256Hex,
     payload_source_offset: u64,
     source_offset: u64,
 }

@@ -79,7 +79,7 @@ pub struct OmRecordArea {
     /// Exact record-area byte length.
     pub byte_len: u64,
     /// SHA-256 of the complete pointed record area.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// Absolute file offset of the first control word.
     pub source_offset: u64,
 }
@@ -202,7 +202,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 control_words: header.control_words,
                 product_version: header.product.value.into_owned(),
                 byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                sha256: crate::native::hex::Sha256Hex::digest(bytes),
                 source_offset: entry_offset + header.offset as u64,
             })
         })
@@ -1091,7 +1091,7 @@ pub struct ObjectRecord {
     /// Exact serialized record length.
     pub byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// Content-backed identity when the scoped exact bytes are unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
@@ -1117,7 +1117,7 @@ struct ObjectRecordWire {
     record_ordinal: u32,
     section_offset: u64,
     byte_len: u64,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stable_identity: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1423,7 +1423,7 @@ pub struct DataBlock {
     /// Exact serialized block length.
     pub byte_len: u64,
     /// SHA-256 of the exact serialized block bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// Content-backed identity when the scoped exact bytes are unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
@@ -2172,7 +2172,7 @@ pub struct ExternalReferenceIndexedRecord {
     /// Exact serialized record length.
     pub byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
-    pub sha256: String,
+    pub sha256: crate::native::hex::Sha256Hex,
     /// Specialized handle-set record when that complete grammar resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle_set_record: Option<String>,
@@ -2446,7 +2446,7 @@ pub fn external_reference_indexed_records(
                 ),
                 record_id: record.record_id,
                 byte_len: record.byte_len as u64,
-                sha256: sha256_hex(bytes),
+                sha256: crate::native::hex::Sha256Hex::digest(bytes),
                 handle_set_record: decoded_by_key
                     .get(&(entry.name.as_str(), record.record_id))
                     .and_then(|record| *record)
@@ -3022,7 +3022,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                     record_ordinal: record_ordinal as u32,
                     section_offset,
                     byte_len: record.bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    sha256: crate::native::hex::Sha256Hex::digest(record.bytes),
                     stable_identity,
                     dependencies,
                     dependents,
@@ -3143,7 +3143,7 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
                 entry_offset,
                 block,
             )| {
-                let sha256 = cadmpeg_ir::hash::sha256_hex(block.bytes);
+                let sha256 = crate::native::hex::Sha256Hex::digest(block.bytes);
                 let stable_identity = stable_data_block_identity(&source_entry, role, block.bytes);
                 DataBlock {
                     id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
@@ -5573,7 +5573,7 @@ mod tests {
             object_records[1].section_offset
         );
         assert_eq!(object_records[1].byte_len, om_records[1].byte_len());
-        assert_eq!(object_records[1].sha256, om_records[1].sha256());
+        assert_eq!(object_records[1].sha256.as_str(), om_records[1].sha256());
         assert_eq!(
             object_records[1].dependencies,
             vec![object_records[0].id.clone()]

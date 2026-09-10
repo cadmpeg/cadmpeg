@@ -13,6 +13,12 @@ impl Sha256Hex {
     pub(crate) fn digest(bytes: &[u8]) -> Self {
         Self(cadmpeg_ir::hash::sha256_hex(bytes))
     }
+
+    /// Borrow the digest text.
+    #[cfg(test)]
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl TryFrom<String> for Sha256Hex {
@@ -23,6 +29,12 @@ impl TryFrom<String> for Sha256Hex {
             return Err("sha256 must contain 64 lowercase hexadecimal digits");
         }
         Ok(Self(value))
+    }
+}
+
+impl std::fmt::Display for Sha256Hex {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
     }
 }
 

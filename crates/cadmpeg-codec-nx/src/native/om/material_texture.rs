@@ -2,7 +2,6 @@
 //! TIFF material assets with checked paths and image-directory bounds.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::hash::sha256_hex;
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
@@ -25,7 +24,7 @@ pub(crate) struct MaterialTextureAsset {
     pub(crate) byte_order: TiffByteOrder,
     first_ifd_offset: u32,
     byte_len: u64,
-    pub(crate) sha256: String,
+    pub(crate) sha256: crate::native::hex::Sha256Hex,
     source_entry: String,
     pub(crate) source_offset: u64,
 }
@@ -36,7 +35,7 @@ impl MaterialTextureAsset {
         byte_order: TiffByteOrder,
         first_ifd_offset: u32,
         byte_len: u64,
-        sha256: String,
+        sha256: crate::native::hex::Sha256Hex,
         source_entry: String,
         source_offset: u64,
     ) -> Result<Self, &'static str> {
@@ -89,7 +88,7 @@ struct TextureWire {
     version: u16,
     first_ifd_offset: u32,
     byte_len: u64,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     source_entry: String,
     source_offset: u64,
 }
@@ -158,7 +157,7 @@ pub(crate) fn material_texture_assets(container: &Container) -> Vec<MaterialText
                 byte_order,
                 first_ifd_offset,
                 size as u64,
-                sha256_hex(payload),
+                crate::native::hex::Sha256Hex::digest(payload),
                 entry.name.clone(),
                 offset,
             )

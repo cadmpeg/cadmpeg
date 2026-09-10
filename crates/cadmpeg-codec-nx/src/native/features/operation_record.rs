@@ -37,8 +37,8 @@ pub(crate) struct FeatureOperationRecord {
     pub(crate) id: String,
     pub(crate) operation_label: String,
     pub(crate) ordinal: u32,
-    pub(crate) sha256: String,
-    pub(crate) payload_sha256: String,
+    pub(crate) sha256: crate::native::hex::Sha256Hex,
+    pub(crate) payload_sha256: crate::native::hex::Sha256Hex,
     pub(crate) stable_identity: Option<String>,
     pub(crate) span: OperationRecordSpan,
 }
@@ -49,9 +49,9 @@ struct OperationRecordWire {
     operation_label: String,
     ordinal: u32,
     byte_len: u64,
-    sha256: String,
+    sha256: crate::native::hex::Sha256Hex,
     payload_byte_len: u64,
-    payload_sha256: String,
+    payload_sha256: crate::native::hex::Sha256Hex,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stable_identity: Option<String>,
     payload_source_offset: u64,

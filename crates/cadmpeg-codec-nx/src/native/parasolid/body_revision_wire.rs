@@ -41,7 +41,7 @@ pub(super) struct RevisionWire {
     byte_len: u64,
     prefix_byte_len: u64,
     state_tail_byte_len: u64,
-    state_tail_sha256: String,
+    state_tail_sha256: crate::native::hex::Sha256Hex,
     inflated_offset: u64,
 }
 
