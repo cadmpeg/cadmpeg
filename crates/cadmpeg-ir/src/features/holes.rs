@@ -74,8 +74,8 @@ impl HoleShape {
             |treatment: PositiveLength| diameter.is_some_and(|bore| treatment.get() > bore.get());
         let valid_kind = |kind: &HoleKind| match kind {
             HoleKind::Unresolved(_)
-            | HoleKind::PartialCounterbore { .. }
-            | HoleKind::PartialCountersink { .. }
+            | HoleKind::PartialCounterbore(..)
+            | HoleKind::PartialCountersink(..)
             | HoleKind::Simple
             | HoleKind::SimpleDrilled { .. } => true,
             HoleKind::Chamfer { diameter, .. }
@@ -144,20 +144,10 @@ impl<'de> Deserialize<'de> for HoleShape {
 pub enum HoleKind {
     /// Entry-treatment family whose dimensions remain unresolved.
     Unresolved(Option<HoleForm>),
-    /// Independently retained counterbore dimensions.
-    PartialCounterbore {
-        /// Counterbore diameter, when resolved.
-        diameter: Option<PositiveLength>,
-        /// Counterbore depth, when resolved.
-        depth: Option<PositiveLength>,
-    },
-    /// Independently retained countersink dimensions.
-    PartialCountersink {
-        /// Countersink diameter, when resolved.
-        diameter: Option<PositiveLength>,
-        /// Countersink included angle, when resolved.
-        angle: Option<InteriorAngle>,
-    },
+    /// Independently retained counterbore diameter and depth.
+    PartialCounterbore(PartialPair<PositiveLength, PositiveLength>),
+    /// Independently retained countersink diameter and included angle.
+    PartialCountersink(PartialPair<PositiveLength, InteriorAngle>),
     /// Plain cylindrical hole with no entry feature.
     Simple,
     /// Hole with a chamfered entry.
@@ -242,13 +232,69 @@ impl HoleConstruction {
     }
 }
 
+/// A pair of dimensions of which at least one is present.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum PartialPair<A, B> {
+    /// Only the first dimension is present.
+    First(A),
+    /// Only the second dimension is present.
+    Second(B),
+    /// Both dimensions are present.
+    Both(A, B),
+}
+
+impl<A, B> PartialPair<A, B> {
+    /// Admit a pair unless both dimensions are absent.
+    pub fn new(first: Option<A>, second: Option<B>) -> Option<Self> {
+        match (first, second) {
+            (Some(first), Some(second)) => Some(Self::Both(first, second)),
+            (Some(first), None) => Some(Self::First(first)),
+            (None, Some(second)) => Some(Self::Second(second)),
+            (None, None) => None,
+        }
+    }
+
+    /// The first dimension, when present.
+    pub const fn first(&self) -> Option<&A> {
+        match self {
+            Self::First(first) | Self::Both(first, _) => Some(first),
+            Self::Second(_) => None,
+        }
+    }
+
+    /// The second dimension, when present.
+    pub const fn second(&self) -> Option<&B> {
+        match self {
+            Self::Second(second) | Self::Both(_, second) => Some(second),
+            Self::First(_) => None,
+        }
+    }
+
+    /// Mutable access to the first dimension, when present.
+    pub const fn first_mut(&mut self) -> Option<&mut A> {
+        match self {
+            Self::First(first) | Self::Both(first, _) => Some(first),
+            Self::Second(_) => None,
+        }
+    }
+
+    /// Mutable access to the second dimension, when present.
+    pub const fn second_mut(&mut self) -> Option<&mut B> {
+        match self {
+            Self::Second(second) | Self::Both(_, second) => Some(second),
+            Self::First(_) => None,
+        }
+    }
+}
+
 impl HoleKind {
     /// Whether the entry treatment still lacks required construction data.
     #[must_use]
     pub const fn is_unresolved(&self) -> bool {
         matches!(
             self,
-            Self::Unresolved(_) | Self::PartialCounterbore { .. } | Self::PartialCountersink { .. }
+            Self::Unresolved(_) | Self::PartialCounterbore(..) | Self::PartialCountersink(..)
         )
     }
 
@@ -257,8 +303,8 @@ impl HoleKind {
     pub const fn unresolved_form(&self) -> Option<HoleForm> {
         match self {
             Self::Unresolved(form) => *form,
-            Self::PartialCounterbore { .. } => Some(HoleForm::Counterbore),
-            Self::PartialCountersink { .. } => Some(HoleForm::Countersink),
+            Self::PartialCounterbore(..) => Some(HoleForm::Counterbore),
+            Self::PartialCountersink(..) => Some(HoleForm::Countersink),
             _ => None,
         }
     }
@@ -325,12 +371,14 @@ impl From<HoleKind> for HoleKindWire {
     fn from(value: HoleKind) -> Self {
         match value {
             HoleKind::Unresolved(form) => Self::Unresolved { form },
-            HoleKind::PartialCounterbore { diameter, depth } => {
-                Self::PartialCounterbore { diameter, depth }
-            }
-            HoleKind::PartialCountersink { diameter, angle } => {
-                Self::PartialCountersink { diameter, angle }
-            }
+            HoleKind::PartialCounterbore(pair) => Self::PartialCounterbore {
+                diameter: pair.first().copied(),
+                depth: pair.second().copied(),
+            },
+            HoleKind::PartialCountersink(pair) => Self::PartialCountersink {
+                diameter: pair.first().copied(),
+                angle: pair.second().copied(),
+            },
             HoleKind::Simple => Self::Simple,
             HoleKind::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKind::SimpleDrilled { drill_point_angle } => {
@@ -367,12 +415,14 @@ impl TryFrom<HoleKindWire> for HoleKind {
     fn try_from(value: HoleKindWire) -> Result<Self, Self::Error> {
         Ok(match value {
             HoleKindWire::Unresolved { form } => Self::Unresolved(form),
-            HoleKindWire::PartialCounterbore { diameter, depth } => {
-                Self::PartialCounterbore { diameter, depth }
-            }
-            HoleKindWire::PartialCountersink { diameter, angle } => {
-                Self::PartialCountersink { diameter, angle }
-            }
+            HoleKindWire::PartialCounterbore { diameter, depth } => Self::PartialCounterbore(
+                PartialPair::new(diameter, depth)
+                    .ok_or_else(|| "partial_counterbore carries no dimension".to_string())?,
+            ),
+            HoleKindWire::PartialCountersink { diameter, angle } => Self::PartialCountersink(
+                PartialPair::new(diameter, angle)
+                    .ok_or_else(|| "partial_countersink carries no dimension".to_string())?,
+            ),
             HoleKindWire::Simple => Self::Simple,
             HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKindWire::SimpleDrilled { drill_point_angle } => {

@@ -109,10 +109,9 @@ fn semantic_writer_retains_partial_native_hole_construction() {
             extent: Some(LinearTermination::ThroughAll),
             ..
         } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::PartialCounterbore {
-                    diameter: Some(actual_diameter),
-                    depth: None,
-                },
+                kind: HoleKind::PartialCounterbore(
+                    cadmpeg_ir::features::PartialPair::First(actual_diameter),
+                ),
                 ..
             }, Some(actual_diameter_2),) if actual_diameter.get() == 10.0 && actual_diameter_2.get() == 6.0)));
     assert!(matches!(

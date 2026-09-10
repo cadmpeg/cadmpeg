@@ -384,7 +384,7 @@ fn flex_modes_round_trip_and_validate() {
 
 #[test]
 fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
-    use crate::features::{FlexMode, HoleKind};
+    use crate::features::{FlexMode, HoleKind, PartialPair};
 
     let counterbore = serde_json::json!({
         "kind": "partial_counterbore",
@@ -393,10 +393,9 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
     let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
     assert_eq!(
         kind,
-        HoleKind::PartialCounterbore {
-            diameter: Some(crate::scalar::PositiveLength::new(10.0).unwrap()),
-            depth: None,
-        }
+        HoleKind::PartialCounterbore(PartialPair::First(
+            crate::scalar::PositiveLength::new(10.0).unwrap()
+        ))
     );
     assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
 
@@ -940,5 +939,61 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
             expected
         );
         assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+    }
+}
+
+#[test]
+fn a_partial_hole_wire_with_no_dimension_is_rejected() {
+    use crate::features::HoleKind;
+
+    for kind in ["partial_counterbore", "partial_countersink"] {
+        let wire = serde_json::json!({ "kind": kind });
+        let error = serde_json::from_value::<HoleKind>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(&format!("{kind} carries no dimension")),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn every_partial_hole_pair_round_trips_to_flat_fields() {
+    use crate::features::{HoleKind, PartialPair};
+
+    let diameter = crate::scalar::PositiveLength::new(10.0).unwrap();
+    let depth = crate::scalar::PositiveLength::new(4.0).unwrap();
+    let angle = crate::scalar::InteriorAngle::new(1.5).unwrap();
+
+    let bore_cases = [
+        (
+            HoleKind::PartialCounterbore(PartialPair::First(diameter)),
+            serde_json::json!({"kind": "partial_counterbore", "diameter": 10.0}),
+        ),
+        (
+            HoleKind::PartialCounterbore(PartialPair::Second(depth)),
+            serde_json::json!({"kind": "partial_counterbore", "depth": 4.0}),
+        ),
+        (
+            HoleKind::PartialCounterbore(PartialPair::Both(diameter, depth)),
+            serde_json::json!({"kind": "partial_counterbore", "diameter": 10.0, "depth": 4.0}),
+        ),
+        (
+            HoleKind::PartialCountersink(PartialPair::First(diameter)),
+            serde_json::json!({"kind": "partial_countersink", "diameter": 10.0}),
+        ),
+        (
+            HoleKind::PartialCountersink(PartialPair::Second(angle)),
+            serde_json::json!({"kind": "partial_countersink", "angle": 1.5}),
+        ),
+        (
+            HoleKind::PartialCountersink(PartialPair::Both(diameter, angle)),
+            serde_json::json!({"kind": "partial_countersink", "diameter": 10.0, "angle": 1.5}),
+        ),
+    ];
+    for (kind, wire) in bore_cases {
+        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+        assert_eq!(serde_json::from_value::<HoleKind>(wire).unwrap(), kind);
     }
 }

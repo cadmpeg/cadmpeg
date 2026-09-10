@@ -1203,12 +1203,18 @@ fn scale_hole_kind(
 
     match kind {
         HoleKind::Unresolved(_) => {}
-        HoleKind::PartialCounterbore { diameter, depth } => {
-            scale_optional_positive_length(diameter, scale)?;
-            scale_optional_positive_length(depth, scale)?;
+        HoleKind::PartialCounterbore(pair) => {
+            if let Some(diameter) = pair.first_mut() {
+                scale_positive_length(diameter, scale)?;
+            }
+            if let Some(depth) = pair.second_mut() {
+                scale_positive_length(depth, scale)?;
+            }
         }
-        HoleKind::PartialCountersink { diameter, .. } => {
-            scale_optional_positive_length(diameter, scale)?;
+        HoleKind::PartialCountersink(pair) => {
+            if let Some(diameter) = pair.first_mut() {
+                scale_positive_length(diameter, scale)?;
+            }
         }
         HoleKind::Chamfer { diameter, .. } | HoleKind::Countersink { diameter, .. } => {
             scale_positive_length(diameter, scale)?;

@@ -404,19 +404,26 @@ pub(in super::super) fn schema_feature_definition(
                                     HoleKind::Counterbore { diameter, depth }
                                 }
                                 (diameter, depth) => {
-                                    HoleKind::PartialCounterbore { diameter, depth }
+                                    cadmpeg_ir::features::PartialPair::new(diameter, depth).map_or(
+                                        HoleKind::Unresolved(Some(HoleForm::Counterbore)),
+                                        HoleKind::PartialCounterbore,
+                                    )
                                 }
                             }
                         }
                         (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
-                            HoleKind::PartialCounterbore {
-                                diameter: dimensions.and_then(|(_, diameter, _)| {
+                            cadmpeg_ir::features::PartialPair::new(
+                                dimensions.and_then(|(_, diameter, _)| {
                                     cadmpeg_ir::scalar::PositiveLength::new(diameter)
                                 }),
-                                depth: dimensions.and_then(|(_, _, depth)| {
+                                dimensions.and_then(|(_, _, depth)| {
                                     cadmpeg_ir::scalar::PositiveLength::new(depth)
                                 }),
-                            }
+                            )
+                            .map_or(
+                                HoleKind::Unresolved(Some(HoleForm::Counterbore)),
+                                HoleKind::PartialCounterbore,
+                            )
                         }
                         (_, _, form, _) => HoleKind::Unresolved(form),
                     },
