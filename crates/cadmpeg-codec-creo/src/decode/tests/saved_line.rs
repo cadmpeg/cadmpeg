@@ -8,7 +8,7 @@ use super::{
 use crate::decode::sketch::{
     is_full_circle_geometry, resolved_section_coordinates, resolved_section_points,
     resolved_section_radii, resolved_section_segment_geometry, resolved_trim_vertex_coordinates,
-    saved_profile_chains, saved_section_arc_carrier, saved_section_arc_geometry,
+    saved_profile_chains, saved_section_arc, saved_section_arc_carrier,
     saved_section_circle_values, saved_section_entity_geometry, saved_section_line_geometry,
     saved_section_missing_line_geometry, saved_section_segment_point_coordinates, trim_segment_id,
 };
@@ -1449,17 +1449,13 @@ fn saved_arc_joins_through_order_table() {
     };
 
     assert_eq!(
-        saved_section_arc_geometry(&definition, &segment),
-        Some(
-            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                radius: Length::new(2.0).expect("finite length fixture"),
-                start_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
-                end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2)
-                    .expect("finite angle fixture"),
-            })
-            .expect("valid test fixture")
-        )
+        saved_section_arc(&definition, &segment),
+        Some(crate::decode::sketch::SavedSectionArc {
+            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            radius: Length::new(2.0).expect("finite length fixture"),
+            start_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+            end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).expect("finite angle fixture"),
+        })
     );
     assert_eq!(
         saved_section_segment_point_coordinates(&definition, &segment),
@@ -1519,10 +1515,7 @@ fn saved_arc_joins_through_order_table() {
             bitmask: 0,
             offset: 11,
         });
-    assert_eq!(
-        saved_section_arc_geometry(&duplicate_order_row, &segment),
-        None
-    );
+    assert_eq!(saved_section_arc(&duplicate_order_row, &segment), None);
     let mut duplicate_saved_arc = definition.clone();
     let duplicate = duplicate_saved_arc
         .saved_section
@@ -1536,10 +1529,7 @@ fn saved_arc_joins_through_order_table() {
         .expect("saved section")
         .entities
         .push(duplicate);
-    assert_eq!(
-        saved_section_arc_geometry(&duplicate_saved_arc, &segment),
-        None
-    );
+    assert_eq!(saved_section_arc(&duplicate_saved_arc, &segment), None);
 
     let segment_table = crate::feature::FeatureSegmentTable {
         declared_count: 2,
@@ -1574,7 +1564,7 @@ fn saved_arc_joins_through_order_table() {
         .expect("saved section")
         .entities
         .insert(0, prototype);
-    assert!(saved_section_arc_geometry(&elided_prototype, &segment).is_some());
+    assert!(saved_section_arc(&elided_prototype, &segment).is_some());
     assert_eq!(
         semantic_saved_section_entities(&elided_prototype).count(),
         1
@@ -1621,7 +1611,7 @@ fn saved_arc_joins_through_order_table() {
     {
         arc.offset = 18;
     }
-    assert!(saved_section_arc_geometry(&unique_at_table_origin, &segment).is_some());
+    assert!(saved_section_arc(&unique_at_table_origin, &segment).is_some());
 
     let mut trimmed = definition;
     trimmed.segments = Some(crate::feature::FeatureSegmentTable {
@@ -1739,7 +1729,7 @@ fn saved_arc_joins_through_order_table() {
         .ordinary()
         .cloned()
         .collect::<Vec<_>>()[0];
-    assert!(saved_section_arc_geometry(&trimmed, segment).is_none());
+    assert!(saved_section_arc(&trimmed, segment).is_none());
     assert_eq!(
         section_segment_intersection_carrier(
             &trimmed,
