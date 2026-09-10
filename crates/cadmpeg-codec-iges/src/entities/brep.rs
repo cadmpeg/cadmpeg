@@ -266,6 +266,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> ProjectionOutcome {
     let records = parameters
         .iter()
@@ -774,6 +775,7 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+        sequences.record_body(&body_id, entry.sequence);
         let region_id =
             RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
@@ -809,6 +811,7 @@ pub(super) fn project(
                 let face_id =
                     FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
                         .expect("identity grammar");
+                sequences.record_face(&face_id, face_sequence);
                 let loop_id_for = |sequence| {
                     LoopId::mint(format!("iges:model:loop#{shell_stem}:D{sequence}"))
                         .expect("identity grammar")

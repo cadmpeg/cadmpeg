@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -1197,15 +1197,79 @@ pub(super) fn admit<T>(
         .ok()
 }
 
+/// The Directory sequence a source-object association names.
+///
+/// This type owns both directions of the `D{sequence}` object-id spelling, so
+/// no reader recovers the sequence by string surgery over an id namespace it
+/// does not own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SourceObjectId(u32);
+
+impl SourceObjectId {
+    /// Names the Directory entry a projected record was decoded from.
+    pub(crate) const fn new(sequence: u32) -> Self {
+        Self(sequence)
+    }
+
+    /// The Directory sequence.
+    pub(crate) const fn sequence(self) -> u32 {
+        self.0
+    }
+
+    /// The object-id text every source association carries.
+    pub(crate) fn text(self) -> String {
+        format!("D{}", self.0)
+    }
+
+    /// Reads back the sequence this crate wrote into an object id.
+    pub(crate) fn of(association: &SourceObjectAssociation) -> Option<Self> {
+        association
+            .object_id
+            .as_str()
+            .strip_prefix('D')?
+            .parse()
+            .ok()
+            .map(Self)
+    }
+}
+
+/// The Directory sequence each projected body and face was decoded from.
+///
+/// Recorded where the id is minted, so appearance binding reads the sequence
+/// the decoder held rather than parsing it back out of the identity.
+#[derive(Debug, Default)]
+pub(super) struct SourceSequences {
+    bodies: BTreeMap<BodyId, u32>,
+    faces: BTreeMap<FaceId, u32>,
+}
+
+impl SourceSequences {
+    pub(super) fn record_body(&mut self, id: &BodyId, sequence: u32) {
+        self.bodies.insert(id.clone(), sequence);
+    }
+
+    pub(super) fn record_face(&mut self, id: &FaceId, sequence: u32) {
+        self.faces.insert(id.clone(), sequence);
+    }
+
+    pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
+        self.bodies.get(id).copied()
+    }
+
+    pub(super) fn face(&self, id: &FaceId) -> Option<u32> {
+        self.faces.get(id).copied()
+    }
+}
+
 pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
-        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("D{}", entry.sequence))
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-            })?,
+        object_id: cadmpeg_ir::products::NonEmptyString::new(
+            SourceObjectId::new(entry.sequence).text(),
+        )
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("source object_id must not be empty"))?,
         name: std::str::from_utf8(&entry.label)
             .ok()
             .map(str::trim)
@@ -2194,12 +2258,13 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_wire_topology",
     )?;
+    let mut sequences = SourceSequences::default();
     let (trimming_projection, trimming_vertex_derivations) =
-        super::trimming::project(ir, directory, parameters, global, ctx);
+        super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences);
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
-    super::brep::project(ir, directory, parameters, global, ctx)
+    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
     super::csg::project(ir, directory, parameters, global, ctx)
@@ -2212,10 +2277,11 @@ pub(crate) fn project_geometry(
         trailing_pointer_analysis,
         global,
         ctx,
+        &mut sequences,
     );
     structure_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
-    super::presentation::project(ir, directory, parameters, global, ctx)
+    super::presentation::project(ir, directory, parameters, global, ctx, &sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
