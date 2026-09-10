@@ -15,6 +15,7 @@ use cadmpeg_ir::sketches::{
 
 use super::super::*;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     FeatureInputClass, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
@@ -451,7 +452,7 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         ordinal: 0,
         offset: 0,
         value: "Hole".into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     });
     let hole_trailer = 6 + "Hole".encode_utf16().count() * 2;
     lane.native_payload[hole_trailer..hole_trailer + 8]
@@ -465,7 +466,7 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         ordinal: 1,
         offset: child_offset as u64,
         value: "Position".into(),
-        object_id: Some(6),
+        object_id: ObjectId::from_value(6),
     });
     let child_trailer = child_offset + 6 + "Position".encode_utf16().count() * 2;
     lane.native_payload[child_trailer..child_trailer + 8]
@@ -1386,7 +1387,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         ordinal: 2,
         offset: 100,
         value: "Profile".into(),
-        object_id: Some(8),
+        object_id: ObjectId::from_value(8),
     });
     lane.scalars.push(FeatureInputScalar {
         id: "depth-scalar".into(),
@@ -1480,7 +1481,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 1,
             offset: 100,
             value: "Position".into(),
-            object_id: Some(12),
+            object_id: ObjectId::from_value(12),
         },
         FeatureInputName {
             id: "profile-name".into(),
@@ -1488,7 +1489,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 2,
             offset: 200,
             value: "Profile".into(),
-            object_id: Some(58),
+            object_id: ObjectId::from_value(58),
         },
     ]);
 
@@ -1516,7 +1517,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 1,
             offset: 100,
             value: "Position".into(),
-            object_id: Some(12),
+            object_id: ObjectId::from_value(12),
         },
         FeatureInputName {
             id: "alternate-profile-name".into(),
@@ -1524,7 +1525,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 2,
             offset: 150,
             value: "Alternate profile".into(),
-            object_id: Some(59),
+            object_id: ObjectId::from_value(59),
         },
         FeatureInputName {
             id: "later-profile-name".into(),
@@ -1532,7 +1533,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             ordinal: 3,
             offset: 200,
             value: "Profile".into(),
-            object_id: Some(58),
+            object_id: ObjectId::from_value(58),
         },
     ]);
     enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane]);

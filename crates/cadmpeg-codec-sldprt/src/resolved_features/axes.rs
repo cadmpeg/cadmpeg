@@ -12,6 +12,7 @@ use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -181,7 +182,7 @@ pub(super) fn linear_pattern_display_directions(
         .filter_map(|(dimension_name, expected)| {
             let expected = expected?;
             let mut records = names.iter().filter(|name| {
-                name.object_id == Some(u32::MAX)
+                name.object_id == Some(ObjectId::Absent)
                     && name.value == dimension_name
                     && usize::try_from(name.offset)
                         .is_ok_and(|offset| (object_start..end).contains(&offset))
@@ -235,7 +236,7 @@ pub(super) fn typed_linear_pattern_dimensions(
         let class_offset = usize::try_from(class.offset).ok()?;
         let name_end = class_offset.checked_add(128)?.min(object_end);
         let mut names = lane.names.iter().filter(|name| {
-            name.object_id == Some(u32::MAX)
+            name.object_id == Some(ObjectId::Absent)
                 && usize::try_from(name.offset)
                     .is_ok_and(|offset| (class_offset..name_end).contains(&offset))
                 && feature.parameters.contains_key(name.value.as_str())
@@ -897,7 +898,7 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
         let mut object_ids = lanes
             .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id)
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
             .collect::<Vec<_>>();
         object_ids.sort_unstable();
         object_ids.dedup();
@@ -915,7 +916,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 feature.source_value().into_iter().chain(
                     lanes
                         .iter()
-                        .filter_map(|lane| feature_object_name(feature, lane)?.object_id),
+                        .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
                 )
             })
             .collect::<HashSet<_>>();
@@ -945,7 +946,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .and_then(|index| objects.get(index))
                     .map(|(_, feature)| *feature)
                     .filter(|feature| is_profile_feature_object(feature))
-                    .and_then(|feature| feature_object_name(feature, lane)?.object_id);
+                    .and_then(|feature| feature_object_name(feature, lane)?.object_id?.value());
                 let Some(known_profiles) = profile_sources.get(&feature.id) else {
                     continue;
                 };

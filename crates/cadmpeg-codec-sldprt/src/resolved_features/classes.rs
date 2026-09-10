@@ -19,6 +19,7 @@ use super::terminations::is_extrusion_end_spec_owner;
 #[cfg(test)]
 use crate::records::FeatureInputClass;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 #[cfg(test)]
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, LinearTermination};
 #[cfg(test)]
@@ -77,7 +78,7 @@ pub(crate) fn bind_history_classes(
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
-            if let Some(object_id) = name.object_id {
+            if let Some(object_id) = name.object_id.and_then(ObjectId::value) {
                 classes_by_object
                     .entry(object_id)
                     .or_default()
@@ -176,7 +177,7 @@ pub(crate) fn bind_history_classes(
         {
             let Some(name) = feature_object_name(feature, lane).filter(|name| {
                 !direct_name_offsets.contains(&name.offset)
-                    && name.object_id.is_some()
+                    && name.object_id.and_then(ObjectId::value).is_some()
                     && name.value == feature.name
             }) else {
                 continue;
@@ -309,7 +310,9 @@ pub(crate) fn bind_history_classes(
             && lanes
                 .iter()
                 .flat_map(|lane| &lane.names)
-                .filter(|name| name.object_id.is_some() && name.value == feature.name)
+                .filter(|name| {
+                    name.object_id.and_then(ObjectId::value).is_some() && name.value == feature.name
+                })
                 .count()
                 == 1;
         if object_id.is_none() && !unique_idless_name {
@@ -318,7 +321,7 @@ pub(crate) fn bind_history_classes(
         for lane in lanes {
             for name in lane.names.iter().filter(|name| {
                 object_id.map_or(name.value == feature.name, |object_id| {
-                    name.object_id == Some(object_id)
+                    name.object_id.and_then(ObjectId::value) == Some(object_id)
                 }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
             }) {
                 let Ok(offset) = usize::try_from(name.offset) else {
@@ -348,7 +351,9 @@ pub(crate) fn bind_history_classes(
             && lanes
                 .iter()
                 .flat_map(|lane| &lane.names)
-                .filter(|name| name.object_id.is_some() && name.value == feature.name)
+                .filter(|name| {
+                    name.object_id.and_then(ObjectId::value).is_some() && name.value == feature.name
+                })
                 .count()
                 == 1;
         if object_id.is_none() && !unique_idless_name {
@@ -358,7 +363,7 @@ pub(crate) fn bind_history_classes(
         for lane in lanes {
             for name in lane.names.iter().filter(|name| {
                 object_id.map_or(name.value == feature.name, |object_id| {
-                    name.object_id == Some(object_id)
+                    name.object_id.and_then(ObjectId::value) == Some(object_id)
                 }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
             }) {
                 let Ok(offset) = usize::try_from(name.offset) else {
@@ -629,7 +634,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 0,
                     offset: 0,
-                    object_id: Some(10),
+                    object_id: ObjectId::from_value(10),
                     value: "name-0".into(),
                 },
                 FeatureInputName {
@@ -637,7 +642,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 1,
                     offset: end,
-                    object_id: Some(3),
+                    object_id: ObjectId::from_value(3),
                     value: "name-1".into(),
                 },
             ],
@@ -710,7 +715,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 0,
                     offset: 100,
-                    object_id: Some(41),
+                    object_id: ObjectId::from_value(41),
                     value: "name-1".into(),
                 },
                 FeatureInputName {
@@ -718,7 +723,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 1,
                     offset: 150,
-                    object_id: Some(42),
+                    object_id: ObjectId::from_value(42),
                     value: "name-2".into(),
                 },
                 FeatureInputName {
@@ -726,7 +731,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 2,
                     offset: 200,
-                    object_id: Some(43),
+                    object_id: ObjectId::from_value(43),
                     value: "name-2".into(),
                 },
             ],
@@ -907,7 +912,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 0,
                     offset: 100,
-                    object_id: Some(41),
+                    object_id: ObjectId::from_value(41),
                     value: "hole A".into(),
                 },
                 FeatureInputName {
@@ -915,7 +920,7 @@ mod idless_history_binding_tests {
                     parent: "lane".into(),
                     ordinal: 1,
                     offset: 200,
-                    object_id: Some(42),
+                    object_id: ObjectId::from_value(42),
                     value: "hole B".into(),
                 },
             ],
@@ -1219,7 +1224,7 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: direct_offset,
-                object_id: Some(1),
+                object_id: ObjectId::from_value(1),
                 value: "direct hole".into(),
             },
             FeatureInputName {
@@ -1227,7 +1232,7 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 400,
-                object_id: Some(2),
+                object_id: ObjectId::from_value(2),
                 value: "repeated hole".into(),
             },
             FeatureInputName {
@@ -1235,7 +1240,7 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: 2,
                 offset: 400,
-                object_id: Some(3),
+                object_id: ObjectId::from_value(3),
                 value: "target hole".into(),
             },
         ];
@@ -1302,7 +1307,7 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: index as u32,
                 offset: 300 + index as u64 * 100,
-                object_id: feature.source_value(),
+                object_id: feature.source_value().and_then(ObjectId::from_value),
                 value: feature.name.clone(),
             })
             .collect::<Vec<_>>();

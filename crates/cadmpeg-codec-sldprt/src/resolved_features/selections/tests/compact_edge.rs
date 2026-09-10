@@ -7,6 +7,7 @@ use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use super::super::*;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -587,7 +588,7 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
                 parent: "lane".into(),
                 ordinal: 0,
                 offset: 0,
-                object_id: Some(1),
+                object_id: ObjectId::from_value(1),
                 value: "Producer".into(),
             },
             FeatureInputName {
@@ -595,7 +596,7 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
                 parent: "lane".into(),
                 ordinal: 1,
                 offset: 24,
-                object_id: Some(2),
+                object_id: ObjectId::from_value(2),
                 value: "Consumer".into(),
             },
         ],
@@ -920,7 +921,7 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(37),
+            object_id: ObjectId::from_value(37),
             value: "VarFillet1".into(),
         }],
         scalars: Vec::new(),

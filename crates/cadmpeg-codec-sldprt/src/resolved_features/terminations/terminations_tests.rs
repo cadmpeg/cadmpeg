@@ -4,6 +4,7 @@ use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
 use super::super::selections::{compact_surface_selections, selection_vector_tail};
 use super::*;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
 use std::collections::BTreeMap;
 
@@ -404,7 +405,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
                 ordinal: 0,
                 offset: 10,
                 value: "extrusion".into(),
-                object_id: Some(10),
+                object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
                 id: "profile-name".into(),
@@ -412,7 +413,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
                 ordinal: 1,
                 offset: 300,
                 value: "profile".into(),
-                object_id: Some(11),
+                object_id: ObjectId::from_value(11),
             },
         ],
         scalars: Vec::new(),
@@ -492,7 +493,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 ordinal: 0,
                 offset: 10,
                 value: "extrusion".into(),
-                object_id: Some(10),
+                object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
                 id: "cosmetic-name".into(),
@@ -500,7 +501,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 ordinal: 1,
                 offset: 200,
                 value: "cosmetic".into(),
-                object_id: Some(11),
+                object_id: ObjectId::from_value(11),
             },
             FeatureInputName {
                 id: "next-name".into(),
@@ -508,7 +509,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 ordinal: 2,
                 offset: 500,
                 value: "next".into(),
-                object_id: Some(12),
+                object_id: ObjectId::from_value(12),
             },
         ],
         scalars: Vec::new(),
@@ -584,7 +585,7 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 ordinal: 0,
                 offset: 10,
                 value: "extrusion".into(),
-                object_id: Some(10),
+                object_id: ObjectId::from_value(10),
             }],
             scalars: Vec::new(),
             relation_bindings: Vec::new(),
@@ -1367,7 +1368,7 @@ fn enrich_combine_uses_outermost_body_paths() {
             parent: "lane#35".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(119),
+            object_id: ObjectId::from_value(119),
             value: "Combine".into(),
         }],
         scalars: Vec::new(),

@@ -1,6 +1,7 @@
 //! Object name and class declaration records.
 
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
+use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::products::NonEmptyString;
@@ -42,7 +43,8 @@ pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName
             let (value, end) = View::utf16le_at(payload, start, length)?;
             let object_id = end
                 .checked_add(8)
-                .and_then(|offset| View::u32_le_at(payload, offset));
+                .and_then(|offset| View::u32_le_at(payload, offset))
+                .and_then(|value| ObjectId::try_from(value).ok());
             (!value.chars().any(char::is_control)).then_some((offset, object_id, value))
         })
         .enumerate()

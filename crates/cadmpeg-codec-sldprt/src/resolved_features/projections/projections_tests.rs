@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputSurfaceSelection,
@@ -1358,7 +1359,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         parent: "lane".into(),
         ordinal: 0,
         offset,
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
     let lane = FeatureInputLane {
@@ -1492,7 +1493,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         parent: "lane".into(),
         ordinal: 0,
         offset,
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
     let lane = FeatureInputLane {

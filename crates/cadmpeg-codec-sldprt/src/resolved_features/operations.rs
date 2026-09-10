@@ -4,6 +4,7 @@ use super::is_class_token;
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
+use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
@@ -325,7 +326,7 @@ pub(super) fn feature_inline_operation_fields(
             });
     if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
         || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
-            != name.object_id?.to_le_bytes()
+            != name.object_id.and_then(ObjectId::value)?.to_le_bytes()
         || bytes[sparse_tr::ZERO_AFTER_OBJECT..sparse_tr::SPARSE_ZERO_PREFIX] != [0; 4]
         || !terminated
         || !matches!(bytes[sparse_tr::OPERATION], 0 | 2)
@@ -506,7 +507,7 @@ fn operation_carrier_present(
         .map(|source_id| {
             lane.names
                 .iter()
-                .filter(|name| name.object_id == Some(source_id))
+                .filter(|name| name.object_id.and_then(ObjectId::value) == Some(source_id))
                 .collect::<Vec<_>>()
         })
         .filter(|matches| !matches.is_empty());

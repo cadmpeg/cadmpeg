@@ -35,6 +35,7 @@ use crate::container::configuration_index;
 use crate::brep::{self, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
+use crate::records::ObjectId;
 
 struct DecodedBrep<'a> {
     /// Representative stream whose header is common to every merged site.
@@ -1735,7 +1736,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                 })
         })
         .filter(|(lane, class, name)| {
-            let source_bound = name.object_id.is_some_and(|id| {
+            let source_bound = name.object_id.and_then(ObjectId::value).is_some_and(|id| {
                 source_counts.get(&id).copied() == Some(1)
                     && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
                         || native_object_class(&class.name)

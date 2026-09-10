@@ -8,6 +8,7 @@ use super::{
 };
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName, FeatureInputScalar,
@@ -81,7 +82,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         parent: "lane".into(),
         ordinal: 0,
         offset,
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
     let scalar = |id: &str, offset, name: &str| FeatureInputScalar {
@@ -433,7 +434,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(228),
+            object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
         scalars: Vec::new(),
@@ -595,7 +596,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(228),
+            object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
         scalars: Vec::new(),
