@@ -4,6 +4,7 @@ use super::super::super::CLASS_MARKER;
 use super::super::selection_vector_tail;
 use super::super::*;
 use crate::classification::FeatureClass;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
@@ -433,7 +434,7 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("20".into()),
+        source_id: FeatureSource::from_value(20),
         ordinal: 0,
         name: "thread".into(),
         kind: "Feature".into(),
@@ -490,7 +491,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("53".into()),
+        source_id: FeatureSource::from_value(53),
         ordinal: 0,
         name: "Thread".into(),
         kind: "Feature".into(),
@@ -1447,7 +1448,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.to_string()),
+        source_id: FeatureSource::from_value(source),
         ordinal: source,
         name: id.into(),
         kind: "Feature".into(),
@@ -1751,7 +1752,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
     let ambiguous_history = history.clone();
     let resolved = history_features_with_object_sources(&[history], &lane);
 
-    assert_eq!(resolved[0].source_id.as_deref(), Some("233"));
+    assert_eq!(resolved[0].source_id, FeatureSource::from_value(233));
 
     lane.names.push(FeatureInputName {
         id: "ambiguous-name".into(),

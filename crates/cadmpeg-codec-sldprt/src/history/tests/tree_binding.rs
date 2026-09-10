@@ -9,6 +9,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::records::FeatureSource;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -37,7 +38,10 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.features[0].xml_tag, "Extrusion");
     assert_eq!(history.features[0].parameters["Depth"], "12.5mm");
     assert_eq!(history.features[0].properties["Scope"], "Body1");
-    assert_eq!(history.features[1].parent_source_id(), Some("7"));
+    assert_eq!(
+        history.features[1].parent_source_id(),
+        FeatureSource::from_value(7)
+    );
     assert_eq!(history.features[1].xml_tag, "EquationDrivenCurve");
     assert_eq!(result.ir().model.features.len(), 2);
     let neutral = &result.ir().model.features[0];
@@ -483,6 +487,9 @@ fn keywords_root_id_does_not_create_feature_parentage() {
     let history = &native.feature_histories[0];
     assert_eq!(history.properties["id"], "document");
     assert_eq!(history.features[0].parent_source_id(), None);
-    assert_eq!(history.features[1].parent_source_id(), Some("1"));
+    assert_eq!(
+        history.features[1].parent_source_id(),
+        FeatureSource::from_value(1)
+    );
     assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
 }

@@ -18,6 +18,7 @@ use super::reference_geometry::enrich_history_reference_planes;
 use super::terminations::is_extrusion_end_spec_owner;
 #[cfg(test)]
 use crate::records::FeatureInputClass;
+use crate::records::FeatureSource;
 #[cfg(test)]
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, LinearTermination};
 #[cfg(test)]
@@ -90,9 +91,7 @@ pub(crate) fn bind_history_classes(
         .flat_map(|history| &mut history.features)
     {
         let classes = feature
-            .source_id
-            .as_deref()
-            .and_then(|value| value.parse::<u32>().ok())
+            .source_value()
             .and_then(|object_id| classes_by_object.get(&object_id));
         let Some(classes) = classes else {
             continue;
@@ -304,10 +303,7 @@ pub(crate) fn bind_history_classes(
         let Some(class) = &feature.input_class else {
             continue;
         };
-        let object_id = feature
-            .source_id
-            .as_deref()
-            .and_then(|value| value.parse::<u32>().ok());
+        let object_id = feature.source_value();
         let unique_idless_name = object_id.is_none()
             && history_name_counts.get(&feature.name) == Some(&1)
             && lanes
@@ -346,10 +342,7 @@ pub(crate) fn bind_history_classes(
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none())
     {
-        let object_id = feature
-            .source_id
-            .as_deref()
-            .and_then(|value| value.parse::<u32>().ok());
+        let object_id = feature.source_value();
         let unique_idless_name = object_id.is_none()
             && history_name_counts.get(&feature.name) == Some(&1)
             && lanes
@@ -586,11 +579,11 @@ mod idless_history_binding_tests {
     #[test]
     fn face_plane_record_suppresses_embedded_plane_source_candidate() {
         let mut offset = feature(0, "offset plane");
-        offset.source_id = Some("10".into());
+        offset.source_id = FeatureSource::from_value(10);
         offset.input_class = Some("moRefPlane_c".into());
         offset.parameters.insert("D1".into(), "0mm".into());
         let mut principal = feature(1, "principal plane");
-        principal.source_id = Some("3".into());
+        principal.source_id = FeatureSource::from_value(3);
         principal.input_class = Some("moRefPlane_c".into());
 
         let mut payload = Vec::new();
@@ -670,12 +663,12 @@ mod idless_history_binding_tests {
     fn classless_sketch_objects_are_profile_features_only_with_source_identity() {
         let mut sketch = feature(1, "localized sketch");
         sketch.xml_tag = "Sketch".into();
-        sketch.source_id = Some("77".into());
+        sketch.source_id = FeatureSource::from_value(77);
         assert!(is_profile_feature_object(&sketch));
 
-        sketch.source_id = Some("0".into());
+        sketch.source_id = FeatureSource::from_value(0);
         assert!(!is_profile_feature_object(&sketch));
-        sketch.source_id = Some("77".into());
+        sketch.source_id = FeatureSource::from_value(77);
         sketch.input_class = Some("moRefPlane_c".into());
         assert!(!is_profile_feature_object(&sketch));
     }
@@ -686,15 +679,15 @@ mod idless_history_binding_tests {
         profile.id = "profile-native".into();
         profile.xml_tag = "Sketch".into();
         profile.input_class = Some("moProfileFeature_c".into());
-        profile.source_id = Some("41".into());
+        profile.source_id = FeatureSource::from_value(41);
         let mut metadata = feature(2, "attribute");
         metadata.id = "metadata-native".into();
-        metadata.source_id = Some("42".into());
+        metadata.source_id = FeatureSource::from_value(42);
         metadata.input_class = Some("moAttribute_c".into());
         let mut extrusion = feature(2, "extrusion");
         extrusion.id = "extrusion-native".into();
         extrusion.xml_tag = "Extrusion".into();
-        extrusion.source_id = Some("43".into());
+        extrusion.source_id = FeatureSource::from_value(43);
         extrusion
             .properties
             .insert("Dissectable".into(), "true".into());
@@ -957,13 +950,13 @@ mod idless_history_binding_tests {
             .insert("DissectableChildren".into(), "23,27".into());
         let mut definition_a = feature(1, "block");
         definition_a.input_class = Some("moSketchBlockDef_c".into());
-        definition_a.source_id = Some("23".into());
+        definition_a.source_id = FeatureSource::from_value(23);
         let mut instance = feature(2, "block instance");
         instance.input_class = Some("moSketchBlockInst_c".into());
-        instance.source_id = Some("25".into());
+        instance.source_id = FeatureSource::from_value(25);
         let mut definition_b = feature(3, "block");
         definition_b.input_class = Some("moSketchBlockDef_c".into());
-        definition_b.source_id = Some("27".into());
+        definition_b.source_id = FeatureSource::from_value(27);
         let objects = [&definition_a, &instance, &definition_b];
         assert!(profile_owns_intervening_sketch_blocks(
             &profile,
@@ -992,13 +985,13 @@ mod idless_history_binding_tests {
         let profile = feature(0, "sketch");
         let mut instance = feature(1, "block instance");
         instance.input_class = Some("moSketchBlockInst_c".into());
-        instance.source_id = Some("25".into());
+        instance.source_id = FeatureSource::from_value(25);
         instance
             .properties
             .insert("BlockDefinition".into(), "23".into());
         let mut definition = feature(2, "block");
         definition.input_class = Some("moSketchBlockDef_c".into());
-        definition.source_id = Some("23".into());
+        definition.source_id = FeatureSource::from_value(23);
 
         assert!(profile_owns_intervening_sketch_blocks(
             &profile,
@@ -1019,16 +1012,16 @@ mod idless_history_binding_tests {
         let profile = feature(0, "sketch");
         let mut instance = feature(1, "block instance");
         instance.input_class = Some("moSketchBlockInst_c".into());
-        instance.source_id = Some("25".into());
+        instance.source_id = FeatureSource::from_value(25);
         instance
             .properties
             .insert("BlockDefinition".into(), "23".into());
         let mut referenced = feature(2, "block");
         referenced.input_class = Some("moSketchBlockDef_c".into());
-        referenced.source_id = Some("23".into());
+        referenced.source_id = FeatureSource::from_value(23);
         let mut unused = feature(3, "block");
         unused.input_class = Some("moSketchBlockDef_c".into());
-        unused.source_id = Some("24".into());
+        unused.source_id = FeatureSource::from_value(24);
 
         assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
@@ -1041,7 +1034,7 @@ mod idless_history_binding_tests {
 
         let mut second_instance = feature(4, "block instance");
         second_instance.input_class = Some("moSketchBlockInst_c".into());
-        second_instance.source_id = Some("26".into());
+        second_instance.source_id = FeatureSource::from_value(26);
         second_instance
             .properties
             .insert("BlockDefinition".into(), "23".into());
@@ -1277,11 +1270,11 @@ mod idless_history_binding_tests {
     #[test]
     fn diameter_parameter_schema_binds_a_repeated_cosmetic_thread_group() {
         let mut first = feature(0, "localized external thread");
-        first.source_id = Some("11".into());
+        first.source_id = FeatureSource::from_value(11);
         first.parameters.insert("D1".into(), "12".into());
         first.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
         let mut second = feature(1, "localized hole thread");
-        second.source_id = Some("12".into());
+        second.source_id = FeatureSource::from_value(12);
         second
             .parameters
             .insert("D2".into(), "&lt;MOD-DIAM&gt;6".into());
@@ -1309,7 +1302,7 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: index as u32,
                 offset: 300 + index as u64 * 100,
-                object_id: feature.source_id.as_deref().and_then(|id| id.parse().ok()),
+                object_id: feature.source_value(),
                 value: feature.name.clone(),
             })
             .collect::<Vec<_>>();

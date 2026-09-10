@@ -3,6 +3,7 @@
 use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
@@ -1186,7 +1187,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("7".into()),
+        source_id: FeatureSource::from_value(7),
         ordinal: 7,
         name: "Sketch1".into(),
         kind: String::new(),

@@ -3,6 +3,7 @@
 use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
 use super::super::selections::{compact_surface_selections, selection_vector_tail};
 use super::*;
+use crate::records::FeatureSource;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
 use std::collections::BTreeMap;
 
@@ -368,7 +369,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         }
         .into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: source_id.parse().expect("required invariant"),
         name: id.into(),
         kind: kind.into(),
@@ -455,7 +456,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: source_id.parse().expect("required invariant"),
         name: id.into(),
         kind: "Feature".into(),
@@ -559,7 +560,7 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 parent: "history".into(),
                 xml_tag: "Feature".into(),
                 tree_parent: None,
-                source_id: Some("10".into()),
+                source_id: FeatureSource::from_value(10),
                 ordinal: 10,
                 name: "extrusion".into(),
                 kind: "Boss-Extrude".into(),
@@ -1343,7 +1344,7 @@ fn enrich_combine_uses_outermost_body_paths() {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("119".into()),
+            source_id: FeatureSource::from_value(119),
             ordinal: 0,
             name: "Combine".into(),
             kind: "Combine".into(),

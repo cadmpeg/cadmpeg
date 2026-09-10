@@ -10,6 +10,7 @@ use crate::layout::{
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
@@ -338,7 +339,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
             parent: "sldprt:history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("spatial".into()),
+            source_id: FeatureSource::from_value(1),
             ordinal: 0,
             name: "3D Sketch".into(),
             kind: "3D Sketch".into(),
@@ -442,7 +443,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
             parent: "sldprt:history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("spatial-indexed-profile".into()),
+            source_id: FeatureSource::from_value(1),
             ordinal: 0,
             name: "3D Sketch".into(),
             kind: "Sketch".into(),

@@ -180,11 +180,7 @@ pub(crate) fn feature_object_name<'a>(
     feature: &crate::records::Feature,
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputName> {
-    if let Some(source_id) = feature
-        .source_id
-        .as_deref()
-        .and_then(|value| value.parse::<u32>().ok())
-    {
+    if let Some(source_id) = feature.source_value() {
         let mut matches = lane
             .names
             .iter()

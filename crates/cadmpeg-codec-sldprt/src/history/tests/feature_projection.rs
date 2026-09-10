@@ -557,7 +557,7 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
         configurations: Vec::new(),
         features: vec![first, second, singleton],
     }];
-    let scene = HashMap::from([("153".into(), "moDirectionLight_c".into())]);
+    let scene = HashMap::from([(153, "moDirectionLight_c".into())]);
 
     enrich_scene_classes(&mut histories, &scene);
 
@@ -898,7 +898,7 @@ fn shifted_reserved_triplet_does_not_classify_principal_planes() {
     let features = [scene, front.clone(), top.clone(), right.clone()];
     let by_source = features
         .iter()
-        .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+        .filter_map(|feature| Some((feature.source_id?, feature)))
         .collect::<HashMap<_, _>>();
 
     assert_eq!(
@@ -994,12 +994,7 @@ fn legacy_principal_plane_requires_a_complete_matching_triplet() {
     let right = feature("right", Some("4"), 2);
     let features = [&front, &top, &right]
         .into_iter()
-        .map(|feature| {
-            (
-                feature.source_id.as_deref().expect("required invariant"),
-                feature,
-            )
-        })
+        .map(|feature| (feature.source_id.expect("required invariant"), feature))
         .collect::<HashMap<_, _>>();
     assert_eq!(
         principal_plane_in_history(&front, &features, &[]),
@@ -1010,12 +1005,7 @@ fn legacy_principal_plane_requires_a_complete_matching_triplet() {
     mismatched.kind = "Different".into();
     let features = [&front, &top, &mismatched]
         .into_iter()
-        .map(|feature| {
-            (
-                feature.source_id.as_deref().expect("required invariant"),
-                feature,
-            )
-        })
+        .map(|feature| (feature.source_id.expect("required invariant"), feature))
         .collect::<HashMap<_, _>>();
     assert_eq!(principal_plane_in_history(&front, &features, &[]), None);
 }

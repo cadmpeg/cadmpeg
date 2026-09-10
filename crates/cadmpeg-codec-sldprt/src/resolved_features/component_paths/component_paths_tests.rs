@@ -1,6 +1,7 @@
 //! Tests for the `component_paths` module.
 
 use super::*;
+use crate::records::FeatureSource;
 use crate::records::{Feature, FeatureInputComponentPathEntry};
 use std::collections::BTreeMap;
 
@@ -11,7 +12,7 @@ fn component_path_type_identities_name_ordered_features() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: String::new(),
         kind: String::new(),

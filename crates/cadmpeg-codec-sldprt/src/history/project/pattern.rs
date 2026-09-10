@@ -58,8 +58,8 @@ pub(crate) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
 
 pub(crate) fn project_pattern(
     feature: &Feature,
-    by_source: &HashMap<&str, FeatureId>,
-    native_by_source: &HashMap<&str, &str>,
+    by_source: &HashMap<String, FeatureId>,
+    native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {
     let form = pattern_form(feature);
     let seeds = match feature.properties.get("Seeds") {

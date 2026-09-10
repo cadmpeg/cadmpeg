@@ -10,7 +10,6 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
 use super::{is_class_token, CLASS_MARKER};
-use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{classify, FeatureClass};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -38,6 +37,7 @@ const EPS_HOLE_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 #[cfg(test)]
 use super::parameters::enrich_history_parameters;
+use crate::records::FeatureSource;
 
 /// Resolve helix placement from the counted curve mesh stored in its feature
 /// object. Promotion requires one mesh stream and a circular-helix fit whose
@@ -170,11 +170,7 @@ fn hole_position_sketch_source(
     let name = feature_object_name(feature, lane)?;
     // Legacy keyword records may omit the XML source id while the serialized
     // object name still carries the stable object id used by the input lane.
-    let source = feature
-        .source_id
-        .as_deref()
-        .and_then(|value| value.parse::<u32>().ok())
-        .or(name.object_id)?;
+    let source = feature.source_value().or(name.object_id)?;
     let offset = usize::try_from(name.offset)
         .ok()?
         .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -252,11 +248,7 @@ pub(crate) fn enrich_history_hole_constructions(
                     };
                     let unique_position = || {
                         let mut positions = history.features.iter().filter(|candidate| {
-                            (candidate
-                                .source_id
-                                .as_deref()
-                                .and_then(|source| source.parse::<u32>().ok())
-                                == Some(*position_source)
+                            (candidate.source_value() == Some(*position_source)
                                 || candidate.ordinal == *position_source)
                                 && classify(candidate) == Some(FeatureClass::Sketch)
                         });
@@ -313,9 +305,7 @@ pub(crate) fn enrich_history_hole_constructions(
                     let source_profile = || {
                         let mut profiles = history.features.iter().filter(|candidate| {
                             candidate
-                                .source_id
-                                .as_deref()
-                                .and_then(|source| source.parse::<u32>().ok())
+                                .source_value()
                                 .is_some_and(|source| adjacent_sources.contains(&source))
                                 && classify(candidate) == Some(FeatureClass::Sketch)
                                 && crate::history::is_hole_profile_construction(candidate)
@@ -326,10 +316,7 @@ pub(crate) fn enrich_history_hole_constructions(
                     if let Some(profile) = source_profile() {
                         return Some((profile, 3_u8));
                     }
-                    let hole_source = feature
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())?;
+                    let hole_source = feature.source_value()?;
                     let (lower, upper) = if hole_source < *position_source {
                         (hole_source, *position_source)
                     } else {
@@ -337,9 +324,7 @@ pub(crate) fn enrich_history_hole_constructions(
                     };
                     let mut bounded_profiles = history.features.iter().filter(|candidate| {
                         candidate
-                            .source_id
-                            .as_deref()
-                            .and_then(|source| source.parse::<u32>().ok())
+                            .source_value()
                             .is_some_and(|source| lower < source && source < upper)
                             && classify(candidate) == Some(FeatureClass::Sketch)
                             && crate::history::is_hole_profile_construction(candidate)
@@ -404,7 +389,7 @@ pub(crate) fn enrich_history_hole_constructions(
                             feature_index,
                             profile
                                 .source_id
-                                .clone()
+                                .map(String::from)
                                 .unwrap_or_else(|| profile.id.clone()),
                             rank,
                         )
@@ -457,29 +442,22 @@ pub(crate) fn enrich_history_hole_constructions(
                     && !feature.properties.contains_key("DissectableChildren")
             })
             .filter_map(|(feature_index, feature)| {
-                let source = feature
-                    .source_id
-                    .as_deref()
-                    .and_then(|source| source.parse::<u32>().ok())?;
+                let source = feature.source_value()?;
                 let upper = history
                     .features
                     .iter()
                     .filter(|candidate| classify(candidate) == Some(FeatureClass::Hole))
-                    .filter_map(|candidate| {
-                        candidate
-                            .source_id
-                            .as_deref()
-                            .and_then(|source| source.parse::<u32>().ok())
-                    })
+                    .filter_map(|candidate| candidate.source_value())
                     .filter(|candidate| *candidate > source)
                     .min()?;
                 let mut profiles = history.features.iter().filter(|candidate| {
-                    let identity = candidate.source_id.as_deref().unwrap_or(&candidate.id);
-                    !claimed_profiles.contains(identity)
+                    let identity = candidate
+                        .source_id
+                        .map(String::from)
+                        .unwrap_or_else(|| candidate.id.clone());
+                    !claimed_profiles.contains(identity.as_str())
                         && candidate
-                            .source_id
-                            .as_deref()
-                            .and_then(|source| source.parse::<u32>().ok())
+                            .source_value()
                             .is_some_and(|candidate| source < candidate && candidate < upper)
                         && classify(candidate) == Some(FeatureClass::Sketch)
                         && crate::history::is_hole_profile_construction(candidate)
@@ -490,7 +468,7 @@ pub(crate) fn enrich_history_hole_constructions(
                         feature_index,
                         profile
                             .source_id
-                            .clone()
+                            .map(String::from)
                             .unwrap_or_else(|| profile.id.clone()),
                     )
                 })
@@ -527,7 +505,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
         let features_by_source = history
             .features
             .iter()
-            .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+            .filter_map(|feature| Some((feature.source_id?, feature)))
             .collect::<HashMap<_, _>>();
         let mut candidates = HashMap::<String, Vec<f64>>::new();
         for lane in lanes {
@@ -1261,7 +1239,9 @@ pub(crate) fn project_profiled_hole_constructions(
                 .filter(|child| !child.is_empty())
                 .filter_map(|child| {
                     let mut profiles = history.features.iter().filter(|candidate| {
-                        candidate.source_id.as_deref() == Some(child) || candidate.id == child
+                        FeatureSource::try_from(child)
+                            .is_ok_and(|child| candidate.source_id == Some(child))
+                            || candidate.id == child
                     });
                     let profile = profiles.next()?;
                     profiles.next().is_none().then_some(&profile.id)
@@ -1346,8 +1326,9 @@ pub(crate) fn project_profiled_hole_constructions(
                                 let mut constructions = children.split(',').filter_map(|source| {
                                     let mut profiles =
                                         history.features.iter().filter(|candidate| {
-                                            candidate.source_id.as_deref() == Some(source.trim())
-                                                || candidate.id == source.trim()
+                                            FeatureSource::try_from(source.trim()).is_ok_and(
+                                                |source| candidate.source_id == Some(source),
+                                            ) || candidate.id == source.trim()
                                         });
                                     let profile = profiles.next()?;
                                     profiles.next().is_none().then_some(())?;
@@ -1691,14 +1672,9 @@ fn hole_position_feature<'a>(
         .filter(|candidate| {
             classify(candidate) == Some(FeatureClass::Sketch)
                 && lanes.iter().any(|lane| {
-                    candidate
-                        .source_id
-                        .as_deref()
-                        .and_then(|value| value.parse::<u32>().ok())
-                        .or_else(|| {
-                            feature_object_name(candidate, lane).and_then(|name| name.object_id)
-                        })
-                        == Some(*source)
+                    candidate.source_value().or_else(|| {
+                        feature_object_name(candidate, lane).and_then(|name| name.object_id)
+                    }) == Some(*source)
                 })
         });
     let position = position_features.next()?;
@@ -2028,9 +2004,8 @@ pub(crate) fn project_generated_hole_axes(
                 .native_ref
                 .as_deref()
                 .and_then(|native| native_features.get(native))
-                .and_then(|native| native.source_id.as_deref())
-                .and_then(|source| source.parse::<u32>().ok())
-                .and_then(|source| FeatureSourceId::try_from(source).ok())
+                .and_then(|native| native.source_id)
+                .and_then(FeatureSource::id)
             else {
                 break 'feature_edit;
             };
@@ -2861,7 +2836,9 @@ fn direct_hole_position_feature<'a>(
         .filter(|source| !source.is_empty())
         .filter_map(|source| {
             let mut matches = history.features.iter().filter(|candidate| {
-                candidate.source_id.as_deref() == Some(source) || candidate.id == source
+                FeatureSource::try_from(source)
+                    .is_ok_and(|source| candidate.source_id == Some(source))
+                    || candidate.id == source
             });
             let child = matches.next()?;
             matches.next().is_none().then_some(child)
@@ -3593,11 +3570,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let mut owning_lanes = lanes
             .iter()
             .filter(|lane| {
-                hole_position_sketch_source(native_hole, lane)
-                    == position
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())
+                hole_position_sketch_source(native_hole, lane) == position.source_value()
             })
             .collect::<Vec<_>>();
         owning_lanes.sort_by_key(|lane| lane.id.as_str());

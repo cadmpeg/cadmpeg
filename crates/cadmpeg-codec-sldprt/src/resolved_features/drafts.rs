@@ -16,6 +16,7 @@ use crate::layout::draft_aligned_direction_frame as aligned_dir;
 use crate::layout::draft_compact_selection_prefix as compact_sel;
 use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
+use crate::records::FeatureSource;
 
 const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
 const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1.0e-9;
@@ -406,7 +407,7 @@ mod tests {
             parent: "history".into(),
             xml_tag: "Draft".into(),
             tree_parent: None,
-            source_id: Some("7".into()),
+            source_id: FeatureSource::from_value(7),
             ordinal: 0,
             name: "Draft1".into(),
             kind: "Draft".into(),

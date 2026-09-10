@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::records::Feature;
+use crate::records::FeatureSource;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};
 use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};
 
@@ -367,10 +368,10 @@ pub(crate) fn principal_plane(feature: &Feature) -> Option<PrincipalPlane> {
     {
         return None;
     }
-    match feature.source_id.as_deref()? {
-        "2" => Some(PrincipalPlane::Front),
-        "3" => Some(PrincipalPlane::Top),
-        "4" => Some(PrincipalPlane::Right),
+    match feature.source_value()? {
+        2 => Some(PrincipalPlane::Front),
+        3 => Some(PrincipalPlane::Top),
+        4 => Some(PrincipalPlane::Right),
         _ => None,
     }
 }
@@ -388,12 +389,7 @@ pub(crate) fn principal_plane_with_siblings(
     let complete_triplet = |start: u32| {
         (start..start + 3).all(|source| {
             siblings.iter().any(|candidate| {
-                candidate
-                    .source_id
-                    .as_deref()
-                    .and_then(|value| value.parse::<u32>().ok())
-                    == Some(source)
-                    && is_builtin_plane(candidate)
+                candidate.source_value() == Some(source) && is_builtin_plane(candidate)
             })
         })
     };
@@ -407,13 +403,7 @@ pub(crate) fn principal_plane_with_siblings(
     if !is_builtin_plane(feature) {
         return None;
     }
-    match feature
-        .source_id
-        .as_deref()?
-        .parse::<u32>()
-        .ok()?
-        .checked_sub(start)?
-    {
+    match feature.source_value()?.checked_sub(start)? {
         0 => Some(PrincipalPlane::Front),
         1 => Some(PrincipalPlane::Top),
         2 => Some(PrincipalPlane::Right),
@@ -562,8 +552,8 @@ mod tests {
             feature("Feature", "localized top", "Plane", None),
             feature("Feature", "localized right", "Plane", None),
         ];
-        for (plane, source) in planes.iter_mut().zip(["2", "3", "4"]) {
-            plane.source_id = Some(source.into());
+        for (plane, source) in planes.iter_mut().zip([2, 3, 4]) {
+            plane.source_id = FeatureSource::from_value(source);
         }
 
         assert_eq!(

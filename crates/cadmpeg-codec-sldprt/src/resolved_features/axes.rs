@@ -11,6 +11,7 @@ use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
+use crate::records::FeatureSource;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -901,7 +902,7 @@ pub(crate) fn enrich_history_revolution_inputs(
         object_ids.sort_unstable();
         object_ids.dedup();
         if let [object_id] = object_ids.as_slice() {
-            feature.source_id = Some(object_id.to_string());
+            feature.source_id = FeatureSource::from_value(*object_id);
         }
     }
     let mut profile_sources = HashMap::<String, HashSet<u32>>::new();
@@ -911,16 +912,11 @@ pub(crate) fn enrich_history_revolution_inputs(
             .iter()
             .filter(|feature| is_profile_feature_object(feature))
             .flat_map(|feature| {
-                feature
-                    .source_id
-                    .as_deref()
-                    .and_then(|source| source.parse::<u32>().ok())
-                    .into_iter()
-                    .chain(
-                        lanes
-                            .iter()
-                            .filter_map(|lane| feature_object_name(feature, lane)?.object_id),
-                    )
+                feature.source_value().into_iter().chain(
+                    lanes
+                        .iter()
+                        .filter_map(|lane| feature_object_name(feature, lane)?.object_id),
+                )
             })
             .collect::<HashSet<_>>();
         for feature in &history.features {

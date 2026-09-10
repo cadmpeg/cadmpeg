@@ -5,6 +5,7 @@
 use super::super::*;
 use crate::container::ContainerScan;
 use crate::native::SldprtNative;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
@@ -326,7 +327,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             parent: "history".into(),
             xml_tag: "Extrusion".into(),
             tree_parent: None,
-            source_id: Some("42".into()),
+            source_id: FeatureSource::from_value(42),
             ordinal: 0,
             name: "Boss".into(),
             kind: "Extrusion".into(),

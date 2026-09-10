@@ -21,6 +21,7 @@ use crate::history::classify::{
     is_semantic_note, principal_plane_in_history,
 };
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
+use crate::records::FeatureSource;
 
 mod datum;
 mod modify;
@@ -84,14 +85,14 @@ pub(crate) fn project_feature_model(
                 .filter_map(|(source, binding)| {
                     binding
                         .as_ref()
-                        .map(|(_, neutral)| (*source, neutral.clone()))
+                        .map(|(_, neutral)| (String::from(*source), neutral.clone()))
                 })
                 .collect::<HashMap<_, _>>();
             by_source.extend(
                 history
                     .features
                     .iter()
-                    .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id))),
+                    .map(|feature| (feature.id.clone(), neutral_feature_id(&feature.id))),
             );
             let by_native = history
                 .features
@@ -102,23 +103,21 @@ pub(crate) fn project_feature_model(
             let native_by_source = source_bindings
                 .iter()
                 .filter_map(|(source, binding)| {
-                    binding.as_ref().map(|(native, _)| (*source, *native))
+                    binding
+                        .as_ref()
+                        .map(|(native, _)| (String::from(*source), *native))
                 })
                 .collect::<HashMap<_, _>>();
             let features_by_source = history
                 .features
                 .iter()
-                .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+                .filter_map(|feature| Some((feature.source_id?, feature)))
                 .collect::<HashMap<_, _>>();
             let source_ordered = history.features.iter().any(|feature| {
                 feature.input_class.is_none()
                     && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
                     && feature.parameters.len() == 1
-                    && feature
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())
-                        .is_some_and(|source| source > 0)
+                    && feature.source_value().is_some_and(|source| source > 0)
             });
             history
                 .features
@@ -129,15 +128,15 @@ pub(crate) fn project_feature_model(
                         .tree_parent_record_id()
                         .and_then(|parent| by_native.get(parent).cloned())
                         .or_else(|| {
-                            feature
-                                .parent_source_id()
-                                .and_then(|source| by_source.get(source).cloned())
+                            feature.parent_source_id().and_then(|source| {
+                                by_source.get(String::from(source).as_str()).cloned()
+                            })
                         });
                     Ok((
                         cadmpeg_ir::features::Feature {
                             id: neutral_feature_id(&feature.id),
                             ordinal: source_ordered
-                                .then(|| feature.source_id.as_deref()?.parse::<u64>().ok())
+                                .then(|| feature.source_value().map(u64::from))
                                 .flatten()
                                 .filter(|source| *source > 0)
                                 .unwrap_or(u64::from(feature.ordinal)),
@@ -808,13 +807,13 @@ pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<So
 
 pub(crate) fn unique_source_bindings(
     history: &FeatureHistory,
-) -> HashMap<&str, Option<(&str, FeatureId)>> {
+) -> HashMap<FeatureSource, Option<(&str, FeatureId)>> {
     let mut bindings = HashMap::new();
     for feature in &history.features {
         if is_history_metadata_record(feature, &history.features) {
             continue;
         }
-        let Some(source) = feature.source_id.as_deref() else {
+        let Some(source) = feature.source_id else {
             continue;
         };
         let binding = (feature.id.as_str(), neutral_feature_id(&feature.id));
@@ -842,15 +841,14 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
                 .filter(|feature| {
                     let duplicate_source = feature
                         .source_id
-                        .as_deref()
-                        .is_some_and(|source| sources.get(source).is_some_and(Option::is_none));
+                        .is_some_and(|source| sources.get(&source).is_some_and(Option::is_none));
                     let parent_requested = feature.tree_parent.is_some();
                     let parent_resolved = feature
                         .tree_parent_record_id()
                         .is_some_and(|parent| native_ids.contains(parent))
-                        || feature
-                            .parent_source_id()
-                            .is_some_and(|source| sources.get(source).is_some_and(Option::is_some));
+                        || feature.parent_source_id().is_some_and(|source| {
+                            sources.get(&source).is_some_and(Option::is_some)
+                        });
                     let incomplete_content = feature.content.iter().any(|item| match item {
                         FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
                         FeatureContent::Dimension(name) => !feature.parameters.contains_key(name),
@@ -866,9 +864,13 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
                         })
                         .filter(|reference| !reference.is_empty())
                         .any(|reference| {
-                            sources.get(reference).and_then(Option::as_ref).is_none_or(
-                                |(_, dependency)| dependency == &neutral_feature_id(&feature.id),
-                            )
+                            FeatureSource::try_from(reference)
+                                .ok()
+                                .and_then(|reference| sources.get(&reference))
+                                .and_then(Option::as_ref)
+                                .is_none_or(|(_, dependency)| {
+                                    dependency == &neutral_feature_id(&feature.id)
+                                })
                         });
                     duplicate_source
                         || (parent_requested && !parent_resolved)
@@ -915,7 +917,7 @@ pub(crate) fn project_feature_content(
 
 pub(crate) fn project_feature_dependencies(
     feature: &Feature,
-    by_source: &HashMap<&str, FeatureId>,
+    by_source: &HashMap<String, FeatureId>,
 ) -> Vec<FeatureId> {
     let owner = neutral_feature_id(&feature.id);
     let mut seen = std::collections::HashSet::new();
@@ -972,9 +974,9 @@ pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<Design
 /// Project every native feature dimension into the neutral parameter arena.
 pub(crate) fn project_definition(
     feature: &Feature,
-    by_source: &HashMap<&str, FeatureId>,
-    native_by_source: &HashMap<&str, &str>,
-    features_by_source: &HashMap<&str, &Feature>,
+    by_source: &HashMap<String, FeatureId>,
+    native_by_source: &HashMap<String, &str>,
+    features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> FeatureDefinition {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {

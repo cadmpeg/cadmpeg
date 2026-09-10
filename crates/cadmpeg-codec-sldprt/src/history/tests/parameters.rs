@@ -4,6 +4,7 @@
 
 use super::super::*;
 use super::*;
+use crate::records::FeatureSource;
 
 #[test]
 fn repeated_aliases_from_one_parameter_remain_unambiguous() {
@@ -321,7 +322,9 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
     let mut dependent = feature("dependent", Some("2"), 2);
     dependent.properties.insert("Dependency".into(), "1".into());
     let mut malformed = feature("malformed", Some("3"), 3);
-    malformed.tree_parent = Some(crate::records::TreeParent::Source("missing".into()));
+    malformed.tree_parent = Some(crate::records::TreeParent::Source(
+        FeatureSource::from_value(9_999).expect("test feature source id"),
+    ));
     malformed
         .content
         .push(FeatureContent::Feature("missing-child".into()));

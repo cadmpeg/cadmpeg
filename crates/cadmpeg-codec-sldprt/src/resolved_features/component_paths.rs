@@ -17,11 +17,7 @@ pub(crate) fn component_path_features(
 ) -> Vec<String> {
     let mut by_source = HashMap::<u32, Option<&str>>::new();
     for feature in features {
-        let Some(source_id) = feature
-            .source_id
-            .as_deref()
-            .and_then(|id| id.parse::<u32>().ok())
-        else {
+        let Some(source_id) = feature.source_value() else {
             continue;
         };
         by_source
@@ -56,16 +52,8 @@ pub(super) fn feature_precedes_consumer(
                 return false;
             }
             match (
-                feature
-                    .source_id
-                    .as_deref()
-                    .and_then(|source| source.parse::<u32>().ok())
-                    .filter(|source| *source != 0),
-                consumer
-                    .source_id
-                    .as_deref()
-                    .and_then(|source| source.parse::<u32>().ok())
-                    .filter(|source| *source != 0),
+                feature.source_value().filter(|source| *source != 0),
+                consumer.source_value().filter(|source| *source != 0),
             ) {
                 (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
                 _ => feature.ordinal < consumer.ordinal,
@@ -109,11 +97,7 @@ pub(crate) fn component_path_terminal_feature(
 ) -> Option<String> {
     let mut by_source = HashMap::<u32, Option<&str>>::new();
     for feature in features {
-        let Some(source_id) = feature
-            .source_id
-            .as_deref()
-            .and_then(|id| id.parse::<u32>().ok())
-        else {
+        let Some(source_id) = feature.source_value() else {
             continue;
         };
         by_source
@@ -151,17 +135,10 @@ pub(super) fn component_path_feature<'a>(
     let owner_source = features
         .iter()
         .find(|feature| feature.id == owner_ref)?
-        .source_id
-        .as_deref()?
-        .parse::<u32>()
-        .ok()?;
+        .source_value()?;
     let mut by_source = HashMap::<u32, Option<&crate::records::Feature>>::new();
     for feature in features {
-        let Some(source_id) = feature
-            .source_id
-            .as_deref()
-            .and_then(|id| id.parse::<u32>().ok())
-        else {
+        let Some(source_id) = feature.source_value() else {
             continue;
         };
         by_source
@@ -371,11 +348,7 @@ pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bo
         == NativeClassKind::ProfileFeature
         || (feature.input_class.is_none()
             && feature.xml_tag.eq_ignore_ascii_case("Sketch")
-            && feature
-                .source_id
-                .as_deref()
-                .and_then(|source| source.parse::<u32>().ok())
-                .is_some_and(|source| source != 0))
+            && feature.source_value().is_some_and(|source| source != 0))
 }
 
 pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
@@ -406,12 +379,7 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
     let mut instance_count = 0usize;
     for feature in objects {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
-        let Some(source) = feature
-            .source_id
-            .as_deref()
-            .and_then(|source| source.parse::<u32>().ok())
-            .filter(|source| *source != 0)
-        else {
+        let Some(source) = feature.source_value().filter(|source| *source != 0) else {
             return false;
         };
         if !object_ids.insert(source) {

@@ -85,7 +85,7 @@ pub(crate) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
 
 pub(crate) fn project_trim_surface(
     feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
+    native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {
     let tool = feature.properties.get("Tool").map_or_else(
         || PathRef::Unresolved(format!("{}:tool", feature.id)),

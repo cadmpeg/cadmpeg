@@ -6,6 +6,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputOperand,
     FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
@@ -836,7 +837,7 @@ mod relation_records_tests {
         let mut metadata = history[0].features[0].clone();
         metadata.id = "attribute-definition".into();
         metadata.xml_tag = "Feature".into();
-        metadata.source_id = Some("-1".into());
+        metadata.source_id = Some(FeatureSource::Reserved);
         metadata.ordinal = 1;
         metadata.name = "Attribute-Definition".into();
         metadata.kind = "Attribute-Definition".into();

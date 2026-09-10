@@ -1693,11 +1693,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .iter()
         .flat_map(|history| &history.features)
     {
-        let Some(source) = feature
-            .source_id
-            .as_deref()
-            .and_then(|source| source.parse::<u32>().ok())
-        else {
+        let Some(source) = feature.source_value() else {
             continue;
         };
         *source_counts.entry(source).or_default() += 1;
@@ -1750,11 +1746,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                                     .iter()
                                     .flat_map(|history| &history.features)
                                     .any(|feature| {
-                                        feature
-                                            .source_id
-                                            .as_deref()
-                                            .and_then(|source| source.parse::<u32>().ok())
-                                            == Some(id)
+                                        feature.source_value() == Some(id)
                                             && feature.input_class.is_none()
                                             && classify(feature) == Some(expected)
                                     })

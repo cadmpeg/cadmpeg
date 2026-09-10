@@ -158,13 +158,9 @@ pub(crate) fn bind_pattern_inputs(
                     .filter_map(|components| {
                         for component in components.iter().rev() {
                             let source = View::u32_le_at(&component.type_signature, 4)?;
-                            let mut matches = history_features.iter().filter(|candidate| {
-                                candidate
-                                    .source_id
-                                    .as_deref()
-                                    .and_then(|value| value.parse::<u32>().ok())
-                                    == Some(source)
-                            });
+                            let mut matches = history_features
+                                .iter()
+                                .filter(|candidate| candidate.source_value() == Some(source));
                             let Some(feature) = matches.next() else {
                                 continue;
                             };
@@ -222,11 +218,7 @@ pub(crate) fn bind_pattern_inputs(
                 };
                 let end = pattern_object_end();
                 if needs_seed {
-                    if let Some(pattern_source) = feature
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())
-                    {
+                    if let Some(pattern_source) = feature.source_value() {
                         let mut seed_candidates = generated_identities
                             .iter()
                             .filter(|identity| {
@@ -249,10 +241,7 @@ pub(crate) fn bind_pattern_inputs(
                             })
                             .filter_map(|identity| {
                                 let mut matches = history_features.iter().filter(|candidate| {
-                                    candidate
-                                        .source_id
-                                        .as_deref()
-                                        .and_then(|source| source.parse::<u32>().ok())
+                                    candidate.source_value()
                                         == Some(identity.feature_source_id.value())
                                 });
                                 let seed = matches.next()?;
@@ -1249,7 +1238,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
                 .iter()
                 .all(|(_, _, owner)| owner != &feature.id)
         })
-        .filter_map(|feature| Some((feature.source_id.as_deref()?.parse::<u32>().ok()?, feature)))
+        .filter_map(|feature| Some((feature.source_value()?, feature)))
         .collect::<Vec<_>>();
     owners.sort_unstable_by_key(|(source, _)| *source);
     if starts.len() != owners.len() {

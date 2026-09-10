@@ -502,9 +502,7 @@ fn operation_carrier_present(
     form_padding: Option<usize>,
 ) -> bool {
     let source_matches = feature
-        .source_id
-        .as_deref()
-        .and_then(|value| value.parse::<u32>().ok())
+        .source_value()
         .map(|source_id| {
             lane.names
                 .iter()
@@ -614,16 +612,14 @@ fn split_line_source_sketch<'a>(
     if feature.parameters.is_empty() {
         return None;
     }
-    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+    let source = feature.source_value()?;
     let mut candidates = history_features.iter().filter(|candidate| {
         candidate.parent == feature.parent
             && classify(candidate) == Some(FeatureClass::Sketch)
             && candidate.input_class.as_deref() == Some("moProfileFeature_c")
             && candidate.parameters == feature.parameters
             && candidate
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
+                .source_value()
                 .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
     });
     let tool = candidates.next()?;

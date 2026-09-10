@@ -1276,15 +1276,11 @@ fn generated_sketch_owner_id(
     owner: &crate::records::Feature,
     sketch: &str,
 ) -> Result<u32, cadmpeg_core::CodecError> {
-    owner
-        .source_id
-        .as_deref()
-        .and_then(|source_id| source_id.parse::<u32>().ok())
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "source-less SLDPRT sketch {sketch} has no numeric feature source id"
-            ))
-        })
+    owner.source_value().ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "source-less SLDPRT sketch {sketch} has no numeric feature source id"
+        ))
+    })
 }
 
 fn source_less_lanes(
