@@ -271,14 +271,18 @@ enum HoleKindWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         form: Option<HoleForm>,
+    },
+    PartialCounterbore {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_diameter: Option<PositiveLength>,
+        diameter: Option<PositiveLength>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_depth: Option<PositiveLength>,
+        depth: Option<PositiveLength>,
+    },
+    PartialCountersink {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_diameter: Option<PositiveLength>,
+        diameter: Option<PositiveLength>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_angle: Option<InteriorAngle>,
+        angle: Option<InteriorAngle>,
     },
     Simple,
     Chamfer {
@@ -320,27 +324,13 @@ enum HoleKindWire {
 impl From<HoleKind> for HoleKindWire {
     fn from(value: HoleKind) -> Self {
         match value {
-            HoleKind::Unresolved(form) => Self::Unresolved {
-                form,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
-            HoleKind::PartialCounterbore { diameter, depth } => Self::Unresolved {
-                form: Some(HoleForm::Counterbore),
-                counterbore_diameter: diameter,
-                counterbore_depth: depth,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
-            HoleKind::PartialCountersink { diameter, angle } => Self::Unresolved {
-                form: Some(HoleForm::Countersink),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: diameter,
-                countersink_angle: angle,
-            },
+            HoleKind::Unresolved(form) => Self::Unresolved { form },
+            HoleKind::PartialCounterbore { diameter, depth } => {
+                Self::PartialCounterbore { diameter, depth }
+            }
+            HoleKind::PartialCountersink { diameter, angle } => {
+                Self::PartialCountersink { diameter, angle }
+            }
             HoleKind::Simple => Self::Simple,
             HoleKind::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
             HoleKind::SimpleDrilled { drill_point_angle } => {
@@ -376,33 +366,12 @@ impl TryFrom<HoleKindWire> for HoleKind {
 
     fn try_from(value: HoleKindWire) -> Result<Self, Self::Error> {
         Ok(match value {
-            HoleKindWire::Unresolved {
-                form,
-                counterbore_diameter,
-                counterbore_depth,
-                countersink_diameter,
-                countersink_angle,
-            } => {
-                let counterbore_present =
-                    counterbore_diameter.is_some() || counterbore_depth.is_some();
-                let countersink_present =
-                    countersink_diameter.is_some() || countersink_angle.is_some();
-                match (form, counterbore_present, countersink_present) {
-                    (Some(HoleForm::Counterbore), true, false) => Self::PartialCounterbore {
-                        diameter: counterbore_diameter,
-                        depth: counterbore_depth,
-                    },
-                    (Some(HoleForm::Countersink), false, true) => Self::PartialCountersink {
-                        diameter: countersink_diameter,
-                        angle: countersink_angle,
-                    },
-                    (form, false, false) => Self::Unresolved(form),
-                    _ => {
-                        return Err(
-                            "unresolved hole fields do not match the form field".to_string()
-                        );
-                    }
-                }
+            HoleKindWire::Unresolved { form } => Self::Unresolved(form),
+            HoleKindWire::PartialCounterbore { diameter, depth } => {
+                Self::PartialCounterbore { diameter, depth }
+            }
+            HoleKindWire::PartialCountersink { diameter, angle } => {
+                Self::PartialCountersink { diameter, angle }
             }
             HoleKindWire::Simple => Self::Simple,
             HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
@@ -805,8 +774,6 @@ pub enum HoleForm {
     Chamfer,
     /// Wider, flat-bottomed entry.
     Counterbore,
-    /// Conical entry followed by a cylindrical recess.
-    Counterdrill,
     /// Conical entry.
     Countersink,
 }
