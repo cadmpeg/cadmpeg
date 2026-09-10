@@ -351,7 +351,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .stdout(
             "severity\tcheck\tentity\tmessage\n\
              error\tidentity\te1\tduplicate id\n\
-             warning\tbounds\t\tnegative radius\n",
+             warning\ttolerances\t\tnegative radius\n",
         );
 
     cadmpeg()
