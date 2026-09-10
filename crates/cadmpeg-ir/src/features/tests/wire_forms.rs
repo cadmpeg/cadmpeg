@@ -1107,3 +1107,123 @@ fn every_partial_hole_pair_round_trips_to_flat_fields() {
         );
     }
 }
+
+/// Each of these six variants once flattened a `*_wire` module into the
+/// definition object, which made `FeatureDefinition`'s `deny_unknown_fields`
+/// inert on the variant. The nested key restores it.
+fn assert_key_beside_the_nested_field_is_rejected(document: &serde_json::Value) {
+    use crate::features::FeatureDefinition;
+
+    assert!(
+        serde_json::from_value::<FeatureDefinition>(document.clone()).is_ok(),
+        "{document}"
+    );
+    let mut beside = document.clone();
+    beside["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<FeatureDefinition>(beside)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}
+
+fn assert_key_inside_the_nested_field_is_rejected(document: &serde_json::Value, field: &str) {
+    use crate::features::FeatureDefinition;
+
+    let mut inside = document.clone();
+    inside[field]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<FeatureDefinition>(inside)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}
+
+#[test]
+fn an_unknown_key_beside_the_helix_shape_is_rejected_by_name() {
+    let helix = serde_json::json!({
+        "definition": "helix",
+        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "radius": 2.0,
+        "shape": {"kind": "spiral", "radial_growth": 1.5},
+        "revolutions": 4.0,
+        "start_angle": 0.0,
+        "clockwise": false
+    });
+    assert_key_beside_the_nested_field_is_rejected(&helix);
+    assert_key_inside_the_nested_field_is_rejected(&helix, "shape");
+}
+
+#[test]
+fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
+    let wrap = serde_json::json!({
+        "definition": "wrap",
+        "profile": {"kind": "native", "value": "wrap:profile"},
+        "face": {"kind": "native", "value": "wrap:face"},
+        "mode": {"emboss": {"depth": 2.5}}
+    });
+    assert_key_beside_the_nested_field_is_rejected(&wrap);
+
+    let mut inside = wrap;
+    inside["mode"]["emboss"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<crate::features::FeatureDefinition>(inside)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}
+
+#[test]
+fn an_unknown_key_beside_the_sketch_binding_is_rejected_by_name() {
+    let sketch = serde_json::json!({
+        "definition": "sketch",
+        "sketch": {"space": "planar", "sketch": "test:model:sketch#1"}
+    });
+    assert_key_beside_the_nested_field_is_rejected(&sketch);
+    assert_key_inside_the_nested_field_is_rejected(&sketch, "sketch");
+}
+
+#[test]
+fn an_unknown_key_beside_the_extrude_direction_is_rejected_by_name() {
+    let extrude = serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "test:profile"},
+        "direction": {
+            "kind": "explicit",
+            "vector": {"x": 0.0, "y": 1.0, "z": 0.0}
+        },
+        "start": {"kind": "profile_plane"},
+        "extent": {
+            "kind": "one_sided",
+            "side": {"termination": {"kind": "blind", "length": 4.0}}
+        },
+        "op": "new_body"
+    });
+    assert_key_beside_the_nested_field_is_rejected(&extrude);
+}
+
+#[test]
+fn an_unknown_key_beside_the_trim_region_is_rejected_by_name() {
+    let trim = serde_json::json!({
+        "definition": "trim_surface",
+        "faces": {"kind": "unresolved"},
+        "tool": {"kind": "unresolved", "value": "test:trim-tool"},
+        "keep": {"cells": {"removed": [1, 4], "total": 5}}
+    });
+    assert_key_beside_the_nested_field_is_rejected(&trim);
+}
+
+#[test]
+fn an_unknown_key_beside_the_draft_anchor_is_rejected_by_name() {
+    let draft = serde_json::json!({
+        "definition": "draft",
+        "faces": {"kind": "native", "value": "draft:faces"},
+        "anchor": {
+            "kind": "parting_line",
+            "tool": {"kind": "native", "value": "draft:parting-tool"},
+            "pull": {"direction": {"x": 0.0, "y": 0.0, "z": 1.0}}
+        },
+        "angle": 0.1,
+        "outward": false
+    });
+    assert_key_beside_the_nested_field_is_rejected(&draft);
+    assert_key_inside_the_nested_field_is_rejected(&draft, "anchor");
+}
