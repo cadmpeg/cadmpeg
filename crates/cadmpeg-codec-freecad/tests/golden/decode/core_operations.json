@@ -20549,25 +20549,27 @@
         {
           "definition": {
             "definition": "datum_coordinate_system",
-            "origin": {
-              "x": 7.0,
-              "y": 8.0,
-              "z": 9.0
-            },
-            "x_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "y_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "z_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "origin": {
+                "x": 7.0,
+                "y": 8.0,
+                "z": 9.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:design:feature#DatumCoordinateSystem",
@@ -20587,20 +20589,22 @@
         {
           "definition": {
             "definition": "datum_plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 4.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 4.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:design:feature#DatumPlane",
@@ -20711,11 +20715,13 @@
         },
         {
           "definition": {
-            "active_child": "fcstd:design:feature#Draft",
-            "children": [
-              "fcstd:design:feature#DraftBase",
-              "fcstd:design:feature#Draft"
-            ],
+            "children": {
+              "active_child": "fcstd:design:feature#Draft",
+              "children": [
+                "fcstd:design:feature#DraftBase",
+                "fcstd:design:feature#Draft"
+              ]
+            },
             "definition": "tree_node",
             "role": "solid_bodies"
           },
@@ -20781,7 +20787,6 @@
                 "kind": "angled"
               },
               "definition": "hole",
-              "diameter": 6.0,
               "direction": {
                 "x": 0.0,
                 "y": 0.0,
@@ -20791,11 +20796,6 @@
                 "kind": "blind",
                 "length": 7.0
               },
-              "kind": {
-                "angle": 1.4311699866353502,
-                "diameter": 10.0,
-                "kind": "countersink"
-              },
               "profile": {
                 "kind": "sketch",
                 "value": "fcstd:design:sketch#HoleProfile"
@@ -20804,6 +20804,14 @@
                 "arcs": true,
                 "circles": true,
                 "points": true
+              },
+              "shape": {
+                "diameter": 6.0,
+                "kind": {
+                  "angle": 1.4311699866353502,
+                  "diameter": 10.0,
+                  "kind": "countersink"
+                }
               }
             },
             "refine": true
@@ -20853,12 +20861,14 @@
         },
         {
           "definition": {
-            "active_child": "fcstd:design:feature#Hole",
-            "children": [
-              "fcstd:design:feature#HoleBase",
-              "fcstd:design:feature#HoleProfile",
-              "fcstd:design:feature#Hole"
-            ],
+            "children": {
+              "active_child": "fcstd:design:feature#Hole",
+              "children": [
+                "fcstd:design:feature#HoleBase",
+                "fcstd:design:feature#HoleProfile",
+                "fcstd:design:feature#Hole"
+              ]
+            },
             "definition": "tree_node",
             "role": "solid_bodies"
           },
@@ -21176,11 +21186,13 @@
         },
         {
           "definition": {
-            "active_child": "fcstd:design:feature#PatternBase",
-            "children": [
-              "fcstd:design:feature#PatternBase",
-              "fcstd:design:feature#LinearPattern"
-            ],
+            "children": {
+              "active_child": "fcstd:design:feature#PatternBase",
+              "children": [
+                "fcstd:design:feature#PatternBase",
+                "fcstd:design:feature#LinearPattern"
+              ]
+            },
             "definition": "tree_node",
             "role": "solid_bodies"
           },
@@ -21270,10 +21282,6 @@
           "definition": {
             "definition": "sweep",
             "linearize": false,
-            "mode": {
-              "mode": "solid",
-              "op": "new_body"
-            },
             "orientation": {
               "kind": "frenet"
             },
@@ -21282,11 +21290,17 @@
               "value": "fcstd:native:property#Sweep:Spine"
             },
             "path_tangent": false,
-            "section": {
-              "kind": "profile",
-              "value": {
-                "kind": "native",
-                "value": "fcstd:native:object#SweepSection"
+            "shape": {
+              "mode": {
+                "mode": "solid",
+                "op": "new_body"
+              },
+              "section": {
+                "kind": "profile",
+                "value": {
+                  "kind": "native",
+                  "value": "fcstd:native:object#SweepSection"
+                }
               }
             },
             "transformation": "constant",

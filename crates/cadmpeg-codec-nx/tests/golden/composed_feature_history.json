@@ -619,16 +619,18 @@
           {
             "definition": {
               "definition": "hole",
-              "exit_kind": {
-                "form": "chamfer",
-                "kind": "unresolved"
-              },
               "extent": {
                 "kind": "through_all"
               },
-              "kind": {
-                "form": "chamfer",
-                "kind": "unresolved"
+              "shape": {
+                "exit_kind": {
+                  "form": "chamfer",
+                  "kind": "unresolved"
+                },
+                "kind": {
+                  "form": "chamfer",
+                  "kind": "unresolved"
+                }
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000014",

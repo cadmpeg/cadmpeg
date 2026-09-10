@@ -846,7 +846,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     let first = Point3::new(0.0, 1.0, 2.0);
     let second = Point3::new(3.0, 4.0, 5.0);
     let segment = FeatureLineSegment::new(first, second).unwrap();
-    let wire = serde_json::json!({"definition":"line_segment", "start":first, "end":second});
+    let wire = serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":second}});
     let definition = FeatureDefinition::LineSegment { segment };
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
@@ -856,7 +856,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     assert!(FeatureLineSegment::new(first, first).is_none());
     assert!(FeatureLineSegment::new(Point3::new(f64::NAN, 0.0, 0.0), second).is_none());
     assert!(serde_json::from_value::<FeatureDefinition>(
-        serde_json::json!({"definition":"line_segment", "start":first, "end":first})
+        serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":first}})
     )
     .is_err());
 
@@ -866,7 +866,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
         (vec![first, second, first], false),
     ] {
         let chain = FeaturePolyline::new(points.clone(), closed).unwrap();
-        let wire = serde_json::json!({"definition":"polyline", "points":points, "closed":closed});
+        let wire = serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}});
         let definition = FeatureDefinition::Polyline { chain };
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
         assert_eq!(
@@ -882,7 +882,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     ] {
         assert!(FeaturePolyline::new(points.clone(), closed).is_none());
         assert!(serde_json::from_value::<FeatureDefinition>(
-            serde_json::json!({"definition":"polyline", "points":points, "closed":closed})
+            serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}})
         )
         .is_err());
     }
@@ -904,7 +904,7 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
     )
     .unwrap();
     let definition = FeatureDefinition::EquationCurve { curve };
-    let wire = serde_json::json!({"definition":"equation_curve", "parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0});
+    let wire = serde_json::json!({"definition":"equation_curve", "curve":{"parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0}});
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
@@ -936,8 +936,8 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
     }
     for [start, end] in [[1.0, 1.0], [2.0, 1.0]] {
         let mut invalid = wire.clone();
-        invalid["start"] = serde_json::json!(start);
-        invalid["end"] = serde_json::json!(end);
+        invalid["curve"]["start"] = serde_json::json!(start);
+        invalid["curve"]["end"] = serde_json::json!(end);
         assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
     }
 }
@@ -958,20 +958,20 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
         let angles = DirectedParameterRange::new(endpoints).unwrap();
         let arc = FeatureCircularArc::new(center, normal, major, angles).unwrap();
         let definition = FeatureDefinition::CircularArc { arc };
-        let wire = serde_json::json!({"definition":"circular_arc", "center":center, "normal":normal, "radius":4.0, "start_angle":endpoints[0], "end_angle":endpoints[1]});
+        let wire = serde_json::json!({"definition":"circular_arc", "arc":{"center":center, "normal":normal, "radius":4.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
             definition
         );
         let mut invalid = wire;
-        invalid["end_angle"] = invalid["start_angle"].clone();
+        invalid["arc"]["end_angle"] = invalid["arc"]["start_angle"].clone();
         assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
 
         let arc =
             FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
         let definition = FeatureDefinition::EllipticArc { arc };
-        let wire = serde_json::json!({"definition":"elliptic_arc", "center":center, "normal":normal, "major_axis":major_axis, "major_radius":4.0, "minor_radius":2.0, "start_angle":endpoints[0], "end_angle":endpoints[1]});
+        let wire = serde_json::json!({"definition":"elliptic_arc", "arc":{"center":center, "normal":normal, "major_axis":major_axis, "major_radius":4.0, "minor_radius":2.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
@@ -983,7 +983,7 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
             ("end_angle", serde_json::json!(endpoints[0])),
         ] {
             let mut invalid = wire.clone();
-            invalid[field] = value;
+            invalid["arc"][field] = value;
             assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
         }
     }
@@ -1098,7 +1098,7 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
     let y = Vector3::new(0.0, 1.0, 0.0);
     let z = Vector3::new(0.0, 0.0, 1.0);
     let frame = FeatureCoordinateFrame::new(origin, x, y, z).unwrap();
-    let wire = serde_json::json!({"definition":"datum_coordinate_system","origin":origin,"x_axis":x,"y_axis":y,"z_axis":z});
+    let wire = serde_json::json!({"definition":"datum_coordinate_system","frame":{"origin":origin,"x_axis":x,"y_axis":y,"z_axis":z}});
     let definition = FeatureDefinition::DatumCoordinateSystem { frame };
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
@@ -1111,7 +1111,7 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
         ("x_axis", Vector3::new(2.0, 0.0, 0.0)),
     ] {
         let mut invalid = wire.clone();
-        invalid[key] = serde_json::to_value(value).unwrap();
+        invalid["frame"][key] = serde_json::to_value(value).unwrap();
         assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
     }
     assert!(FeatureCoordinateFrame::new(Point3::new(f64::NAN, 0.0, 0.0), x, y, z).is_none());
@@ -1189,15 +1189,17 @@ fn reference_image_and_coil_frames_preserve_wire_fields_and_reject_invalid_frame
     let image = serde_json::json!({
         "definition":"reference_image", "asset":"synthetic:test:asset#frame",
         "visible":true, "mirror_u":false, "mirror_v":false,
-        "origin":{"x":1.0,"y":2.0,"z":3.0},
-        "u_axis":{"x":1.0,"y":0.0,"z":0.0},
-        "v_axis":{"x":0.0,"y":1.0,"z":0.0},
+        "frame":{
+            "origin":{"x":1.0,"y":2.0,"z":3.0},
+            "u_axis":{"x":1.0,"y":0.0,"z":0.0},
+            "v_axis":{"x":0.0,"y":1.0,"z":0.0}
+        },
         "bounds":[{"u":2.0,"v":3.0},{"u":-2.0,"v":-3.0}]
     });
     let decoded = serde_json::from_value::<FeatureDefinition>(image.clone()).unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), image);
     let mut invalid = image.clone();
-    invalid["v_axis"] = invalid["u_axis"].clone();
+    invalid["frame"]["v_axis"] = invalid["frame"]["u_axis"].clone();
     assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
     let mut invalid = image;
     invalid["bounds"][1]["u"] = serde_json::json!(2.0);
@@ -1235,8 +1237,8 @@ fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
     let geometry = serde_json::json!({"origin":origin,"normal":normal,"u_axis":u_axis});
     assert_eq!(serde_json::to_value(datum).unwrap(), geometry);
     assert_eq!(serde_json::to_value(support).unwrap(), geometry);
-    let mut datum_wire = geometry.clone();
-    datum_wire["definition"] = serde_json::json!("datum_plane");
+    let datum_wire =
+        serde_json::json!({"definition":"datum_plane","frame":geometry.clone()});
     let definition = FeatureDefinition::DatumPlane { frame: datum };
     assert_eq!(serde_json::to_value(&definition).unwrap(), datum_wire);
     assert_eq!(

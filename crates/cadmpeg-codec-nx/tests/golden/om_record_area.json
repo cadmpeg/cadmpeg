@@ -29,13 +29,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",

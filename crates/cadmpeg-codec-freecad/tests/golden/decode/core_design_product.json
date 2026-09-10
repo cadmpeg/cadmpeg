@@ -3422,13 +3422,15 @@
             "operation": {
               "definition": "combine",
               "op": "cut",
-              "target": {
-                "kind": "native",
-                "value": "fcstd:native:property#Cut:Base"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "fcstd:native:property#Cut:Tool"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "fcstd:native:property#Cut:Base"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "fcstd:native:property#Cut:Tool"
+                }
               }
             },
             "refine": true

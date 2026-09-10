@@ -443,21 +443,23 @@ fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
 }
 
 #[test]
-fn hole_construction_forms_preserve_the_flat_wire_layout() {
+fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
     use crate::features::{FeatureDefinition, HoleConstruction, HoleKind, HoleSpecification};
 
     let standard = serde_json::json!({
         "definition": "hole",
-        "kind": {"kind": "simple"},
-        "specification": {
-            "standard": "ISO metric",
-            "designation": "M8",
-            "fit": "normal",
-            "threaded": false,
-            "modeled": false,
-            "cosmetic": false,
-            "hand": "right",
-            "depth": {"kind": "hole_depth"}
+        "shape": {
+            "kind": {"kind": "simple"},
+            "specification": {
+                "standard": "ISO metric",
+                "designation": "M8",
+                "fit": "normal",
+                "threaded": false,
+                "modeled": false,
+                "cosmetic": false,
+                "hand": "right",
+                "depth": {"kind": "hole_depth"}
+            }
         }
     });
     let definition: FeatureDefinition = serde_json::from_value(standard.clone()).unwrap();
@@ -471,13 +473,15 @@ fn hole_construction_forms_preserve_the_flat_wire_layout() {
 
     let native_thread = serde_json::json!({
         "definition": "hole",
-        "diameter": 6.0,
-        "kind": {
-            "kind": "threaded",
-            "major_diameter": 8.0,
-            "thread_depth": 12.0,
-            "pitch": 1.25,
-            "drill_point_angle": 2.0
+        "shape": {
+            "diameter": 6.0,
+            "kind": {
+                "kind": "threaded",
+                "major_diameter": 8.0,
+                "thread_depth": 12.0,
+                "pitch": 1.25,
+                "drill_point_angle": 2.0
+            }
         }
     });
     let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
@@ -486,6 +490,31 @@ fn hole_construction_forms_preserve_the_flat_wire_layout() {
         FeatureDefinition::Hole { shape, .. } if matches!(shape.construction(), HoleConstruction::NativeThread { .. })
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), native_thread);
+}
+
+#[test]
+fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
+    use crate::features::FeatureDefinition;
+
+    let hole = serde_json::json!({
+        "definition": "hole",
+        "shape": {"kind": {"kind": "simple"}, "diameter": 3.0}
+    });
+    assert!(serde_json::from_value::<FeatureDefinition>(hole.clone()).is_ok());
+
+    let mut beside_shape = hole.clone();
+    beside_shape["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<FeatureDefinition>(beside_shape)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+
+    let mut inside_shape = hole;
+    inside_shape["shape"]["zz_bogus"] = serde_json::json!(1);
+    let error = serde_json::from_value::<FeatureDefinition>(inside_shape)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
 }
 
 #[test]
@@ -513,14 +542,16 @@ fn hole_wire_rejects_cross_form_thread_fields() {
 
     let mut native_with_standard = serde_json::json!({
         "definition": "hole",
-        "kind": {
-            "kind": "threaded",
-            "major_diameter": 8.0,
-            "thread_depth": 12.0,
-            "drill_point_angle": 2.0
+        "shape": {
+            "kind": {
+                "kind": "threaded",
+                "major_diameter": 8.0,
+                "thread_depth": 12.0,
+                "drill_point_angle": 2.0
+            }
         }
     });
-    native_with_standard["specification"] = specification(true);
+    native_with_standard["shape"]["specification"] = specification(true);
     assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
 }
 
@@ -540,9 +571,9 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
         merge_result: Some(false),
     };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["continuity"], serde_json::json!("contact"));
+    assert_eq!(wire["continuity"]["continuity"], serde_json::json!("contact"));
     assert_eq!(
-        wire["boundary_continuities"],
+        wire["continuity"]["boundary_continuities"],
         serde_json::json!(["contact", "contact"])
     );
     assert_eq!(
@@ -551,7 +582,7 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     );
 
     let mut conflicting = wire;
-    conflicting["continuity"] = serde_json::json!("curvature");
+    conflicting["continuity"]["continuity"] = serde_json::json!("curvature");
     assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
 }
 
@@ -567,7 +598,6 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
     };
     let wire = serde_json::to_value(&definition).unwrap();
     assert!(wire.get("continuity").is_none());
-    assert!(wire.get("boundary_continuities").is_none());
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
         definition

@@ -123,7 +123,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     let value = serde_json::to_value(&model).unwrap();
     assert_eq!(value["features"][1]["parent"], parent_id.as_str());
     assert_eq!(
-        value["features"][0]["definition"]["children"][0],
+        value["features"][0]["definition"]["children"]["children"][0],
         child_id.as_str()
     );
     assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);

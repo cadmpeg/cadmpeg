@@ -148,12 +148,14 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "ordinal": 1,
             "definition": {
                 "definition": "sweep",
-                "section": {
-                    "kind": "profile",
-                    "value": {"kind": "native", "value": "native:sweep-profile"}
+                "shape": {
+                    "section": {
+                        "kind": "profile",
+                        "value": {"kind": "native", "value": "native:sweep-profile"}
+                    },
+                    "mode": {"mode": "solid", "op": "cut"}
                 },
-                "path": {"kind": "native", "value": "native:sweep-path"},
-                "mode": {"mode": "solid", "op": "cut"}
+                "path": {"kind": "native", "value": "native:sweep-path"}
             }
         }))
         .expect("Sweep feature"),
@@ -215,8 +217,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "definition": {
                 "definition": "native",
                 "kind": "unsupported",
-                "parameters": {},
-                "properties": {}
+                "parameters": {}
             }
         }))
         .expect("native feature"),
@@ -591,8 +592,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 "definition": {
                     "definition": "native",
                     "kind": "Unsupported",
-                    "parameters": {},
-                    "properties": {}
+                    "parameters": {}
                 },
                 "native_ref": scope.id
             }))

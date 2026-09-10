@@ -62,13 +62,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [

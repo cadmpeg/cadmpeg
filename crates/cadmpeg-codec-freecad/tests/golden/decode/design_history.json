@@ -5948,14 +5948,16 @@
       "features": [
         {
           "definition": {
-            "active_child": "fcstd:design:feature#Fillet",
-            "children": [
-              "fcstd:design:feature#PadSketch",
-              "fcstd:design:feature#Pad",
-              "fcstd:design:feature#PocketSketch",
-              "fcstd:design:feature#Pocket",
-              "fcstd:design:feature#Fillet"
-            ],
+            "children": {
+              "active_child": "fcstd:design:feature#Fillet",
+              "children": [
+                "fcstd:design:feature#PadSketch",
+                "fcstd:design:feature#Pad",
+                "fcstd:design:feature#PocketSketch",
+                "fcstd:design:feature#Pocket",
+                "fcstd:design:feature#Fillet"
+              ]
+            },
             "definition": "tree_node",
             "role": "solid_bodies"
           },
