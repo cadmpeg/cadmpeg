@@ -76,7 +76,7 @@ pub struct ConversionArgs {
 /// Attempt to persist a semantic refusal without replacing it with a report
 /// I/O failure. The original refusal controls the process exit status; report
 /// persistence failure remains visible on stderr.
-fn write_refusal<P: Serialize>(
+fn write_refusal<P: reporting::ReportBody>(
     input: &Path,
     output: Option<&FileDestination>,
     command: &'static str,
