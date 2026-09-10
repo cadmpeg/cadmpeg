@@ -105,6 +105,7 @@ pub mod fuzz;
 #[doc(hidden)]
 pub use native::hex::Sha256Hex;
 
+#[doc(hidden)]
 pub use evaluation::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
