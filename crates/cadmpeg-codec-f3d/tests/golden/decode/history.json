@@ -128,30 +128,30 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#13",
+          "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#14",
+          "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#15",
+          "end": "f3d:brep:entity#13"
         }
       ],
       "vertices": [
@@ -274,6 +274,7 @@
             "records": [],
             "state_flag": 0,
             "state_id": 2,
+            "topology_cache": "released",
             "version_flag": 1
           },
           {
@@ -287,6 +288,7 @@
             "records": [],
             "state_flag": 0,
             "state_id": 3,
+            "topology_cache": "released",
             "version_flag": 1
           }
         ],
@@ -312,7 +314,6 @@
             "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
             "byte_offset": 1628,
             "history_entry_count": 99,
-            "projection_finalized": true,
             "states": [],
             "stream_size": 2
           }

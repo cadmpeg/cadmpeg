@@ -1670,12 +1670,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
     incomplete_revision_history.states[1].topology_cache =
-        crate::history_records::AsmTopologyCache::Retained(
-            incomplete_revision_history.states[1]
-                .topology()
-                .unwrap()
-                .clone(),
-        );
+        crate::history_records::AsmTopologyCache::Absent;
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700,),
         None

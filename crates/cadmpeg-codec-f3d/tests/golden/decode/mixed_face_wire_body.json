@@ -131,40 +131,40 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#13",
+          "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#14",
+          "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13",
           "param_range": [
             0.0,
             1.0
-          ]
+          ],
+          "start": "f3d:brep:entity#15",
+          "end": "f3d:brep:entity#13"
         },
         {
           "id": "f3d:brep:entity#21",
           "curve": "f3d:brep:entity#26",
-          "start": "f3d:brep:entity#22",
-          "end": "f3d:brep:entity#23",
           "param_range": [
             0.0,
             20.0
-          ]
+          ],
+          "start": "f3d:brep:entity#22",
+          "end": "f3d:brep:entity#23"
         }
       ],
       "vertices": [

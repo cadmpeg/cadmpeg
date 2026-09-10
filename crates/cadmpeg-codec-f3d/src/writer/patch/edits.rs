@@ -14,15 +14,15 @@ use cadmpeg_core::CodecError;
 /// The before-value carried at the after-record's location, for comparing an
 /// edited record against the record it replaces.
 fn normalized_token<T: Clone>(
-    before: &Option<crate::records::RecordedValue<T>>,
-    after: &Option<crate::records::RecordedValue<T>>,
+    before: Option<&crate::records::RecordedValue<T>>,
+    after: Option<&crate::records::RecordedValue<T>>,
 ) -> Option<crate::records::RecordedValue<T>> {
     match (before, after) {
         (Some(before), Some(after)) => Some(crate::records::RecordedValue {
             value: before.value.clone(),
             offset: after.offset,
         }),
-        _ => after.clone(),
+        _ => after.cloned(),
     }
 }
 use cadmpeg_ir::document::{CadIr, Model};
@@ -913,8 +913,12 @@ pub(crate) fn validate_material_assignment_edits(
         }
         let mut normalized = after.clone();
         normalized.visual_guid.clone_from(&before.visual_guid);
-        normalized.physical_token = normalized_token(&before.physical_token, &after.physical_token);
-        normalized.visual_preset = normalized_token(&before.visual_preset, &after.visual_preset);
+        normalized.physical_token = normalized_token(
+            before.physical_token.as_ref(),
+            after.physical_token.as_ref(),
+        );
+        normalized.visual_preset =
+            normalized_token(before.visual_preset.as_ref(), after.visual_preset.as_ref());
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
@@ -1486,7 +1490,10 @@ pub(crate) fn validate_design_type_edits(
         let mut normalized = after.clone();
         normalized.entities.clone_from(&before.entities);
         normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid = normalized_token(&before.base_type_guid, &after.base_type_guid);
+        normalized.base_type_guid = normalized_token(
+            before.base_type_guid.as_ref(),
+            after.base_type_guid.as_ref(),
+        );
         normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(

@@ -504,7 +504,6 @@ fn bind_complete_record_tables(
                     .retain(|version| slots.contains(&version.entity_ref));
             } else {
                 state.entity_versions.clear();
-                state.topology_cache = crate::history_records::AsmTopologyCache::Released;
             }
         }
     } else {
@@ -699,6 +698,7 @@ pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
                 state.topology_cache = crate::history_records::AsmTopologyCache::Retained(topology);
             } else {
                 state.entity_versions.clear();
+                state.topology_cache = crate::history_records::AsmTopologyCache::Released;
             }
         }
     }

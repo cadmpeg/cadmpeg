@@ -27,7 +27,7 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
-    AsmHistoricalTransition, AsmHistory,
+    AsmHistoricalTransition, AsmHistory, AsmTopologyCacheKind,
 };
 use crate::records::dimension_locus_arenas::{
     DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
@@ -211,8 +211,8 @@ struct FlatAsmDeltaState<'a> {
     records: EmptyList,
     #[serde(skip_serializing_if = "slice_is_empty")]
     entity_versions: &'a [AsmEntityVersion],
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    record_table_complete: bool,
+    #[serde(skip_serializing_if = "AsmTopologyCacheKind::is_absent")]
+    topology_cache: AsmTopologyCacheKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     topology: Option<&'a AsmHistoricalTopology>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -236,7 +236,7 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
             bulletin_boards: EmptyList,
             records: EmptyList,
             entity_versions: &state.entity_versions,
-            record_table_complete: state.record_table_complete(),
+            topology_cache: state.topology_cache_kind(),
             topology: state.topology(),
             transition: state.transition.as_ref(),
         }

@@ -144,7 +144,7 @@ pub(crate) enum AsmTopologyCache {
 /// Serialized discriminant of one state's topology cache.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum AsmTopologyCacheKind {
+pub(crate) enum AsmTopologyCacheKind {
     #[default]
     Absent,
     Complete,
@@ -153,7 +153,9 @@ enum AsmTopologyCacheKind {
 }
 
 impl AsmTopologyCacheKind {
-    fn is_absent(&self) -> bool {
+    // Serde requires `skip_serializing_if` predicates to borrow the field.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub(crate) fn is_absent(&self) -> bool {
         matches!(self, Self::Absent)
     }
 }
@@ -178,8 +180,19 @@ impl AsmDeltaState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn record_table_complete(&self) -> bool {
         matches!(self.topology_cache, AsmTopologyCache::Complete(_))
+    }
+
+    /// The serialized discriminant of this state's topology cache.
+    pub(crate) fn topology_cache_kind(&self) -> AsmTopologyCacheKind {
+        match self.topology_cache {
+            AsmTopologyCache::Absent => AsmTopologyCacheKind::Absent,
+            AsmTopologyCache::Complete(_) => AsmTopologyCacheKind::Complete,
+            AsmTopologyCache::Retained(_) => AsmTopologyCacheKind::Retained,
+            AsmTopologyCache::Released => AsmTopologyCacheKind::Released,
+        }
     }
 
     /// The state's complete projection snapshot was released at finalization.
@@ -784,13 +797,12 @@ mod tests {
             assert_eq!(state.record_table_complete(), complete);
             assert_eq!(state.topology().is_some(), has_topology);
             assert_eq!(state.projection_released(), released);
-            match (&state.topology_cache, complete, released) {
-                (AsmTopologyCache::Absent, false, false)
-                | (AsmTopologyCache::Complete(_), true, false)
-                | (AsmTopologyCache::Retained(_), false, true)
-                | (AsmTopologyCache::Released, false, true) => {}
-                other => panic!("unexpected topology cache: {other:?}"),
-            }
+            let expected = match &state.topology_cache {
+                AsmTopologyCache::Absent => (false, false),
+                AsmTopologyCache::Complete(_) => (true, false),
+                AsmTopologyCache::Retained(_) | AsmTopologyCache::Released => (false, true),
+            };
+            assert_eq!(expected, (complete, released));
             assert_eq!(serde_json::to_string(&state).unwrap(), wire);
         }
         let invalid = format!("{prefix},\"topology_cache\":\"complete\"}}");
