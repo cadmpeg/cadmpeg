@@ -2727,8 +2727,8 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                 None,
             )
         }
-        3 => (cadmpeg_ir::geometry::LawSurfaceTail::Historical, None),
-        4 => (cadmpeg_ir::geometry::LawSurfaceTail::Optimal, None),
+        3 => (cadmpeg_ir::geometry::LawSurfaceTail::Historical {}, None),
+        4 => (cadmpeg_ir::geometry::LawSurfaceTail::Optimal {}, None),
         _ => return None,
     };
     let discontinuities = [

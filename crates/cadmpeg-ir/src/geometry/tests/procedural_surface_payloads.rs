@@ -70,7 +70,7 @@ fn surface_law_admission_preserves_the_depth_boundary() {
             variables: vec![expression],
         },
         additional: Vec::new(),
-        tail: LawSurfaceTail::Historical,
+        tail: LawSurfaceTail::Historical {},
         discontinuities: std::array::from_fn(|_| Vec::new()),
     };
     let law = |expression| {
@@ -159,7 +159,7 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
                 parameter_ranges: None,
                 primary: LawFormula::Null,
                 additional: Vec::new(),
-                tail: LawSurfaceTail::Historical,
+                tail: LawSurfaceTail::Historical {},
                 discontinuities: std::array::from_fn(|_| Vec::new()),
             },
         ))
