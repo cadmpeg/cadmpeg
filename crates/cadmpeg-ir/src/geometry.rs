@@ -5341,9 +5341,12 @@ pub enum CompoundLoftTail {
     },
 }
 
-/// A bounded leading prefix of compound-loft scales.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "Vec<Option<CompoundLoftScale>>")]
+/// A bounded list of compound-loft scales.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "Vec<CompoundLoftScale>",
+    into = "Vec<CompoundLoftScale>"
+)]
 pub struct CompoundLoftScales<const CAPACITY: usize>(Vec<CompoundLoftScale>);
 
 #[cfg(feature = "schema")]
@@ -5353,8 +5356,7 @@ impl<const CAPACITY: usize> JsonSchema for CompoundLoftScales<CAPACITY> {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = Vec::<Option<CompoundLoftScale>>::json_schema(generator);
-        schema.insert("minItems".into(), CAPACITY.into());
+        let mut schema = Vec::<CompoundLoftScale>::json_schema(generator);
         schema.insert("maxItems".into(), CAPACITY.into());
         schema
     }
@@ -5395,69 +5397,25 @@ impl<const CAPACITY: usize> CompoundLoftScales<CAPACITY> {
     }
 }
 
-impl<const CAPACITY: usize> TryFrom<Vec<Option<CompoundLoftScale>>>
-    for CompoundLoftScales<CAPACITY>
-{
+impl<const CAPACITY: usize> TryFrom<Vec<CompoundLoftScale>> for CompoundLoftScales<CAPACITY> {
     type Error = &'static str;
-    fn try_from(slots: Vec<Option<CompoundLoftScale>>) -> Result<Self, Self::Error> {
-        if slots.len() != CAPACITY {
-            return Err("compound loft scales have the wrong slot count");
-        }
-        Self::try_from_slots(slots)
+    fn try_from(scales: Vec<CompoundLoftScale>) -> Result<Self, Self::Error> {
+        Self::try_new(scales)
     }
 }
 
-impl<const CAPACITY: usize> Serialize for CompoundLoftScales<CAPACITY> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq((0..CAPACITY).map(|index| self.0.get(index)))
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CompoundLoftScalesWire {
-    scales: [Option<CompoundLoftScale>; 4],
-    #[serde(default)]
-    fifth_scale: Option<CompoundLoftScale>,
-}
-
-mod compound_loft_scales_wire {
-    use super::{CompoundLoftScale, CompoundLoftScales, CompoundLoftScalesWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S: Serializer>(
-        scales: &CompoundLoftScales<5>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            scales: [Option<&'a CompoundLoftScale>; 4],
-            #[serde(skip_serializing_if = "Option::is_none")]
-            fifth_scale: Option<&'a CompoundLoftScale>,
-        }
-        Wire {
-            scales: std::array::from_fn(|index| scales.as_slice().get(index)),
-            fifth_scale: scales.as_slice().get(4),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<CompoundLoftScales<5>, D::Error> {
-        let wire = CompoundLoftScalesWire::deserialize(deserializer)?;
-        CompoundLoftScales::try_from_slots(wire.scales.into_iter().chain([wire.fifth_scale]))
-            .map_err(serde::de::Error::custom)
+impl<const CAPACITY: usize> From<CompoundLoftScales<CAPACITY>> for Vec<CompoundLoftScale> {
+    fn from(scales: CompoundLoftScales<CAPACITY>) -> Self {
+        scales.0
     }
 }
 
 /// Complete native compound-loft construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CompoundLoftConstruction {
-    /// Present leading scales, up to the optional fifth native slot.
-    #[serde(flatten, with = "compound_loft_scales_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftScalesWire"))]
+    /// Present scales, up to the five native slots.
     pub scales: CompoundLoftScales<5>,
     /// Two flags before the tail kind.
     pub flags: [bool; 2],
