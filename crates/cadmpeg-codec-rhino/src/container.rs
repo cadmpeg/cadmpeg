@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
@@ -183,6 +184,8 @@ pub(crate) struct Table {
     pub(crate) range: std::ops::Range<usize>,
     /// Table body range, excluding the table checksum.
     pub(crate) body: std::ops::Range<usize>,
+    /// Table chunk bytes outside the body: the header and any checksum.
+    pub(crate) framing: NonZeroU64,
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
     /// Number of direct records, including compactly summarized records.
@@ -1072,6 +1075,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             typecode: chunk.typecode,
             range: offset..chunk.next_offset(),
             body: chunk.body(),
+            framing: chunk.framing(),
             records,
             record_count: table_record_count,
             object_typecodes,
@@ -1100,7 +1104,6 @@ pub(crate) fn scan_with_test_record_limit(
 /// Build the format-neutral container summary.
 pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
-    let mut storage_notes = Diagnostics::new();
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
         attributes.insert("offset".to_string(), table.range.start.to_string());
@@ -1110,17 +1113,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
-        let storage = match EntryStorage::framed(
-            VerbatimLabel::None,
-            table.body.len() as u64,
-            table.range.len() as u64,
-        ) {
-            Ok(storage) => storage,
-            Err(message) => {
-                storage_notes.push(format!("table-{:#x}: {message}", table.typecode));
-                EntryStorage::payload_only(VerbatimLabel::None, table.body.len() as u64)
-            }
-        };
+        let storage =
+            EntryStorage::framed_by(VerbatimLabel::None, table.body.len() as u64, table.framing);
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
@@ -1150,7 +1144,6 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         });
     }
     let mut notes = vec![scan.version_note()];
-    notes.extend(storage_notes.messages().map(str::to_owned));
     notes.extend(scan.warnings.messages().map(str::to_owned));
     notes.extend(
         scan.definitions

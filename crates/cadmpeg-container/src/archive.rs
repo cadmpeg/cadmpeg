@@ -926,6 +926,7 @@ fn declared_storage(
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Write as _};
+    use std::num::NonZeroU64;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use zip::write::SimpleFileOptions;
@@ -962,38 +963,61 @@ mod tests {
         archive.finish().expect("archive finishes").into_inner()
     }
 
+    /// Rewrites the central-directory `uncompressed_size` of `name` to `size`.
+    fn patch_central_uncompressed_size(bytes: &mut [u8], name: &str, size: u32) {
+        let mut at = 0;
+        while let Some(found) = bytes[at..]
+            .windows(4)
+            .position(|window| window == [0x50, 0x4b, 0x01, 0x02])
+        {
+            let record = at + found;
+            let name_len = u16::from_le_bytes([bytes[record + 28], bytes[record + 29]]) as usize;
+            let start = record + 46;
+            if &bytes[start..start + name_len] == name.as_bytes() {
+                bytes[record + 24..record + 28].copy_from_slice(&size.to_le_bytes());
+                return;
+            }
+            at = record + 4;
+        }
+        panic!("central directory record not found");
+    }
+
     #[test]
     fn a_stored_member_declaring_a_span_under_its_payload_is_reported() {
-        use cadmpeg_core::container::{EntryStorage, VerbatimLabel, VerbatimSize};
+        use cadmpeg_core::container::{ContainerRole, VerbatimLabel, VerbatimSize};
+
+        let mut bytes = archive_bytes();
+        // "stored" is six bytes; the declaration now claims it expands to nine.
+        patch_central_uncompressed_size(&mut bytes, "stored.bin", 9);
+        let arena = DecodeArena::new();
+        let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive fits root policy");
+        let snapshot = ArchiveSnapshot::new(root).expect("archive snapshots");
+        let entries = snapshot.container_entries(|_| ContainerRole::Stream);
+        let stored = entries
+            .iter()
+            .find(|entry| entry.name == "stored.bin")
+            .expect("stored entry summarized");
 
         assert_eq!(
-            ZipCompression::Stored.storage(5, 9),
-            Err("verbatim container entry stores fewer bytes than it expands to")
-        );
-        let mut attributes = BTreeMap::new();
-        let storage = declared_storage(ZipCompression::Stored, 5, 9, &mut attributes);
-        assert_eq!(
-            storage,
-            EntryStorage::payload_only(VerbatimLabel::Stored, 9)
-        );
-        assert_eq!(storage.stored_size(), None);
-        assert_eq!(storage.expanded_size(), Some(9));
-        assert_eq!(
-            attributes["storage_declaration"],
-            "verbatim container entry stores fewer bytes than it expands to: 5/9"
-        );
-
-        let mut attributes = BTreeMap::new();
-        let storage = declared_storage(ZipCompression::Stored, 12, 9, &mut attributes);
-        assert!(matches!(
-            storage,
-            EntryStorage::Verbatim {
-                size: VerbatimSize::Framed(_),
-                ..
+            stored.storage,
+            cadmpeg_core::container::EntryStorage::Verbatim {
+                label: VerbatimLabel::Stored,
+                size: VerbatimSize::PayloadOnly(NonZeroU64::new(9).expect("nine is nonzero")),
             }
-        ));
-        assert_eq!(storage.stored_size(), Some(12));
-        assert!(attributes.is_empty());
+        );
+        assert_eq!(stored.storage.stored_size(), None);
+        assert_eq!(stored.storage.expanded_size(), Some(9));
+        assert_eq!(
+            stored.attributes["storage_declaration"],
+            "verbatim container entry stores fewer bytes than it expands to: 6/9"
+        );
+
+        let deflated = entries
+            .iter()
+            .find(|entry| entry.name == "deflated.bin")
+            .expect("deflated entry summarized");
+        assert!(!deflated.attributes.contains_key("storage_declaration"));
     }
 
     #[test]

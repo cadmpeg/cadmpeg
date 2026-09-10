@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+use std::num::NonZeroU64;
+
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
 use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
+
+const TABLE_FRAMING: NonZeroU64 = match NonZeroU64::new(8) {
+    Some(framing) => framing,
+    None => unreachable!(),
+};
 
 #[test]
 fn decodes_bounded_utf8_and_utf16_strings() {
@@ -363,6 +370,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
         typecode: 0x1000_0014,
         range: 0..data.len(),
         body: 0..data.len(),
+        framing: TABLE_FRAMING,
         records: vec![record],
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
@@ -379,6 +387,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
         typecode: 0x1000_0014,
         range: 0..trailing.len(),
         body: 0..trailing.len(),
+        framing: TABLE_FRAMING,
         records: vec![record],
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
@@ -513,6 +522,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         typecode: 0x1000_0011,
         range: 0..data.len(),
         body: 0..data.len(),
+        framing: TABLE_FRAMING,
         records: vec![record],
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
@@ -571,6 +581,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         typecode: 0x1000_0011,
         range: 0..future_data.len(),
         body: 0..future_data.len(),
+        framing: TABLE_FRAMING,
         records: vec![future_record.clone()],
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
@@ -660,6 +671,7 @@ fn layer_metadata(
         typecode: 0x1000_0011,
         range: 0..data.len(),
         body: 0..data.len(),
+        framing: TABLE_FRAMING,
         records: vec![record],
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
@@ -670,6 +682,7 @@ fn layer_metadata(
             typecode: 0x1000_0014,
             range: 0..0,
             body: 0..0,
+            framing: TABLE_FRAMING,
             records: vec![crate::container::Record::short(0xa000_0026, 0..0, value)],
             record_count: 1,
             object_typecodes: std::collections::BTreeMap::new(),
@@ -1135,6 +1148,7 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         typecode: 0x1000_0015,
         range: 0..0,
         body: 0..0,
+        framing: TABLE_FRAMING,
         records: vec![
             crate::container::Record::short(0xa000_0038, 0..0, 3),
             crate::container::Record::short(0xa000_0038, 0..0, 7),
