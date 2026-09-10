@@ -210,7 +210,6 @@ pub(crate) fn decode(
         byte_offset: offset as u64,
         preamble,
         record_table_binding_budget_exceeded,
-        projection_finalized: false,
         states,
     })
 }
@@ -505,6 +504,7 @@ fn bind_complete_record_tables(
                     .retain(|version| slots.contains(&version.entity_ref));
             } else {
                 state.entity_versions.clear();
+                state.topology_cache = crate::history_records::AsmTopologyCache::Released;
             }
         }
     } else {
@@ -682,10 +682,10 @@ fn retain_mirror_plane_topology(
 /// plane-selection topology remain retained.
 pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
     for history in histories {
-        history.projection_finalized = true;
         for state in &mut history.states {
             let topology = match std::mem::take(&mut state.topology_cache) {
-                crate::history_records::AsmTopologyCache::Absent => None,
+                crate::history_records::AsmTopologyCache::Absent
+                | crate::history_records::AsmTopologyCache::Released => None,
                 crate::history_records::AsmTopologyCache::Complete(topology)
                 | crate::history_records::AsmTopologyCache::Retained(topology) => {
                     retain_mirror_plane_topology(topology)
@@ -705,7 +705,10 @@ pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
 }
 
 pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
-    !histories.is_empty() && histories.iter().all(|history| history.projection_finalized)
+    !histories.is_empty()
+        && histories
+            .iter()
+            .all(crate::history_records::AsmHistory::projection_finalized)
 }
 
 fn historical_transition(
@@ -6780,9 +6783,8 @@ impl HistoricalIdentityIndex {
                     .all(|state| match &state.topology_cache {
                         crate::history_records::AsmTopologyCache::Absent => false,
                         crate::history_records::AsmTopologyCache::Complete(_) => true,
-                        crate::history_records::AsmTopologyCache::Retained(_) => {
-                            history.projection_finalized
-                        }
+                        crate::history_records::AsmTopologyCache::Retained(_) => true,
+                        crate::history_records::AsmTopologyCache::Released => false,
                     })
         }) {
             for change in history

@@ -507,7 +507,6 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(1, AsmHistoricalTopology::default(), None),
             state(

@@ -472,7 +472,6 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![state],
     };
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
