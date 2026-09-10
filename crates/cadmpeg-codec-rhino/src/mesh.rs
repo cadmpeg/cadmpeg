@@ -762,6 +762,52 @@ fn read_raw_channels(
     Ok(())
 }
 
+/// What one compressed mesh vertex channel decodes into.
+#[derive(Clone, Copy)]
+enum MeshChannelAction {
+    Vertices,
+    Normals,
+    Raw(u32),
+}
+
+/// One compressed mesh vertex channel: its name, per-vertex size and decode action.
+#[derive(Clone, Copy)]
+struct MeshChannelSpec {
+    name: &'static str,
+    item_size: u32,
+    action: MeshChannelAction,
+}
+
+impl MeshChannelSpec {
+    const ALL: [Self; 5] = [
+        Self {
+            name: "vertices",
+            item_size: 12,
+            action: MeshChannelAction::Vertices,
+        },
+        Self {
+            name: "normals",
+            item_size: 12,
+            action: MeshChannelAction::Normals,
+        },
+        Self {
+            name: "UV",
+            item_size: 8,
+            action: MeshChannelAction::Raw(CHANNEL_UV),
+        },
+        Self {
+            name: "curvature",
+            item_size: 16,
+            action: MeshChannelAction::Raw(CHANNEL_CURVATURE),
+        },
+        Self {
+            name: "colors",
+            item_size: 4,
+            action: MeshChannelAction::Raw(CHANNEL_COLOR),
+        },
+    ];
+}
+
 fn read_compressed_channels(
     expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
@@ -771,44 +817,30 @@ fn read_compressed_channels(
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<(), GeometryError> {
-    let expected = [
-        vertices * 12,
-        vertices * 12,
-        vertices * 8,
-        vertices * 16,
-        vertices * 4,
-    ];
-    let names = ["vertices", "normals", "UV", "curvature", "colors"];
-    for (index, expected_size) in expected.into_iter().enumerate() {
+    for spec in MeshChannelSpec::ALL {
         let bytes = read_buffer(
             expand,
             reader,
-            expected_size,
+            vertices * spec.item_size as usize,
             &mut decoded.warnings,
-            names[index],
+            spec.name,
             decompressed_bytes,
             document_budget,
             archive,
         )?;
         let Some(bytes) = bytes else { continue };
-        match index {
-            0 => decoded.vertices = parse_f32_points(&bytes)?,
-            1 => match parse_f32_vectors(&bytes) {
+        match spec.action {
+            MeshChannelAction::Vertices => decoded.vertices = parse_f32_points(&bytes)?,
+            MeshChannelAction::Normals => match parse_f32_vectors(&bytes) {
                 Ok(value) => decoded.normals = value,
                 Err(_) => decoded
                     .warnings
                     .push("normals channel contains nonfinite values".to_string()),
             },
-            _ => {
-                let (kind, item_size) = match index {
-                    2 => (CHANNEL_UV, 8),
-                    3 => (CHANNEL_CURVATURE, 16),
-                    4 => (CHANNEL_COLOR, 4),
-                    _ => unreachable!(),
-                };
+            MeshChannelAction::Raw(kind) => {
                 decoded
                     .channels
-                    .push(channel(kind, item_size, bytes.into_owned())?);
+                    .push(channel(kind, spec.item_size, bytes.into_owned())?);
             }
         }
     }

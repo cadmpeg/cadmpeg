@@ -4452,7 +4452,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             hierarchy: layer.hierarchy,
             name: layer.name.clone(),
             description: layer.description.clone(),
-            iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
+            iges_level: layer.iges_level,
             visible: layer.visible,
             locked: layer.locked,
             color: layer.color,

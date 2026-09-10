@@ -489,7 +489,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     let layer = settings::LayerRecord {
         source: settings::SourceRange { range: 0..1 },
         index: -1,
-        iges_level: 0,
+        iges_level: Some(0),
         render_material_index: -1,
         color: [10, 20, 30, 255],
         name: "Layer".to_string(),

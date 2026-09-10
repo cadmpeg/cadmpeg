@@ -493,7 +493,7 @@ pub(crate) struct LayerRecord {
     /// Archive layer index.
     pub(crate) index: i32,
     /// IGES level.
-    pub(crate) iges_level: i32,
+    pub(crate) iges_level: Option<i32>,
     /// Render material index.
     pub(crate) render_material_index: i32,
     /// Layer color.
@@ -1908,7 +1908,7 @@ fn parse_layer(
     }
     let obsolete_mode = reader.i32()?;
     let index = reader.i32()?;
-    let iges_level = reader.i32()?;
+    let iges_level = reader.i32().map(|value| (value != -1).then_some(value))?;
     let render_material_index = reader.i32()?;
     let _obsolete_model_index = reader.i32()?;
     let layer_color = color(&mut reader)?;

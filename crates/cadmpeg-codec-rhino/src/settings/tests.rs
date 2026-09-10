@@ -520,7 +520,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
     assert_eq!(metadata.layers.len(), 1, "{warnings:?}");
     assert_eq!(metadata.layers[0].index, 7);
-    assert_eq!(metadata.layers[0].iges_level, -1);
+    assert_eq!(metadata.layers[0].iges_level, None);
     assert_eq!(metadata.layers[0].render_material_index, -1);
     assert_eq!(metadata.layers[0].color, [10, 20, 30, 255]);
     assert_eq!(metadata.layers[0].name, "L");
@@ -1155,7 +1155,7 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
     let layer = |index| settings::LayerRecord {
         source: settings::SourceRange { range: 0..1 },
         index,
-        iges_level: 0,
+        iges_level: Some(0),
         render_material_index: -1,
         color: [0, 0, 0, 255],
         name: String::new(),
