@@ -103,11 +103,42 @@ pub(crate) struct DiffInput<'a> {
     pub(crate) forced: Option<ForcedInput>,
 }
 
+/// How the codec that read the inspected input was chosen.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum InputSelection {
+    /// The caller forced the codec, so no detection ran.
+    Forced,
+    /// Content detection named the codec at this confidence.
+    Detected {
+        confidence: cadmpeg_ir::codec::Confidence,
+    },
+}
+
+impl From<cadmpeg_registry::Selection> for InputSelection {
+    fn from(selection: cadmpeg_registry::Selection) -> Self {
+        match selection {
+            cadmpeg_registry::Selection::Forced => Self::Forced,
+            cadmpeg_registry::Selection::Detected { confidence } => Self::Detected { confidence },
+        }
+    }
+}
+
+impl InputSelection {
+    /// Renders the selection the way the plain-text report states it.
+    fn label(self) -> String {
+        match self {
+            Self::Forced => " (forced)".to_string(),
+            Self::Detected { confidence } => format!(" (detected {confidence})"),
+        }
+    }
+}
+
 /// `inspect` payload. `summary` is `null` on a refusal, where no container
 /// summary was produced.
 #[derive(Serialize)]
 struct InspectPayload<'a> {
-    confidence: Option<cadmpeg_ir::codec::Confidence>,
+    selection: InputSelection,
     summary: Option<&'a cadmpeg_ir::ContainerSummary>,
 }
 
@@ -167,7 +198,7 @@ pub fn inspect(
         }) => {
             let refusal = ConversionRefusal::unsupported_dialect(dialects, message);
             let payload = InspectPayload {
-                confidence: selection.confidence(),
+                selection: selection.into(),
                 summary: None,
             };
             write_refusal(
@@ -191,9 +222,9 @@ pub fn inspect(
                 .into())
         }
     };
-    let confidence = selection.confidence();
+    let selection = InputSelection::from(selection);
     let payload = InspectPayload {
-        confidence,
+        selection,
         summary: Some(&summary),
     };
     write_json_report(path, report_path, "inspect", &payload)?;
@@ -204,10 +235,7 @@ pub fn inspect(
     println!(
         "format: {}{}\ncontainer: {}\nentries: {}",
         summary.format(),
-        confidence.map_or_else(
-            || " (forced)".to_string(),
-            |value| format!(" (detected {value})")
-        ),
+        selection.label(),
         summary.container_kind,
         summary.entries.len()
     );
