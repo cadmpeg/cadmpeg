@@ -260,17 +260,19 @@ impl<'a> Record<'a> {
                     return None;
                 };
                 // `bytes` spans the whole layout: `split` is the only mint.
-                let field_bytes = &bytes[offset..offset + kind.width().get()];
                 let value = match *kind {
                     FieldKind::Scalar(ty, endian) => {
+                        let width = ty.width().get();
                         let mut raw = [0u8; ScalarType::MAX_WIDTH];
-                        raw[..field_bytes.len()].copy_from_slice(field_bytes);
+                        raw[..width].copy_from_slice(&bytes[offset..offset + width]);
                         DecodedValue::Scalar {
                             value: ty.window_of(&raw).read(endian),
                             endian,
                         }
                     }
-                    FieldKind::Bytes(count) => DecodedValue::Bytes(RawBytes(field_bytes, count)),
+                    FieldKind::Bytes(count) => {
+                        DecodedValue::Bytes(RawBytes::new(bytes, offset, count))
+                    }
                 };
                 Some(DecodedField {
                     name,
@@ -283,17 +285,25 @@ impl<'a> Record<'a> {
 
 /// A run of raw bytes covering at least one byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RawBytes<'a>(&'a [u8], NonZeroUsize);
+pub struct RawBytes<'a>(&'a [u8]);
 
 impl<'a> RawBytes<'a> {
+    /// Returns the run of `count` bytes of `bytes` that starts at `offset`.
+    ///
+    /// The count is the field's own width, so the run covers at least one byte
+    /// and the length is read back off the slice.
+    pub fn new(bytes: &'a [u8], offset: usize, count: NonZeroUsize) -> Self {
+        Self(&bytes[offset..offset + count.get()])
+    }
+
     /// Returns the bytes of the run.
     pub const fn as_slice(self) -> &'a [u8] {
         self.0
     }
 
     /// Returns how many bytes the run covers.
-    pub const fn len(self) -> NonZeroUsize {
-        self.1
+    pub fn len(self) -> NonZeroUsize {
+        NonZeroUsize::new(self.0.len()).expect("a raw byte run covers at least one byte")
     }
 }
 
