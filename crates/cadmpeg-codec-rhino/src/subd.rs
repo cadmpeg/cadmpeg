@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino `ON_SubD` control-cage decoding.
 
+use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
@@ -46,7 +47,7 @@ pub(crate) struct DecodedSubd {
     /// Unknown symmetry enumeration values mapped to their neutral values.
     pub(crate) enum_diagnostics: Vec<SubdEnumDiagnostic>,
     /// Recoverable nested checksum warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// Native mesh-array identity saved beside a `SubD` proxy.
@@ -200,7 +201,7 @@ pub(crate) fn decode(
         return Err(malformed(range.start, "invalid SubD unit scale"));
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let has_subdimple = reader.u8()?;
     match has_subdimple {
         0 => {
@@ -362,7 +363,7 @@ fn read_subdimple(
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(SubdSurface, usize, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
     reader.u32()?;
@@ -413,7 +414,7 @@ fn read_level(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawLevel, SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD level")?;
     let mut reader =
@@ -520,7 +521,7 @@ fn read_vertex(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawVertex, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
     let tag = match reader.u8()? {
@@ -589,7 +590,7 @@ fn read_edge(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawEdge, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
     let tag = match reader.u8()? {
@@ -670,7 +671,7 @@ fn read_face(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<RawFace, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
     reader.u32()?;
@@ -761,7 +762,7 @@ fn read_base(
     archive: ArchiveVersion,
     expected_id: u32,
     expected_level: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<ComponentBase, SubdError> {
     let source_offset = reader.position();
     let archive_id = reader.u32()?;
@@ -846,7 +847,7 @@ fn consume_known_addition(
     archive: ArchiveVersion,
     expected: u8,
     label: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Addition, SubdError> {
     loop {
         match reader.u8()? {
@@ -867,7 +868,7 @@ fn consume_known_addition(
 fn finish_additions(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     loop {
         match reader.u8()? {
@@ -882,7 +883,7 @@ fn finish_additions(
 fn read_record_end(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     if archive.value() < 70 {
         expect_zero(reader, "SubD component end marker")
@@ -1329,7 +1330,7 @@ fn validate_sharpness(value: f64, offset: usize) -> Result<(), SubdError> {
 fn read_mapping_tag(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD texture mapping tag")?;
     let mut reader =
@@ -1390,7 +1391,7 @@ fn read_symmetry(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD symmetry")?;
     let mut reader =
@@ -1470,7 +1471,7 @@ fn read_symmetry(
 fn read_subd_hash(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD topology hash")?;
     let mut reader =
@@ -1498,7 +1499,7 @@ fn read_subd_hash(
 fn read_sha1(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SHA-1 hash")?;
     let mut reader =
@@ -1551,7 +1552,7 @@ fn consume_anonymous(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
-    _warnings: &mut Vec<String>,
+    _warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(reader, archive, label)?;
     reader.skip(chunk.next_offset() - reader.position())?;
@@ -1562,7 +1563,7 @@ fn finish_chunk(
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
@@ -1578,7 +1579,7 @@ fn finish_direct_chunk(
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
@@ -1590,10 +1591,13 @@ fn finish_direct_chunk(
         verify_checksum(parent.backing_bytes(), chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "SubD anonymous CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "SubD anonymous CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
@@ -1604,7 +1608,7 @@ fn finish_chunk_children(
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
     children: &[Range<usize>],
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
@@ -1617,10 +1621,13 @@ fn finish_chunk_children(
         crate::chunks::verify_checksum_ranges(parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "SubD anonymous CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "SubD anonymous CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())

@@ -2,6 +2,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
 use crate::settings;
 use crate::test_support::test_dump::*;
@@ -366,7 +367,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&data, ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
     assert!(warnings.is_empty());
@@ -382,7 +383,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&trailing, ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
     assert!(warnings.is_empty());
@@ -498,7 +499,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         .concat(),
     );
     let (data, record) = metadata_record(0x2000_8050, class);
-    let mut wrapper_warnings = Vec::new();
+    let mut wrapper_warnings = Diagnostics::new();
     let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
         &data,
         record.body(),
@@ -516,7 +517,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
     assert_eq!(metadata.layers.len(), 1, "{warnings:?}");
     assert_eq!(metadata.layers[0].index, 7);
@@ -574,7 +575,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
-    let mut future_warnings = Vec::new();
+    let mut future_warnings = Diagnostics::new();
     let future =
         settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
     assert_eq!(future.layers.len(), 1, "{future_warnings:?}");
@@ -606,7 +607,7 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
 fn layer_metadata(
     extension: &[u8],
     writer_version: Option<i64>,
-) -> (settings::DocumentMetadata, Vec<String>) {
+) -> (settings::DocumentMetadata, Diagnostics) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -675,7 +676,7 @@ fn layer_metadata(
         });
     }
     tables.push(table);
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&data, archive, &tables, &mut warnings);
     (metadata, warnings)
 }
@@ -771,7 +772,7 @@ fn rendering_attributes_accept_layer_future_minor_suffix() {
         &[1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0xaa, 0xbb],
     );
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
         &bytes,
         &mut reader,
@@ -913,7 +914,7 @@ fn rendering_attributes_parse_object_mapping_and_future_suffix() {
         &[mapping_start..mapping_end],
     );
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
         &bytes,
         &mut reader,
@@ -944,7 +945,7 @@ fn future_linetype_extension_stops_at_unknown_code() {
         &[8..8 + model_attributes.len()],
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
         .expect("future linetype code is bounded by the anonymous chunk");
     assert_eq!(descriptor.version, (2, 4));
@@ -974,7 +975,7 @@ fn linetype_out_of_order_id_leaves_value_at_boundary() {
         &[8..8 + model_attributes.len()],
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
         .expect("source ordered cascade leaves out-of-order value bounded");
     assert_eq!(reader.remaining(), 0);
@@ -998,7 +999,7 @@ fn future_section_style_extension_stops_at_unknown_code() {
         &[8..8 + model_attributes.len()],
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let descriptor =
         settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
             .expect("future section-style code is bounded by the anonymous chunk");
@@ -1028,7 +1029,7 @@ fn section_style_out_of_order_id_leaves_value_at_boundary() {
         &[8..8 + model_attributes.len()],
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
         .expect("source ordered cascade leaves out-of-order value bounded");
     assert_eq!(reader.remaining(), 0);
@@ -1141,12 +1142,12 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         record_count: 2,
         object_typecodes: std::collections::BTreeMap::new(),
     };
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let metadata = settings::parse_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.settings.current_layer, Some(7));
     assert_eq!(
-        warnings,
-        vec!["duplicate singleton metadata record 0xa0000038; later record wins"]
+        warnings.messages().collect::<Vec<_>>(),
+        ["duplicate singleton metadata record 0xa0000038; later record wins"]
     );
 }
 
@@ -1176,7 +1177,7 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
         per_viewport_settings: Vec::new(),
     };
     let mut layers = vec![layer(7), layer(7), layer(9), layer(9)];
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     super::reassign_duplicate_layer_indices(&mut layers, &mut warnings);
     assert_eq!(
         layers.iter().map(|layer| layer.index).collect::<Vec<_>>(),

@@ -20,6 +20,122 @@
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
+/// One decode diagnostic: its message and, when the producer knows it, its code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RhinoDiagnostic {
+    /// The loss code the producer assigned, or `None` when the channel decides.
+    pub(crate) code: Option<RhinoLossCode>,
+    /// The human-readable message.
+    pub(crate) message: String,
+}
+
+/// The decode diagnostic channel: messages carrying the code their producer knew.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Diagnostics(Vec<RhinoDiagnostic>);
+
+impl Diagnostics {
+    pub(crate) fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Records a diagnostic whose category the consuming channel decides.
+    pub(crate) fn push(&mut self, message: impl Into<String>) {
+        self.0.push(RhinoDiagnostic {
+            code: None,
+            message: message.into(),
+        });
+    }
+
+    /// Records a diagnostic whose category the producer knows.
+    pub(crate) fn push_coded(&mut self, code: RhinoLossCode, message: impl Into<String>) {
+        self.0.push(RhinoDiagnostic {
+            code: Some(code),
+            message: message.into(),
+        });
+    }
+
+    pub(crate) fn messages(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(|entry| entry.message.as_str())
+    }
+
+    /// Places `earlier` ahead of the diagnostics already recorded.
+    pub(crate) fn prepend(&mut self, earlier: Self) {
+        self.0.splice(0..0, earlier.0);
+    }
+
+    /// Records an already-classified diagnostic.
+    pub(crate) fn push_diagnostic(&mut self, diagnostic: RhinoDiagnostic) {
+        self.0.push(diagnostic);
+    }
+
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
+
+    pub(crate) fn append(&mut self, other: &mut Self) {
+        self.0.append(&mut other.0);
+    }
+
+    /// Rewrites every message through `map`, keeping each code.
+    pub(crate) fn map_messages(self, map: impl Fn(String) -> String) -> Self {
+        Self(
+            self.0
+                .into_iter()
+                .map(|entry| RhinoDiagnostic {
+                    code: entry.code,
+                    message: map(entry.message),
+                })
+                .collect(),
+        )
+    }
+}
+
+impl std::ops::Deref for Diagnostics {
+    type Target = [RhinoDiagnostic];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for RhinoDiagnostic {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.message
+    }
+}
+
+impl Extend<RhinoDiagnostic> for Diagnostics {
+    fn extend<T: IntoIterator<Item = RhinoDiagnostic>>(&mut self, iter: T) {
+        self.0.extend(iter);
+    }
+}
+
+impl FromIterator<RhinoDiagnostic> for Diagnostics {
+    fn from_iter<T: IntoIterator<Item = RhinoDiagnostic>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Diagnostics {
+    type Item = RhinoDiagnostic;
+    type IntoIter = std::vec::IntoIter<RhinoDiagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Diagnostics {
+    type Item = &'a RhinoDiagnostic;
+    type IntoIter = std::slice::Iter<'a, RhinoDiagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// Construct the loss charged when a reading depends on an absent writer stamp.
 pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNote {
     RhinoLossCode::SourceWriterStampUnverified.note(message)

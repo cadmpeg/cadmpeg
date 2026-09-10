@@ -7,6 +7,7 @@
 //! [`CHANNEL_CURVATURE`] is two `f64`, and [`CHANNEL_NGON_GROUP`] is the
 //! retained native grouping record. Channel data is never unit-scaled.
 
+use crate::loss::Diagnostics;
 use std::borrow::Cow;
 use std::ops::Range;
 
@@ -182,7 +183,7 @@ pub(crate) struct DecodedMesh {
     /// Typed IR tessellation.
     pub(crate) tessellation: Tessellation,
     /// Per-object warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
     /// Typed losses raised while selecting writer-version-dependent fields.
     pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Whether source coordinates were converted to millimeters.
@@ -214,7 +215,7 @@ struct MeshChannels {
     vertices: Vec<[f32; 3]>,
     normals: Vec<Vector3>,
     channels: Vec<TessellationChannel>,
-    warnings: Vec<String>,
+    warnings: Diagnostics,
     losses: Vec<cadmpeg_ir::report::LossNote>,
 }
 
@@ -395,7 +396,8 @@ pub(crate) fn decode(
                     }
                 }
             } else {
-                decoded.warnings.push(
+                decoded.warnings.push_coded(
+                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
                     "redundant mesh double vertex count mismatch; using float vertices".to_string(),
                 );
             }
@@ -455,11 +457,11 @@ pub(crate) fn decode(
         {
             match read_v5_double_vertices(data, extra, archive, &decoded.vertices) {
                 Ok(Some(values)) => double_vertices = Some(values),
-                Ok(None) => decoded.warnings.push(format!(
+                Ok(None) => decoded.warnings.push_coded(crate::loss::RhinoLossCode::RedundantFieldRepaired, format!(
                     "redundant V5 mesh double-precision userdata at offset {} was rejected; using float vertices",
                     extra.range.start
                 )),
-                Err(error) => decoded.warnings.push(format!(
+                Err(error) => decoded.warnings.push_coded(crate::loss::RhinoLossCode::RedundantFieldRepaired, format!(
                     "redundant V5 mesh double-precision userdata at offset {} was dropped: {error}",
                     extra.range.start
                 )),
@@ -731,7 +733,7 @@ fn read_raw_channels(
     points: &mut Vec<[f32; 3]>,
     normals: &mut Vec<Vector3>,
     channels: &mut Vec<TessellationChannel>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     let vertex_bytes = read_counted_raw(reader, vertices, 12, "vertices", warnings)?;
     if let Some(bytes) = vertex_bytes {
@@ -855,13 +857,14 @@ fn read_counted_raw(
     vertices: usize,
     item_size: usize,
     name: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Option<Vec<u8>>, GeometryError> {
     let count = reader.i32()?;
     if count < 0 {
-        warnings.push(format!(
-            "redundant mesh {name} channel has a negative count; channel dropped"
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format!("redundant mesh {name} channel has a negative count; channel dropped"),
+        );
         return Ok(None);
     }
     if count == 0 {
@@ -872,9 +875,10 @@ fn read_counted_raw(
         .ok_or_else(|| error(reader.position(), "mesh channel byte count overflow"))?;
     let data = reader.take(bytes)?.to_vec();
     if count as usize != vertices {
-        warnings.push(format!(
-            "redundant mesh {name} channel count mismatch; channel dropped"
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format!("redundant mesh {name} channel count mismatch; channel dropped"),
+        );
         return Ok(None);
     }
     Ok(Some(data))
@@ -885,7 +889,7 @@ fn read_buffer<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     expected: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     name: &str,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
@@ -967,7 +971,10 @@ fn read_buffer<'a>(
                 verify_checksum(reader.backing_bytes(), &chunk)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
-                warnings.push(format!("{name} compressed chunk CRC mismatch"));
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format!("{name} compressed chunk CRC mismatch"),
+                );
             }
             (
                 Cow::Borrowed(view.window()),
@@ -983,13 +990,17 @@ fn read_buffer<'a>(
     };
     reader.skip(consumed)?;
     if bytes.len() != expected {
-        warnings.push(format!(
-            "redundant mesh {name} compressed-buffer size mismatch; channel dropped"
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format!("redundant mesh {name} compressed-buffer size mismatch; channel dropped"),
+        );
         return Ok(None);
     }
     if crc32fast::hash(&bytes) != crc {
-        warnings.push(format!("{name} compressed-buffer CRC mismatch"));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!("{name} compressed-buffer CRC mismatch"),
+        );
         return Ok(None);
     }
     Ok(Some(bytes))
@@ -1008,7 +1019,7 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
         return;
     };
     let expand = MeshExpand::new(&ctx, root);
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let mut decompressed_bytes = 0;
     let mut document_budget = MeshBudget::new();
     let _ = read_buffer(
@@ -1043,7 +1054,7 @@ fn read_ngons(
     archive: ArchiveVersion,
     vertices: usize,
     faces: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<usize, GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
@@ -1085,7 +1096,7 @@ fn read_ngons(
 fn read_mapping_tag(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
@@ -1135,7 +1146,7 @@ fn read_double_chunk<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     vertex_count: usize,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
@@ -1190,10 +1201,13 @@ fn read_double_chunk<'a>(
         crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "mesh double vertices CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!(
+                "mesh double vertices CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        );
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     if count != vertex_count {
@@ -1393,7 +1407,7 @@ fn legacy_ngon_indices_valid(
 fn consume_optional_chunk(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    _warnings: &mut Vec<String>,
+    _warnings: &mut Diagnostics,
     _label: &str,
 ) -> Result<(), GeometryError> {
     let bytes = reader.backing_bytes();
@@ -1405,17 +1419,17 @@ fn consume_optional_chunk(
 fn push_chunk_checksum_warning(
     bytes: &[u8],
     chunk: &crate::chunks::Chunk,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     label: &str,
 ) -> Result<(), GeometryError> {
     if matches!(
         verify_checksum(bytes, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "{label} CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!("{label} CRC mismatch at offset {}", chunk.header_start),
+        );
     }
     Ok(())
 }
@@ -2012,7 +2026,7 @@ mod tests {
         bytes.push(0xaa);
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
@@ -2041,7 +2055,7 @@ mod tests {
         bytes.extend(buffer(&[8], 0));
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
@@ -2083,7 +2097,7 @@ mod tests {
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
@@ -2114,7 +2128,7 @@ mod tests {
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
         let mut document_budget = MeshBudget::with_limit(4);
         with_expand(&bytes, |expand| {
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let mut first = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             assert_eq!(
                 read_buffer(
@@ -2161,7 +2175,7 @@ mod tests {
                 expand,
                 &mut reader,
                 1,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "bad",
                 &mut 0,
                 &mut MeshBudget::new(),
@@ -2177,7 +2191,7 @@ mod tests {
                 expand,
                 &mut reader,
                 3,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "short",
                 &mut 0,
                 &mut MeshBudget::new(),
@@ -2199,7 +2213,7 @@ mod tests {
                 expand,
                 &mut reader,
                 1,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "bomb",
                 &mut 0,
                 &mut MeshBudget::new(),
@@ -2219,7 +2233,7 @@ mod tests {
                 expand,
                 &mut reader,
                 1,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "budget",
                 &mut budget,
                 &mut MeshBudget::new(),
@@ -2240,7 +2254,7 @@ mod tests {
                     expand,
                     &mut reader,
                     1,
-                    &mut Vec::new(),
+                    &mut Diagnostics::new(),
                     "aggregate",
                     &mut 0,
                     &mut document_budget,
@@ -2298,8 +2312,13 @@ mod tests {
         bytes.extend(chunk(&[1, 2, 3]));
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 11, end).expect("reader");
-        consume_optional_chunk(&mut reader, ArchiveVersion::V5, &mut Vec::new(), "optional")
-            .expect("chunk");
+        consume_optional_chunk(
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+            "optional",
+        )
+        .expect("chunk");
         assert_eq!(reader.position(), end);
     }
 
@@ -2351,7 +2370,8 @@ mod tests {
         bytes.extend(mapping);
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 3, end).expect("reader");
-        read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut Vec::new()).expect("mapping");
+        read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut Diagnostics::new())
+            .expect("mapping");
 
         let mut ngon = 1_i32.to_le_bytes().to_vec();
         ngon.extend(0_i32.to_le_bytes());
@@ -2364,7 +2384,14 @@ mod tests {
         bytes.extend(ngon);
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 5, end).expect("reader");
-        read_ngons(&mut reader, ArchiveVersion::V5, 3, 1, &mut Vec::new()).expect("ngon");
+        read_ngons(
+            &mut reader,
+            ArchiveVersion::V5,
+            3,
+            1,
+            &mut Diagnostics::new(),
+        )
+        .expect("ngon");
     }
 
     #[test]
@@ -2380,7 +2407,7 @@ mod tests {
         bytes[crc] ^= 1;
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 0, end).expect("reader");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut warnings).expect("mapping");
         assert_eq!(reader.position(), end);
         assert_eq!(warnings.len(), 1);
@@ -2432,7 +2459,7 @@ mod tests {
                 expand,
                 &mut child,
                 4,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "nested",
                 &mut 0,
                 &mut MeshBudget::new(),
@@ -2458,7 +2485,7 @@ mod tests {
                 expand,
                 &mut reader,
                 3,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "first",
                 &mut 0,
                 &mut MeshBudget::new(),
@@ -2470,7 +2497,7 @@ mod tests {
                 expand,
                 &mut reader,
                 3,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
                 "second",
                 &mut 0,
                 &mut MeshBudget::new(),

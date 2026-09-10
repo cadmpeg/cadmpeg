@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+use crate::loss::Diagnostics;
 use cadmpeg_ir::report::Severity;
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
@@ -19,7 +20,7 @@ fn parses_fixed_attributes_through_every_minor_gate() {
             100..100 + bytes.len(),
             ArchiveVersion::V4,
             None,
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .unwrap_or_else(|error| panic!("minor {minor}: {error}"));
         assert_eq!(parsed.version, (1, minor));
@@ -42,7 +43,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..hidden.len(),
         ArchiveVersion::V4,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     assert!(!hidden.visible);
@@ -54,7 +55,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..locked.len(),
         ArchiveVersion::V4,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     assert!(locked.visible);
@@ -66,7 +67,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..definition.len(),
         ArchiveVersion::V4,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     assert_eq!(definition.object_mode & 0x0f, 3);
@@ -81,7 +82,7 @@ fn fixed_explicit_visibility_overrides_hidden_mode_default() {
         0..bytes.len(),
         ArchiveVersion::V4,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     assert!(parsed.visible);
@@ -96,7 +97,7 @@ fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
         0..bytes.len(),
         ArchiveVersion::V5,
         Some(200_712_189),
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("pre-cutoff V5 writer uses the fixed attributes reader");
     assert_eq!(parsed.version, (1, 1));
@@ -108,7 +109,7 @@ fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
         0..bytes.len(),
         ArchiveVersion::V5,
         Some(200_712_190),
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect_err("the cutoff selects the tagged V5 reader");
     assert!(matches!(
@@ -126,7 +127,7 @@ fn object_attribute_booleans_use_writer_version_strictness() {
         0..bytes.len(),
         ArchiveVersion::V8,
         Some(201_708_239),
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("legacy Boolean remains permissive");
     assert!(legacy.visible);
@@ -138,7 +139,7 @@ fn object_attribute_booleans_use_writer_version_strictness() {
             0..bytes.len(),
             ArchiveVersion::V8,
             Some(writer_version),
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .expect_err("modern Boolean must be canonical");
         assert!(matches!(
@@ -241,7 +242,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             0..minimum.len(),
             ArchiveVersion::V8,
             None,
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor {gate}: {error}"));
         let latest = tagged_attributes(&[(*item, payload.clone())], 13);
@@ -251,7 +252,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             0..latest.len(),
             ArchiveVersion::V8,
             None,
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor 13: {error}"));
         decoded_at_gate.version = decoded_at_latest.version;
@@ -267,7 +268,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
                 0..preceding.len(),
                 ArchiveVersion::V8,
                 None,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
             )
             .unwrap_or_else(|error| panic!("item {item} failed before minor {gate}: {error}"));
             let empty = tagged_attributes(&[], gate - 1);
@@ -277,7 +278,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
                 0..preceding.len(),
                 ArchiveVersion::V8,
                 None,
-                &mut Vec::new(),
+                &mut Diagnostics::new(),
             )
             .expect("empty tagged attributes have source defaults");
             assert_eq!(
@@ -293,7 +294,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         10..10 + bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     assert_eq!(parsed.name, "N");
@@ -323,7 +324,7 @@ fn object_rendering_attributes_require_minor_one() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .is_err());
 }
@@ -358,7 +359,7 @@ fn object_rendering_attributes_consume_mapping_reference_and_channel() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("mapping reference and channel have source-shaped framing");
     assert!(parsed.rendering_range.is_some());
@@ -374,7 +375,7 @@ fn tagged_attributes_follow_source_cascade_boundaries() {
             0..bytes.len(),
             ArchiveVersion::V8,
             None,
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .unwrap_or_else(|error| panic!("minor {minor} item {item}: {error}"));
         assert_eq!(parsed.version, (2, minor));
@@ -388,7 +389,7 @@ fn tagged_attributes_follow_source_cascade_boundaries() {
         0..out_of_order.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("out-of-order item stops at the containing attributes boundary");
     assert_eq!(parsed.url, "U");
@@ -405,7 +406,7 @@ fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
             0..bytes.len(),
             ArchiveVersion::V8,
             None,
-            &mut Vec::new()
+            &mut Diagnostics::new()
         )
         .is_err(),
         "an admitted object-frame item still requires its value grammar"
@@ -417,7 +418,7 @@ fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new()
+        &mut Diagnostics::new()
     )
     .is_err());
 
@@ -429,7 +430,7 @@ fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new()
+        &mut Diagnostics::new()
     )
     .is_err());
 }
@@ -444,7 +445,7 @@ fn future_tagged_attributes_stop_at_unknown_item_and_preserve_suffix() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("future unknown item is bounded by the containing chunk");
     assert_eq!(parsed.version, (2, 14));
@@ -463,7 +464,7 @@ fn future_tagged_attributes_accept_known_prefix_and_suffix() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("future minor with a known prefix");
     assert_eq!(parsed.version, (2, 14));
@@ -479,7 +480,7 @@ fn tagged_attributes_reject_nonfinite_numeric_items() {
         0..bytes.len(),
         ArchiveVersion::V8,
         None,
-        &mut Vec::new()
+        &mut Diagnostics::new()
     )
     .is_err());
 }
@@ -520,13 +521,13 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         0..fixed_attributes(1, 0, None).len(),
         ArchiveVersion::V4,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     attributes.layer_index = -1;
     attributes.color_source = crate::objects::ColorSource::Material;
     let material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let material = crate::objects::resolve_identities(material, &metadata, &mut warnings);
     assert_eq!(
         material[0]
@@ -575,7 +576,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         0..bytes.len(),
         ArchiveVersion::V4,
         None,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("required invariant");
     let mut duplicate = attributes.clone();
@@ -591,7 +592,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         panic!("test object is framed");
     };
     object.class_uuid = Uuid::from_wire([9; 16]);
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let objects = crate::objects::resolve_identities(
         objects,
         &settings::DocumentMetadata::default(),
@@ -628,7 +629,7 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     valid_body.extend(short_chunk(ArchiveVersion::V4, 0x8002_7fff, 0));
     let valid = long_chunk(ArchiveVersion::V4, 0x0002_7ffd, &valid_body);
     malformed.extend(valid);
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let descriptors = crate::objects::parse_attribute_userdata(
         &malformed,
         0..malformed.len(),
@@ -908,7 +909,7 @@ fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
         &wrapper,
         0..wrapper.len(),
         archive,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("null object wrapper");
     assert_eq!(class.class_uuid, Uuid::nil());

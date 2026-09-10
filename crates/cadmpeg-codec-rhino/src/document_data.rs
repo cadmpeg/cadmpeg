@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino document properties, selectors, previews, and setting identities.
 
+use crate::loss::Diagnostics;
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
 use std::ops::Range;
@@ -452,7 +453,7 @@ fn render_userdata(
                         "render userdata item must be a long chunk",
                     ));
                 }
-                let mut checksum_warnings = Vec::new();
+                let mut checksum_warnings = Diagnostics::new();
                 items.push(parse_userdata(
                     data,
                     &chunk,

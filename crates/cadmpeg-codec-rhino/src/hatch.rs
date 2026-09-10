@@ -2,6 +2,7 @@
 //! Bounded hatch payload decoding.
 #![deny(clippy::disallowed_methods)]
 
+use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -107,7 +108,7 @@ pub(crate) struct Hatch {
     pub(crate) loops: Vec<HatchLoop>,
     pub(crate) basepoint: [f64; 2],
     pub(crate) gradient: Option<Gradient>,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
@@ -224,7 +225,7 @@ pub(crate) fn decode(
         Ok(loops) => loops,
         Err(error) => return Err(refused(body.position(), &error)),
     };
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     for loop_index in 0..count {
         let loop_offset = body.position();
         let loop_version = body.req_u8()?;
@@ -250,7 +251,7 @@ pub(crate) fn decode(
         };
         let wrapper_offset = body.position();
         let wrapper = chunk_at(data, wrapper_offset, range.end, archive, false)?;
-        let mut loop_warnings = Vec::new();
+        let mut loop_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
             data,
             wrapper_offset..wrapper.next_offset(),
@@ -270,9 +271,7 @@ pub(crate) fn decode(
         if let Err(error) = loops.push(HatchLoop { kind, curve }) {
             return Err(refused(body.position(), &error));
         }
-        for warning in loop_warnings {
-            warnings.push(warning);
-        }
+        warnings.extend(loop_warnings);
     }
     let basepoint = if minor >= 2 {
         let offset = body.position();

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
+use crate::loss::Diagnostics;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
@@ -103,7 +104,7 @@ struct ArenaLengths {
 
 #[derive(Clone, Debug, Default)]
 struct ReportBuckets {
-    phase_warnings: Vec<String>,
+    phase_warnings: Diagnostics,
     phase_losses: Vec<LossNote>,
     typed_losses: Vec<LossNote>,
 }
@@ -1275,7 +1276,7 @@ impl<'a> DecodeContext<'a> {
         match result {
             Ok(()) => {
                 for warning in hatch.warnings {
-                    self.scan_warning(source_order, &warning);
+                    self.scan_diagnostic(source_order, &warning);
                 }
                 let mut links = loop_ids.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
                 links.push(feature_id.to_string());
@@ -1761,7 +1762,7 @@ impl<'a> DecodeContext<'a> {
         match result {
             Ok(()) => {
                 for warning in construction.warnings {
-                    self.scan_warning(source_order, &warning);
+                    self.scan_diagnostic(source_order, &warning);
                 }
                 let mut links = vec![parameter_id, surface_id.to_string(), feature_id.to_string()];
                 if let Some(model_id) = model_id {
@@ -2221,7 +2222,7 @@ impl<'a> DecodeContext<'a> {
             warnings,
         } = decoded;
         for warning in warnings {
-            self.scan_warning(source_order, &warning);
+            self.scan_diagnostic(source_order, &warning);
         }
         for diagnostic in enum_diagnostics {
             self.report
@@ -2292,7 +2293,7 @@ impl<'a> DecodeContext<'a> {
         match decoded {
             Ok(extrusion) => {
                 for warning in &extrusion.warnings {
-                    self.scan_warning(source_order, warning);
+                    self.scan_diagnostic(source_order, warning);
                 }
                 if self.commit_extrusion(source_order, extrusion) {
                     self.mark_decoded(source_order);
@@ -2410,36 +2411,20 @@ impl<'a> DecodeContext<'a> {
             );
         }
         losses.append(&mut self.report.typed_losses);
-        losses.extend(self.scan.warnings.iter().map(|warning| {
-            if integrity_diagnostic(warning) {
-                RhinoLossCode::IntegrityFailure.note(warning.clone())
-            } else if warning.contains(" has invalid color source ") {
-                RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
-            } else if brep_mesh_cache_diagnostic(warning) {
-                RhinoLossCode::BrepMeshCacheDegraded.note(warning.clone())
-            } else if redundant_field_diagnostic(warning) {
-                RhinoLossCode::RedundantFieldRepaired.note(warning.clone())
-            } else if duplicate_resolution_diagnostic(warning) {
-                RhinoLossCode::DuplicateRecordResolved.note(warning.clone())
-            } else {
-                RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())
-            }
+        losses.extend(self.scan.warnings.iter().map(|diagnostic| {
+            diagnostic
+                .code
+                .unwrap_or(RhinoLossCode::ContainerScanDiagnostic)
+                .note(diagnostic.message.clone())
         }));
         losses.append(&mut self.report.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
-        for warning in &self.report.phase_warnings {
-            if integrity_diagnostic(warning) {
-                losses.push(RhinoLossCode::IntegrityFailure.note(warning.clone()));
+        for diagnostic in &self.report.phase_warnings {
+            if let Some(code) = diagnostic.code {
+                losses.push(code.note(diagnostic.message.clone()));
                 continue;
             }
-            if brep_mesh_cache_diagnostic(warning) {
-                losses.push(RhinoLossCode::BrepMeshCacheDegraded.note(warning.clone()));
-                continue;
-            }
-            if redundant_field_diagnostic(warning) {
-                losses.push(RhinoLossCode::RedundantFieldRepaired.note(warning.clone()));
-                continue;
-            }
+            let warning = &diagnostic.message;
             let (family, detail) = warning
                 .split_once(':')
                 .map_or(("rhino", warning.as_str()), |(family, detail)| {
@@ -2567,6 +2552,16 @@ impl<'a> DecodeContext<'a> {
         self.scan_warnings_for_class(&class, message);
     }
 
+    fn scan_diagnostic(&mut self, source_order: usize, diagnostic: &crate::loss::RhinoDiagnostic) {
+        let class = report_class(&self.scan.objects[source_order]);
+        self.report
+            .phase_warnings
+            .push_diagnostic(crate::loss::RhinoDiagnostic {
+                code: diagnostic.code,
+                message: format!("{class}: {}", diagnostic.message),
+            });
+    }
+
     fn scan_warnings_for_class(&mut self, class: &str, message: &str) {
         self.report
             .phase_warnings
@@ -2684,9 +2679,7 @@ impl<'a> DecodeContext<'a> {
                     warnings,
                 } = cloud;
                 self.report.phase_warnings.extend(
-                    warnings
-                        .into_iter()
-                        .map(|warning| format!("{}: {warning}", identity.source_id)),
+                    warnings.map_messages(|message| format!("{}: {message}", identity.source_id)),
                 );
                 let Some(entity_count) = points
                     .len()
@@ -2788,9 +2781,7 @@ impl<'a> DecodeContext<'a> {
                 }
                 let warnings = curve_warnings(&curve);
                 self.report.phase_warnings.extend(
-                    warnings
-                        .into_iter()
-                        .map(|warning| format!("{}: {warning}", identity.source_id)),
+                    warnings.map_messages(|message| format!("{}: {message}", identity.source_id)),
                 );
                 let before = ArenaLengths::capture(&self.ir);
                 let annotation_checkpoint = self.annotations.clone();
@@ -3129,8 +3120,7 @@ impl<'a> DecodeContext<'a> {
             }));
         self.report.phase_warnings.extend(
             mesh.warnings
-                .into_iter()
-                .map(|warning| format!("{}: {warning}", identity.source_id)),
+                .map_messages(|message| format!("{}: {message}", identity.source_id)),
         );
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
@@ -3202,12 +3192,12 @@ impl<'a> DecodeContext<'a> {
             crate::brep::BrepParse::SemanticInvalid { warnings, .. } => warnings,
         };
         for warning in warnings {
-            if warning.starts_with("invalid Brep is_solid value ") {
-                self.report
+            match warning.code {
+                Some(code) => self
+                    .report
                     .typed_losses
-                    .push(RhinoLossCode::EnumerationValueDegraded.note(warning));
-            } else {
-                self.scan_warning(source_order, warning);
+                    .push(code.note(warning.message.clone())),
+                None => self.scan_diagnostic(source_order, warning),
             }
         }
         let identity = &object.identity;
@@ -3284,21 +3274,11 @@ impl<'a> DecodeContext<'a> {
                     self.append_links(source_order, &links);
                     self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
-                        if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            self.report.typed_losses.push(
-                                RhinoLossCode::TopologyBrepFallback
-                                    .note(format!("Brep topology fallback: {cause}")),
-                            );
-                        } else if warning.contains("polycurve join moved endpoints") {
-                            self.report
-                                .typed_losses
-                                .push(RhinoLossCode::PolycurveJoinGap.note(&warning));
-                        } else if warning.contains(" C2 omitted: ") {
-                            self.report
-                                .typed_losses
-                                .push(RhinoLossCode::TrimPcurveDropped.note(&warning));
-                        } else {
-                            self.scan_warning(source_order, &warning);
+                        match warning.code {
+                            Some(code) => {
+                                self.report.typed_losses.push(code.note(&warning.message));
+                            }
+                            None => self.scan_diagnostic(source_order, &warning),
                         }
                     }
                     if cache_only {
@@ -3380,26 +3360,6 @@ fn report_class(object: &crate::objects::ObjectRecord) -> String {
         .class_uuid()
         .unwrap_or_else(crate::wire::Uuid::nil)
         .to_string()
-}
-
-fn integrity_diagnostic(message: &str) -> bool {
-    message.contains("CRC mismatch") || message.contains("checksum mismatch")
-}
-
-fn duplicate_resolution_diagnostic(message: &str) -> bool {
-    message.starts_with("duplicate layer index ")
-        || message.starts_with("duplicate layer UUID ")
-        || message.starts_with("duplicate singleton metadata record ")
-}
-
-fn redundant_field_diagnostic(message: &str) -> bool {
-    message.starts_with("redundant ")
-        || message.contains(": redundant ")
-        || message.contains("invalid optional Brep region topology discarded")
-}
-
-fn brep_mesh_cache_diagnostic(message: &str) -> bool {
-    message.contains("Brep mesh cache") || message.contains(" mesh cache slot ")
 }
 
 fn duplicate_userdata_count(userdata: &[UserdataDescriptor], class: crate::wire::Uuid) -> usize {
@@ -3745,7 +3705,7 @@ struct BrepDraft {
     kind: BrepTransferKind,
     draft: ModelDraft,
     links: Vec<String>,
-    warnings: Vec<String>,
+    warnings: Diagnostics,
     typed_losses: Vec<LossNote>,
 }
 
@@ -3859,8 +3819,10 @@ impl BrepDraft {
         model.vertices.clear();
         model.points.clear();
         model.pcurves.clear();
-        self.warnings
-            .push(format!("Brep topology fallback: {}", cause.into()));
+        self.warnings.push_coded(
+            RhinoLossCode::TopologyBrepFallback,
+            format!("Brep topology fallback: {}", cause.into()),
+        );
         self
     }
 }
@@ -3951,8 +3913,7 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
             Ok(crate::curves::DecodedGeometry::Curve { curve }) => {
                 staged.warnings.extend(
                     curve_warnings(&curve)
-                        .into_iter()
-                        .map(|warning| format!("C3 slot {index}: {warning}")),
+                        .map_messages(|message| format!("C3 slot {index}: {message}")),
                 );
                 let id = match stage_curve_tree(
                     &mut staged,
@@ -4750,12 +4711,12 @@ fn decode_pcurves(
 ) -> (
     BTreeMap<i32, cadmpeg_ir::ids::PcurveId>,
     Vec<Pcurve>,
-    Vec<String>,
+    Diagnostics,
 ) {
     let mut ids = BTreeMap::new();
     let mut values = Vec::new();
     let mut decoded_slots = BTreeMap::<i32, Option<NurbsCurve>>::new();
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     for (index, trim) in raw.trims.iter().enumerate() {
         if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
             continue;
@@ -4795,14 +4756,16 @@ fn decode_pcurves(
                     warnings.extend(
                         joined
                             .warnings
-                            .into_iter()
-                            .map(|warning| format!("trim {index}: {warning}")),
+                            .map_messages(|message| format!("trim {index}: {message}")),
                     );
                     decoded_slots.insert(trim_curve, Some(joined.curve.clone()));
                     joined.curve
                 }
                 Err(error) => {
-                    warnings.push(format!("trim {index} C2 omitted: {error}"));
+                    warnings.push_coded(
+                        crate::loss::RhinoLossCode::TrimPcurveDropped,
+                        format!("trim {index} C2 omitted: {error}"),
+                    );
                     decoded_slots.insert(trim_curve, None);
                     continue;
                 }
@@ -4864,7 +4827,7 @@ fn c2_curve_to_nurbs_join(
         crate::curves::DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Nurbs(nurbs) => Ok(crate::curves::NurbsJoin {
                 curve: nurbs,
-                warnings: Vec::new(),
+                warnings: Diagnostics::new(),
             }),
             _ => Err(crate::curves::error(
                 offset,
@@ -4877,7 +4840,7 @@ fn c2_curve_to_nurbs_join(
             ..
         } => {
             let mut segments = Vec::with_capacity(children.len());
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let mut children = children.into_iter().peekable();
             while let Some((start, child)) = children.next() {
                 let end = children.peek().map_or(end_parameter, |(start, _)| *start);
@@ -5117,8 +5080,8 @@ fn disjoint_root(parent: &mut [usize], mut value: usize) -> usize {
     value
 }
 
-fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
-    let mut warnings = curve.warnings().to_vec();
+fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Diagnostics {
+    let mut warnings = curve.warnings().clone();
     if let crate::curves::DecodedCurve::Compound { children, .. } = curve {
         for (_, child) in children {
             warnings.extend(curve_warnings(child));
@@ -5286,8 +5249,10 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             CurveGeometry::Nurbs(nurbs)
         }
         CurveGeometry::Circle(circle_curve) => {
-            let decoded =
-                crate::curves::DecodedCurve::leaf(CurveGeometry::Circle(circle_curve), Vec::new());
+            let decoded = crate::curves::DecodedCurve::leaf(
+                CurveGeometry::Circle(circle_curve),
+                Diagnostics::new(),
+            );
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             nurbs
@@ -5477,7 +5442,7 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             scale,
         )
     });
-    let mut history_warnings = Vec::new();
+    let mut history_warnings = Diagnostics::new();
     let untyped = context.validate_candidate(|candidate, _annotations| {
         crate::history::project(
             &scan.history,
