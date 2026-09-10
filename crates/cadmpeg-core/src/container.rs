@@ -214,7 +214,8 @@ impl FramedSpan {
         self.payload
     }
 
-    /// Stored span in bytes, framing included.
+    /// Stored span in bytes, framing included: at least `payload + 1`, since
+    /// the framing is non-zero.
     #[must_use]
     pub const fn stored(self) -> u64 {
         self.payload + self.framing.get()
@@ -258,6 +259,11 @@ pub enum EntryStorage {
         size: VerbatimSize,
     },
     /// Bytes stored compressed; either size is absent when the codec does not report it.
+    ///
+    /// The two sizes are independent facts: a compressed stream may occupy
+    /// fewer, the same, or more stored bytes than it expands to (an
+    /// incompressible deflate member grows), so no pair of reported sizes is
+    /// invalid and none is a second spelling of another.
     Compressed {
         /// Compression method.
         method: CompressionMethod,
