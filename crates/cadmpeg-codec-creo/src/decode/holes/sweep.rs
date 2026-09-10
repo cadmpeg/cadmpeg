@@ -119,9 +119,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .windows(2)
                 .enumerate()
                 .filter_map(|(index, pair)| {
-                    let [class_204, class_203] = pair else {
-                        unreachable!("two-entry window")
-                    };
+                    let [class_204, class_203] = pair.first_chunk::<2>()?;
                     (class_204.class_id() == 204
                         && class_203.class_id() == 203
                         && class_204.source_entity_id().is_none()

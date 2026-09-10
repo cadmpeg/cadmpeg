@@ -1399,12 +1399,13 @@ impl SurfaceParameterRecord {
                     .slots
                     .last()
                     .and_then(|slot| slot.offset.checked_add(slot.raw.len()));
-                if frame.slots.len() == 5 && end == Some(frame_end) {
-                    let [coordinate0, coordinate1, coordinate2, coordinate3, coordinate4] =
-                        frame.slots.as_slice()
-                    else {
-                        unreachable!("five slots were checked above");
-                    };
+                if let (
+                    Ok([coordinate0, coordinate1, coordinate2, coordinate3, coordinate4]),
+                    true,
+                ) = (
+                    <&[SurfaceParameterScalar; 5]>::try_from(frame.slots.as_slice()),
+                    end == Some(frame_end),
+                ) {
                     let values = [
                         coordinate0.value?,
                         coordinate1.value?,
@@ -1429,18 +1430,15 @@ impl SurfaceParameterRecord {
                     .slots
                     .last()
                     .and_then(|slot| slot.offset.checked_add(slot.raw.len()))?;
-                if first.slots.len() >= 3
-                    && second.slots.len() == 2
-                    && first_end < second.offset
-                    && second_end == frame_end
-                {
-                    let first_coordinates = &first.slots[first.slots.len() - 3..];
-                    let [coordinate0, coordinate1, coordinate2] = first_coordinates else {
-                        unreachable!("three trailing slots were selected");
-                    };
-                    let [coordinate3, coordinate4] = second.slots.as_slice() else {
-                        unreachable!("two slots were checked above");
-                    };
+                if let (
+                    Some([coordinate0, coordinate1, coordinate2]),
+                    Ok([coordinate3, coordinate4]),
+                    true,
+                ) = (
+                    first.slots.last_chunk::<3>(),
+                    <&[SurfaceParameterScalar; 2]>::try_from(second.slots.as_slice()),
+                    first_end < second.offset && second_end == frame_end,
+                ) {
                     let values = [
                         coordinate0.value?,
                         coordinate1.value?,
@@ -2050,17 +2048,14 @@ impl SurfaceParameterRecord {
         (first_end == type24_round::SEPARATOR).then_some(())?;
         let (second_diameter, mut cursor) = decode_at(type24_round::SECOND_DIAMETER_ENDPOINT)?;
         (cursor == type24_round::EXTENT_SCALARS).then_some(())?;
-        let mut coordinates = Vec::with_capacity(6);
-        for _ in 0..5 {
+        let mut coordinates = [0.0; 6];
+        for coordinate in coordinates.iter_mut().take(5) {
             let (value, next) = decode_at(cursor)?;
-            coordinates.push(value);
+            *coordinate = value;
             cursor = next;
         }
         (cursor == type24_round::TERMINAL).then_some(())?;
-        coordinates.push(0.0);
-        let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
-            unreachable!("six bounded round coordinates")
-        };
+        let [a0, a1, a2, b0, b1, b2] = coordinates;
         let diameter = (second_diameter - first_diameter).abs();
         let scale = [first_diameter, second_diameter]
             .into_iter()
@@ -2069,7 +2064,7 @@ impl SurfaceParameterRecord {
             .fold(1.0, f64::max);
         (diameter > EPS_SURFACE_NONZERO * scale).then_some(Type24RoundEnvelope {
             diameter,
-            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+            extent_endpoints: [[a0, a1, a2], [b0, b1, b2]],
         })
     }
 
@@ -2088,16 +2083,14 @@ impl SurfaceParameterRecord {
         (first_end == type24_seg::LITERAL_RUN).then_some(())?;
         let (second_diameter, mut cursor) = decode_at(type24_seg::SECOND_DIAMETER_ENDPOINT)?;
         (cursor == type24_seg::EXTENT_COORDINATES).then_some(())?;
-        let mut coordinates = Vec::with_capacity(6);
-        for _ in 0..6 {
+        let mut coordinates = [0.0; 6];
+        for coordinate in &mut coordinates {
             let (value, next) = decode_at(cursor)?;
-            coordinates.push(value);
+            *coordinate = value;
             cursor = next;
         }
         (cursor == type24_seg::TRAILER).then_some(())?;
-        let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
-            unreachable!("six bounded segmented-round coordinates")
-        };
+        let [a0, a1, a2, b0, b1, b2] = coordinates;
         let diameter = (second_diameter - first_diameter).abs();
         let scale = [first_diameter, second_diameter]
             .into_iter()
@@ -2106,7 +2099,7 @@ impl SurfaceParameterRecord {
             .fold(1.0, f64::max);
         (diameter > EPS_SURFACE_NONZERO * scale).then_some(Type24RoundEnvelope {
             diameter,
-            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+            extent_endpoints: [[a0, a1, a2], [b0, b1, b2]],
         })
     }
 
@@ -2163,8 +2156,8 @@ impl SurfaceParameterRecord {
             }
             [leading, trailing] if leading.slots.len() == 1 => {
                 let (leading_values, leading_end) = contiguous_values(leading)?;
-                let [first] = leading_values.as_slice() else {
-                    unreachable!("one leading diameter slot was checked above");
+                let &[first] = leading_values.as_slice() else {
+                    return None;
                 };
                 let (trailing_values, trailing_end) = contiguous_values(trailing)?;
                 let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
@@ -2189,7 +2182,7 @@ impl SurfaceParameterRecord {
                         && self.body.get(..2) == Some(&[0xeb, 0xba])
                         && self.body.get(leading_end..trailing.offset) == Some(&[0x12]));
                 (controls_match && frame_reaches_body_end(trailing_end)).then_some(())?;
-                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+                ([first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
             [leading, trailing] => {
                 let (leading_values, leading_end) = contiguous_values(leading)?;
