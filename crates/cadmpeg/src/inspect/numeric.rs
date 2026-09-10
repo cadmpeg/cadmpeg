@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset argument parsing and fixed-width scalar reads.
 
+use std::num::NonZeroUsize;
+
 use clap::ValueEnum;
 
 use cadmpeg_core::bytes::assemble_u64_le;
@@ -134,18 +136,19 @@ impl ScalarType {
     pub const MAX_WIDTH: usize = 8;
 
     /// Returns the encoded width in bytes.
-    pub const fn width(self) -> usize {
-        match self {
+    pub const fn width(self) -> NonZeroUsize {
+        let width = match self {
             Self::U8 | Self::I8 => 1,
             Self::U16 | Self::I16 => 2,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
-        }
+        };
+        NonZeroUsize::new(width).expect("every encoding is at least one byte wide")
     }
 
     /// Returns true when the encoding is one byte wide and byte order is moot.
     pub const fn is_single_byte(self) -> bool {
-        self.width() == 1
+        self.width().get() == 1
     }
 
     /// Returns the spec name without a byte-order suffix.
@@ -194,7 +197,7 @@ impl ScalarType {
     /// Returns a window over the leading [`ScalarType::width`] bytes of `bytes`.
     pub fn window(self, bytes: &[u8]) -> Option<ScalarWindow<'_>> {
         bytes
-            .get(..self.width())
+            .get(..self.width().get())
             .map(|bytes| ScalarWindow { ty: self, bytes })
     }
 
@@ -202,7 +205,7 @@ impl ScalarType {
     pub fn window_of(self, buffer: &[u8; ScalarType::MAX_WIDTH]) -> ScalarWindow<'_> {
         ScalarWindow {
             ty: self,
-            bytes: &buffer[..self.width()],
+            bytes: &buffer[..self.width().get()],
         }
     }
 }

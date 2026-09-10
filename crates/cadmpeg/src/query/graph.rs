@@ -12,7 +12,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 use serde_json::{json, Value};
 
-use super::document::{CadirDocument, RecordRef, RecordSelection};
+use super::document::{CadirDocument, RecordRef, RecordSelection, RequestedIds};
 use super::item::{emit_values, ArenaTarget};
 use super::output::OutputArgs;
 
@@ -271,9 +271,9 @@ mod tests {
     fn start_nodes(document: &CadirDocument, arena: &str, ids: &[&str]) -> Vec<RecordRef> {
         let target = ArenaTarget::parse(arena).unwrap();
         let ids: Vec<String> = ids.iter().map(|s| (*s).to_owned()).collect();
-        let (recs, errors) = document
-            .select_records(&target, &RecordSelection::Ids(ids))
-            .unwrap();
+        let selection =
+            RequestedIds::new(ids).map_or(RecordSelection::Head(1), RecordSelection::Ids);
+        let (recs, errors) = document.select_records(&target, &selection).unwrap();
         assert!(errors.is_empty(), "{errors:?}");
         recs
     }
