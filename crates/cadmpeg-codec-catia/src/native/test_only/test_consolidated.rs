@@ -266,13 +266,10 @@ pub(super) fn validate_consolidated_cylinders(
                 range_origin,
             } => {
                 cylinder.payload.layout() == 0x62
-                    && stored_vector
-                        .iter()
-                        .chain(std::iter::once(range_origin))
-                        .all(|value| value.is_finite())
-                    && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1.0e-9
+                    && range_origin.is_finite()
                     && axis.get() == [0.0, 1.0, 0.0]
-                    && reference_direction.get() == [stored_vector[0], 0.0, stored_vector[1]]
+                    && reference_direction.get()
+                        == [stored_vector.get()[0], 0.0, stored_vector.get()[1]]
                     && crate::families::b2::records::circle_range_is_within_full_turn(
                         cylinder.radius.get(),
                         cylinder.u_range.get(),

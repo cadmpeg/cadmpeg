@@ -416,11 +416,12 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     assert!(matches!(
         range_origin.payload,
         crate::native::CatiaConsolidatedCylinderPayload::RangeOrigin {
-            stored_vector: [0.0, 1.0],
+            stored_vector,
             axis,
             reference_direction,
             range_origin,
-        } if axis.get() == [0.0, 1.0, 0.0]
+        } if stored_vector.get() == [0.0, 1.0]
+            && axis.get() == [0.0, 1.0, 0.0]
             && reference_direction.get() == [0.0, 0.0, 1.0]
             && range_origin.to_bits()
                 == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()

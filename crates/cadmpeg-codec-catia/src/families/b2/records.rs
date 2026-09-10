@@ -12,7 +12,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
-use crate::checked::{ExactUnitVector3, OrderedInterval, PositiveFinite, RelaxedUnitVector3};
+use crate::checked::{
+    CoordinatePlane, ExactUnitVector3, OrderedInterval, PositiveFinite, RelaxedUnitVector2,
+    RelaxedUnitVector3,
+};
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
 use crate::native::CatiaOwnerNumericTail;
@@ -2093,7 +2096,7 @@ pub enum B2CylinderLayout {
     /// Layout `0x52` with a fixed X-axis frame.
     Full52,
     /// Layout `0x62` with a stored planar vector.
-    RangeOrigin { stored_vector: [f64; 2] },
+    RangeOrigin { stored_vector: RelaxedUnitVector2 },
 }
 
 impl B2Cylinder {
@@ -2953,30 +2956,25 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let v_range = read_f64_array::<2>(data, p + 73)?;
             if one != 1.0
                 || origin_values.iter().any(|value| !value.is_finite())
-                || vector.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_B2_RECORD_GEOMETRY
                 || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
+            let vector = RelaxedUnitVector2::from_hypot(vector)?;
             let radius = PositiveFinite::new(radius)?;
             let u_range = OrderedInterval::new(u_range)?;
             let v_range = OrderedInterval::new(v_range)?;
             let axis = match frame_token {
-                0x19 => Vector3::new(vector[0], vector[1], 0.0),
-                0x1c => Vector3::new(vector[1], -vector[0], 0.0),
+                0x19 => vector,
+                0x1c => vector.reverse_quarter_turn(),
                 _ => return None,
             };
-            let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
+            let ref_direction = axis.quarter_turn();
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedUnitVector3::new([axis.x, axis.y, axis.z])?,
-                reference_direction: RelaxedUnitVector3::new([
-                    ref_direction.x,
-                    ref_direction.y,
-                    ref_direction.z,
-                ])?,
+                axis: axis.in_plane(CoordinatePlane::Xy),
+                reference_direction: ref_direction.in_plane(CoordinatePlane::Xy),
                 radius,
                 u_range,
                 v_range,
@@ -3005,8 +3003,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedUnitVector3::new([1.0, 0.0, 0.0])?,
-                reference_direction: RelaxedUnitVector3::new([0.0, 1.0, 0.0])?,
+                axis: RelaxedUnitVector3::X,
+                reference_direction: RelaxedUnitVector3::Y,
                 radius,
                 u_range,
                 v_range,
@@ -3023,22 +3021,21 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
                 || origin_values.iter().any(|value| !value.is_finite())
-                || vector.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_B2_RECORD_GEOMETRY
                 || !range_origin.is_finite()
                 || range_origin.to_bits() != expected_range_origin.to_bits()
                 || !circle_range_is_within_full_turn(radius, u_range)
             {
                 return None;
             }
+            let vector = RelaxedUnitVector2::from_hypot(vector)?;
             let radius = PositiveFinite::new(radius)?;
             let u_range = OrderedInterval::new(u_range)?;
             let v_range = OrderedInterval::new(v_range)?;
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedUnitVector3::new([0.0, 1.0, 0.0])?,
-                reference_direction: RelaxedUnitVector3::new([vector[0], 0.0, vector[1]])?,
+                axis: RelaxedUnitVector3::Y,
+                reference_direction: vector.in_plane(CoordinatePlane::Xz),
                 radius,
                 u_range,
                 v_range,

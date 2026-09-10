@@ -539,7 +539,7 @@ pub enum CatiaConsolidatedCylinderPayload {
     /// Complete layout-`0x62` frame and its redundant range origin.
     RangeOrigin {
         /// Stored unit vector in the token-defined carrier plane.
-        stored_vector: [f64; 2],
+        stored_vector: crate::checked::RelaxedUnitVector2,
         /// Cylinder-axis unit direction.
         axis: crate::checked::RelaxedUnitVector3,
         /// Unit direction from which the circumferential parameter is measured.
@@ -603,7 +603,7 @@ enum CatiaConsolidatedCylinderPayloadWire {
         reference_direction: crate::checked::RelaxedUnitVector3,
     },
     RangeOrigin {
-        stored_vector: [f64; 2],
+        stored_vector: crate::checked::RelaxedUnitVector2,
         axis: crate::checked::RelaxedUnitVector3,
         reference_direction: crate::checked::RelaxedUnitVector3,
         range_origin: f64,
