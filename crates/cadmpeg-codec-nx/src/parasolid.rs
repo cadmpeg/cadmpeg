@@ -159,16 +159,6 @@ impl Stream {
             StreamBody::Preview => None,
         }
     }
-
-    /// Exact schema token text this stream declares, if it declares one.
-    pub fn schema(&self) -> Option<&str> {
-        match &self.body {
-            StreamBody::Parasolid { schema, .. } => schema
-                .as_ref()
-                .map(cadmpeg_parasolid::OwnedSchemaToken::value),
-            StreamBody::Preview => None,
-        }
-    }
 }
 
 /// Owner-flag layouts admitted by the attribute-definition grammar.

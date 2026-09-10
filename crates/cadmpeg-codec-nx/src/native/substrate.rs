@@ -112,7 +112,8 @@ pub(crate) fn pair_stream_indices(
             .enumerate()
             .rev()
             .find(|(_, candidate)| {
-                candidate.kind() == StreamKind::Partition && candidate.schema() == stream.schema()
+                candidate.kind() == StreamKind::Partition
+                    && candidate.schema_token() == stream.schema_token()
             })
             .map(|(partition, _)| partition);
         if let Some(partition) = partition {
