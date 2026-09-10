@@ -627,12 +627,13 @@ pub(crate) fn build_metadata_fallback(
 
 /// Preserve the native payload for every partial decode.  Typed entities are
 /// additive views; unrecovered record families must remain byte-addressable.
+/// Returns the index of the preserved payload record in `unknowns`.
 pub(crate) fn preserve_raw_payload(
     unknowns: &mut Vec<UnknownRecord>,
     annotations: &mut AnnotationBuilder,
     scan: &ContainerScan,
     id: &str,
-) {
+) -> usize {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_ref(), "CATPart"),
@@ -647,6 +648,7 @@ pub(crate) fn preserve_raw_payload(
         Exactness::Unknown,
     );
     unknowns.push(UnknownRecord::retained(id, 0, bytes.to_vec(), Vec::new()));
+    unknowns.len() - 1
 }
 
 /// Attribute typed carrier views to the preserved payload when CATIA's binding
@@ -654,7 +656,7 @@ pub(crate) fn preserve_raw_payload(
 /// avoids inventing topology or procedural relationships.
 pub(crate) fn link_payload_carriers(
     ir: &CadIr,
-    unknowns: &mut [UnknownRecord],
+    payload: &mut UnknownRecord,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let links = ir
@@ -672,9 +674,6 @@ pub(crate) fn link_payload_carriers(
     if links.is_empty() {
         return Ok(());
     }
-    let payload = unknowns
-        .last_mut()
-        .expect("partial CATIA decode preserves its source payload");
     *payload.links_mut() = links;
     annotations
         .derived(payload.id(), "links")
