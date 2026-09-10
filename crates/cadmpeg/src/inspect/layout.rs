@@ -18,7 +18,7 @@
 use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 
-use super::numeric::{Endian, ScalarType};
+use super::numeric::{Endian, ScalarType, ScalarValue};
 
 /// A parse failure in a layout spec.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -132,14 +132,6 @@ impl FieldKind {
             Self::Bytes(count) => count.get(),
         }
     }
-
-    /// Returns the type name as it appears in a decoded record listing.
-    pub fn type_name(self) -> String {
-        match self {
-            Self::Scalar(ty, endian) => ty.display_name(endian),
-            Self::Bytes(count) => format!("bytes{count}"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,10 +141,10 @@ enum Field {
 }
 
 impl Field {
-    fn width(&self) -> usize {
+    fn width(&self) -> NonZeroUsize {
         match self {
-            Self::Named { kind, .. } => kind.width(),
-            Self::Pad(count) => count.get(),
+            Self::Named { kind, .. } => NonZeroUsize::MIN.saturating_add(kind.width() - 1),
+            Self::Pad(count) => *count,
         }
     }
 }
@@ -162,6 +154,8 @@ impl Field {
 pub struct Layout {
     /// Fields in spec order, including `padN` runs.
     fields: Vec<Field>,
+    /// Total record size, which every layout has at least one byte of.
+    size: NonZeroUsize,
 }
 
 impl Layout {
@@ -178,7 +172,7 @@ impl Layout {
             return Err(LayoutError::EmptySpec);
         }
         let mut fields = Vec::new();
-        let mut offset: usize = 0;
+        let mut size: Option<NonZeroUsize> = None;
         for (index, raw_token) in spec.split(',').enumerate() {
             let token = raw_token.trim();
             if token.is_empty() {
@@ -199,20 +193,36 @@ impl Layout {
                     name: name.unwrap_or_else(|| format!("f{index}")),
                 }
             };
-            offset =
-                offset
-                    .checked_add(field.width())
-                    .ok_or_else(|| LayoutError::SizeOverflow {
-                        token: token.to_string(),
-                    })?;
+            let width = field.width();
+            size = Some(match size {
+                None => width,
+                Some(total) => {
+                    total
+                        .checked_add(width.get())
+                        .ok_or_else(|| LayoutError::SizeOverflow {
+                            token: token.to_string(),
+                        })?
+                }
+            });
             fields.push(field);
         }
-        Ok(Self { fields })
+        let Some(size) = size else {
+            return Err(LayoutError::EmptySpec);
+        };
+        Ok(Self { fields, size })
     }
 
     /// Returns the total record size in bytes.
-    pub fn size(&self) -> usize {
-        self.fields.iter().map(Field::width).sum()
+    pub const fn size(&self) -> NonZeroUsize {
+        self.size
+    }
+
+    /// Splits `bytes` into whole records, dropping a trailing partial record.
+    pub fn split<'a>(&'a self, bytes: &'a [u8]) -> impl Iterator<Item = Record<'a>> {
+        bytes.chunks_exact(self.size.get()).map(|bytes| Record {
+            layout: self,
+            bytes,
+        })
     }
 
     /// Returns the printable field names in layout order.
@@ -226,56 +236,100 @@ impl Layout {
     fn fields_with_offsets(&self) -> impl Iterator<Item = (usize, &Field)> {
         self.fields.iter().scan(0, |offset, field| {
             let start = *offset;
-            *offset += field.width();
+            *offset += field.width().get();
             Some((start, field))
         })
     }
+}
 
-    /// Decodes one record from a slice of at least [`Layout::size`] bytes.
-    ///
-    /// # Panics
-    ///
-    /// Panics when `record` is shorter than the layout. Callers bounds-check
-    /// against the file length before slicing.
-    pub fn decode(&self, record: &[u8]) -> Vec<DecodedField> {
-        self.fields_with_offsets()
-            .filter_map(|(offset, field)| {
+/// One record-sized window of a byte buffer, paired with the layout that spans it.
+#[derive(Debug, Clone, Copy)]
+pub struct Record<'a> {
+    layout: &'a Layout,
+    bytes: &'a [u8],
+}
+
+impl<'a> Record<'a> {
+    /// Returns the printable fields in layout order, dropping `padN` runs.
+    pub fn fields(&self) -> impl Iterator<Item = DecodedField<'a>> {
+        let bytes = self.bytes;
+        self.layout
+            .fields_with_offsets()
+            .filter_map(move |(offset, field)| {
                 let Field::Named { name, kind } = field else {
                     return None;
                 };
-                let bytes = &record[offset..offset + kind.width()];
-                let (decimal, hex) = match *kind {
-                    FieldKind::Scalar(ty, endian) => {
-                        let value = ty.read(bytes, endian);
-                        (Some(value.decimal()), value.hex())
+                let value = match *kind {
+                    FieldKind::Scalar(ty, endian) => DecodedValue::Scalar {
+                        value: ty.window(bytes.get(offset..)?)?.read(endian),
+                        endian,
+                    },
+                    FieldKind::Bytes(count) => {
+                        DecodedValue::Bytes(bytes.get(offset..offset + count.get())?)
                     }
-                    FieldKind::Bytes(_) => (None, hex_bytes(bytes)),
                 };
                 Some(DecodedField {
-                    name: name.clone(),
-                    type_name: kind.type_name(),
+                    name,
                     offset,
-                    decimal,
-                    hex,
+                    value,
                 })
             })
-            .collect()
     }
 }
 
+/// The reading one decoded field carries.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DecodedValue<'a> {
+    /// A number decoded in the byte order the layout states.
+    Scalar {
+        /// The decoded value, which names its own encoded type.
+        value: ScalarValue,
+        /// The byte order the value was decoded in.
+        endian: Endian,
+    },
+    /// A run of raw bytes with no numeric reading.
+    Bytes(&'a [u8]),
+}
+
 /// One field of a decoded record, ready to print.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodedField {
-    /// Field name.
-    pub name: String,
-    /// Type name including any byte-order suffix.
-    pub type_name: String,
-    /// Byte offset from the start of the record.
-    pub offset: usize,
-    /// Decimal rendering, absent for `bytesN` fields.
-    pub decimal: Option<String>,
-    /// Hexadecimal rendering of the encoded bytes.
-    pub hex: String,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DecodedField<'a> {
+    name: &'a str,
+    offset: usize,
+    value: DecodedValue<'a>,
+}
+
+impl<'a> DecodedField<'a> {
+    /// Returns the field name.
+    pub const fn name(&self) -> &'a str {
+        self.name
+    }
+
+    /// Returns the byte offset from the start of the record.
+    pub const fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Returns the reading the field carries.
+    pub const fn value(&self) -> DecodedValue<'a> {
+        self.value
+    }
+
+    /// Returns the type name including any byte-order suffix.
+    pub fn type_name(&self) -> String {
+        match self.value {
+            DecodedValue::Scalar { value, endian } => value.ty().display_name(endian),
+            DecodedValue::Bytes(raw) => format!("bytes{}", raw.len()),
+        }
+    }
+
+    /// Returns the hexadecimal rendering of the encoded bytes.
+    pub fn hex(&self) -> String {
+        match self.value {
+            DecodedValue::Scalar { value, .. } => value.hex(),
+            DecodedValue::Bytes(raw) => hex_bytes(raw),
+        }
+    }
 }
 
 fn split_name(token: &str, index: usize) -> Result<(&str, Option<String>), LayoutError> {
@@ -393,7 +447,7 @@ mod tests {
     #[test]
     fn parses_the_documented_example() {
         let layout = Layout::parse("u32le:count,pad4,f64le:x,f64le:y,bytes4:tag").unwrap();
-        assert_eq!(layout.size(), 4 + 4 + 8 + 8 + 4);
+        assert_eq!(layout.size().get(), 4 + 4 + 8 + 8 + 4);
         let names: Vec<&str> = layout.names().collect();
         assert_eq!(names, ["count", "x", "y", "tag"]);
         let offsets: Vec<usize> = layout
@@ -426,7 +480,7 @@ mod tests {
     #[test]
     fn tolerates_whitespace_around_tokens_and_names() {
         let layout = Layout::parse(" u32le : count , f64be:x ").unwrap();
-        assert_eq!(layout.size(), 12);
+        assert_eq!(layout.size().get(), 12);
         assert_eq!(layout.names().collect::<Vec<_>>(), ["count", "x"]);
     }
 
@@ -554,21 +608,46 @@ mod tests {
     #[test]
     fn decode_reads_hand_built_bytes_and_drops_pad() {
         let layout = Layout::parse("u32le:count,pad2,i16be:delta,bytes2:tag").unwrap();
-        assert_eq!(layout.size(), 10);
+        assert_eq!(layout.size().get(), 10);
         // count = 0x0000002a = 42, pad, delta = 0xfffe = -2, tag = ab cd.
         let record = [0x2a, 0x00, 0x00, 0x00, 0xee, 0xee, 0xff, 0xfe, 0xab, 0xcd];
-        let decoded = layout.decode(&record);
+        let records: Vec<_> = layout.split(&record).collect();
+        assert_eq!(records.len(), 1);
+        let decoded: Vec<_> = records[0].fields().collect();
         assert_eq!(decoded.len(), 3);
-        assert_eq!(decoded[0].name, "count");
-        assert_eq!(decoded[0].type_name, "u32le");
-        assert_eq!(decoded[0].decimal.as_deref(), Some("42"));
-        assert_eq!(decoded[0].hex, "0x0000002a");
-        assert_eq!(decoded[1].name, "delta");
-        assert_eq!(decoded[1].decimal.as_deref(), Some("-2"));
-        assert_eq!(decoded[1].hex, "0xfffe");
-        assert_eq!(decoded[1].offset, 6);
-        assert_eq!(decoded[2].type_name, "bytes2");
-        assert_eq!(decoded[2].hex, "ab cd");
-        assert_eq!(decoded[2].decimal, None);
+        assert_eq!(decoded[0].name(), "count");
+        assert_eq!(decoded[0].type_name(), "u32le");
+        assert_eq!(
+            decoded[0].value(),
+            DecodedValue::Scalar {
+                value: ScalarValue::U32(42),
+                endian: Endian::Le,
+            }
+        );
+        assert_eq!(decoded[0].hex(), "0x0000002a");
+        assert_eq!(decoded[1].name(), "delta");
+        assert_eq!(
+            decoded[1].value(),
+            DecodedValue::Scalar {
+                value: ScalarValue::I16(-2),
+                endian: Endian::Be,
+            }
+        );
+        assert_eq!(decoded[1].hex(), "0xfffe");
+        assert_eq!(decoded[1].offset(), 6);
+        assert_eq!(decoded[2].type_name(), "bytes2");
+        assert_eq!(decoded[2].hex(), "ab cd");
+        assert_eq!(decoded[2].value(), DecodedValue::Bytes(&[0xab, 0xcd]));
+    }
+
+    #[test]
+    fn split_drops_a_trailing_partial_record() {
+        let layout = Layout::parse("u16le:a").unwrap();
+        let starts: Vec<usize> = layout
+            .split(&[1, 2, 3, 4, 5])
+            .map(|record| record.fields().next().expect("one named field").offset())
+            .collect();
+        assert_eq!(starts, [0, 0]);
+        assert_eq!(layout.split(&[1]).count(), 0);
     }
 }
