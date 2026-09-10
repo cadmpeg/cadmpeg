@@ -1124,7 +1124,27 @@ impl ProceduralSurfaceDefinition {
             }
             Self::Deformable(payload) => payload.revision_cache(),
             Self::Blend(payload) => payload.revision_cache(),
-            _ => None,
+            Self::Compound(_)
+            | Self::SubSurface(_)
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::G2Blend(_)
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Subset(_)
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::Ruled { .. }
+            | Self::RollingBallJet(_)
+            | Self::Unknown { .. } => None,
         }
     }
 
@@ -1146,7 +1166,27 @@ impl ProceduralSurfaceDefinition {
                 .map(|form| &mut form.cache),
             Self::Deformable(payload) => payload.revision_cache_mut(),
             Self::Blend(payload) => payload.revision_cache_mut(),
-            _ => None,
+            Self::Compound(_)
+            | Self::SubSurface(_)
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::G2Blend(_)
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Subset(_)
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::Ruled { .. }
+            | Self::RollingBallJet(_)
+            | Self::Unknown { .. } => None,
         }
     }
 
