@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema-aware STEP-to-IR decoding entry point.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -738,7 +739,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(ids::data("pcurve", id).as_str()))
+        .filter(|id| !owned.contains(ids::data(kind!("pcurve"), id).as_str()))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
@@ -1004,7 +1005,8 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId::from(ids::data(&kind, id))
+    let derived = crate::ids::IdentityKind::parse(&kind);
+    UnknownId::from(ids::data(derived.unwrap_or(kind!("record")), id))
 }
 
 fn record_targets(

@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::ids::kind;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -529,7 +530,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
     ] {
         let construction_id = ProceduralCurveId::from(ids::construction(
-            "trimmed_curve",
+            kind!("trimmed_curve"),
             curve_id.trim_start_matches('#'),
         ));
         let construction = decoded

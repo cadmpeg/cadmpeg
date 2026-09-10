@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP presentation style and topology color decoding.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -228,7 +229,7 @@ pub(super) fn decode(
             ));
         }
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId::from(ids::presentation("layer", layer_id)),
+            id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
@@ -369,7 +370,7 @@ pub(super) fn decode(
                 } else {
                     format!("{color_id}-alpha-{}", color.a().to_bits())
                 };
-                let id = AppearanceId::from(ids::presentation("appearance", key));
+                let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
                 ir.model.appearances.push(Appearance {
                     id: id.clone(),
                     name,
@@ -421,7 +422,7 @@ pub(super) fn decode(
                 }
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: ids::presentation(
-                        "binding",
+                        kind!("binding"),
                         format!("{style_id}:{ordinal}-{target_ordinal}"),
                     )
                     .into(),
@@ -477,7 +478,7 @@ pub(super) fn decode(
             }
         }
         for layer_id in layer_targets {
-            let expected_id = ids::presentation("layer", layer_id);
+            let expected_id = ids::presentation(kind!("layer"), layer_id);
             let mut matched = false;
             for layer in &mut ir.model.presentation_layers {
                 if layer.id.as_str() == expected_id.as_str() {
@@ -580,7 +581,7 @@ fn collect_invisible_body_ids(
         active.remove(&id);
         return !ids.is_empty();
     }
-    let fallback = BodyId::from(ids::data("body", id));
+    let fallback = BodyId::from(ids::data(kind!("body"), id));
     if body_indices.contains_key(fallback.as_str()) {
         body_ids.insert(fallback);
         active.remove(&id);
@@ -711,13 +712,13 @@ fn appearance_targets(
             .map(AppearanceTarget::Vertex)
             .collect();
     }
-    let face_id = ids::data("face", id);
-    let body_id = ids::data("body", id);
-    let edge_id = ids::data("edge", id);
-    let surface_id = ids::data("surface", id);
-    let curve_id = ids::data("curve", id);
-    let point_id = ids::data("point", id);
-    let tessellation_id = ids::tessellation("mesh", id);
+    let face_id = ids::data(kind!("face"), id);
+    let body_id = ids::data(kind!("body"), id);
+    let edge_id = ids::data(kind!("edge"), id);
+    let surface_id = ids::data(kind!("surface"), id);
+    let curve_id = ids::data(kind!("curve"), id);
+    let point_id = ids::data(kind!("point"), id);
+    let tessellation_id = ids::tessellation(kind!("mesh"), id);
     if face_indices.contains_key(face_id.as_str()) {
         return vec![AppearanceTarget::Face(FaceId::from(face_id))];
     }
@@ -812,44 +813,44 @@ fn presentation_item_one(
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> PresentationItem {
-    let candidate = |kind: &str| ids::data(kind, id);
-    let body = candidate("body");
+    let candidate = |kind: crate::ids::IdentityKind| ids::data(kind, id);
+    let body = candidate(kind!("body"));
     if body_indices.contains_key(body.as_str()) {
         return PresentationItem::Body {
             body: BodyId::from(body),
         };
     }
-    let face = candidate("face");
+    let face = candidate(kind!("face"));
     if face_indices.contains_key(face.as_str()) {
         return PresentationItem::Face {
             face: FaceId::from(face),
         };
     }
-    let edge = candidate("edge");
+    let edge = candidate(kind!("edge"));
     if entity_ids.edges.contains(edge.as_str()) {
         return PresentationItem::Edge {
             edge: EdgeId::from(edge),
         };
     }
-    let vertex = candidate("vertex");
+    let vertex = candidate(kind!("vertex"));
     if entity_ids.vertices.contains(vertex.as_str()) {
         return PresentationItem::Vertex {
             vertex: VertexId::from(vertex),
         };
     }
-    let point = candidate("point");
+    let point = candidate(kind!("point"));
     if entity_ids.points.contains(point.as_str()) {
         return PresentationItem::Point {
             point: PointId::from(point),
         };
     }
-    let curve = candidate("curve");
+    let curve = candidate(kind!("curve"));
     if entity_ids.curves.contains(curve.as_str()) {
         return PresentationItem::Curve {
             curve: CurveId::from(curve),
         };
     }
-    let surface = candidate("surface");
+    let surface = candidate(kind!("surface"));
     if entity_ids.surfaces.contains(surface.as_str()) {
         return PresentationItem::Surface {
             surface: SurfaceId::from(surface),
@@ -864,10 +865,10 @@ fn presentation_item_one(
     if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
-            .contains(ids::product("occurrence", id).as_str())
+            .contains(ids::product(kind!("occurrence"), id).as_str())
     {
         PresentationItem::Occurrence {
-            occurrence: OccurrenceId::from(ids::product("occurrence", id)),
+            occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
         }
     } else if record.partials.iter().any(|partial| {
         (partial.name == "DATUM"
@@ -877,10 +878,10 @@ fn presentation_item_one(
             || super::pmi::is_presentation_annotation(&partial.name))
             && entity_ids
                 .pmi
-                .contains(ids::presentation("pmi", id).as_str())
+                .contains(ids::presentation(kind!("pmi"), id).as_str())
     }) {
         PresentationItem::Pmi {
-            annotation: PmiId::from(ids::presentation("pmi", id)),
+            annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
         }
     } else if (has("TRIANGULATED_FACE")
         || has("COMPLEX_TRIANGULATED_FACE")
@@ -888,10 +889,10 @@ fn presentation_item_one(
         || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
         && entity_ids
             .tessellations
-            .contains(ids::tessellation("mesh", id).as_str())
+            .contains(ids::tessellation(kind!("mesh"), id).as_str())
     {
         PresentationItem::Tessellation {
-            tessellation: ids::tessellation("mesh", id).into_string(),
+            tessellation: ids::tessellation(kind!("mesh"), id).into_string(),
         }
     } else {
         PresentationItem::Source {

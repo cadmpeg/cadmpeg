@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP drawing definitions, revisions, sheets, views, and their relations.
 
+use crate::ids::kind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
@@ -375,7 +376,8 @@ fn drawing_kind(name: &str) -> DrawingKind {
 }
 
 fn drawing_identity(id: u64, name: &str) -> cadmpeg_ir::ids::Identity {
-    ids::drawing(&name.to_ascii_lowercase(), id)
+    let derived = crate::ids::IdentityKind::parse(&name.to_ascii_lowercase());
+    ids::drawing(derived.unwrap_or(kind!("drawing")), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {

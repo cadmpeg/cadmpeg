@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP semantic product-manufacturing information.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
@@ -1354,7 +1355,7 @@ fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
 }
 
 fn pmi_id(id: u64) -> PmiId {
-    PmiId::from(ids::presentation("pmi", id))
+    PmiId::from(ids::presentation(kind!("pmi"), id))
 }
 
 fn datum_target_form(value: &str) -> DatumTargetForm {
