@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
+use cadmpeg_ir::products::NonEmptyString;
 use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
@@ -31,10 +32,25 @@ pub enum CatiaOwnerChartCarrier {
 /// Outer alias row selected by a unique width-coded support tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatiaOwnerChartAliasBinding {
-    /// Exact outer alias row.
-    pub row: String,
-    /// Canonical persistent surface tag selected through the alias row.
-    pub canonical_tag: Option<u32>,
+    row: NonEmptyString,
+    canonical_tag: Option<u32>,
+}
+
+impl CatiaOwnerChartAliasBinding {
+    /// Binds a non-empty outer alias row to its optional canonical surface tag.
+    pub fn new(row: NonEmptyString, canonical_tag: Option<u32>) -> Self {
+        Self { row, canonical_tag }
+    }
+
+    /// Returns the exact outer alias row.
+    pub fn row(&self) -> &str {
+        self.row.as_str()
+    }
+
+    /// Returns the canonical persistent surface tag selected through the row.
+    pub fn canonical_tag(&self) -> Option<u32> {
+        self.canonical_tag
+    }
 }
 
 /// One allocation-local reference in an owner-chart bridge.
@@ -126,7 +142,7 @@ impl From<CatiaOwnerChartBridgeReference> for CatiaOwnerChartBridgeReferenceWire
         let (alias_row, canonical_surface_tag) = match value.address {
             CatiaOwnerChartAddress::WidthCoded {
                 alias: Some(binding),
-            } => (Some(binding.row), binding.canonical_tag),
+            } => (Some(binding.row().to_owned()), binding.canonical_tag()),
             _ => (None, None),
         };
         Self {
@@ -147,10 +163,11 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
             (None, Some(_)) => {
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
-            (Some(row), _) if row.is_empty() => {
-                return Err("owner-chart alias_row must not be empty".to_owned());
+            (Some(row), canonical_tag) => {
+                let row = NonEmptyString::new(row)
+                    .ok_or_else(|| "owner-chart alias_row must not be empty".to_owned())?;
+                Some(CatiaOwnerChartAliasBinding::new(row, canonical_tag))
             }
-            (Some(row), canonical_tag) => Some(CatiaOwnerChartAliasBinding { row, canonical_tag }),
         };
         let mut reference = Self::new(wire.value, wire.encoding);
         match &mut reference.address {
