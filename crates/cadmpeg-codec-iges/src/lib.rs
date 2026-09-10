@@ -20,6 +20,7 @@ mod entities;
 mod error;
 mod global;
 mod graph;
+mod ids;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
 pub(crate) mod layout;
 mod loss;

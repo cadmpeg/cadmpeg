@@ -359,6 +359,7 @@ fn decode_with_occurrence_limits(
             parameters: &parse.quarantined_parameters,
         },
         semantic_structure_admitted,
+        &projection.sequences,
         &projection.boundary_vertex_derivations,
         &mut parse.references,
         &parse.global,

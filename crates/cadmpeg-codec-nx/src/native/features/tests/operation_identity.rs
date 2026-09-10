@@ -364,7 +364,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
-            schema: Some("SCH_TEST".into()),
+            schema: Some(
+                cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST")
+                    .expect("the fixture text is a schema token"),
+            ),
         },
     };
     let streams = [
