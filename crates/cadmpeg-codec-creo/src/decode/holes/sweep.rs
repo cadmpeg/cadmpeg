@@ -250,16 +250,13 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
     outlines: impl IntoIterator<Item = CapOutline>,
 ) -> Option<HoleCylinder> {
     let (_, axis, _) = hole_placement(planes)?;
-    let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
-            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_ALIGNMENT)
-    })?;
-    let radial = (0..3)
-        .filter(|index| *index != axis_index)
-        .collect::<Vec<_>>();
+    let aligned_axis = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT)?;
+    let radial = aligned_axis
+        .complement()
+        .map(crate::decode::axis::Axis::index);
     let circles = outlines
         .into_iter()
-        .filter_map(|cap| cap_square_center_radius(cap.corners, axis_index))
+        .filter_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))
         .collect::<Vec<_>>();
     let (center, radius) = circles.first().copied()?;
     let scale = center
