@@ -641,10 +641,7 @@ fn persistent_surface_reference_decodes_signed_tail() {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
     let references = persistent_surface_references(
         &payload,
-        ByteRange {
-            start: 0,
-            end: payload.len(),
-        },
+        ByteRange::new(0, payload.len()).expect("ordered range"),
     );
     assert_eq!(
         references,
@@ -661,10 +658,7 @@ fn opaque_surface_suffix_remains_source_only() {
     let payload = framed_surface_reference("moFromSktEntSurfIdRep_c,7,3,opaque");
     let references = persistent_surface_references(
         &payload,
-        ByteRange {
-            start: 0,
-            end: payload.len(),
-        },
+        ByteRange::new(0, payload.len()).expect("ordered range"),
     );
     assert_eq!(
         references,
@@ -675,8 +669,8 @@ fn opaque_surface_suffix_remains_source_only() {
     );
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table: ByteRange { start: 0, end: 1 },
-        metadata: ByteRange { start: 1, end: 2 },
+        table: ByteRange::new(0, 1).expect("ordered range"),
+        metadata: ByteRange::new(1, 2).expect("ordered range"),
         surface_references: references,
     };
     assert_eq!(
@@ -690,8 +684,8 @@ fn opaque_surface_suffix_remains_source_only() {
 fn persistent_surface_identity_requires_agreeing_duplicates() {
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table: ByteRange { start: 0, end: 1 },
-        metadata: ByteRange { start: 1, end: 2 },
+        table: ByteRange::new(0, 1).expect("ordered range"),
+        metadata: ByteRange::new(1, 2).expect("ordered range"),
         surface_references: vec![
             PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
             PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
@@ -1943,10 +1937,7 @@ fn persistent_surface_source_sentinels_are_absent() {
         let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
         let references = persistent_surface_references(
             &payload,
-            ByteRange {
-                start: 0,
-                end: payload.len(),
-            },
+            ByteRange::new(0, payload.len()).expect("ordered range"),
         );
         assert!(references.is_empty());
     }

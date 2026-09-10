@@ -103,10 +103,36 @@ impl Mesh {
     }
 }
 
+/// A nonempty-or-empty byte interval whose end never precedes its start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ByteRange {
-    pub(crate) start: usize,
-    pub(crate) end: usize,
+    start: usize,
+    end: usize,
+}
+
+impl ByteRange {
+    /// The interval `start..end`, when it is ordered.
+    pub(crate) fn new(start: usize, end: usize) -> Option<Self> {
+        (start <= end).then_some(Self { start, end })
+    }
+
+    /// First byte offset of the interval.
+    pub(crate) fn start(self) -> usize {
+        self.start
+    }
+
+    /// One past the last byte offset of the interval.
+    pub(crate) fn end(self) -> usize {
+        self.end
+    }
+
+    /// This interval truncated at `end`, empty when `end` precedes its start.
+    pub(crate) fn truncated(self, end: usize) -> Self {
+        Self {
+            start: self.start,
+            end: end.min(self.end).max(self.start),
+        }
+    }
 }
 
 /// One decoded `uoTempFaceTessData_c` descriptor table.
@@ -210,12 +236,13 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     declarations
         .iter()
         .enumerate()
-        .map(|(index, (offset, class))| {
+        .filter_map(|(index, (offset, class))| {
             let start = offset + 6 + class.len();
             let end = declarations
                 .get(index + 1)
                 .map_or(payload.len(), |(offset, _)| *offset);
-            let records = &payload[start..end];
+            let content = ByteRange::new(start, end)?;
+            let records = payload.get(start..end)?;
             let source_ids = records
                 .windows(scene_src::LEN)
                 .filter_map(|window| {
@@ -225,12 +252,12 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
                         .filter(|source| *source != 0)
                 })
                 .collect();
-            ClassInterval {
+            Some(ClassInterval {
                 name: class.clone(),
                 class_offset: *offset,
-                content: ByteRange { start, end },
+                content,
                 source_ids,
-            }
+            })
         })
         .collect()
 }
@@ -441,24 +468,25 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
             continue;
         }
         for (start, end, mesh) in tables {
+            let (Some(table), Some(metadata)) =
+                (ByteRange::new(start, end), ByteRange::new(end, limit))
+            else {
+                continue;
+            };
             faces.push(DisplayFace {
                 mesh,
-                table: ByteRange { start, end },
-                metadata: ByteRange {
-                    start: end,
-                    end: limit,
-                },
+                table,
+                metadata,
                 surface_references: Vec::new(),
             });
         }
     }
-    faces.sort_by_key(|face| face.table.start);
+    faces.sort_by_key(|face| face.table.start());
     for index in 0..faces.len() {
         let metadata_end = faces
             .get(index + 1)
-            .map_or(faces[index].metadata.end, |next| next.table.start)
-            .min(faces[index].metadata.end);
-        faces[index].metadata.end = metadata_end;
+            .map_or(faces[index].metadata.end(), |next| next.table.start());
+        faces[index].metadata = faces[index].metadata.truncated(metadata_end);
         faces[index].surface_references =
             persistent_surface_references(payload, faces[index].metadata);
     }
@@ -535,8 +563,8 @@ fn persistent_surface_references(
 ) -> Vec<PersistentSurfaceReference> {
     const MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let mut references = Vec::new();
-    let mut at = range.start;
-    while at + 4 <= range.end && at + 4 <= payload.len() {
+    let mut at = range.start();
+    while at + 4 <= range.end() && at + 4 <= payload.len() {
         if payload.get(at..at + MARKER.len()) != Some(MARKER) {
             at += 1;
             continue;
@@ -546,7 +574,7 @@ fn persistent_surface_references(
         let Some(end) = count
             .checked_mul(2)
             .and_then(|length| start.checked_add(length))
-            .filter(|end| *end <= range.end)
+            .filter(|end| *end <= range.end())
         else {
             at += 1;
             continue;
