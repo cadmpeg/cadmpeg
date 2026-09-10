@@ -138,7 +138,6 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         byte_offset: 14,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -279,7 +278,6 @@ fn point_closure_does_not_mark_construction_geometry() {
         byte_offset: 10,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -300,7 +298,6 @@ fn point_closure_does_not_mark_construction_geometry() {
         byte_offset: 11,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -382,7 +379,6 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 400,
         coordinate_offset: 89,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -931,7 +927,6 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 106,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(

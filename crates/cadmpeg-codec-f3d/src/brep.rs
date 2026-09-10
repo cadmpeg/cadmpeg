@@ -448,7 +448,6 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
         .into_iter()
         .filter(|(entity_kind, _, _)| *entity_kind == 3)
         .collect::<Vec<_>>();
-    let last = groups.len().saturating_sub(1);
     groups
         .into_iter()
         .enumerate()
@@ -463,7 +462,6 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
 
                 design_reference,
                 ordinal: ordinal as u32,
-                is_current: ordinal == last,
             },
         )
         .collect()
@@ -929,7 +927,6 @@ mod tests {
 
                     design_reference: 1,
                     ordinal: 0,
-                    is_current: true,
                 },
                 PersistentDesignLink {
                     id: "design-dropped".into(),
@@ -938,7 +935,6 @@ mod tests {
 
                     design_reference: 3,
                     ordinal: 0,
-                    is_current: true,
                 },
             ],
             persistent_subentity_tags: vec![

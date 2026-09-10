@@ -129,30 +129,30 @@
         {
           "id": "f3d:brep:entity#10",
           "curve": "f3d:brep:entity#19",
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14",
           "param_range": [
             3.141592653589793,
             4.71238898038469
-          ]
+          ],
+          "start": "f3d:brep:entity#13",
+          "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15",
           "param_range": [
             -3.141592653589793,
             -1.5707963267948966
-          ]
+          ],
+          "start": "f3d:brep:entity#14",
+          "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13",
           "param_range": [
             -3.141592653589793,
             -1.5707963267948966
-          ]
+          ],
+          "start": "f3d:brep:entity#15",
+          "end": "f3d:brep:entity#13"
         }
       ],
       "vertices": [

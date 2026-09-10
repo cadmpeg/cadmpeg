@@ -97,7 +97,6 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![previous, current],
     };
     let scope_histories = HashMap::from([(scope.id.clone(), history.id.clone())]);

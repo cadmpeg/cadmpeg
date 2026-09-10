@@ -184,12 +184,11 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
         resource_guid: None,
         authored_name: None,
         groups: Vec::new(),
-        domain: crate::paramesh::MeshAttributeDomain::Corner,
         elements: crate::paramesh::MeshElements::Float {
             width: crate::paramesh::FloatWidth::Quad,
             values: (0..80).collect(),
         },
-        indices: Some(vec![0, 2]),
+        addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
     };
     let mut unresolved = std::collections::BTreeMap::new();
     let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);

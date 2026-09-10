@@ -832,7 +832,6 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
             byte_offset: 0,
             coordinate_offset: 89,
             companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
                 incident_curves: Vec::new(),
             },
             record_form: crate::records::SketchPointRecordForm::version11(

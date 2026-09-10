@@ -266,7 +266,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             byte_offset: 0,
             coordinate_offset: 0,
             companion: crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
                 incident_curves: Vec::new(),
             },
             record_form: crate::records::SketchPointRecordForm::version11(
@@ -346,7 +345,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "native-unit".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d2".into(),
             name_offset: 80,
@@ -735,7 +734,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(90),
+                offset: 90,
             }),
             name: "d1".into(),
             name_offset: 100,

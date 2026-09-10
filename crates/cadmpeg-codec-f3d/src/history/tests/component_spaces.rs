@@ -45,7 +45,6 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             byte_offset: 0,
             preamble: None,
             record_table_binding_budget_exceeded: false,
-            projection_finalized: false,
         }
     }
 

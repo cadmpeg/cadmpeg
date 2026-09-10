@@ -53,7 +53,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d4".into(),
             name_offset: 80,
@@ -250,7 +250,6 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         coordinate_offset: 0,
         companion: crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
             incident_curves: Vec::new(),
         },
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -875,7 +874,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d1".into(),
             name_offset: 80,
@@ -1086,7 +1085,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(70),
+                offset: 70,
             }),
             name: "d1".into(),
             name_offset: 80,

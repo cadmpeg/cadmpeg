@@ -435,11 +435,9 @@ fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, us
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_extent =
-            Some(crate::records::RecordedValue {
-                value: DesignCoilExtent::Spiral,
-                offset: None,
-            });
+        slot.get_or_insert_with(Default::default).coil_extent = Some(
+            crate::records::MaybeRecordedValue::Unlocated(DesignCoilExtent::Spiral),
+        );
     }
     (bytes, scope, transform_start)
 }
@@ -519,7 +517,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
                 value: "body".into(),
-                offset: None,
+                offset: 0,
             },
             selector: None,
         }),
@@ -739,11 +737,9 @@ fn compact_coil_seven_reference_form_requires_spiral_extent() {
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_extent =
-            Some(crate::records::RecordedValue {
-                value: DesignCoilExtent::RevolutionsHeight,
-                offset: None,
-            });
+        slot.get_or_insert_with(Default::default).coil_extent = Some(
+            crate::records::MaybeRecordedValue::Unlocated(DesignCoilExtent::RevolutionsHeight),
+        );
     }
     assert_eq!(
         exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),

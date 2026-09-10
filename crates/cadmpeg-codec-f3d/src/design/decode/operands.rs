@@ -14,7 +14,7 @@ use crate::design::decode::dimension_frames::{
 use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
-    indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
+    indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
     IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
@@ -1564,22 +1564,13 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         "322" => {
             let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
             let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
-            let short_pair_matches = indexed_record_index(bytes, short_paired_offset)
-                == Some(header.record_index)
-                && bytes
-                    .get(
-                        short_paired_offset + indexed_header::CLASS_TAG
-                            ..short_paired_offset + indexed_header::CLASS_TAG + 3,
-                    )
-                    .is_some_and(|class_tag| class_tag == b"262");
-            let long_pair_matches = indexed_record_index(bytes, long_paired_offset)
-                == Some(header.record_index)
-                && bytes
-                    .get(
-                        long_paired_offset + indexed_header::CLASS_TAG
-                            ..long_paired_offset + indexed_header::CLASS_TAG + 3,
-                    )
-                    .is_some_and(|class_tag| class_tag == b"262");
+            let pair_matches = |at: usize| {
+                indexed_record_header_at(bytes, at).is_some_and(|paired| {
+                    paired.record_index == header.record_index && paired.class_tag.as_str() == "262"
+                })
+            };
+            let short_pair_matches = pair_matches(short_paired_offset);
+            let long_pair_matches = pair_matches(long_paired_offset);
             if short_pair_matches {
                 ("262", legacy_loft_322::LEN, false)
             } else if long_pair_matches {
@@ -1591,7 +1582,8 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         "411" => ("266", legacy_loft_411::LEN, true),
         _ => return None,
     };
-    if indexed_record_index(bytes, start) != Some(header.record_index)
+    if indexed_record_header_at(bytes, start)
+        .is_none_or(|parsed| parsed.record_index != header.record_index)
         || bytes
             .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
             != [0; 10]
@@ -1655,7 +1647,8 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     };
     let paired_byte_offset = start.checked_add(frame_length)?;
     if cursor != paired_byte_offset
-        || indexed_record_index(bytes, paired_byte_offset) != Some(header.record_index)
+        || indexed_record_header_at(bytes, paired_byte_offset)
+            .is_none_or(|parsed| parsed.record_index != header.record_index)
     {
         return None;
     }
@@ -4323,7 +4316,7 @@ fn parse_sketch_profile_region_selection(
 
     let next_header = |position, expected| {
         let at = next_indexed_record_offset(bytes, position)?;
-        (indexed_record_index(bytes, at) == Some(expected)).then_some(at)
+        (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
     };
     let nested_one_at = next_header(
         paired_at.checked_add(indexed_header::LEN)?,
@@ -5158,7 +5151,7 @@ fn face_recipe_next_boundary(
         .min_by_key(|(_, offset)| *offset)
         .or_else(|| {
             let offset = next_indexed_record_offset(bytes, position)?;
-            let record_index = indexed_record_index(bytes, offset)?;
+            let record_index = indexed_record_header_at(bytes, offset)?.record_index;
             within_limit(offset).then_some((record_index, offset))
         })
         .map(|(record_index, offset)| (offset, record_index))
