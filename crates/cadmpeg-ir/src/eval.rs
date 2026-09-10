@@ -5785,7 +5785,7 @@ fn cacheless_variable_blend_domain_contains(
     let exact_construction = matches!(
         construction.cache,
         crate::geometry::VariableBlendCache::Parameterization { .. }
-            | crate::geometry::VariableBlendCache::Stale
+            | crate::geometry::VariableBlendCache::Stale {}
     );
     exact_construction
         && (0.0..=1.0).contains(&u)

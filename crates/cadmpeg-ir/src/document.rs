@@ -149,7 +149,7 @@ impl Serialize for ProceduralSurfaceWire<'_> {
         state.serialize_field("id", &self.procedural.id)?;
         state.serialize_field("surface", owner)?;
         state.serialize_field("definition", self.procedural.definition())?;
-        if let Some(cache_fit_tolerance) = self.procedural.cache_fit_tolerance() {
+        if let Some(cache_fit_tolerance) = self.procedural.legacy_cache_fit_tolerance() {
             state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
         }
         if let Some(record_bounds) = self.procedural.record_bounds {
@@ -179,7 +179,7 @@ impl Serialize for ProceduralCurveWire<'_> {
         state.serialize_field("id", &self.procedural.id)?;
         state.serialize_field("curve", owner)?;
         state.serialize_field("definition", self.procedural.definition())?;
-        if let Some(cache_fit_tolerance) = self.procedural.cache_fit_tolerance() {
+        if let Some(cache_fit_tolerance) = self.procedural.legacy_cache_fit_tolerance() {
             state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
         }
         state.end()

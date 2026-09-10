@@ -33,29 +33,6 @@ fn generated_revision_exact_surface_round_trips() {
     assert_revision_surface_round_trip(smbh, "exact");
 }
 
-/// The blend constructions' tail enum was serialized as `cache_selector`. A
-/// document written under that name deserializes into the same construction.
-#[test]
-fn blend_tail_enum_deserializes_under_its_former_name() {
-    for smbh in [
-        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
-        synthetic_variable_blend_smbh("var_blend_spl_sur"),
-    ] {
-        let decoded = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&smbh)),
-                &DecodeOptions::default(),
-            )
-            .expect("blend decode");
-        let json = serde_json::to_string(decoded.ir()).expect("IR JSON");
-        assert_eq!(json.matches("\"tail_enum\"").count(), 1);
-        let renamed = json.replace("\"tail_enum\"", "\"cache_selector\"");
-        let restored: cadmpeg_ir::document::CadIr =
-            serde_json::from_str(&renamed).expect("IR under the former field name");
-        assert_eq!(&restored, decoded.ir());
-    }
-}
-
 #[test]
 fn generated_revision_exact_surface_carries_two_unextended_intervals() {
     use cadmpeg_ir::geometry::{ExactSpline, ProceduralSurfaceDefinition};
