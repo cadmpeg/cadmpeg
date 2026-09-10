@@ -165,7 +165,9 @@ fn corpus_manifest_dialects_are_pinned_from_classification() {
 fn corpus_manifest_dialects_name_registry_rows() {
     let manifest: Manifest =
         toml::from_str(&std::fs::read_to_string(manifest_path()).unwrap()).unwrap();
-    let registry = std::fs::read_to_string(repo_root().join("docs/dialects.toml")).unwrap();
+    let registry =
+        std::fs::read_to_string(repo_root().join("crates/cadmpeg-registry/docs/dialects.toml"))
+            .unwrap();
     let declared = registry_ids(&registry);
     for entry in &manifest.files {
         let Some(dialect) = entry.dialect.as_deref() else {
@@ -179,7 +181,7 @@ fn corpus_manifest_dialects_name_registry_rows() {
         }
         assert!(
             declared.contains(dialect),
-            "{} pins {dialect:?}, which is not a row in docs/dialects.toml",
+            "{} pins {dialect:?}, which is not a row in crates/cadmpeg-registry/docs/dialects.toml",
             entry.filename
         );
     }

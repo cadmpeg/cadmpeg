@@ -69,7 +69,7 @@ impl fmt::Display for LadderLevel {
 
 /// What cadmpeg does when it reads a dialect.
 ///
-/// The `read` column of `docs/dialect-support.toml`, verbatim. The column is
+/// The `read` column of `crates/cadmpeg-registry/docs/dialect-support.toml`, verbatim. The column is
 /// three refusal-and-recovery states plus one ladder score, and they are not
 /// points on one scale: `detected` is "recognized, with no fixture witnessing
 /// a decode", which is a statement about evidence, while `refused` is a
@@ -129,7 +129,7 @@ impl TryFrom<String> for ReadDisposition {
 
 /// What cadmpeg does when it writes a dialect.
 ///
-/// The `write` column of `docs/dialect-support.toml`, verbatim. Synthesis and
+/// The `write` column of `crates/cadmpeg-registry/docs/dialect-support.toml`, verbatim. Synthesis and
 /// preservation are different capabilities and the column never conflates
 /// them: `verified` and `emitted` grade a `TargetDescriptor` this build can
 /// synthesize, `preserved` records that a same-dialect re-export replays a

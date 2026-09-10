@@ -17,7 +17,7 @@ cargo() { :; }
 """
         cases = [
             ("crates/cadmpeg-codec-step/src/reader.rs", set()),
-            ("docs/dialects.toml", set()),
+            ("crates/cadmpeg-registry/docs/dialects.toml", set()),
             ("README.md", set()),
             ("scripts/check-dialects.py", {"test_check_dialects.py"}),
             ("scripts/test_check_dialects.py", {"test_check_dialects.py"}),
@@ -38,7 +38,7 @@ cargo() { :; }
                     if line.startswith("python3 -m unittest discover ")
                 }
                 self.assertEqual(tests, expected)
-                if staged in {"docs/dialects.toml", "scripts/dialect_support_data.py"}:
+                if staged in {"crates/cadmpeg-registry/docs/dialects.toml", "scripts/dialect_support_data.py"}:
                     self.assertIn("python3 scripts/check-dialect-support.py\n", result.stdout)
                     self.assertIn("python3 scripts/render-format-support.py --check\n",
                                   result.stdout)

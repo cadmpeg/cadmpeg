@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Deliberately broken layout table: `dialects` names an id with no row in
-# `docs/dialects.toml`. `crates/cadmpeg/tests/layout_tables.rs` asserts the
+# `crates/cadmpeg-registry/docs/dialects.toml`. `crates/cadmpeg/tests/layout_tables.rs` asserts the
 # validator rejects it, so a table cannot key on a dialect that does not exist.
 schema = 1
 format = "f3d"

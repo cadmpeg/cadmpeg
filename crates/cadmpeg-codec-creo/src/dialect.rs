@@ -106,8 +106,8 @@ impl DialectClassification {
 impl Layout {
     /// The registry-generated id.
     ///
-    /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
-    /// registry string boundary this enum has. `docs/dialects.toml` declares
+    /// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `creo` namespace, and the only
+    /// registry string boundary this enum has. `crates/cadmpeg-registry/docs/dialects.toml` declares
     /// `complete = false` for this format: the rows are the grammar classes this
     /// codec branches on plus the mandatory [`Layout::Unknown`] totality row, not
     /// an enumeration of anything PTC publishes.

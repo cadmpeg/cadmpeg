@@ -86,7 +86,7 @@ pub(crate) const DECLARED_ARCHIVE_MEMBER: &str = "archive_member";
 /// [`DECLARED_ROOT_DOCUMENT_MEMBERS`].
 const MEMBER_SEPARATOR: &str = ",";
 
-/// One row of `docs/dialects.toml` under the `f3d` namespace.
+/// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `f3d` namespace.
 ///
 /// Three variants is still an enum: the drift test against the registry is what
 /// the type is for, and it holds at three rows exactly as it holds at

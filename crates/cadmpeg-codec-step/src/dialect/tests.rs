@@ -67,7 +67,7 @@ struct Case {
 
 /// Declarations spanning every Part 21 row and the totality row.
 ///
-/// Ids come from `docs/dialects.toml`. Four rows share the AP242 schema name
+/// Ids come from `crates/cadmpeg-registry/docs/dialects.toml`. Four rows share the AP242 schema name
 /// and separate on the object identifier, which Part 21 makes optional: absent
 /// is `step:ap242`, each declared edition has its own row, and an edition claim
 /// naming no declared edition satisfies no row. The three single-row names

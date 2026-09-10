@@ -135,8 +135,9 @@ class RegistryCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text(identity, encoding="utf-8")
-            (root / "docs" / "dialect-support.toml").write_text(support, encoding="utf-8")
+            (root / "crates" / "cadmpeg-registry" / "docs").mkdir(parents=True)
+            (root / "crates" / "cadmpeg-registry" / "docs" / "dialects.toml").write_text(identity, encoding="utf-8")
+            (root / "crates" / "cadmpeg-registry" / "docs" / "dialect-support.toml").write_text(support, encoding="utf-8")
             (root / "docs" / "evaluations.toml").write_text(evaluations, encoding="utf-8")
             yield root
 

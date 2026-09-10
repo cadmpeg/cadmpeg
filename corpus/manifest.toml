@@ -3,7 +3,7 @@
 #
 # Every field is donor-supplied except `dialect`. That one is derived: the
 # codec's own `inspect()` classifies the fixture's bytes and the primary
-# layer's `docs/dialects.toml` id is pinned here, the way a golden is pinned.
+# layer's `crates/cadmpeg-registry/docs/dialects.toml` id is pinned here, the way a golden is pinned.
 # A codec change that reclassifies a corpus file then fails a test instead of
 # passing silently. `authoring_app_version` is the producer axis and stays
 # donor-supplied; neither field is derivable from the other.
