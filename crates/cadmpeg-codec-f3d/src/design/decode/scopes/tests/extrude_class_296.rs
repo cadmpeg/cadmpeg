@@ -87,7 +87,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
                 direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
                 solid_operation: true,
                 solid_operation_offset: layout::GEOMETRY_KIND as u64,
-                start: DesignExtrudeStart::ProfilePlane {},
+                start: DesignExtrudeStart::ProfilePlane,
                 start_offset: layout::START_SUPPORT as u64,
             })
         );
@@ -203,7 +203,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
             direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
             solid_operation: true,
             solid_operation_offset: layout::GEOMETRY_KIND as u64,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: layout::START_SUPPORT as u64,
         })
     );
@@ -337,7 +337,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
             direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
             solid_operation: true,
             solid_operation_offset: layout::GEOMETRY_KIND as u64,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: layout::START_SUPPORT as u64,
         })
     );

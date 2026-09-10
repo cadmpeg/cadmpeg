@@ -194,7 +194,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             direction_reversed_offset: 40,
             solid_operation: true,
             solid_operation_offset: 41,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: 42,
         })
     );
@@ -886,7 +886,7 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
             direction_reversed_offset: 38,
             solid_operation: true,
             solid_operation_offset: 39,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: 40,
         })
     );
@@ -978,7 +978,7 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
             direction_reversed_offset: 38,
             solid_operation: true,
             solid_operation_offset: 39,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: 40,
         })
     );
@@ -1115,7 +1115,7 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
                 direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
                 solid_operation: true,
                 solid_operation_offset: layout::GEOMETRY_KIND as u64,
-                start: DesignExtrudeStart::ProfilePlane {},
+                start: DesignExtrudeStart::ProfilePlane,
                 start_offset: layout::START_SUPPORT as u64,
             })
         );
@@ -1398,7 +1398,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
                 direction_reversed_offset: 39,
                 solid_operation: true,
                 solid_operation_offset: 40,
-                start: DesignExtrudeStart::ProfilePlane {},
+                start: DesignExtrudeStart::ProfilePlane,
                 start_offset: 41,
             })
         );
@@ -1595,7 +1595,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
             direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
             solid_operation: true,
             solid_operation_offset: layout::GEOMETRY_KIND as u64,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: layout::START_SUPPORT as u64,
         })
     );
@@ -1748,7 +1748,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
             direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
             solid_operation: true,
             solid_operation_offset: layout::GEOMETRY_KIND as u64,
-            start: DesignExtrudeStart::ProfilePlane {},
+            start: DesignExtrudeStart::ProfilePlane,
             start_offset: layout::START_SUPPORT as u64,
         })
     );
