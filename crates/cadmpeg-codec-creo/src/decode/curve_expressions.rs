@@ -197,23 +197,24 @@ pub(crate) fn curve_expression_parameter_order(
     }
     let mut ordinals = alloc_filled(
         dependencies.len(),
-        u32::MAX,
+        None::<u32>,
         "creo curve-expression parameter ordinals",
     )
     .ok()?;
     for ordinal in 0..dependencies.len() {
-        let index = (0..dependencies.len())
-            .find(|&candidate| {
-                ordinals[candidate] == u32::MAX
-                    && dependencies[candidate].iter().all(|dependency| {
-                        cyclic_edges.contains(&(candidate, *dependency))
-                            || ordinals[*dependency] != u32::MAX
-                    })
-            })
-            .expect("removing cyclic edges leaves an acyclic assignment graph");
-        ordinals[index] = ordinal as u32;
+        let index = (0..dependencies.len()).find(|&candidate| {
+            ordinals[candidate].is_none()
+                && dependencies[candidate].iter().all(|dependency| {
+                    cyclic_edges.contains(&(candidate, *dependency))
+                        || ordinals[*dependency].is_some()
+                })
+        })?;
+        ordinals[index] = Some(ordinal as u32);
     }
-    Some((ordinals, cyclic_edges))
+    Some((
+        ordinals.into_iter().collect::<Option<Vec<u32>>>()?,
+        cyclic_edges,
+    ))
 }
 
 pub(crate) fn curve_expression_parameter_names(
