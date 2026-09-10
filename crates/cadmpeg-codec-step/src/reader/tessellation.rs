@@ -207,22 +207,11 @@ pub(super) fn decode(
         }
     }
     for (&id, record) in &exchange.records {
-        let Some(kind) = entity_kind(
-            record,
-            &[
-                "TRIANGULATED_FACE",
-                "COMPLEX_TRIANGULATED_FACE",
-                "TRIANGULATED_SURFACE_SET",
-                "COMPLEX_TRIANGULATED_SURFACE_SET",
-            ],
-        ) else {
+        let Some(entity) = TriangulatedEntity::of(record) else {
             continue;
         };
-        let base_kind = if matches!(kind, "TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") {
-            "TESSELLATED_FACE"
-        } else {
-            "TESSELLATED_SURFACE_SET"
-        };
+        let kind = entity.name();
+        let base_kind = entity.base_name();
         let Some(coordinate_id) =
             inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
         else {
@@ -233,23 +222,24 @@ pub(super) fn decode(
             warnings.push(format!("{kind} #{id} has no resolved COORDINATES_LIST"));
             continue;
         };
-        let (triangles, strip_lengths) = match kind {
-            "TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET" => (
-                entity_parameter(record, kind, 1, own_parameter_offset(kind))
-                    .and_then(triangle_rows),
+        let offset = entity.own_parameter_offset();
+        let (triangles, strip_lengths) = match entity {
+            TriangulatedEntity::Face | TriangulatedEntity::SurfaceSet => (
+                entity_parameter(record, kind, 1, offset).and_then(triangle_rows),
                 Vec::new(),
             ),
-            "COMPLEX_TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_SURFACE_SET" => complex_triangles(
-                entity_parameter(record, kind, 1, own_parameter_offset(kind)),
-                entity_parameter(record, kind, 2, own_parameter_offset(kind)),
-            ),
-            _ => unreachable!("tessellation kind was checked above"),
+            TriangulatedEntity::ComplexFace | TriangulatedEntity::ComplexSurfaceSet => {
+                complex_triangles(
+                    entity_parameter(record, kind, 1, offset),
+                    entity_parameter(record, kind, 2, offset),
+                )
+            }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
             warnings.push(format!("{kind} #{id} has no triangle indices"));
             continue;
         };
-        let pnindex = match entity_parameter(record, kind, 0, own_parameter_offset(kind)) {
+        let pnindex = match entity_parameter(record, kind, 0, offset) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
@@ -737,11 +727,49 @@ fn entity_parameter<'a>(
     partial.parameters.get(index + offset)
 }
 
-fn own_parameter_offset(entity: &str) -> usize {
-    match entity {
-        "TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" => 5,
-        "TRIANGULATED_SURFACE_SET" | "COMPLEX_TRIANGULATED_SURFACE_SET" => 4,
-        _ => unreachable!("tessellation entity has no indexed subtype fields"),
+/// One triangulated tessellation entity, parsed from the record's partial names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TriangulatedEntity {
+    Face,
+    ComplexFace,
+    SurfaceSet,
+    ComplexSurfaceSet,
+}
+
+impl TriangulatedEntity {
+    fn of(record: &RawRecord) -> Option<Self> {
+        record.partials.iter().find_map(|partial| {
+            Some(match partial.name.as_str() {
+                "TRIANGULATED_FACE" => Self::Face,
+                "COMPLEX_TRIANGULATED_FACE" => Self::ComplexFace,
+                "TRIANGULATED_SURFACE_SET" => Self::SurfaceSet,
+                "COMPLEX_TRIANGULATED_SURFACE_SET" => Self::ComplexSurfaceSet,
+                _ => return None,
+            })
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Face => "TRIANGULATED_FACE",
+            Self::ComplexFace => "COMPLEX_TRIANGULATED_FACE",
+            Self::SurfaceSet => "TRIANGULATED_SURFACE_SET",
+            Self::ComplexSurfaceSet => "COMPLEX_TRIANGULATED_SURFACE_SET",
+        }
+    }
+
+    fn base_name(self) -> &'static str {
+        match self {
+            Self::Face | Self::ComplexFace => "TESSELLATED_FACE",
+            Self::SurfaceSet | Self::ComplexSurfaceSet => "TESSELLATED_SURFACE_SET",
+        }
+    }
+
+    fn own_parameter_offset(self) -> usize {
+        match self {
+            Self::Face | Self::ComplexFace => 5,
+            Self::SurfaceSet | Self::ComplexSurfaceSet => 4,
+        }
     }
 }
 
