@@ -240,7 +240,8 @@ fn inspect_report_writes_summary_to_file() {
         .stdout(predicate::str::contains("format: rhino (detected high)"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "inspect");
-    assert_eq!(value["confidence"], "high");
+    assert_eq!(value["selection"]["kind"], "detected");
+    assert_eq!(value["selection"]["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
 }
 

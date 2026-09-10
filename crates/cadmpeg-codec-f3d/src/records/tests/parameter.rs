@@ -106,24 +106,3 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
         assert_eq!(edited.evaluated_value().to_bits(), value.to_bits());
     }
 }
-
-#[test]
-fn parameter_translation_moves_all_locations_and_rejects_overflow_atomically() {
-    let mut parameter = DesignParameter::try_from(draft()).unwrap();
-    let original = parameter.clone();
-    assert!(parameter.try_translate_offsets(u64::MAX).is_err());
-    assert_eq!(parameter, original);
-    parameter.try_translate_offsets(100).unwrap();
-    assert_eq!(parameter.byte_offset(), 200);
-    assert_eq!(parameter.family_discriminator().unwrap().offset, 222);
-    assert_eq!(parameter.expression_offset(), 240);
-    assert_eq!(parameter.source_kind_offset(), 260);
-    assert_eq!(parameter.unit().unwrap().offset, 270);
-    assert_eq!(parameter.name_offset(), 280);
-    assert_eq!(parameter.evaluated_value_offset(), 290);
-    let wire = serde_json::to_value(&parameter).unwrap();
-    assert_eq!(
-        serde_json::from_value::<DesignParameter>(wire).unwrap(),
-        parameter
-    );
-}

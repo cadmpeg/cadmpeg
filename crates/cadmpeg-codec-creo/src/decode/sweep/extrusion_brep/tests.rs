@@ -42,20 +42,19 @@ fn surface_row(
 }
 
 fn generated_side_table() -> crate::feature::FeatureEntityTable {
-    crate::feature::FeatureEntityTable {
-        feature_id: 7,
-        table_class_id: 29,
-        entries: vec![crate::feature::FeatureEntityTableEntry {
+    crate::feature::FeatureEntityTable::new(
+        7,
+        29,
+        vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 31,
-            class_id: 200,
             payload: crate::feature::entry_payload(200, Some(11), None, None),
             prefixed: false,
             offset: 0,
             end_offset: 0,
-            is_surface: false,
         }],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([31])
 }
 
@@ -127,20 +126,16 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         payload: crate::feature::entry_payload(class_id, None, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let materialized = crate::feature::FeatureEntityTableEntry {
         entity_id: 32,
-        class_id: 200,
         payload: crate::feature::entry_payload(200, Some(13), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     table.entries = vec![
         cap(29, 204),
@@ -148,9 +143,7 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         table.entries[0].clone(),
         materialized,
     ];
-    for entry in &mut table.entries {
-        entry.is_surface = matches!(entry.entity_id, 29 | 30 | 32);
-    }
+    table.mark_surface_ids([29, 30, 32]);
     scan.features.entity_tables.push(table);
     scan.surfaces
         .rows

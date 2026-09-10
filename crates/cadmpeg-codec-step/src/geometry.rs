@@ -54,13 +54,19 @@ fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
+    // A composite carrier is emitted from its child graph by the exporter, so it
+    // is supported only in the outermost position.
+    matches!(curve, CurveGeometry::Composite { .. }) || leaf_curve_is_supported(curve)
+}
+
+fn leaf_curve_is_supported(curve: &CurveGeometry) -> bool {
     match curve {
         CurveGeometry::Procedural {
             cache: Some(geometry),
             ..
-        } => curve_is_supported(geometry),
+        } => leaf_curve_is_supported(geometry),
         CurveGeometry::Transformed { basis, transform } => {
-            similarity_transform(transform) && curve_is_supported(basis)
+            similarity_transform(transform) && leaf_curve_is_supported(basis)
         }
         CurveGeometry::Line(_)
         | CurveGeometry::Circle(_)
@@ -68,10 +74,11 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
         | CurveGeometry::Parabola(_)
         | CurveGeometry::Hyperbola(_)
         | CurveGeometry::Degenerate(_)
-        | CurveGeometry::Composite { .. }
         | CurveGeometry::Nurbs(_)
         | CurveGeometry::Polyline(_) => true,
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => false,
     }
 }
 
@@ -511,10 +518,9 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             let operator = transformation_operator(e, *transform);
             e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
         }
-        CurveGeometry::Composite { .. } => {
-            unreachable!("composite curves are emitted from their child graph")
-        }
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => return None,
+        CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => return None,
     })
 }
 

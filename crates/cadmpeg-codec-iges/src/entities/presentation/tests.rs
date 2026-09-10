@@ -881,3 +881,38 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
         result.report().losses
     );
 }
+
+#[test]
+fn decode_binds_the_directory_color_to_a_curve_source_object() {
+    // The source association names its Directory entry as `D{sequence}`; the
+    // colour bound to that entry must reach the curve's source object.
+    let file = owned_test_file_with_colors(
+        &[OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00010000",
+            parameters: "110,0.,0.,0.,1.,0.,0.;".into(),
+        }],
+        &[(1, 2)],
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D1")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    let source = curve
+        .source_object
+        .as_ref()
+        .expect("a projected line names its source entity");
+    assert_eq!(source.object_id.as_str(), "D1");
+    assert_eq!(
+        source.color,
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
+    );
+}

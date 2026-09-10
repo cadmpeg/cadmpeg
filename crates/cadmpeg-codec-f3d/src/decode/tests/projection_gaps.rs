@@ -761,20 +761,22 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         })
         .unwrap(),
     );
-    native
-        .design_parameter_companions
-        .push(DesignParameterCompanion {
-            id: format!("{stream}:design-parameter-companion#30"),
-            byte_offset: 220,
-            class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
-            record_index: 30,
-            owner_record_index: 29,
-            timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
-            timestamp_micros_offset: 262,
-            payload_byte_offset: 278,
-            payload_byte_length: 100,
-            owned_recipe_ids: Vec::new(),
-        });
+    native.design_parameter_companions.push(
+        DesignParameterCompanion::unbound(
+            format!("{stream}:design-parameter-companion#30"),
+            220,
+            crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+            30,
+            29,
+            std::num::NonZeroU64::new(1).unwrap(),
+            262,
+        )
+        .bound(crate::records::DesignCompanionPayload::new(
+            278,
+            100,
+            Vec::new(),
+        )),
+    );
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 1);
     ir.model.sketch_constraints.push(
         serde_json::from_value(serde_json::json!({

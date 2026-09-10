@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
     knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     NurbsCurve, ProceduralCurve, ProceduralCurveDefinition,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -190,7 +190,9 @@ pub(super) fn curve_carrier_id(
     } else {
         sequence
     };
-    Some(CurveId::mint(format!("iges:model:curve#D{carrier_sequence}")).expect("identity grammar"))
+    Some(crate::ids::curve(&crate::ids::Stem::directory(
+        carrier_sequence,
+    )))
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
@@ -1275,6 +1277,7 @@ fn project_native_composite(
     entry: &DirectoryEntry,
     child_curves: &[CurveId],
     join_tolerance: f64,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
     if child_curves
         .iter()
@@ -1306,17 +1309,15 @@ fn project_native_composite(
             },
         })
         .collect::<Vec<_>>();
-    let stem = format!("D{}", entry.sequence);
-    let start_point =
-        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-    let end_point =
-        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-    let start_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-    let end_vertex =
-        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-    let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-    let edge_id = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+    let stem = crate::ids::Stem::directory(entry.sequence);
+    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    sequences.record_point(&start_point, &stem);
+    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    sequences.record_point(&end_point, &stem);
+    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+    let curve_id = crate::ids::curve(&stem);
+    let edge_id = crate::ids::edge(&stem);
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -1341,6 +1342,7 @@ fn project_native_composite(
             tolerance: None,
         },
     ]);
+    sequences.record_curve(&curve_id, entry.sequence);
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Composite {
@@ -1369,6 +1371,7 @@ fn project_native_composite(
     Some(edge_id)
 }
 
+/// The degraded carrier, if one was built, and the loss it charges either way.
 fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
@@ -1376,18 +1379,18 @@ fn project_degraded_composite(
     child_curves: &[CurveId],
     join_tolerance: f64,
     reason: &str,
-    losses: &mut Vec<LossNote>,
-) -> Option<EdgeId> {
-    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance);
-    if edge.is_some() {
-        losses.push(degraded_carrier_loss(entry, reason));
+    sequences: &mut super::geometry::SourceSequences,
+) -> (Option<EdgeId>, LossNote) {
+    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance, sequences);
+    let loss = if edge.is_some() {
+        degraded_carrier_loss(entry, reason)
     } else {
-        losses.push(entity_loss(
+        entity_loss(
             entry,
             format!("{reason}, and no ordered native composite carrier can be constructed"),
-        ));
-    }
-    edge
+        )
+    };
+    (edge, loss)
 }
 
 pub(super) fn project(
@@ -1396,8 +1399,9 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    project_with_type_130_policy(ir, directory, parameters, global, ctx, false)
+    project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, false)
 }
 
 pub(super) fn project_type_130_children(
@@ -1406,8 +1410,9 @@ pub(super) fn project_type_130_children(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    project_with_type_130_policy(ir, directory, parameters, global, ctx, true)
+    project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, true)
 }
 
 fn has_type_130_child(
@@ -1445,6 +1450,7 @@ fn project_with_type_130_policy(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+    sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
@@ -1632,15 +1638,17 @@ fn project_with_type_130_policy(
             })
             .collect::<Option<Vec<_>>>()
         else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "a child has no bounded line or NURBS carrier",
-                &mut losses,
-            ) {
+                sequences,
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
@@ -1650,15 +1658,17 @@ fn project_with_type_130_policy(
         let Some(ConcatenatedNurbs { nurbs, segments }) =
             concatenate_nurbs(children, Some(join_tolerance))
         else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "child endpoints do not join within the Global minimum resolution",
-                &mut losses,
-            ) {
+                sequences,
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
@@ -1674,15 +1684,17 @@ fn project_with_type_130_policy(
             nurbs.weights(),
             0.0,
         ) else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "its start cannot be evaluated",
-                &mut losses,
-            ) {
+                sequences,
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
@@ -1696,32 +1708,32 @@ fn project_with_type_130_policy(
             nurbs.weights(),
             cursor,
         ) else {
-            if let Some(edge) = project_degraded_composite(
+            let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
                 &curve_ids,
                 join_tolerance,
                 "its end cannot be evaluated",
-                &mut losses,
-            ) {
+                sequences,
+            );
+            losses.push(loss);
+            if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
             }
             continue;
         };
-        let stem = format!("D{}", entry.sequence);
-        let start_point =
-            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
-        let end_point =
-            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
-        let start_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
-        let end_vertex =
-            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
-        let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
-        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
+        let stem = crate::ids::Stem::directory(entry.sequence);
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve_id = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1746,6 +1758,7 @@ fn project_with_type_130_policy(
                 tolerance: None,
             },
         ]);
+        sequences.record_curve(&curve_id, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Nurbs(nurbs),
@@ -1784,8 +1797,7 @@ fn project_with_type_130_policy(
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
-                ProceduralCurveId::mint(format!("iges:model:procedural-curve#{stem}"))
-                    .expect("identity grammar"),
+                crate::ids::procedural_curve(&stem),
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         boundaries, components,

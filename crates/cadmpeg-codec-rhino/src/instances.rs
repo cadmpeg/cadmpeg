@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino instance-definition and instance-reference records.
 
+use crate::loss::Diagnostics;
 use std::collections::HashSet;
 use std::ops::Range;
 
@@ -238,16 +239,16 @@ fn checksum_warning(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     label: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), FramingError> {
     if matches!(
         verify_checksum(data, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "{label} CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!("{label} CRC mismatch at offset {}", chunk.header_start),
+        );
     }
     Ok(())
 }
@@ -257,17 +258,17 @@ fn checksum_warning_excluding(
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
     label: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), FramingError> {
     let direct = direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "{label} CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!("{label} CRC mismatch at offset {}", chunk.header_start),
+        );
     }
     Ok(())
 }
@@ -309,7 +310,7 @@ fn anonymous_versioned<'a>(
     archive: ArchiveVersion,
     label: &str,
     verify_container_crc: bool,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
@@ -332,7 +333,7 @@ fn anonymous<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     label: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>), FramingError> {
     let (chunk, payload, version) =
         anonymous_versioned(data, reader, archive, label, true, warnings)?;
@@ -349,7 +350,7 @@ fn unit_detail<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<UnitDetail, FramingError> {
     let (_chunk, mut payload) = anonymous(data, reader, archive, "unit detail", warnings)?;
@@ -384,7 +385,7 @@ fn model_component(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(Option<i32>, Uuid, String), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != MODEL_ATTRIBUTES || chunk.short() {
@@ -463,7 +464,7 @@ pub(crate) fn file_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<FileReference, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "file reference", false, warnings)?;
@@ -592,7 +593,7 @@ fn reference_settings<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Range<usize>, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "reference settings", false, warnings)?;
@@ -669,7 +670,7 @@ fn parse_v5(
     source_range: Range<usize>,
     range: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
@@ -767,7 +768,7 @@ fn parse_v6(
     source_range: Range<usize>,
     range: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
@@ -889,7 +890,7 @@ fn extract_member_ids(
         archive,
         "instance definition",
         false,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -898,9 +899,15 @@ fn extract_member_ids(
         ));
     }
     finish(&mut outer, "instance-definition wrapper")?;
-    let _component = model_component(data, &mut reader, archive, &mut Vec::new())?;
+    let _component = model_component(data, &mut reader, archive, &mut Diagnostics::new())?;
     let _kind = reader.u32()?;
-    let _units = unit_detail(data, &mut reader, archive, &mut Vec::new(), &mut Vec::new())?;
+    let _units = unit_detail(
+        data,
+        &mut reader,
+        archive,
+        &mut Diagnostics::new(),
+        &mut Vec::new(),
+    )?;
     let _description = utf16(&mut reader)?;
     let _url = utf16(&mut reader)?;
     let _url_tag = utf16(&mut reader)?;
@@ -916,7 +923,7 @@ fn parse_idef_alternative_path(
     data: &[u8],
     userdata: &ClassUserdata,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(String, bool), FramingError> {
     let mut reader = BoundedReader::new(
         data,
@@ -949,7 +956,7 @@ fn apply_idef_alternative_path(
     userdata: &[UserdataDescriptor],
     archive: ArchiveVersion,
     definition: &mut InstanceDefinition,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> bool {
     if !matches!(
         definition.kind,
@@ -1032,7 +1039,7 @@ pub(crate) fn parse_definitions(
     let mut seen = HashSet::new();
     for record in records {
         let parsed = (|| {
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let (class, userdata) =
                 parse_class_wrapper_with_userdata(data, record.body(), archive, &mut warnings)?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
@@ -1080,7 +1087,7 @@ pub(crate) fn parse_definitions(
             );
             for warning in warnings {
                 result.scan.diagnostics.push(DefinitionDiagnostic {
-                    message: warning,
+                    message: warning.message,
                     source_range: record.range.clone(),
                 });
             }

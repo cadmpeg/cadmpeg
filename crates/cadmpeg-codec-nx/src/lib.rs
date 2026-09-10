@@ -103,6 +103,8 @@ mod vec3_at;
 pub mod fuzz;
 
 #[doc(hidden)]
+pub use native::hex::Sha256Hex;
+
 pub use evaluation::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
@@ -197,8 +199,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
         attributes.insert("kind".to_string(), stream.kind().label().to_string());
-        if let Some(schema) = stream.schema() {
-            attributes.insert("schema".to_string(), schema.to_owned());
+        if let Some(schema) = stream.schema_token() {
+            attributes.insert("schema".to_string(), schema.value().to_owned());
         }
         if stream.kind().is_parasolid() {
             let graph = topology::Graph::parse(&stream.inflated);

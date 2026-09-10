@@ -1161,18 +1161,20 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         companion_record_index: 102,
     })
     .unwrap();
-    let companion = DesignParameterCompanion {
-        id: crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
-        byte_offset: 1_200,
-        class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        record_index: 102,
-        owner_record_index: 100,
-        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
-        timestamp_micros_offset: 1_242,
-        payload_byte_offset: 1_258,
-        payload_byte_length: 0,
-        owned_recipe_ids: Vec::new(),
-    };
+    let companion = DesignParameterCompanion::unbound(
+        crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
+        1_200,
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        102,
+        100,
+        std::num::NonZeroU64::new(1).unwrap(),
+        1_242,
+    )
+    .bound(crate::records::DesignCompanionPayload::new(
+        1_258,
+        0,
+        Vec::new(),
+    ));
     let ownerless_parameter =
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),

@@ -69,8 +69,8 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "record#3".to_string(),
         operation_label: label.id.clone(),
         ordinal: 3,
-        sha256: "a".repeat(64),
-        payload_sha256: "b".repeat(64),
+        sha256: crate::native::hex::Sha256Hex::digest(b"a"),
+        payload_sha256: crate::native::hex::Sha256Hex::digest(b"b"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),
@@ -270,8 +270,8 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         id: "record#threaded".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        sha256: "a".repeat(64),
-        payload_sha256: "b".repeat(64),
+        sha256: crate::native::hex::Sha256Hex::digest(b"a"),
+        payload_sha256: crate::native::hex::Sha256Hex::digest(b"b"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),

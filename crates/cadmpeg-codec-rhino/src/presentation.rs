@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino appearance, grouping, and lighting presentation records.
 
+use crate::loss::Diagnostics;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
@@ -1168,7 +1169,7 @@ fn object_attributes_presentation(
         object_mode: attributes.object_mode,
         decoration: attributes.decoration,
         wire_density: attributes.wire_density,
-        color_source: attributes.color_source,
+        color_source: attributes.color_source.as_byte(),
         linetype_source: attributes.linetype_source,
         material_source: attributes.material_source,
         plot_color_source: attributes.plot_color_source,
@@ -1617,7 +1618,7 @@ fn class_data(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let class = parse_class_wrapper(data, record.body(), archive, &mut Vec::new())?;
+    let class = parse_class_wrapper(data, record.body(), archive, &mut Diagnostics::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1638,7 +1639,7 @@ fn class_data_prefix(
         data,
         wrapper.header_start..wrapper.next_offset(),
         archive,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
@@ -1656,7 +1657,7 @@ fn parse_light_record_attributes(
     writer_version: Option<i64>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let _ = class_data_prefix(data, record, archive, LIGHT)?;
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let mut offset = wrapper.next_offset();
@@ -1767,7 +1768,7 @@ fn parse_light_record_attributes(
             )),
             _ => None,
         } {
-            warnings.push(note);
+            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
     }
     let Some(attributes) = attributes.as_mut() else {
@@ -1791,10 +1792,15 @@ fn parse_light_record_attributes(
         losses,
     );
     for warning in warnings {
-        losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
-            "light record attributes at offset {}: {warning}",
-            record.range.start
-        )));
+        losses.push(
+            warning
+                .code
+                .unwrap_or(RhinoLossCode::ObjectDecodeDiagnostic)
+                .note(format!(
+                    "light record attributes at offset {}: {}",
+                    record.range.start, warning.message
+                )),
+        );
     }
     Ok(Some(LightAttributesRecord {
         source_offset: attributes_chunk
@@ -1812,7 +1818,7 @@ fn class_data_with_userdata(
     expected: Uuid,
 ) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body(), archive, &mut Vec::new())?;
+        parse_class_wrapper_with_userdata(data, record.body(), archive, &mut Diagnostics::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1868,7 +1874,8 @@ fn parse_texture(
     ];
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
-        let value = crate::instances::file_reference(data, &mut reader, archive, &mut Vec::new())?;
+        let value =
+            crate::instances::file_reference(data, &mut reader, archive, &mut Diagnostics::new())?;
         Some(TextureFileReference {
             full_path: value.full_path,
             relative_path: value.relative_path,
@@ -1952,7 +1959,7 @@ fn texture_array(
             data,
             object.header_start..object.next_offset(),
             archive,
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )?;
         if class.class_uuid != TEXTURE {
             return Err(FramingError::structural(
@@ -3618,7 +3625,7 @@ fn parse_texture_mapping(
     let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
         (None, false)
     } else {
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (value, userdata) =
             parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
         let cache_requires_opaque =
@@ -4294,9 +4301,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                         images.push(value);
                         parsed = true;
                     }
-                } else if let Ok(class) =
-                    parse_class_wrapper(scan.data, record.body(), scan.archive, &mut Vec::new())
-                {
+                } else if let Ok(class) = parse_class_wrapper(
+                    scan.data,
+                    record.body(),
+                    scan.archive,
+                    &mut Diagnostics::new(),
+                ) {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         if let Ok(value) = parse_windows_bitmap(
                             scan.data,
@@ -4452,7 +4462,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             hierarchy: layer.hierarchy,
             name: layer.name.clone(),
             description: layer.description.clone(),
-            iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
+            iges_level: layer.iges_level,
             visible: layer.visible,
             locked: layer.locked,
             color: layer.color,

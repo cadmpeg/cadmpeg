@@ -76,7 +76,7 @@ fn construction_payload_preserves_each_ownership_form() {
         r#""construction":"construction""#,
     ] {
         let json = format!(
-            r#"{{"id":"payload","operation_label":"operation",{owner},"data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10]}}"#
+            r#"{{"id":"payload","operation_label":"operation",{owner},"data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10]}}"#
         );
         let payload: super::FeatureConstructionPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&payload).unwrap(), json);
@@ -85,14 +85,14 @@ fn construction_payload_preserves_each_ownership_form() {
 
 #[test]
 fn construction_payload_rejects_untyped_operation_kinds() {
-    let json = r#"{"id":"payload","operation_label":"operation","operation_kind":"other","construction_references":[],"data_blocks":[],"byte_len":0,"sha256":"hash","block_payload_offsets":[],"block_byte_lengths":[],"block_source_offsets":[]}"#;
+    let json = r#"{"id":"payload","operation_label":"operation","operation_kind":"other","construction_references":[],"data_blocks":[],"byte_len":0,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[],"block_byte_lengths":[],"block_source_offsets":[]}"#;
     let error = serde_json::from_str::<super::FeatureConstructionPayload>(json).unwrap_err();
     assert!(error.to_string().contains("operation_kind"));
 }
 
 #[test]
 fn datum_plane_payload_derives_terminal_index_count() {
-    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":2,"index_lane_values":[1],"index_lane_raw_indices":[[1]],"index_lane_value_offsets":[4],"index_lane_trailer":0}"#;
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":2,"index_lane_values":[1],"index_lane_raw_indices":[[1]],"index_lane_value_offsets":[4],"index_lane_trailer":0}"#;
     let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&payload).unwrap(), json);
     for count in [0, 1, 3, 256] {
@@ -107,7 +107,7 @@ fn datum_plane_payload_derives_terminal_index_count() {
 
 #[test]
 fn datum_plane_payload_retains_checked_compact_tokens() {
-    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
     let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&payload).unwrap(), json);
     for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
@@ -823,7 +823,7 @@ fn sketch_reference_wire_derives_terminal_and_retains_zero_count_form() {
 
 #[test]
 fn datum_plane_payload_rejects_detached_member_positions_and_frame_overflow() {
-    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
     for offsets in [[3, 6], [4, 5], [4, u64::MAX]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["index_lane_value_offsets"] = serde_json::json!(offsets);

@@ -38,11 +38,18 @@ pub(crate) fn has_root_marker(prefix: &[u8]) -> bool {
             .is_some_and(|archive| archive.entry(ROOT_NAME).is_some())
 }
 
+/// One STEP ZIP container whose required root member is proven present.
+pub(crate) struct OpenedRoot<'a> {
+    pub(crate) archive: ArchiveSnapshot<'a>,
+    pub(crate) view: View<'a>,
+    pub(crate) data_start: u64,
+}
+
 /// Opens and validates the required root member of one STEP ZIP container.
 pub(crate) fn open_root<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-) -> Result<(ArchiveSnapshot<'a>, View<'a>), CodecError> {
+) -> Result<OpenedRoot<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(root)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
@@ -60,8 +67,13 @@ pub(crate) fn open_root<'a>(
     let root_entry = archive.entry(ROOT_NAME).ok_or_else(|| {
         CodecError::WrongFormat(format!("STEP ZIP has no required root {ROOT_NAME}"))
     })?;
+    let data_start = root_entry.data_start;
     let root_view = archive.open(ctx, &root_entry.name)?;
-    Ok((archive, root_view))
+    Ok(OpenedRoot {
+        archive,
+        view: root_view,
+        data_start,
+    })
 }
 
 /// Resolves one archive URI against the directory of its referencing member.

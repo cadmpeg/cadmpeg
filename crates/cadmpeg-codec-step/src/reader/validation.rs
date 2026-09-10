@@ -33,7 +33,6 @@ pub(super) fn decode(
             value: (),
             claims: HashSet::new(),
             notes: Vec::new(),
-            warnings: Vec::new(),
             losses: Vec::new(),
         };
     }
@@ -90,7 +89,6 @@ pub(super) fn decode(
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
-    let mut warnings = Vec::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(relation) = relation.partial("PROPERTY_DEFINITION_REPRESENTATION") else {
@@ -117,9 +115,9 @@ pub(super) fn decode(
             let scale = geometry.units.length([item_id, representation_id]);
             let expected = expected_value(item_id, item, exchange, scale, &mut losses);
             let Some(expected) = expected else {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "geometric validation property #{property_id} has unsupported item #{item_id}"
-                ));
+                )));
                 continue;
             };
             if matches!(expected, Expected::Centroid(_)) {
@@ -184,7 +182,6 @@ pub(super) fn decode(
         value: (),
         claims: typed,
         notes,
-        warnings,
         losses,
     }
 }

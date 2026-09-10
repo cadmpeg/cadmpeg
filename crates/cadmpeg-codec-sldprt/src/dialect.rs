@@ -150,7 +150,11 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
                 let name = section.name().unwrap_or("unnamed");
                 (
                     stream.header.schema.clone(),
-                    format!("{}:{name}+{}", section.site_key(), stream.offset),
+                    cadmpeg_parasolid::Carrier::new(format!(
+                        "{}:{name}+{}",
+                        section.site_key(),
+                        stream.offset
+                    )),
                 )
             })
         })

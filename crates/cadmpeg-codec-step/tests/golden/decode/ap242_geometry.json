@@ -783,7 +783,7 @@
           "kind": "decode_diagnostic",
           "namespace": "step"
         },
-        "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
+        "message": "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; set dropped",
         "severity": "warning"
       },
       {
@@ -794,6 +794,15 @@
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
+      },
+      {
+        "code": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step"
+        },
+        "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
+        "severity": "warning"
       },
       {
         "code": {

@@ -16,11 +16,36 @@ pub struct FeatureEntityTable {
     pub table_class_id: u32,
     /// Structurally bounded records in their declared generated-entity order.
     pub entries: Vec<FeatureEntityTableEntry>,
+    /// Materialized `srf_array` identifiers among this table's entity ids.
+    surface_ids: BTreeSet<u32>,
     /// Byte offset of the `f8` table opener in the original stream.
     pub offset: usize,
 }
 
 impl FeatureEntityTable {
+    /// Admits a table whose materialized identifiers are exactly the entries
+    /// the model decoded as `srf_array` identifiers.
+    pub fn new(
+        feature_id: u32,
+        table_class_id: u32,
+        entries: Vec<FeatureEntityTableEntry>,
+        model_surface_ids: &BTreeSet<u32>,
+        offset: usize,
+    ) -> Self {
+        let surface_ids = entries
+            .iter()
+            .map(|entry| entry.entity_id)
+            .filter(|id| model_surface_ids.contains(id))
+            .collect();
+        Self {
+            feature_id,
+            table_class_id,
+            entries,
+            surface_ids,
+            offset,
+        }
+    }
+
     pub fn entry_ids(&self) -> Vec<u32> {
         self.entries.iter().map(|entry| entry.entity_id).collect()
     }
@@ -28,16 +53,16 @@ impl FeatureEntityTable {
     pub fn surface_ids(&self) -> Vec<u32> {
         self.entries
             .iter()
-            .filter(|entry| entry.is_surface)
             .map(|entry| entry.entity_id)
+            .filter(|id| self.surface_ids.contains(id))
             .collect()
     }
 
     pub fn non_surface_entity_ids(&self) -> Vec<u32> {
         self.entries
             .iter()
-            .filter(|entry| !entry.is_surface)
             .map(|entry| entry.entity_id)
+            .filter(|id| !self.surface_ids.contains(id))
             .collect()
     }
 }
@@ -45,28 +70,44 @@ impl FeatureEntityTable {
 #[cfg(test)]
 impl FeatureEntityTable {
     pub(crate) fn mark_surface_ids(&mut self, surface_ids: impl IntoIterator<Item = u32>) {
-        let set: BTreeSet<u32> = surface_ids.into_iter().collect();
-        for entry in &mut self.entries {
-            entry.is_surface = set.contains(&entry.entity_id);
-        }
+        let model_surface_ids = surface_ids.into_iter().collect();
+        *self = Self::new(
+            self.feature_id,
+            self.table_class_id,
+            std::mem::take(&mut self.entries),
+            &model_surface_ids,
+            self.offset,
+        );
     }
 
     pub(crate) fn with_surface_ids(mut self, surface_ids: impl IntoIterator<Item = u32>) -> Self {
         self.mark_surface_ids(surface_ids);
         self
     }
+
+    pub(crate) fn mark_surface_id(&mut self, entity_id: u32) {
+        let mut model_surface_ids = std::mem::take(&mut self.surface_ids);
+        model_surface_ids.insert(entity_id);
+        self.mark_surface_ids(model_surface_ids);
+    }
+
+    pub(crate) fn unmark_surface_id(&mut self, entity_id: u32) {
+        let mut model_surface_ids = std::mem::take(&mut self.surface_ids);
+        model_surface_ids.remove(&entity_id);
+        self.mark_surface_ids(model_surface_ids);
+    }
 }
 
 #[cfg(test)]
-pub(crate) fn dummy_table_entry(entity_id: u32, is_surface: bool) -> FeatureEntityTableEntry {
+pub(crate) fn dummy_table_entry(entity_id: u32) -> FeatureEntityTableEntry {
     FeatureEntityTableEntry {
         entity_id,
-        class_id: 0,
-        payload: EntryPayload::Plain,
+        payload: EntryPayload::Plain {
+            class: PlainClass::new(0).expect("0 is not the source class"),
+        },
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface,
     }
 }
 
@@ -76,9 +117,69 @@ pub enum EntryPayload {
     /// Class `200` source-section identifier, present when the compact id parsed.
     Source { entity: Option<u32> },
     /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
-    Related { entity: u32, state: RelatedState },
+    Related {
+        /// The related class that owns the pair.
+        class: RelatedClass,
+        entity: u32,
+        state: RelatedState,
+    },
     /// Any other class, or a related class whose pair did not parse.
-    Plain,
+    Plain {
+        /// The positional entry class.
+        class: PlainClass,
+    },
+}
+
+/// A positional entry class that owns no payload of its own. Class `200`
+/// always carries a source identifier, so it is not one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlainClass(u32);
+
+impl PlainClass {
+    /// Admits every entry class but `200`.
+    pub const fn new(class: u32) -> Option<Self> {
+        match class {
+            200 => None,
+            class => Some(Self(class)),
+        }
+    }
+
+    /// The positional entry class.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// A generated-entity class that carries a related entity and its state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelatedClass {
+    Class210,
+    Class214,
+    Class219,
+    Class2017,
+}
+
+impl RelatedClass {
+    /// The related class for a positional entry class, when it is one.
+    pub(crate) fn from_class_id(class_id: u32) -> Option<Self> {
+        match class_id {
+            210 => Some(Self::Class210),
+            214 => Some(Self::Class214),
+            219 => Some(Self::Class219),
+            2017 => Some(Self::Class2017),
+            _ => None,
+        }
+    }
+
+    /// The positional entry class.
+    pub fn class_id(self) -> u32 {
+        match self {
+            Self::Class210 => 210,
+            Self::Class214 => 214,
+            Self::Class219 => 219,
+            Self::Class2017 => 2017,
+        }
+    }
 }
 
 /// One-byte state following a related entity identifier.
@@ -107,24 +208,35 @@ impl RelatedState {
 }
 
 #[cfg(test)]
+fn plain_payload(class_id: u32) -> EntryPayload {
+    EntryPayload::Plain {
+        class: PlainClass::new(class_id).expect("a plain class is not the source class"),
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn entry_payload(
     class_id: u32,
     source_entity_id: Option<u32>,
     related_entity_id: Option<u32>,
     related_entity_state: Option<u8>,
 ) -> EntryPayload {
-    match class_id {
-        200 => EntryPayload::Source {
+    match (class_id, RelatedClass::from_class_id(class_id)) {
+        (200, _) => EntryPayload::Source {
             entity: source_entity_id,
         },
-        210 | 214 | 219 | 2017 => match (
+        (_, Some(class)) => match (
             related_entity_id,
             related_entity_state.and_then(RelatedState::from_byte),
         ) {
-            (Some(entity), Some(state)) => EntryPayload::Related { entity, state },
-            _ => EntryPayload::Plain,
+            (Some(entity), Some(state)) => EntryPayload::Related {
+                class,
+                entity,
+                state,
+            },
+            _ => plain_payload(class_id),
         },
-        _ => EntryPayload::Plain,
+        _ => plain_payload(class_id),
     }
 }
 
@@ -133,14 +245,10 @@ pub(crate) fn entry_payload(
 pub struct FeatureEntityTableEntry {
     /// Entity identifier at the start of the record body.
     pub entity_id: u32,
-    /// Positional entry class following the entity identifier.
-    pub class_id: u32,
-    /// Payload owned by `class_id`.
+    /// Payload of the positional entry class following the entity identifier.
     pub payload: EntryPayload,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
-    /// Whether this entity identifier is a materialized `srf_array` identifier.
-    pub is_surface: bool,
     /// Byte offset of the entity identifier in the original stream.
     pub offset: usize,
     /// Byte offset immediately after the entry body. This follows the
@@ -150,6 +258,15 @@ pub struct FeatureEntityTableEntry {
 }
 
 impl FeatureEntityTableEntry {
+    /// The positional entry class following the entity identifier.
+    pub fn class_id(&self) -> u32 {
+        match self.payload {
+            EntryPayload::Source { .. } => 200,
+            EntryPayload::Related { class, .. } => class.class_id(),
+            EntryPayload::Plain { class } => class.get(),
+        }
+    }
+
     pub fn source_entity_id(&self) -> Option<u32> {
         match self.payload {
             EntryPayload::Source { entity } => entity,
@@ -283,6 +400,7 @@ pub(crate) fn read_entries(
                 .flatten()
                 .map(|(class_id, _)| (class_id, after))
         })?;
+        let related_class = RelatedClass::from_class_id(class_id);
         let (entry_payload, body_start) = if class_id == 200 {
             match psb::reference_id(payload, after_class) {
                 Ok((order, after_order)) => (
@@ -293,20 +411,37 @@ pub(crate) fn read_entries(
                 ),
                 Err(_) => (EntryPayload::Source { entity: None }, after_class),
             }
-        } else if matches!(class_id, 210 | 214 | 219 | 2017) {
+        } else if let Some(class) = related_class {
             psb::reference_id(payload, after_class)
                 .ok()
                 .and_then(|(entity, after_related)| {
-                    let state = match (class_id, payload.get(after_related)) {
-                        (210 | 214 | 219 | 2017, Some(&0)) => RelatedState::Zero,
-                        (2017, Some(&1)) => RelatedState::One,
+                    let state = match (class, payload.get(after_related)) {
+                        (_, Some(&0)) => RelatedState::Zero,
+                        (RelatedClass::Class2017, Some(&1)) => RelatedState::One,
                         _ => return None,
                     };
-                    Some((EntryPayload::Related { entity, state }, after_related))
+                    Some((
+                        EntryPayload::Related {
+                            class,
+                            entity,
+                            state,
+                        },
+                        after_related,
+                    ))
                 })
-                .unwrap_or((EntryPayload::Plain, after_class))
+                .unwrap_or((
+                    EntryPayload::Plain {
+                        class: PlainClass::new(class_id)?,
+                    },
+                    after_class,
+                ))
         } else {
-            (EntryPayload::Plain, after_class)
+            (
+                EntryPayload::Plain {
+                    class: PlainClass::new(class_id)?,
+                },
+                after_class,
+            )
         };
         let terminal_state = match entry_payload {
             EntryPayload::Source { .. } => payload
@@ -314,7 +449,7 @@ pub(crate) fn read_entries(
                 .copied()
                 .filter(|state| matches!(state, 0 | 1)),
             EntryPayload::Related { state, .. } => Some(state.as_u8()),
-            EntryPayload::Plain => None,
+            EntryPayload::Plain { .. } => None,
         };
         let terminal_table_separator = (index + 1 == count
             && terminal_state.is_some()
@@ -333,10 +468,8 @@ pub(crate) fn read_entries(
         };
         entries.push(FeatureEntityTableEntry {
             entity_id: id,
-            class_id,
             payload: entry_payload,
             prefixed,
-            is_surface: false,
             offset,
             end_offset,
         });
@@ -377,19 +510,16 @@ pub fn entity_tables(
         else {
             continue;
         };
-        let Some(mut entries) = read_entries(&payload[..row_end], after_table_class + 2, count)
-        else {
+        let Some(entries) = read_entries(&payload[..row_end], after_table_class + 2, count) else {
             continue;
         };
-        for entry in &mut entries {
-            entry.is_surface = surface_ids.contains(&entry.entity_id);
-        }
-        tables.push(FeatureEntityTable {
+        tables.push(FeatureEntityTable::new(
             feature_id,
             table_class_id,
             entries,
+            surface_ids,
             offset,
-        });
+        ));
     }
     tables
 }

@@ -63,7 +63,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// Verbatim as read. The attribute is required — a document without it is
 /// refused as the wrong format before classification — so this key is always
 /// present.
-const DECLARED_SCHEMA_VERSION: &str = "schema_version";
+pub(crate) const DECLARED_SCHEMA_VERSION: &str = "schema_version";
 /// Key of `Document/@FileVersion` in [`DialectMatch::declared`].
 ///
 /// Verbatim as read, except that an absent attribute is recorded as `"0"`,
@@ -150,13 +150,10 @@ impl FcstdDialect {
     /// decode path, container-only or full, and every inspect reads an
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
-    pub(crate) fn classify(document: &DocumentFacts) -> DialectMatch {
-        let dialect = Self::from_schema_version(&document.schema_version);
+    pub(crate) fn classify(document: &DocumentFacts, schema_version: &str) -> DialectMatch {
+        let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
-        declared.insert(
-            DECLARED_SCHEMA_VERSION.into(),
-            document.schema_version.clone(),
-        );
+        declared.insert(DECLARED_SCHEMA_VERSION.into(), schema_version.to_owned());
         declared.insert(
             DECLARED_FILE_VERSION.into(),
             document.file_version.as_str().to_owned(),

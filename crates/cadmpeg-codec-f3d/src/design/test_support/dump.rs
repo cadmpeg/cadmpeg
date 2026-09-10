@@ -24,7 +24,8 @@ pub(crate) use crate::design::decode::operands::{
     FaceRecipeProgramKind,
 };
 pub(crate) use crate::design::decode::parameters::{
-    bind_parameter_companion_payloads, parse_design_parameter, parse_parameter_owner,
+    bind_parameter_companion_payloads, parse_design_parameter_record as parse_design_parameter,
+    parse_parameter_owner,
 };
 pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::{
     exact_ruled_surface_operation, exact_surface_stitch_operation,

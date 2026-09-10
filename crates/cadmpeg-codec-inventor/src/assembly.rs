@@ -4,6 +4,7 @@
 use crate::pmdc::unique_by;
 
 use std::collections::{BTreeMap, HashSet};
+use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -72,6 +73,14 @@ pub(crate) struct AssemblyPlacement<'a> {
     pub(crate) suffix: View<'a>,
 }
 
+/// Records one more occurrence of `cause` in a non-zero tally.
+pub(crate) fn count_unresolved<C: Ord>(counts: &mut BTreeMap<C, NonZeroUsize>, cause: C) {
+    counts
+        .entry(cause)
+        .and_modify(|count| *count = count.saturating_add(1))
+        .or_insert(NonZeroUsize::MIN);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum UnresolvedCause {
     ExternalReference,
@@ -96,7 +105,7 @@ impl UnresolvedCause {
 #[derive(Debug)]
 pub(crate) struct AssemblyProjection {
     pub(crate) occurrences: Vec<Occurrence>,
-    pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, usize>,
+    pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -120,21 +129,24 @@ pub(crate) fn project_occurrences(
 
     for source in ufrx_occurrences {
         let Some(reference) = references.get(&source.file_reference_id) else {
-            *unresolved_placements
-                .entry(UnresolvedCause::ExternalReference)
-                .or_default() += 1;
+            count_unresolved(
+                &mut unresolved_placements,
+                UnresolvedCause::ExternalReference,
+            );
             continue;
         };
         if !occurrence_records.contains_key(&source.occurrence_id) {
-            *unresolved_placements
-                .entry(UnresolvedCause::OccurrenceRecord)
-                .or_default() += 1;
+            count_unresolved(
+                &mut unresolved_placements,
+                UnresolvedCause::OccurrenceRecord,
+            );
             continue;
         }
         if !emitted_ids.insert(source.occurrence_id) {
-            *unresolved_placements
-                .entry(UnresolvedCause::DuplicateOccurrence)
-                .or_default() += 1;
+            count_unresolved(
+                &mut unresolved_placements,
+                UnresolvedCause::DuplicateOccurrence,
+            );
             continue;
         }
 
@@ -146,18 +158,17 @@ pub(crate) fn project_occurrences(
                     row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
                 }
                 let Some(transform) = Transform::from_rows(rows) else {
-                    *unresolved_placements
-                        .entry(UnresolvedCause::InvalidTransform)
-                        .or_default() += 1;
+                    count_unresolved(
+                        &mut unresolved_placements,
+                        UnresolvedCause::InvalidTransform,
+                    );
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                *unresolved_placements
-                    .entry(UnresolvedCause::Placement)
-                    .or_default() += 1;
+                count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement);
                 continue;
             }
         };
@@ -656,7 +667,7 @@ mod tests {
         assert!(projection.occurrences.is_empty());
         assert_eq!(
             projection.unresolved_placements,
-            BTreeMap::from([(super::UnresolvedCause::Placement, 1)])
+            BTreeMap::from([(super::UnresolvedCause::Placement, NonZeroUsize::MIN)])
         );
     }
 

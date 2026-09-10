@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP presentation style and topology color decoding.
 
+use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -30,7 +31,6 @@ pub(super) fn decode(
     ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<()> {
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
     let face_indices = ir
@@ -108,7 +108,9 @@ pub(super) fn decode(
         }
         let Some(items) = partial_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            warnings.push(format!("INVISIBILITY #{id} has no item set"));
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
+            );
             continue;
         };
         let mut supported = true;
@@ -157,9 +159,9 @@ pub(super) fn decode(
                 }
             }
             if !target_supported || !hidden {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{id} targets unsupported item #{target}"
-                ));
+                )));
                 supported = false;
             }
         }
@@ -176,15 +178,15 @@ pub(super) fn decode(
         let Some(assigned_items) =
             partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            ));
+            )));
             continue;
         };
         if assigned_items.is_empty() {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            ));
+            )));
             continue;
         }
         let Some(name) =
@@ -199,9 +201,9 @@ pub(super) fn decode(
                 )
             })
         else {
-            warnings.push(format!(
+            losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            ));
+            )));
             continue;
         };
         let description = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -228,7 +230,7 @@ pub(super) fn decode(
             ));
         }
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId::from(ids::presentation("layer", layer_id)),
+            id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
@@ -259,7 +261,10 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
+            );
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
@@ -348,9 +353,9 @@ pub(super) fn decode(
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
-                    warnings.push(format!(
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
                         "STYLED_ITEM #{style_id} has no resolved surface color"
-                    ));
+                    )));
                 }
                 continue;
             }
@@ -369,7 +374,7 @@ pub(super) fn decode(
                 } else {
                     format!("{color_id}-alpha-{}", color.a().to_bits())
                 };
-                let id = AppearanceId::from(ids::presentation("appearance", key));
+                let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
                 ir.model.appearances.push(Appearance {
                     id: id.clone(),
                     name,
@@ -404,9 +409,9 @@ pub(super) fn decode(
                 &body_indices,
             );
             if targets.is_empty() {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
-                ));
+                )));
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
@@ -421,7 +426,7 @@ pub(super) fn decode(
                 }
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: ids::presentation(
-                        "binding",
+                        kind!("binding"),
                         format!("{style_id}:{ordinal}-{target_ordinal}"),
                     )
                     .into(),
@@ -470,14 +475,14 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                ));
+                )));
                 supported = false;
             }
         }
         for layer_id in layer_targets {
-            let expected_id = ids::presentation("layer", layer_id);
+            let expected_id = ids::presentation(kind!("layer"), layer_id);
             let mut matched = false;
             for layer in &mut ir.model.presentation_layers {
                 if layer.id.as_str() == expected_id.as_str() {
@@ -487,9 +492,9 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                warnings.push(format!(
+                losses.push(StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                ));
+                )));
                 supported = false;
             }
         }
@@ -539,7 +544,6 @@ pub(super) fn decode(
     StageOutcome {
         value: (),
         claims: typed,
-        warnings,
         losses,
         notes: Vec::new(),
     }
@@ -580,7 +584,7 @@ fn collect_invisible_body_ids(
         active.remove(&id);
         return !ids.is_empty();
     }
-    let fallback = BodyId::from(ids::data("body", id));
+    let fallback = BodyId::from(ids::data(kind!("body"), id));
     if body_indices.contains_key(fallback.as_str()) {
         body_ids.insert(fallback);
         active.remove(&id);
@@ -711,13 +715,13 @@ fn appearance_targets(
             .map(AppearanceTarget::Vertex)
             .collect();
     }
-    let face_id = ids::data("face", id);
-    let body_id = ids::data("body", id);
-    let edge_id = ids::data("edge", id);
-    let surface_id = ids::data("surface", id);
-    let curve_id = ids::data("curve", id);
-    let point_id = ids::data("point", id);
-    let tessellation_id = ids::tessellation("mesh", id);
+    let face_id = ids::data(kind!("face"), id);
+    let body_id = ids::data(kind!("body"), id);
+    let edge_id = ids::data(kind!("edge"), id);
+    let surface_id = ids::data(kind!("surface"), id);
+    let curve_id = ids::data(kind!("curve"), id);
+    let point_id = ids::data(kind!("point"), id);
+    let tessellation_id = ids::tessellation(kind!("mesh"), id);
     if face_indices.contains_key(face_id.as_str()) {
         return vec![AppearanceTarget::Face(FaceId::from(face_id))];
     }
@@ -812,44 +816,44 @@ fn presentation_item_one(
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> PresentationItem {
-    let candidate = |kind: &str| ids::data(kind, id);
-    let body = candidate("body");
+    let candidate = |kind: &crate::ids::IdentityKind| ids::data(kind, id);
+    let body = candidate(kind!("body"));
     if body_indices.contains_key(body.as_str()) {
         return PresentationItem::Body {
             body: BodyId::from(body),
         };
     }
-    let face = candidate("face");
+    let face = candidate(kind!("face"));
     if face_indices.contains_key(face.as_str()) {
         return PresentationItem::Face {
             face: FaceId::from(face),
         };
     }
-    let edge = candidate("edge");
+    let edge = candidate(kind!("edge"));
     if entity_ids.edges.contains(edge.as_str()) {
         return PresentationItem::Edge {
             edge: EdgeId::from(edge),
         };
     }
-    let vertex = candidate("vertex");
+    let vertex = candidate(kind!("vertex"));
     if entity_ids.vertices.contains(vertex.as_str()) {
         return PresentationItem::Vertex {
             vertex: VertexId::from(vertex),
         };
     }
-    let point = candidate("point");
+    let point = candidate(kind!("point"));
     if entity_ids.points.contains(point.as_str()) {
         return PresentationItem::Point {
             point: PointId::from(point),
         };
     }
-    let curve = candidate("curve");
+    let curve = candidate(kind!("curve"));
     if entity_ids.curves.contains(curve.as_str()) {
         return PresentationItem::Curve {
             curve: CurveId::from(curve),
         };
     }
-    let surface = candidate("surface");
+    let surface = candidate(kind!("surface"));
     if entity_ids.surfaces.contains(surface.as_str()) {
         return PresentationItem::Surface {
             surface: SurfaceId::from(surface),
@@ -864,10 +868,10 @@ fn presentation_item_one(
     if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
-            .contains(ids::product("occurrence", id).as_str())
+            .contains(ids::product(kind!("occurrence"), id).as_str())
     {
         PresentationItem::Occurrence {
-            occurrence: OccurrenceId::from(ids::product("occurrence", id)),
+            occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
         }
     } else if record.partials.iter().any(|partial| {
         (partial.name == "DATUM"
@@ -877,10 +881,10 @@ fn presentation_item_one(
             || super::pmi::is_presentation_annotation(&partial.name))
             && entity_ids
                 .pmi
-                .contains(ids::presentation("pmi", id).as_str())
+                .contains(ids::presentation(kind!("pmi"), id).as_str())
     }) {
         PresentationItem::Pmi {
-            annotation: PmiId::from(ids::presentation("pmi", id)),
+            annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
         }
     } else if (has("TRIANGULATED_FACE")
         || has("COMPLEX_TRIANGULATED_FACE")
@@ -888,10 +892,10 @@ fn presentation_item_one(
         || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
         && entity_ids
             .tessellations
-            .contains(ids::tessellation("mesh", id).as_str())
+            .contains(ids::tessellation(kind!("mesh"), id).as_str())
     {
         PresentationItem::Tessellation {
-            tessellation: ids::tessellation("mesh", id).into_string(),
+            tessellation: ids::tessellation(kind!("mesh"), id).into_string(),
         }
     } else {
         PresentationItem::Source {

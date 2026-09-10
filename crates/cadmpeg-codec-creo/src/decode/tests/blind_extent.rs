@@ -113,22 +113,21 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 7,
-        table_class_id: 29,
-        entries: vec![
+    let table = crate::feature::FeatureEntityTable::new(
+        7,
+        29,
+        vec![
             entry(31, 204, None),
             entry(32, 203, None),
             entry(33, 200, Some(11)),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([31, 32, 33]);
     let row = |id| crate::surface::SurfaceRow {
         id,

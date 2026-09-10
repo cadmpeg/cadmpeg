@@ -29,6 +29,7 @@ mod build;
 pub(crate) mod emit;
 pub(crate) mod feature_completeness;
 mod geometry_work;
+pub(crate) mod ids;
 pub(crate) mod jpeg;
 mod offset;
 pub(crate) mod pcurves;

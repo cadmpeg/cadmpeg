@@ -596,6 +596,44 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
 }
 
 #[test]
+fn companion_payload_absence_is_distinct_from_an_empty_payload() {
+    let prefix = r#"{"id":"companion","byte_offset":0,"class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"timestamp_micros_offset":42"#;
+    let unbound = format!("{prefix}}}");
+    let empty = format!("{prefix},\"payload_byte_offset\":58,\"payload_byte_length\":0}}");
+
+    let companion: crate::records::DesignParameterCompanion =
+        serde_json::from_str(&unbound).unwrap();
+    assert!(companion.payload().is_none());
+    assert_eq!(serde_json::to_string(&companion).unwrap(), unbound);
+
+    let companion: crate::records::DesignParameterCompanion = serde_json::from_str(&empty).unwrap();
+    let payload = companion.payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 58);
+    assert_eq!(payload.byte_length(), 0);
+    assert_eq!(serde_json::to_string(&companion).unwrap(), empty);
+
+    for (invalid, field) in [
+        (
+            format!("{prefix},\"payload_byte_offset\":58}}"),
+            "payload_byte_length",
+        ),
+        (
+            format!("{prefix},\"payload_byte_length\":4}}"),
+            "payload_byte_offset",
+        ),
+        (
+            format!("{prefix},\"owned_recipe_ids\":[\"recipe\"]}}"),
+            "owned_recipe_ids",
+        ),
+    ] {
+        let error = serde_json::from_str::<crate::records::DesignParameterCompanion>(&invalid)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(field), "{error}");
+    }
+}
+
+#[test]
 fn companion_timestamp_preserves_wire_and_rejects_zero() {
     let wire = r#"{"id":"companion","byte_offset":0,"class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"timestamp_micros_offset":42,"payload_byte_offset":58,"payload_byte_length":0}"#;
     let companion: crate::records::DesignParameterCompanion = serde_json::from_str(wire).unwrap();

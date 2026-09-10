@@ -141,12 +141,6 @@ fn directory_line_weight_is_semantic(entry: &DirectoryEntry, global_table: Globa
     !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
-fn source_sequence(id: &str) -> Option<u32> {
-    let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
-    let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
-    id.get(marker..marker.checked_add(digits)?)?.parse().ok()
-}
-
 fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Color) {
     if ir.model.appearances.iter().all(|item| item.id != id) {
         ir.model.appearances.push(Appearance {
@@ -230,6 +224,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
+    sequences: &super::geometry::SourceSequences,
 ) -> ProjectionOutcome {
     let records = parameters
         .iter()
@@ -463,8 +458,7 @@ pub(super) fn project(
         names.insert(entry.sequence, name.clone());
         appearance(
             ir,
-            AppearanceId::mint(format!("iges:appearance:color#D{}", entry.sequence))
-                .expect("identity grammar"),
+            crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
             name,
             color,
         );
@@ -474,8 +468,7 @@ pub(super) fn project(
     let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
         match value.cmp(&0) {
             std::cmp::Ordering::Greater => Some((
-                AppearanceId::mint(format!("iges:appearance:standard#{value}"))
-                    .expect("identity grammar"),
+                crate::ids::appearance_standard(&crate::ids::Stem::number(value)),
                 standard_color(value)?,
             )),
             std::cmp::Ordering::Less => {
@@ -485,8 +478,7 @@ pub(super) fn project(
                     return None;
                 }
                 Some((
-                    AppearanceId::mint(format!("iges:appearance:color#D{sequence}"))
-                        .expect("identity grammar"),
+                    crate::ids::appearance_color(&crate::ids::Stem::directory(sequence)),
                     *defined.get(&sequence)?,
                 ))
             }
@@ -531,7 +523,8 @@ pub(super) fn project(
 
     for curve in &mut ir.model.curves {
         if let Some(source) = &mut curve.source_object {
-            source.color = source_sequence(source.object_id.as_str())
+            source.color = sequences
+                .curve(&curve.id)
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
@@ -539,7 +532,8 @@ pub(super) fn project(
     }
     for surface in &mut ir.model.surfaces {
         if let Some(source) = &mut surface.source_object {
-            source.color = source_sequence(source.object_id.as_str())
+            source.color = sequences
+                .surface(&surface.id)
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
@@ -551,7 +545,7 @@ pub(super) fn project(
         .bodies
         .iter()
         .filter_map(|body| {
-            let sequence = source_sequence(body.id.as_str())?;
+            let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color).map(|appearance| {
                 (
@@ -584,7 +578,8 @@ pub(super) fn project(
     }
     for body in &mut ir.model.bodies {
         if body.visible.is_none() {
-            body.visible = source_sequence(body.id.as_str())
+            body.visible = sequences
+                .body(&body.id)
                 .and_then(|sequence| entries.get(&sequence))
                 .map(|entry| entry.status.is_visible());
         }
@@ -595,7 +590,7 @@ pub(super) fn project(
         .faces
         .iter()
         .filter_map(|face| {
-            let sequence = source_sequence(face.id.as_str())?;
+            let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color).map(|appearance| (face.id.clone(), sequence, appearance))
         })
