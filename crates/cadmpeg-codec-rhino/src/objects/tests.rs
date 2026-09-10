@@ -524,7 +524,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     )
     .expect("required invariant");
     attributes.layer_index = -1;
-    attributes.color_source = 2;
+    attributes.color_source = crate::objects::ColorSource::Material;
     let material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
     let mut warnings = Vec::new();
     let material = crate::objects::resolve_identities(material, &metadata, &mut warnings);
@@ -545,7 +545,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         Some("Layer")
     );
 
-    attributes.color_source = 3;
+    attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
     let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings);

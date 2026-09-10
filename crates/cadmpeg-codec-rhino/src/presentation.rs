@@ -1168,7 +1168,7 @@ fn object_attributes_presentation(
         object_mode: attributes.object_mode,
         decoration: attributes.decoration,
         wire_density: attributes.wire_density,
-        color_source: attributes.color_source,
+        color_source: attributes.color_source.as_byte(),
         linetype_source: attributes.linetype_source,
         material_source: attributes.material_source,
         plot_color_source: attributes.plot_color_source,
