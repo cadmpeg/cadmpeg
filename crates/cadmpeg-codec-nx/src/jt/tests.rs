@@ -345,6 +345,15 @@ fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
     assert!(normal[0].abs() < 1e-3);
     assert!(normal[1].abs() < 1.0e-6);
     assert!((normal[2] - 1.0).abs() < 1.0e-6);
+    let coarse = super::NormalBits::new(6).expect("six-bit codes");
+    let odd_sextant = super::deering_normal(
+        super::Sextant::from_index(1).expect("sextant one"),
+        super::Octant::new(7).expect("octant seven"),
+        super::NormalCode::new(3, coarse).expect("theta code"),
+        super::NormalCode::new(0, coarse).expect("psi code"),
+    )
+    .expect("finite normal");
+    assert_eq!(odd_sextant, [0.650_906_5, 0.0, 0.759_157_9]);
     assert!(super::Sextant::from_index(6).is_none());
     assert!(super::Sextant::from_index(-1).is_none());
     assert!(super::Octant::new(8).is_none());
