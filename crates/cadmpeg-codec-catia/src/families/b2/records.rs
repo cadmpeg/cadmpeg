@@ -1947,7 +1947,8 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     let transverse = Vector3::new(values[6], values[7], values[8]);
     let transverse_norm = transverse.norm();
     let orthogonality = stored_reference.dot(transverse).abs();
-    let stored_axis = stored_reference.cross(transverse).unit()?;
+    let cross = stored_reference.cross(transverse);
+    let axis = ExactUnitVector3::normalized([cross.x, cross.y, cross.z])?;
     let radius = values[9];
     let range = [values[10], values[11]];
     if !values.iter().all(|value| value.is_finite())
@@ -1957,12 +1958,8 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     {
         return None;
     }
-    let ref_direction = ExactUnitVector3::from_length([
-        stored_reference.x,
-        stored_reference.y,
-        stored_reference.z,
-    ])?;
-    let axis = ExactUnitVector3::from_length([stored_axis.x, stored_axis.y, stored_axis.z])?;
+    let ref_direction =
+        ExactUnitVector3::from_norm([stored_reference.x, stored_reference.y, stored_reference.z])?;
     let radius = PositiveFinite::new(radius)?;
     let range = OrderedInterval::new(range)?;
     Some(B2SpatialCircle {

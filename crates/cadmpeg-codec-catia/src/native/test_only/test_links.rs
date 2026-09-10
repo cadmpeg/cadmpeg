@@ -12,9 +12,9 @@ pub(super) fn validate_consolidated_owner_packets(
         });
         let valid_payload = match &packet.payload {
             CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => {
-                numeric_tail.header[0] == 0x84
-                    && matches!(numeric_tail.header[1], 0x41 | 0xc1)
-                    && numeric_tail.header[4] == 0x0d
+                numeric_tail.header()[0] == 0x84
+                    && matches!(numeric_tail.header()[1], 0x41 | 0xc1)
+                    && numeric_tail.header()[4] == 0x0d
             }
             CatiaOwnerPacketPayload::Counted { references, tail } => {
                 !references.is_empty() && !tail.is_empty()

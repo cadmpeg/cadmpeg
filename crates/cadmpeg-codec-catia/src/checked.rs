@@ -55,7 +55,9 @@ pub type ExactUnitVector3 = UnitVector3<12>;
 pub type RelaxedUnitVector3 = UnitVector3<9>;
 
 impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
-    /// Squared-length tolerance this direction is held to.
+    /// Tolerance on this direction's deviation from unit length. [`Self::new`]
+    /// applies it to the squared length; the length-measured constructors apply
+    /// it to the length itself, each mirroring the record grammar it admits.
     pub const TOLERANCE: f64 = squared_tolerance(TOLERANCE_EXPONENT);
 
     /// Constructs a unit direction whose squared length is one within the tolerance.
@@ -69,12 +71,19 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector3<TOLERANCE_EXPONENT> {
             .then_some(Self(value))
     }
 
-    /// Constructs a unit direction whose length is one within the tolerance.
-    pub fn from_length(value: [f64; 3]) -> Option<Self> {
-        let length = value[0].hypot(value[1]).hypot(value[2]);
-        (value.iter().all(|component| component.is_finite())
-            && (length - 1.0).abs() <= Self::TOLERANCE)
-            .then_some(Self(value))
+    /// Constructs a unit direction whose Euclidean norm, taken as the square
+    /// root of the sum of the squared components, is one within the tolerance.
+    pub fn from_norm(value: [f64; 3]) -> Option<Self> {
+        let norm = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
+        ((norm - 1.0).abs() <= Self::TOLERANCE).then_some(Self(value))
+    }
+
+    /// Normalizes a direction whose norm is above [`f64::EPSILON`], dividing
+    /// each component by that norm.
+    pub fn normalized(value: [f64; 3]) -> Option<Self> {
+        let length = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
+        (length > f64::EPSILON)
+            .then(|| Self([value[0] / length, value[1] / length, value[2] / length]))
     }
 
     /// Constructs a unit direction from a `scale`-scaled stored vector whose
@@ -157,6 +166,32 @@ mod tests {
         assert!(ExactUnitVector3::new(value).is_none());
         assert!(serde_json::from_value::<ExactUnitVector3>(serde_json::json!(value)).is_err());
         assert!(serde_json::from_value::<RelaxedUnitVector3>(serde_json::json!(value)).is_ok());
+    }
+
+    #[test]
+    fn norm_measured_directions_match_the_record_norm_predicate() {
+        for component in [
+            1.0_f64,
+            1.0 + 9.0e-13,
+            1.0 - 9.0e-13,
+            1.0 + 2.0e-12,
+            1.0 - 2.0e-12,
+        ] {
+            let value = [0.0, component, 0.0];
+            let norm = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
+            let admitted = (norm - 1.0).abs() <= ExactUnitVector3::TOLERANCE;
+            assert_eq!(ExactUnitVector3::from_norm(value).is_some(), admitted);
+        }
+    }
+
+    #[test]
+    fn normalized_directions_divide_by_the_norm_and_reject_the_degenerate_one() {
+        let value = [0.0, 3.0, 4.0];
+        assert_eq!(
+            ExactUnitVector3::normalized(value).map(ExactUnitVector3::get),
+            Some([0.0, 3.0 / 5.0, 4.0 / 5.0])
+        );
+        assert!(ExactUnitVector3::normalized([0.0, 0.0, 0.0]).is_none());
     }
 
     #[test]

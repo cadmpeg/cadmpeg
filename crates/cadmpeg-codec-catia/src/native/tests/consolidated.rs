@@ -820,10 +820,13 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
             },)
         )
     );
-    assert_eq!(numeric_tail.header, [0x84, 0x41, 0xbb, 0x05, 0x0d]);
-    assert_eq!(numeric_tail.lower, [-0.0, 4.5]);
-    assert_eq!(numeric_tail.upper, [12.25, 7.0]);
-    assert_eq!(numeric_tail.bounds, [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]);
+    assert_eq!(numeric_tail.header(), [0x84, 0x41, 0xbb, 0x05, 0x0d]);
+    assert_eq!(numeric_tail.lower(), [-0.0, 4.5]);
+    assert_eq!(numeric_tail.upper(), [12.25, 7.0]);
+    assert_eq!(
+        numeric_tail.bounds(),
+        [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
+    );
     let face_node = packet.face_node.expect("face-node relation");
     assert_eq!(face_node.byte_len, 11);
     assert_eq!(
