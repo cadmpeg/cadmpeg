@@ -16,6 +16,8 @@ pub struct FeatureEntityTable {
     pub table_class_id: u32,
     /// Structurally bounded records in their declared generated-entity order.
     pub entries: Vec<FeatureEntityTableEntry>,
+    /// Materialized `srf_array` identifiers among this table's entity ids.
+    pub surface_ids: BTreeSet<u32>,
     /// Byte offset of the `f8` table opener in the original stream.
     pub offset: usize,
 }
@@ -28,16 +30,16 @@ impl FeatureEntityTable {
     pub fn surface_ids(&self) -> Vec<u32> {
         self.entries
             .iter()
-            .filter(|entry| entry.is_surface)
             .map(|entry| entry.entity_id)
+            .filter(|id| self.surface_ids.contains(id))
             .collect()
     }
 
     pub fn non_surface_entity_ids(&self) -> Vec<u32> {
         self.entries
             .iter()
-            .filter(|entry| !entry.is_surface)
             .map(|entry| entry.entity_id)
+            .filter(|id| !self.surface_ids.contains(id))
             .collect()
     }
 }
@@ -45,10 +47,7 @@ impl FeatureEntityTable {
 #[cfg(test)]
 impl FeatureEntityTable {
     pub(crate) fn mark_surface_ids(&mut self, surface_ids: impl IntoIterator<Item = u32>) {
-        let set: BTreeSet<u32> = surface_ids.into_iter().collect();
-        for entry in &mut self.entries {
-            entry.is_surface = set.contains(&entry.entity_id);
-        }
+        self.surface_ids = surface_ids.into_iter().collect();
     }
 
     pub(crate) fn with_surface_ids(mut self, surface_ids: impl IntoIterator<Item = u32>) -> Self {
@@ -58,14 +57,13 @@ impl FeatureEntityTable {
 }
 
 #[cfg(test)]
-pub(crate) fn dummy_table_entry(entity_id: u32, is_surface: bool) -> FeatureEntityTableEntry {
+pub(crate) fn dummy_table_entry(entity_id: u32) -> FeatureEntityTableEntry {
     FeatureEntityTableEntry {
         entity_id,
         payload: EntryPayload::Plain { class: 0 },
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface,
     }
 }
 
@@ -180,8 +178,6 @@ pub struct FeatureEntityTableEntry {
     pub payload: EntryPayload,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
-    /// Whether this entity identifier is a materialized `srf_array` identifier.
-    pub is_surface: bool,
     /// Byte offset of the entity identifier in the original stream.
     pub offset: usize,
     /// Byte offset immediately after the entry body. This follows the
@@ -393,7 +389,6 @@ pub(crate) fn read_entries(
             entity_id: id,
             payload: entry_payload,
             prefixed,
-            is_surface: false,
             offset,
             end_offset,
         });
@@ -434,17 +429,19 @@ pub fn entity_tables(
         else {
             continue;
         };
-        let Some(mut entries) = read_entries(&payload[..row_end], after_table_class + 2, count)
-        else {
+        let Some(entries) = read_entries(&payload[..row_end], after_table_class + 2, count) else {
             continue;
         };
-        for entry in &mut entries {
-            entry.is_surface = surface_ids.contains(&entry.entity_id);
-        }
+        let table_surface_ids = entries
+            .iter()
+            .map(|entry| entry.entity_id)
+            .filter(|id| surface_ids.contains(id))
+            .collect();
         tables.push(FeatureEntityTable {
             feature_id,
             table_class_id,
             entries,
+            surface_ids: table_surface_ids,
             offset,
         });
     }

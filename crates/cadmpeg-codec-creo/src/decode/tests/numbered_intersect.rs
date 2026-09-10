@@ -471,12 +471,12 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = |feature_id: u32,
                  table_class_id: u32,
                  entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id,
             table_class_id,
             entries,
@@ -604,10 +604,10 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 2976,
             table_class_id,
             entries,
@@ -647,10 +647,10 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         prefixed: true,
         offset,
         end_offset: offset + 1,
-        is_surface: false,
     };
     let producer = |feature_id, entity_id, offset| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id,
             table_class_id: 67,
             entries: vec![entry(entity_id, offset + 1)],
@@ -683,6 +683,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         Some([103, 192, 329].as_slice())
     );
     let wrong_class = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 175,
         table_class_id: 67,
         entries: vec![crate::feature::FeatureEntityTableEntry {
@@ -691,7 +692,6 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
             prefixed: true,
             offset: 20,
             end_offset: 0,
-            is_surface: false,
         }],
         offset: 20,
     }
@@ -792,9 +792,9 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 97,
         table_class_id: 29,
         entries: vec![entry(98, 200, Some(1)), entry(145, 203, None)],
@@ -841,17 +841,18 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     );
 
     let mut duplicate = table.clone();
-    let mut extra = entry(98, 204, None);
-    extra.is_surface = true;
+    let extra = entry(98, 204, None);
     duplicate.entries.push(extra);
+    duplicate.surface_ids.insert(98);
     assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
 
     let mut missing = table;
     missing.entries[1] = entry(146, 203, None);
-    missing.entries[1].is_surface = true;
+    missing.surface_ids.insert(146);
     assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
 
     let foreign = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 97,
         table_class_id: 29,
         entries: vec![entry(145, 203, None)],
@@ -924,13 +925,13 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
             prefixed: true,
             offset,
             end_offset: offset + 1,
-            is_surface: false,
         };
     let table = |feature_id: u32,
                  table_class_id: u32,
                  entries: Vec<crate::feature::FeatureEntityTableEntry>,
                  offset: usize| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id,
             table_class_id,
             entries,

@@ -570,10 +570,10 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 942,
             table_class_id: 29,
             entries: vec![
@@ -680,9 +680,9 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
-        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 17,
         table_class_id: 80,
         entries: vec![
@@ -749,10 +749,10 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
-        is_surface: false,
     };
     let table = |entries: Vec<crate::feature::FeatureEntityTableEntry>, surface_ids| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 225,
             table_class_id: 29,
             entries,
@@ -802,6 +802,7 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
 #[test]
 fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
     let table = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 225,
         table_class_id: 64,
         entries: vec![crate::feature::FeatureEntityTableEntry {
@@ -810,7 +811,6 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
             prefixed: true,
             offset: 0,
             end_offset: 0,
-            is_surface: false,
         }],
         offset: 0,
     }
@@ -1056,7 +1056,6 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(31, 204, None),
@@ -1066,6 +1065,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 7,
             table_class_id: 29,
             entries,
@@ -1131,10 +1131,10 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 144,
             table_class_id,
             entries,
@@ -1190,10 +1190,10 @@ fn new_sheet_output_requires_an_owned_output_surface() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 144,
             table_class_id,
             entries,

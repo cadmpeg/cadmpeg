@@ -101,7 +101,6 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -125,6 +124,7 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(36, 200, Some(4)),
     ];
     crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id,
         table_class_id: 29,
         entries,

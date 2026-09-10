@@ -85,11 +85,11 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 7,
             table_class_id: 29,
             entries: vec![
@@ -234,7 +234,6 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let frame = crate::surface::PositionalCylinderFrame::new(
         [0.0, 4.0, 0.0],
@@ -247,6 +246,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 7,
             table_class_id: 29,
             entries: vec![entry],

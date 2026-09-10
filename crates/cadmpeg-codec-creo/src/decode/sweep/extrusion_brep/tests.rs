@@ -43,6 +43,7 @@ fn surface_row(
 
 fn generated_side_table() -> crate::feature::FeatureEntityTable {
     crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 7,
         table_class_id: 29,
         entries: vec![crate::feature::FeatureEntityTableEntry {
@@ -51,7 +52,6 @@ fn generated_side_table() -> crate::feature::FeatureEntityTable {
             prefixed: false,
             offset: 0,
             end_offset: 0,
-            is_surface: false,
         }],
         offset: 0,
     }
@@ -129,7 +129,6 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let materialized = crate::feature::FeatureEntityTableEntry {
         entity_id: 32,
@@ -137,7 +136,6 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     table.entries = vec![
         cap(29, 204),
@@ -145,9 +143,7 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         table.entries[0].clone(),
         materialized,
     ];
-    for entry in &mut table.entries {
-        entry.is_surface = matches!(entry.entity_id, 29 | 30 | 32);
-    }
+    table.mark_surface_ids([29, 30, 32]);
     scan.features.entity_tables.push(table);
     scan.surfaces
         .rows

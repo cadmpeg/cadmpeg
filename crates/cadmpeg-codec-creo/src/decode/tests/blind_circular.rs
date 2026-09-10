@@ -43,7 +43,6 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(43, 204, None),
@@ -52,6 +51,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(51, 200, None),
     ];
     let table = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 40,
         table_class_id: 29,
         entries,
@@ -119,6 +119,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     ];
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 41,
             table_class_id: 29,
             entries: reversed_entries,
@@ -176,11 +177,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         &scan.surfaces.rows,
     ));
 
-    for entry in &mut scan.features.entity_tables[0].entries {
-        if entry.entity_id == 51 {
-            entry.is_surface = false;
-        }
-    }
+    scan.features.entity_tables[0].surface_ids.remove(&51);
     assert!(single_cap_circular_sweep_geometry(&scan, 40).is_none());
     assert!(!section_entity_is_generated_profile(
         true,
@@ -249,7 +246,6 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let entries = vec![
         entry(828, 204, None),
@@ -259,6 +255,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     ];
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {
+            surface_ids: std::collections::BTreeSet::new(),
             feature_id: 825,
             table_class_id: 29,
             entries,
@@ -301,11 +298,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         })
     );
 
-    for entry in &mut scan.features.entity_tables[0].entries {
-        if entry.entity_id == 831 {
-            entry.is_surface = false;
-        }
-    }
+    scan.features.entity_tables[0].surface_ids.remove(&831);
     assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
@@ -318,9 +311,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
     let mut table = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 107,
         table_class_id: 29,
         entries: vec![
@@ -402,6 +395,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     .is_none());
 
     let mut extended = crate::feature::FeatureEntityTable {
+        surface_ids: std::collections::BTreeSet::new(),
         feature_id: 107,
         table_class_id: 29,
         entries: vec![
