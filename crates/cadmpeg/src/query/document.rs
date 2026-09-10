@@ -43,9 +43,25 @@ pub(crate) struct CadirDocument {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordSelection {
     /// Records matching these IDs, exactly or as a unique suffix.
-    Ids(Vec<String>),
+    Ids(RequestedIds),
     /// The first N records in arena order.
     Head(usize),
+}
+
+/// A record-ID request naming at least one ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestedIds(Vec<String>);
+
+impl RequestedIds {
+    /// Returns the request, or `None` when the list names no ID.
+    pub fn new(ids: Vec<String>) -> Option<Self> {
+        (!ids.is_empty()).then_some(Self(ids))
+    }
+
+    /// Returns the requested IDs in the order they were given.
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
 }
 
 impl clap::Args for RecordSelection {
@@ -84,11 +100,11 @@ impl clap::FromArgMatches for RecordSelection {
             .flatten()
             .cloned()
             .collect();
-        match (ids.is_empty(), matches.get_one::<usize>("head")) {
-            (true, Some(head)) => Ok(Self::Head(*head)),
-            (true, None) => Ok(Self::Head(1)),
-            (false, None) => Ok(Self::Ids(ids)),
-            (false, Some(_)) => Err(clap::Error::raw(
+        match (RequestedIds::new(ids), matches.get_one::<usize>("head")) {
+            (None, Some(head)) => Ok(Self::Head(*head)),
+            (None, None) => Ok(Self::Head(1)),
+            (Some(ids), None) => Ok(Self::Ids(ids)),
+            (Some(_), Some(_)) => Err(clap::Error::raw(
                 clap::error::ErrorKind::ArgumentConflict,
                 "--head cannot be used with explicit record IDs\n",
             )),
@@ -234,7 +250,7 @@ impl CadirDocument {
                     Vec::new(),
                 ));
             }
-            RecordSelection::Ids(ids) => ids,
+            RecordSelection::Ids(ids) => ids.as_slice(),
         };
 
         let indexed: Vec<(Option<&str>, RecordRef)> = arena
@@ -371,6 +387,12 @@ mod tests {
         assert_eq!(doc.by_id["dup"].len(), 2);
     }
 
+    /// Selects by ID, falling back to the first record when no ID is given.
+    fn ids_selection(ids: &[&str]) -> RecordSelection {
+        RequestedIds::new(ids.iter().map(|id| (*id).to_owned()).collect())
+            .map_or(RecordSelection::Head(1), RecordSelection::Ids)
+    }
+
     #[test]
     fn select_head_and_suffix_and_ambiguous() {
         let doc = CadirDocument::from_value(&json!({
@@ -392,7 +414,7 @@ mod tests {
         assert!(err.is_empty());
 
         let (idx, err) = doc
-            .select_records(&target, &RecordSelection::Ids(vec!["face#2".to_owned()]))
+            .select_records(&target, &ids_selection(&["face#2"]))
             .unwrap();
         assert_eq!(
             idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
@@ -401,7 +423,7 @@ mod tests {
         assert!(err.is_empty());
 
         let (_, err) = doc
-            .select_records(&target, &RecordSelection::Ids(vec!["#802".to_owned()]))
+            .select_records(&target, &ids_selection(&["#802"]))
             .unwrap();
         assert_eq!(err.len(), 1);
         assert!(err[0].contains("ambiguous"));

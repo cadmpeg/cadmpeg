@@ -162,7 +162,7 @@ pub fn run(args: &ItemArgs) -> Result<()> {
 /// Returns the requested IDs, empty when the selection is a head count.
 fn requested_ids(selection: &RecordSelection) -> &[String] {
     match selection {
-        RecordSelection::Ids(ids) => ids,
+        RecordSelection::Ids(ids) => ids.as_slice(),
         RecordSelection::Head(_) => &[],
     }
 }
@@ -691,7 +691,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
                 }
                 Kept::Ids { records, all_ids } => {
                     if let Some(id) = string_id(&raw) {
-                        let matched = matches!(self.mode, RecordSelection::Ids(ids) if ids.iter().any(|req| id == *req || id.ends_with(req)));
+                        let matched = matches!(self.mode, RecordSelection::Ids(ids) if ids.as_slice().iter().any(|req| id == *req || id.ends_with(req)));
                         all_ids.push(id);
                         if matched {
                             records.push(raw);

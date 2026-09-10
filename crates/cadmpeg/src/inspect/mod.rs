@@ -583,7 +583,7 @@ fn hex(args: &HexArgs) -> Result<()> {
 
 fn read(args: &ReadArgs) -> Result<()> {
     let endian = args.endian;
-    let width = args.ty.width() as u64;
+    let width = args.ty.width().get() as u64;
     let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
         return Ok(());

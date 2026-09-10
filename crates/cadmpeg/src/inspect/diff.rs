@@ -40,9 +40,11 @@ impl DiffRun {
         self.start + self.len.get()
     }
 
-    /// Grows the run so that it covers the byte at `offset`.
+    /// Grows the run so that it covers the byte at `offset`, and does nothing
+    /// for an offset the run already covers.
     fn extend_to(&mut self, offset: u64) {
-        self.len = NonZeroU64::MIN.saturating_add(offset - self.start);
+        let covered = NonZeroU64::MIN.saturating_add(offset.saturating_sub(self.start));
+        self.len = self.len.max(covered);
     }
 }
 

@@ -126,10 +126,10 @@ pub enum FieldKind {
 
 impl FieldKind {
     /// Returns how many bytes the field consumes.
-    pub const fn width(self) -> usize {
+    pub const fn width(self) -> NonZeroUsize {
         match self {
             Self::Scalar(ty, _) => ty.width(),
-            Self::Bytes(count) => count.get(),
+            Self::Bytes(count) => count,
         }
     }
 }
@@ -143,7 +143,7 @@ enum Field {
 impl Field {
     fn width(&self) -> NonZeroUsize {
         match self {
-            Self::Named { kind, .. } => NonZeroUsize::MIN.saturating_add(kind.width() - 1),
+            Self::Named { kind, .. } => kind.width(),
             Self::Pad(count) => *count,
         }
     }
@@ -259,14 +259,18 @@ impl<'a> Record<'a> {
                 let Field::Named { name, kind } = field else {
                     return None;
                 };
+                // `bytes` spans the whole layout: `split` is the only mint.
+                let field_bytes = &bytes[offset..offset + kind.width().get()];
                 let value = match *kind {
-                    FieldKind::Scalar(ty, endian) => DecodedValue::Scalar {
-                        value: ty.window(bytes.get(offset..)?)?.read(endian),
-                        endian,
-                    },
-                    FieldKind::Bytes(count) => {
-                        DecodedValue::Bytes(bytes.get(offset..offset + count.get())?)
+                    FieldKind::Scalar(ty, endian) => {
+                        let mut raw = [0u8; ScalarType::MAX_WIDTH];
+                        raw[..field_bytes.len()].copy_from_slice(field_bytes);
+                        DecodedValue::Scalar {
+                            value: ty.window_of(&raw).read(endian),
+                            endian,
+                        }
                     }
+                    FieldKind::Bytes(count) => DecodedValue::Bytes(RawBytes(field_bytes, count)),
                 };
                 Some(DecodedField {
                     name,
@@ -274,6 +278,22 @@ impl<'a> Record<'a> {
                     value,
                 })
             })
+    }
+}
+
+/// A run of raw bytes covering at least one byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawBytes<'a>(&'a [u8], NonZeroUsize);
+
+impl<'a> RawBytes<'a> {
+    /// Returns the bytes of the run.
+    pub const fn as_slice(self) -> &'a [u8] {
+        self.0
+    }
+
+    /// Returns how many bytes the run covers.
+    pub const fn len(self) -> NonZeroUsize {
+        self.1
     }
 }
 
@@ -288,7 +308,7 @@ pub enum DecodedValue<'a> {
         endian: Endian,
     },
     /// A run of raw bytes with no numeric reading.
-    Bytes(&'a [u8]),
+    Bytes(RawBytes<'a>),
 }
 
 /// One field of a decoded record, ready to print.
@@ -327,7 +347,7 @@ impl<'a> DecodedField<'a> {
     pub fn hex(&self) -> String {
         match self.value {
             DecodedValue::Scalar { value, .. } => value.hex(),
-            DecodedValue::Bytes(raw) => hex_bytes(raw),
+            DecodedValue::Bytes(raw) => hex_bytes(raw.as_slice()),
         }
     }
 }
@@ -637,7 +657,11 @@ mod tests {
         assert_eq!(decoded[1].offset(), 6);
         assert_eq!(decoded[2].type_name(), "bytes2");
         assert_eq!(decoded[2].hex(), "ab cd");
-        assert_eq!(decoded[2].value(), DecodedValue::Bytes(&[0xab, 0xcd]));
+        let DecodedValue::Bytes(raw) = decoded[2].value() else {
+            panic!("the tag field is a raw byte run");
+        };
+        assert_eq!(raw.as_slice(), &[0xab, 0xcd]);
+        assert_eq!(raw.len().get(), 2);
     }
 
     #[test]
