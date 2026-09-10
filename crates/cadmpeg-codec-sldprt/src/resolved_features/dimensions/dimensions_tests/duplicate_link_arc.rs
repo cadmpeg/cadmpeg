@@ -120,7 +120,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
@@ -131,7 +131,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         5.0,
     )
     .expect("duplicate-link arc carrier");
-    assert_eq!(carrier.marker.id, "arc");
+    assert_eq!(carrier.marker.id(), "arc");
     assert_eq!(carrier.center(), [0.010, 0.020]);
     assert!(matches!(
         carrier.curve(),
@@ -151,7 +151,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&mismatched_lane),
@@ -163,11 +163,11 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     .is_none());
 
     let mut non_arc_lane = lane.clone();
-    non_arc_lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    non_arc_lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     let non_arc_markers = non_arc_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&non_arc_lane),
@@ -222,7 +222,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         std::slice::from_ref(&ambiguous_lane),

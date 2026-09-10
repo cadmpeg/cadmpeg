@@ -105,7 +105,7 @@ fn ensure_spatial_relation_point(
     let matches = entities
         .iter()
         .filter(|entity| {
-            entity.sketch == *sketch && entity.native_ref.as_deref() == Some(marker.id.as_str())
+            entity.sketch == *sketch && entity.native_ref.as_deref() == Some(marker.id())
         })
         .collect::<Vec<_>>();
     if matches.len() > 1 || matches.iter().any(|entity| {
@@ -132,7 +132,7 @@ fn ensure_spatial_relation_point(
                 .ok()?,
         )
         .with_construction(true)
-        .with_native_ref(Some(marker.id.clone())),
+        .with_native_ref(Some(marker.id().to_string())),
     );
     Some(id)
 }
@@ -170,7 +170,7 @@ fn spatial_relation_point_line_entities(
         .and_then(|entity_ref| {
             point_markers
                 .iter()
-                .find(|(marker, _)| marker.id == entity_ref)
+                .find(|(marker, _)| marker.id() == entity_ref)
         })
         .or_else(|| point_markers.get(usize::from(point_operand.entity_index)))?;
     let (point_marker, point) = *point_marker;
@@ -397,7 +397,7 @@ pub(crate) fn project_relation_point_geometry(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let point_operands = lanes
         .iter()
@@ -444,20 +444,20 @@ pub(crate) fn project_relation_point_geometry(
                 .chain(
                     lane.sketch_entities
                         .iter()
-                        .filter(|marker| matches!(marker.kind, SketchInputKind::Relation(_)))
-                        .map(|marker| marker.id.as_str()),
+                        .filter(|marker| matches!(marker.kind(), SketchInputKind::Relation(_)))
+                        .map(super::super::records::SketchInputEntity::id),
                 )
         })
         .collect::<HashSet<_>>();
     loop {
         let mut linked = Vec::new();
-        for marker in markers_by_id.values().copied() {
-            let marker_referenced = referenced.contains(marker.id.as_str());
+        for marker in markers_by_id.values() {
+            let marker_referenced = referenced.contains(marker.id());
             for link in marker.links() {
                 let adjacent = if marker_referenced {
                     Some(link.entity_ref.as_str())
                 } else if referenced.contains(link.entity_ref.as_str()) {
-                    Some(marker.id.as_str())
+                    Some(marker.id())
                 } else {
                     None
                 };
@@ -477,26 +477,26 @@ pub(crate) fn project_relation_point_geometry(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for marker in &lane.sketch_entities {
-            let qualified_point = point_operands.contains(marker.id.as_str());
+            let qualified_point = point_operands.contains(marker.id());
             let has_existing_point = entities.iter().any(|entity| {
-                (entity.native_ref.as_deref() == Some(marker.id.as_str())
-                    || entity.geometry_ref.as_deref() == Some(marker.id.as_str()))
+                (entity.native_ref.as_deref() == Some(marker.id())
+                    || entity.geometry_ref.as_deref() == Some(marker.id()))
                     && matches!(
                         *entity.geometry.definition(),
                         SketchGeometryDefinition::Point { .. }
                     )
             });
-            if !referenced.contains(marker.id.as_str())
+            if !referenced.contains(marker.id())
                 || !(qualified_point
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
                             | SketchInputKind::Arc
                     )
                     || matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
                 || has_existing_point
@@ -504,7 +504,7 @@ pub(crate) fn project_relation_point_geometry(
                     entity
                         .endpoint_refs
                         .iter()
-                        .any(|reference| reference == &marker.id)
+                        .any(|reference| reference == marker.id())
                 })
             {
                 continue;
@@ -523,7 +523,7 @@ pub(crate) fn project_relation_point_geometry(
                     entity
                         .endpoint_refs
                         .iter()
-                        .any(|reference| reference == &marker.id)
+                        .any(|reference| reference == marker.id())
                 })
             {
                 continue;
@@ -572,64 +572,66 @@ pub(crate) fn project_relation_point_geometry(
                 .with_construction(true)
                 .with_native_ref(
                     matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
-                    .then(|| marker.id.clone()),
+                    .then(|| marker.id().to_string()),
                 )
                 .with_geometry_ref(
-                    qualified_point.then(|| marker.id.clone()).filter(|_| {
-                        matches!(
-                            marker.kind,
-                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                        )
-                    }),
+                    qualified_point
+                        .then(|| marker.id().to_string())
+                        .filter(|_| {
+                            matches!(
+                                marker.kind(),
+                                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                            )
+                        }),
                 ),
             );
         }
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
         for marker in &lane.sketch_entities {
             let marker_offset = usize::try_from(marker.offset()).ok();
-            let undetailed_arc_line = marker.kind == SketchInputKind::Arc
+            let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
                 && marker_offset.is_some_and(|offset| {
                     current_undetailed_bounded_curve_is_line(&lane.native_payload, offset)
                         || legacy_undetailed_profile_line(&lane.native_payload, offset)
                 });
-            let self_linked_curve_handle = curve_operands.contains(marker.id.as_str())
+            let self_linked_curve_handle = curve_operands.contains(marker.id())
                 && marker.coordinates_m.is_some()
                 && marker
                     .links()
                     .iter()
-                    .any(|link| link.entity_ref == marker.id)
+                    .any(|link| link.entity_ref == marker.id())
                 && marker
                     .links()
                     .iter()
-                    .filter(|link| link.entity_ref != marker.id)
+                    .filter(|link| link.entity_ref != marker.id())
                     .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()))
                     .filter(|linked| linked.coordinates_m.is_some())
                     .count()
                     == 1;
-            let linked_curve_handle = curve_operands.contains(marker.id.as_str())
+            let linked_curve_handle = curve_operands.contains(marker.id())
                 && !marker
                     .links()
                     .iter()
-                    .any(|link| link.entity_ref == marker.id)
+                    .any(|link| link.entity_ref == marker.id())
                 && (linked_coordinate_line_endpoints(marker, &markers_by_id).is_some()
                     || coordinate_line_endpoints_with_linked_point(marker, &markers_by_id)
                         .is_some());
-            if !referenced.contains(marker.id.as_str())
-                || !(marker.kind == SketchInputKind::LineOrCircle
+            if !referenced.contains(marker.id())
+                || !(marker.kind() == SketchInputKind::LineOrCircle
                     || undetailed_arc_line
                     || self_linked_curve_handle
                     || linked_curve_handle)
                 || entities
                     .iter()
-                    .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
+                    .any(|entity| entity.native_ref.as_deref() == Some(marker.id()))
             {
                 continue;
             }
@@ -661,7 +663,7 @@ pub(crate) fn project_relation_point_geometry(
                             .links()
                             .iter()
                             .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
-                            .filter(|endpoint| endpoint.id != marker.id)
+                            .filter(|endpoint| endpoint.id() != marker.id())
                             .filter(|endpoint| {
                                 endpoint.feature_ref == marker.feature_ref
                                     && endpoint.coordinates_m.is_some()
@@ -671,16 +673,15 @@ pub(crate) fn project_relation_point_geometry(
                                                 *entity.geometry.definition(),
                                                 SketchGeometryDefinition::Point { .. }
                                             )
-                                            && (entity.native_ref.as_deref()
-                                                == Some(endpoint.id.as_str())
+                                            && (entity.native_ref.as_deref() == Some(endpoint.id())
                                                 || entity.geometry_ref.as_deref()
-                                                    == Some(endpoint.id.as_str()))
+                                                    == Some(endpoint.id()))
                                     })
                             }),
                     )
                     .collect::<Vec<_>>();
                 endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
-                endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
+                endpoints.dedup_by_key(|endpoint| endpoint.id());
             }
             let [first_marker, second_marker] = endpoints.as_slice() else {
                 continue;
@@ -746,13 +747,17 @@ pub(crate) fn project_relation_point_geometry(
                 )
                 .with_construction(true)
                 .with_native_ref(
-                    (!matches!(marker.kind, SketchInputKind::Relation(_)))
-                        .then(|| marker.id.clone()),
+                    (!matches!(marker.kind(), SketchInputKind::Relation(_)))
+                        .then(|| marker.id().to_string()),
                 )
                 .with_geometry_ref(
-                    matches!(marker.kind, SketchInputKind::Relation(_)).then(|| marker.id.clone()),
+                    matches!(marker.kind(), SketchInputKind::Relation(_))
+                        .then(|| marker.id().to_string()),
                 )
-                .with_endpoint_refs(vec![first_marker.id.clone(), second_marker.id.clone()]),
+                .with_endpoint_refs(vec![
+                    first_marker.id().to_string(),
+                    second_marker.id().to_string(),
+                ]),
             );
         }
     }
@@ -826,7 +831,7 @@ pub(crate) fn project_relation_solved_line_geometry(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     for lane in lanes {
@@ -916,7 +921,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
                         && marker.coordinates_m.is_some()
                         && matches!(
-                            marker.kind,
+                            marker.kind(),
                             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                         )
                 })
@@ -927,7 +932,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     .and_then(|marker_id| {
                         lane.sketch_entities
                             .iter()
-                            .find(|marker| marker.id == marker_id)
+                            .find(|marker| marker.id() == marker_id)
                     })
                     .map(|marker| {
                         marker_curve_endpoint_markers(
@@ -953,10 +958,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                     first_operand
                         .entity_ref
                         .as_deref()
-                        .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id == id))
+                        .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id() == id))
                         .or_else(|| {
                             relation_operand_marker(relation, 0, sketch, &markers_by_id).and_then(
-                                |id| lane.sketch_entities.iter().find(|marker| marker.id == id),
+                                |id| lane.sketch_entities.iter().find(|marker| marker.id() == id),
                             )
                         })
                         .or_else(|| {
@@ -972,7 +977,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     .iter()
                     .find(|entity| {
                         entity.sketch == *sketch
-                            && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                            && entity.native_ref.as_deref() == Some(marker.id())
                     })
                     .and_then(|entity| match entity.geometry.definition() {
                         SketchGeometryDefinition::Point { position } => Some(*position),
@@ -1272,7 +1277,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     .with_construction(line.construction)
                     .with_native_ref(line.native_ref.clone())
                     .with_geometry_ref(Some(geometry_ref))
-                    .with_endpoint_refs(markers.map(|marker| marker.id.clone()).into()),
+                    .with_endpoint_refs(markers.map(|marker| marker.id().to_string()).into()),
                 );
             }
         }
@@ -1381,7 +1386,7 @@ pub(crate) fn project_relation_solved_point_geometry(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = profile_loci_by_marker(features, sketches, entities, lanes);
 
@@ -1522,7 +1527,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             };
             if missing_marker.coordinates_m.is_some()
                 || !matches!(
-                    missing_marker.kind,
+                    missing_marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             {
@@ -1616,7 +1621,7 @@ pub(super) fn implicit_circle_marker<'a>(
             let relation = lane.sketch_entities.iter().find(|marker| {
                 marker.feature_ref.as_deref() == Some(feature)
                     && marker.object_index() == Some(relation_index)
-                    && marker.kind == SketchInputKind::Relation(SketchRelationKind::Distance)
+                    && marker.kind() == SketchInputKind::Relation(SketchRelationKind::Distance)
                     && matches!(marker.links(), [first, second]
                         if first.entity_ref == second.entity_ref
                             && first.local_id == second.local_id)
@@ -1625,7 +1630,7 @@ pub(super) fn implicit_circle_marker<'a>(
             let center = lane
                 .sketch_entities
                 .iter()
-                .find(|marker| marker.id == center_id && marker.coordinates_m.is_some())?;
+                .find(|marker| marker.id() == center_id && marker.coordinates_m.is_some())?;
             let radial = lane
                 .sketch_entities
                 .iter()
@@ -1641,9 +1646,10 @@ pub(super) fn implicit_circle_marker<'a>(
             same_dimension_length(radius, expected_radius).then_some((center, radius))
         })
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(center, _)| center.id.as_str());
-    candidates
-        .dedup_by(|left, right| left.0.id == right.0.id && left.1.to_bits() == right.1.to_bits());
+    candidates.sort_by_key(|(center, _)| center.id());
+    candidates.dedup_by(|left, right| {
+        left.0.id() == right.0.id() && left.1.to_bits() == right.1.to_bits()
+    });
     if let [candidate] = candidates.as_slice() {
         return Some(*candidate);
     }
@@ -1657,7 +1663,7 @@ pub(super) fn implicit_circle_marker<'a>(
             .filter(|marker| marker.coordinates_m.is_some())
             .filter(|marker| {
                 matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             })
@@ -1681,9 +1687,10 @@ pub(super) fn implicit_circle_marker<'a>(
             }
         }
     }
-    terminal_pairs.sort_by_key(|(center, _)| center.id.as_str());
-    terminal_pairs
-        .dedup_by(|left, right| left.0.id == right.0.id && left.1.to_bits() == right.1.to_bits());
+    terminal_pairs.sort_by_key(|(center, _)| center.id());
+    terminal_pairs.dedup_by(|left, right| {
+        left.0.id() == right.0.id() && left.1.to_bits() == right.1.to_bits()
+    });
     if let [candidate] = terminal_pairs.as_slice() {
         return Some(*candidate);
     }
@@ -1703,7 +1710,7 @@ pub(super) fn implicit_circle_marker<'a>(
         .filter(|marker| {
             marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
@@ -1771,10 +1778,10 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         return None;
     };
     let marker = lane.sketch_entities.iter().find(|marker| {
-        marker.id == entity_ref
+        marker.id() == entity_ref
             && marker.feature_ref.as_deref() == Some(feature)
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
             )
     })?;
@@ -1851,7 +1858,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .filter(|candidate| candidate.coordinates_m.is_some())
         .filter(|candidate| {
             matches!(
-                candidate.kind,
+                candidate.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         })
@@ -1909,7 +1916,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
         })
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         })
@@ -1954,11 +1961,11 @@ fn point_dimension_marker_matches_operand(
         FeatureInputOperandKind::Native(_) => marker.local_id() == Some(address),
         _ => false,
     };
-    marker.id == entity_ref
+    marker.id() == entity_ref
         && marker.feature_ref.as_deref() == Some(feature)
         && identity_matches
         && matches!(
-            marker.kind,
+            marker.kind(),
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
 }
@@ -2039,7 +2046,7 @@ pub(super) fn direct_point_dimension_center<'a>(
     }
     for [center, radial] in declared_entity_handle_pairs(lane, feature)
         .into_iter()
-        .filter(|[_, radial]| radial.id == marker.id)
+        .filter(|[_, radial]| radial.id() == marker.id())
     {
         let [cu, cv] = center.coordinates_m?;
         let [ru, rv] = radial.coordinates_m?;
@@ -2074,7 +2081,7 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
             let mut candidates = pairs
                 .iter()
                 .copied()
-                .filter(|[_, radial]| radial.id == entity_ref);
+                .filter(|[_, radial]| radial.id() == entity_ref);
             let candidate = candidates.next();
             if candidates.next().is_some() {
                 return None;
@@ -2095,7 +2102,7 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         let operand_identifies_child = operand
             .entity_ref
             .as_deref()
-            .is_some_and(|entity_ref| child_pair[1].id == entity_ref);
+            .is_some_and(|entity_ref| child_pair[1].id() == entity_ref);
         if operand.entity_ref.is_some() && !operand_identifies_child {
             return None;
         }
@@ -2147,7 +2154,7 @@ pub(super) fn declared_entity_handle_point_is_declared_radial(
     };
     declared_entity_handle_pairs(lane, feature)
         .iter()
-        .any(|[_, radial]| radial.id == entity_ref)
+        .any(|[_, radial]| radial.id() == entity_ref)
 }
 
 fn declared_entity_handle_pairs<'a>(
@@ -2158,7 +2165,7 @@ fn declared_entity_handle_pairs<'a>(
     pairs.extend(declared_entity_handle_declared_child_pairs(lane, feature));
     pairs.extend(declared_entity_handle_indexed_point_pairs(lane, feature));
     pairs.sort_unstable_by_key(|[center, radial]| (center.offset(), radial.offset()));
-    pairs.dedup_by(|left, right| left[0].id == right[0].id && left[1].id == right[1].id);
+    pairs.dedup_by(|left, right| left[0].id() == right[0].id() && left[1].id() == right[1].id());
     pairs
 }
 
@@ -2177,18 +2184,16 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
         .filter(|marker| marker.coordinates_m.is_some())
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         })
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset());
     markers
-        .windows(2)
-        .filter_map(|pair| {
-            let [center, radial] = pair else {
-                unreachable!("slice windows have the requested length")
-            };
+        .iter()
+        .zip(markers.iter().skip(1))
+        .filter_map(|(center, radial)| {
             let center_local_id = center.local_id()?;
             if center_local_id == 0
                 || radial.object_index() != Some(center_local_id)
@@ -2222,7 +2227,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         .filter(|marker| {
             marker.coordinates_m.is_some()
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
@@ -2232,18 +2237,16 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset());
     markers
-        .windows(2)
-        .filter_map(|pair| {
-            let [center, radial] = pair else {
-                unreachable!("slice windows have the requested length")
-            };
-            let class_name = match center.kind {
+        .iter()
+        .zip(markers.iter().skip(1))
+        .filter_map(|(center, radial)| {
+            let class_name = match center.kind() {
                 SketchInputKind::Arc => "sgArcHandle",
                 SketchInputKind::LineOrCircle => "sgLineHandle",
                 _ => return None,
             };
             if !matches!(
-                radial.kind,
+                radial.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) {
                 return None;
@@ -2276,7 +2279,7 @@ fn declared_entity_handle_linked_pairs<'a>(
         .filter(|marker| marker.coordinates_m.is_some())
         .filter(|marker| {
             matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point
                     | SketchInputKind::ConstrainedPoint
                     | SketchInputKind::LineOrCircle
@@ -2286,13 +2289,11 @@ fn declared_entity_handle_linked_pairs<'a>(
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset());
     markers
-        .windows(2)
-        .filter_map(|pair| {
-            let [center, radial] = pair else {
-                unreachable!("slice windows have the requested length")
-            };
+        .iter()
+        .zip(markers.iter().skip(1))
+        .filter_map(|(center, radial)| {
             if !matches!(
-                radial.kind,
+                radial.kind(),
                 SketchInputKind::Point
                     | SketchInputKind::ConstrainedPoint
                     | SketchInputKind::LineOrCircle
@@ -2337,7 +2338,7 @@ pub(crate) fn project_relation_bindings(
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation_parameters = owned_relation_parameters(features, parameters, lanes);
     let parameters_by_id = parameters
@@ -2495,7 +2496,7 @@ pub(crate) fn project_relation_bindings(
             }
         }
         for marker in &lane.sketch_entities {
-            let existing = constraints_by_native_ref.get(marker.id.as_str()).copied();
+            let existing = constraints_by_native_ref.get(marker.id()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
                     constraints[index].definition.kind(),
@@ -2546,7 +2547,7 @@ pub(crate) fn project_relation_bindings(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(marker.id.clone()),
+                native_ref: Some(marker.id().to_string()),
             };
             if let Some(index) = existing {
                 if !matches!(
@@ -2557,7 +2558,7 @@ pub(crate) fn project_relation_bindings(
                 }
             } else {
                 constraints_by_native_ref
-                    .entry(marker.id.clone())
+                    .entry(marker.id().to_string())
                     .or_insert(constraints.len());
                 constraints.push(projected);
             }
@@ -3085,11 +3086,11 @@ mod relation_geometry_tests {
             vec![
                 crate::records::SketchInputLink {
                     local_id: 0,
-                    entity_ref: first_start.id.clone(),
+                    entity_ref: first_start.id().to_string(),
                 },
                 crate::records::SketchInputLink {
                     local_id: 1,
-                    entity_ref: first_end.id.clone(),
+                    entity_ref: first_end.id().to_string(),
                 },
             ],
         );
@@ -3102,11 +3103,11 @@ mod relation_geometry_tests {
             vec![
                 crate::records::SketchInputLink {
                     local_id: 2,
-                    entity_ref: second_start.id.clone(),
+                    entity_ref: second_start.id().to_string(),
                 },
                 crate::records::SketchInputLink {
                     local_id: 3,
-                    entity_ref: second_end.id.clone(),
+                    entity_ref: second_end.id().to_string(),
                 },
             ],
         );
@@ -3211,7 +3212,7 @@ mod relation_geometry_tests {
 
         fallback_scalar.operands = fallback_operands;
         for marker in &mut fallback_lane.sketch_entities {
-            match marker.id.as_str() {
+            match marker.id() {
                 "first-line" => {
                     *marker = marker.with_test_identity(Some(1), marker.local_id());
                     marker.links = crate::records::SketchInputLinks::new(

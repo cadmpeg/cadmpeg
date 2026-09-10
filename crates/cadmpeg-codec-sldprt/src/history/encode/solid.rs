@@ -112,12 +112,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
             }
-            let implicit_profile = existing.is_some_and(|record| {
+            let profile_source = if existing.is_some_and(|record| {
                 !record.properties.contains_key("Profile")
                     && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
                         || matches!(profile, ProfileRef::Native(native) if native == &record.id))
-            });
-            let profile_source = if implicit_profile {
+            }) {
                 None
             } else {
                 Some(
@@ -166,6 +165,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.remove("Face");
                 properties.remove("Vertex");
             }
+            let unsupported_termination_selection = || {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses an unsupported extrusion termination selection",
+                    feature.id
+                ))
+            };
             let unsupported_extent = || {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses an unsupported extrusion extent",
@@ -204,38 +209,30 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             feature.id
                         )));
                     }
-                    LinearTermination::ToFace { face, offset }
-                        if face_selection_value(face).is_some() =>
-                    {
-                        let selection = face_selection_value(face).expect("guarded above");
+                    LinearTermination::ToFace { face, offset } => {
+                        let Some(selection) = face_selection_value(face) else {
+                            return Err(unsupported_termination_selection());
+                        };
                         properties.insert("EndCondition".into(), "ToFace".into());
                         properties.insert("Face".into(), selection);
                         if let Some(offset) = offset {
                             parameters.insert("Depth".into(), format_length_mm(offset.get()));
                         }
                     }
-                    LinearTermination::ToVertex { vertex }
-                        if vertex_selection_value(vertex).is_some() =>
-                    {
-                        let selection = vertex_selection_value(vertex).expect("guarded above");
+                    LinearTermination::ToVertex { vertex } => {
+                        let Some(selection) = vertex_selection_value(vertex) else {
+                            return Err(unsupported_termination_selection());
+                        };
                         properties.insert("EndCondition".into(), "ToVertex".into());
                         properties.insert("Vertex".into(), selection);
                     }
-                    LinearTermination::OffsetFromFace { face, offset }
-                        if face_selection_value(face).is_some() =>
-                    {
-                        let selection = face_selection_value(face).expect("guarded above");
+                    LinearTermination::OffsetFromFace { face, offset } => {
+                        let Some(selection) = face_selection_value(face) else {
+                            return Err(unsupported_termination_selection());
+                        };
                         properties.insert("EndCondition".into(), "OffsetFromFace".into());
                         properties.insert("Face".into(), selection);
                         parameters.insert("Depth".into(), format_length_mm(offset.get()));
-                    }
-                    LinearTermination::ToFace { .. }
-                    | LinearTermination::ToVertex { .. }
-                    | LinearTermination::OffsetFromFace { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported extrusion termination selection",
-                            feature.id
-                        )));
                     }
                 },
                 ExtrudeExtent::Symmetric { side } => match &side.termination {
@@ -300,11 +297,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            if !implicit_profile {
-                properties.insert(
-                    "Profile".into(),
-                    profile_source.expect("non-implicit profile was resolved"),
-                );
+            if let Some(profile_source) = profile_source {
+                properties.insert("Profile".into(), profile_source);
             }
             let kind = existing.map_or_else(
                 || match op {
@@ -501,15 +495,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 );
             }
             let mut properties = feature.source_properties.clone();
-            match face {
-                Some(face) if face_selection_value(face).is_some() => {
-                    properties.insert(
-                        "Face".into(),
-                        face_selection_value(face).expect("guarded above"),
-                    );
+            match face.as_ref().map(|face| (face, face_selection_value(face))) {
+                Some((_, Some(selection))) => {
+                    properties.insert("Face".into(), selection);
                 }
-                Some(FaceSelection::Unresolved) if existing.is_some() => {}
-                Some(FaceSelection::Unresolved) => {
+                Some((FaceSelection::Unresolved, _)) if existing.is_some() => {}
+                Some((FaceSelection::Unresolved, _)) => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved hole face selection",
                         feature.id

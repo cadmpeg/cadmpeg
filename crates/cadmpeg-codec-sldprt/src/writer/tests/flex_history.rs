@@ -682,9 +682,9 @@ fn encoder_writes_source_less_curved_sketches() {
     let marker = native.feature_input_lanes[0]
         .sketch_entities
         .iter()
-        .find(|marker| Some(marker.id.as_str()) == operand.entity_ref.as_deref())
+        .find(|marker| Some(marker.id()) == operand.entity_ref.as_deref())
         .expect("resolved diameter marker");
-    assert_eq!(marker.kind, crate::records::SketchInputKind::LineOrCircle);
+    assert_eq!(marker.kind(), crate::records::SketchInputKind::LineOrCircle);
     assert_ne!(marker.local_id(), Some(u32::from(operand.entity_index)));
     assert!(native.feature_input_lanes[0]
         .relation_instances
@@ -709,7 +709,7 @@ fn encoder_writes_source_less_curved_sketches() {
             native.feature_input_lanes[0]
                 .sketch_entities
                 .iter()
-                .find(|marker| Some(marker.id.as_str()) == operand.entity_ref.as_deref())
+                .find(|marker| Some(marker.id()) == operand.entity_ref.as_deref())
                 .is_some_and(|marker| marker.local_id() != Some(u32::from(operand.entity_index)))
         }));
     assert!(decoded
@@ -741,7 +741,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .feature_input_lanes
             .iter()
             .flat_map(|lane| &lane.sketch_entities)
-            .any(|marker| marker.kind == crate::records::SketchInputKind::Relation(expected)));
+            .any(|marker| marker.kind() == crate::records::SketchInputKind::Relation(expected)));
     }
     assert!(decoded
         .ir()
@@ -1237,11 +1237,8 @@ fn encoder_writes_source_less_native_features() {
         .iter()
         .map(|feature| {
             feature
-                .source_id
-                .as_deref()
+                .source_value()
                 .expect("generated features have source ids")
-                .parse::<u32>()
-                .expect("generated feature source ids are numeric")
         })
         .collect::<std::collections::HashSet<_>>();
     assert_eq!(source_ids.len(), native_features.len());

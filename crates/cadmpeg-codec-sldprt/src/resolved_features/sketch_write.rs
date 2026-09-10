@@ -70,7 +70,7 @@ pub(super) fn sketch_brep(
     }) {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
-            entity.id().as_str()
+            entity.id()
         )));
     }
     let profiles = sketch.profiles.clone();
@@ -150,7 +150,7 @@ pub(super) fn sketch_brep(
             {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch entity {} has zero length",
-                    entity.id().as_str()
+                    entity.id()
                 )));
             }
             let curve_id = CurveId::mint(format!("{prefix}:curve:{profile_index}:{use_index}"))
@@ -495,7 +495,7 @@ pub(super) fn patch_line_profiles(
             if entity.endpoint_refs.len() != 2 {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch entity {} lacks two endpoint references",
-                    entity.id().as_str()
+                    entity.id()
                 )));
             }
             match entity.geometry.definition() {

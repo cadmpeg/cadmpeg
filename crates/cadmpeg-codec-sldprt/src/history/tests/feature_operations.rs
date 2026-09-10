@@ -998,7 +998,7 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
     assert_eq!(scalar.operands[0].entity_index, 0);
     assert_eq!(
         scalar.operands[0].entity_ref.as_deref(),
-        Some(lane.sketch_entities[0].id.as_str())
+        Some(lane.sketch_entities[0].id())
     );
     assert_eq!(scalar.operands[1].entity_index, 2);
     assert_eq!(scalar.operands[1].entity_ref, None);

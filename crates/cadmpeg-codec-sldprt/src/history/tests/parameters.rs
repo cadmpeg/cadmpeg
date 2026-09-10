@@ -4,6 +4,7 @@
 
 use super::super::*;
 use super::*;
+use crate::records::FeatureSource;
 
 #[test]
 fn repeated_aliases_from_one_parameter_remain_unambiguous() {
@@ -116,6 +117,32 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             assert_eq!(layered.get(alias), materialized.get(alias));
         }
     }
+}
+
+#[test]
+fn an_empty_quoted_run_is_not_a_parameter_reference() {
+    use crate::history::parameters::{
+        definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
+    };
+    let tokens = expression_identifier_tokens("\"\" + Width").expect("closed quotes");
+    assert_eq!(
+        tokens
+            .iter()
+            .map(ExpressionIdentifier::value)
+            .collect::<Vec<_>>(),
+        ["Width"]
+    );
+    assert!(!tokens.iter().any(definite_parameter_reference));
+
+    let named = expression_identifier_tokens("\"D1@Sketch1\"").expect("closed quotes");
+    assert_eq!(
+        named
+            .iter()
+            .map(ExpressionIdentifier::value)
+            .collect::<Vec<_>>(),
+        ["D1@Sketch1"]
+    );
+    assert!(named.iter().all(definite_parameter_reference));
 }
 
 #[test]
@@ -321,7 +348,9 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
     let mut dependent = feature("dependent", Some("2"), 2);
     dependent.properties.insert("Dependency".into(), "1".into());
     let mut malformed = feature("malformed", Some("3"), 3);
-    malformed.tree_parent = Some(crate::records::TreeParent::Source("missing".into()));
+    malformed.tree_parent = Some(crate::records::TreeParent::Source(
+        FeatureSource::from_value(9_999).expect("test feature source id"),
+    ));
     malformed
         .content
         .push(FeatureContent::Feature("missing-child".into()));

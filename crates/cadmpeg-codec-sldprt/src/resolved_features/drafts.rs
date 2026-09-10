@@ -16,6 +16,10 @@ use crate::layout::draft_aligned_direction_frame as aligned_dir;
 use crate::layout::draft_compact_selection_prefix as compact_sel;
 use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
+#[cfg(test)]
+use crate::records::FeatureSource;
+#[cfg(test)]
+use crate::records::ObjectId;
 
 const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
 const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1.0e-9;
@@ -406,7 +410,7 @@ mod tests {
             parent: "history".into(),
             xml_tag: "Draft".into(),
             tree_parent: None,
-            source_id: Some("7".into()),
+            source_id: FeatureSource::from_value(7),
             ordinal: 0,
             name: "Draft1".into(),
             kind: "Draft".into(),
@@ -518,7 +522,7 @@ mod tests {
                 ordinal: 0,
                 offset: object_start as u64,
                 value: "Draft1".into(),
-                object_id: Some(7),
+                object_id: ObjectId::from_value(7),
             }],
             scalars: Vec::new(),
             relation_bindings: Vec::new(),
@@ -597,7 +601,7 @@ mod tests {
                 ordinal: 0,
                 offset: object_start as u64,
                 value: "Draft1".into(),
-                object_id: Some(7),
+                object_id: ObjectId::from_value(7),
             }],
             scalars: Vec::new(),
             relation_bindings: Vec::new(),

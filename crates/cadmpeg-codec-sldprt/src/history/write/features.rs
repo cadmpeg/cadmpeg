@@ -18,6 +18,7 @@ use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, valid_xml_name};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::records::FeatureSource;
 
 pub(crate) fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
@@ -82,23 +83,18 @@ pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
 pub(crate) fn generated_feature_source_ids(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
-) -> Result<HashMap<FeatureId, String>, CodecError> {
+) -> Result<HashMap<FeatureId, FeatureSource>, CodecError> {
     let mut used = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .filter_map(crate::records::Feature::source_value)
         .collect::<HashSet<_>>();
     let existing = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| {
-            Some((
-                feature.id.as_str(),
-                feature.source_id.as_deref()?.parse::<u32>().ok()?,
-            ))
-        })
+        .filter_map(|feature| Some((feature.id.as_str(), feature.source_value()?)))
         .collect::<HashMap<_, _>>();
     let mut next = 1u32;
     let mut allocated = HashMap::new();
@@ -120,7 +116,10 @@ pub(crate) fn generated_feature_source_ids(
             next = next.checked_add(1).unwrap_or(next);
             source_id
         };
-        allocated.insert(feature.id.clone(), source_id.to_string());
+        let source_id = FeatureSource::from_value(source_id).ok_or_else(|| {
+            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+        })?;
+        allocated.insert(feature.id.clone(), source_id);
     }
     Ok(allocated)
 }
@@ -199,9 +198,9 @@ pub(crate) fn sync_neutral_features(
                 .iter()
                 .flat_map(|history| &history.features)
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
-                .and_then(|candidate| candidate.source_id.clone())
-                .or_else(|| generated_sources.get(&feature.id).cloned())
-                .unwrap_or_else(|| feature.id.as_str().to_owned());
+                .and_then(|candidate| candidate.source_id)
+                .or_else(|| generated_sources.get(&feature.id).copied())
+                .map_or_else(|| feature.id.as_str().to_owned(), String::from);
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -213,8 +212,8 @@ pub(crate) fn sync_neutral_features(
                 .iter()
                 .flat_map(|history| &history.features)
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
-                .and_then(|candidate| candidate.source_id.clone())
-                .or_else(|| generated_sources.get(&feature.id).cloned());
+                .and_then(|candidate| candidate.source_id)
+                .or_else(|| generated_sources.get(&feature.id).copied());
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -244,7 +243,7 @@ pub(crate) fn sync_neutral_features(
             let by_source = history
                 .features
                 .iter()
-                .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+                .filter_map(|feature| Some((feature.source_id?, feature)))
                 .collect::<HashMap<_, _>>();
             history.features.iter().filter_map(move |feature| {
                 Some((
@@ -261,8 +260,7 @@ pub(crate) fn sync_neutral_features(
         .filter_map(|feature| {
             feature
                 .source_id
-                .as_ref()
-                .map(|source| (feature.id.clone(), source.clone()))
+                .map(|source| (feature.id.clone(), String::from(source)))
         })
         .collect::<HashMap<_, _>>();
     let retained_tree_node_roles = native
@@ -372,7 +370,7 @@ pub(crate) fn sync_neutral_features(
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
-            let source_id = structural_parent_sources.get(parent).cloned().flatten();
+            let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
                 Some(record_id) => Some(crate::records::TreeParent::Record {
                     record_id: record_id.clone(),
@@ -412,7 +410,7 @@ pub(crate) fn sync_neutral_features(
                 parent: history.id.clone(),
                 xml_tag: feature_xml_tag(feature),
                 tree_parent,
-                source_id: generated_sources.get(&feature.id).cloned(),
+                source_id: generated_sources.get(&feature.id).copied(),
                 ordinal,
                 name: feature.name.clone().unwrap_or_default(),
                 kind,

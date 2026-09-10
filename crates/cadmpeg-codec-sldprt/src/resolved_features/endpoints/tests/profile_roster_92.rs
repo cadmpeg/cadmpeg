@@ -101,7 +101,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     let endpoint_ids = |payload: &[u8]| {
         roster_curve_endpoint_markers(payload, &curve, &markers)
             .iter()
-            .map(|marker| marker.id.as_str())
+            .map(|marker| marker.id())
             .collect::<Vec<_>>()
     };
 

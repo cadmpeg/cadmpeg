@@ -428,8 +428,7 @@ pub(crate) fn derive_feature_outputs(
                     .flat_map(|history| &history.features)
                     .find(|record| record.id == native_ref)
             })
-            .and_then(|record| record.source_id.as_deref())
-            .and_then(|source_id| source_id.parse::<u32>().ok())
+            .and_then(crate::records::Feature::source_value)
         else {
             continue;
         };

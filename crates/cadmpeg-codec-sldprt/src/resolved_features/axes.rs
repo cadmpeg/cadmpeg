@@ -11,6 +11,8 @@ use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -180,7 +182,7 @@ pub(super) fn linear_pattern_display_directions(
         .filter_map(|(dimension_name, expected)| {
             let expected = expected?;
             let mut records = names.iter().filter(|name| {
-                name.object_id == Some(u32::MAX)
+                name.object_id == Some(ObjectId::Absent)
                     && name.value == dimension_name
                     && usize::try_from(name.offset)
                         .is_ok_and(|offset| (object_start..end).contains(&offset))
@@ -234,7 +236,7 @@ pub(super) fn typed_linear_pattern_dimensions(
         let class_offset = usize::try_from(class.offset).ok()?;
         let name_end = class_offset.checked_add(128)?.min(object_end);
         let mut names = lane.names.iter().filter(|name| {
-            name.object_id == Some(u32::MAX)
+            name.object_id == Some(ObjectId::Absent)
                 && usize::try_from(name.offset)
                     .is_ok_and(|offset| (class_offset..name_end).contains(&offset))
                 && feature.parameters.contains_key(name.value.as_str())
@@ -896,12 +898,12 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
         let mut object_ids = lanes
             .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id)
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
             .collect::<Vec<_>>();
         object_ids.sort_unstable();
         object_ids.dedup();
         if let [object_id] = object_ids.as_slice() {
-            feature.source_id = Some(object_id.to_string());
+            feature.source_id = FeatureSource::from_value(*object_id);
         }
     }
     let mut profile_sources = HashMap::<String, HashSet<u32>>::new();
@@ -911,16 +913,11 @@ pub(crate) fn enrich_history_revolution_inputs(
             .iter()
             .filter(|feature| is_profile_feature_object(feature))
             .flat_map(|feature| {
-                feature
-                    .source_id
-                    .as_deref()
-                    .and_then(|source| source.parse::<u32>().ok())
-                    .into_iter()
-                    .chain(
-                        lanes
-                            .iter()
-                            .filter_map(|lane| feature_object_name(feature, lane)?.object_id),
-                    )
+                feature.source_value().into_iter().chain(
+                    lanes
+                        .iter()
+                        .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
+                )
             })
             .collect::<HashSet<_>>();
         for feature in &history.features {
@@ -949,7 +946,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .and_then(|index| objects.get(index))
                     .map(|(_, feature)| *feature)
                     .filter(|feature| is_profile_feature_object(feature))
-                    .and_then(|feature| feature_object_name(feature, lane)?.object_id);
+                    .and_then(|feature| feature_object_name(feature, lane)?.object_id?.value());
                 let Some(known_profiles) = profile_sources.get(&feature.id) else {
                     continue;
                 };
@@ -1309,7 +1306,7 @@ fn profile_generated_surface_axis(
     let v_axis = normal.cross(u_axis);
     let mut sides = Vec::new();
     for endpoint in curve_endpoints {
-        if !endpoint_ids.insert(endpoint.id.as_str()) {
+        if !endpoint_ids.insert(endpoint.id()) {
             continue;
         }
         let [u, v] = endpoint.coordinates_m?;
@@ -1442,7 +1439,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
         .filter(|endpoint| endpoint.object_index().is_some())
-        .map(|endpoint| endpoint.id.as_str())
+        .map(super::super::records::SketchInputEntity::id)
         .collect::<HashSet<_>>();
     let unreferenced_points = markers
         .iter()
@@ -1450,11 +1447,11 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         .filter(|marker| {
             marker.feature_ref.as_deref() == Some(profile_native)
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && marker.coordinates_m.is_some()
-                && !curve_endpoints.contains(marker.id.as_str())
+                && !curve_endpoints.contains(marker.id())
         })
         .collect::<Vec<_>>();
     let [origin] = unreferenced_points.as_slice() else {
@@ -1469,9 +1466,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
     let mut candidates = markers
         .iter()
         .copied()
-        .filter(|marker| {
-            marker.object_index().is_some() && curve_endpoints.contains(marker.id.as_str())
-        })
+        .filter(|marker| marker.object_index().is_some() && curve_endpoints.contains(marker.id()))
         .filter_map(|marker| {
             let end = marker.coordinates_m?;
             let endpoints = [[origin_u, origin_v], end];
@@ -1503,7 +1498,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         markers
             .iter()
             .filter(|marker| {
-                marker.object_index().is_some() && curve_endpoints.contains(marker.id.as_str())
+                marker.object_index().is_some() && curve_endpoints.contains(marker.id())
             })
             .filter_map(|marker| marker.coordinates_m)
             .filter(|[u, v]| {
@@ -1538,13 +1533,13 @@ pub(super) fn profile_roster_principal_axis_endpoints(
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
         .filter(|endpoint| endpoint.object_index().is_some())
-        .map(|endpoint| endpoint.id.as_str())
+        .map(super::super::records::SketchInputEntity::id)
         .collect::<HashSet<_>>();
     let incidence = |axis: &[[f64; 2]; 2]| {
         let [axis_u, axis_v] = axis[1];
         markers
             .iter()
-            .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
+            .filter(|marker| curve_endpoints.contains(marker.id()))
             .filter_map(|marker| marker.coordinates_m)
             .filter(|[u, v]| {
                 (u * axis_v - v * axis_u).abs()
@@ -1604,7 +1599,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .map(|endpoint| endpoint.id.as_str())
+        .map(super::super::records::SketchInputEntity::id)
         .collect::<HashSet<_>>();
     let unreferenced_points = markers
         .iter()
@@ -1612,11 +1607,11 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .filter(|marker| {
             marker.feature_ref.as_deref() == Some(profile_native)
                 && matches!(
-                    marker.kind,
+                    marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && marker.coordinates_m.is_some()
-                && !curve_endpoints.contains(marker.id.as_str())
+                && !curve_endpoints.contains(marker.id())
         })
         .collect::<Vec<_>>();
     if let [start, end] = unreferenced_points.as_slice() {
@@ -1649,11 +1644,11 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         owned.sort_unstable_by_key(|marker| marker.offset());
         if let Some(start) = owned
             .windows(2)
-            .find_map(|pair| (pair[1].id == end.id).then_some(pair[0]))
+            .find_map(|pair| (pair[1].id() == end.id()).then_some(pair[0]))
             .filter(|marker| {
                 marker.coordinates_m.is_some()
                     && matches!(
-                        marker.kind,
+                        marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
             })
@@ -1687,8 +1682,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .collect::<Vec<_>>();
     boundary_relations
         .sort_unstable_by_key(|endpoints| [endpoints[0].offset(), endpoints[1].offset()]);
-    boundary_relations
-        .dedup_by_key(|endpoints| [endpoints[0].id.as_str(), endpoints[1].id.as_str()]);
+    boundary_relations.dedup_by_key(|endpoints| [endpoints[0].id(), endpoints[1].id()]);
     match boundary_relations.as_slice() {
         [endpoints] => return Some(*endpoints),
         [] => {}
@@ -1741,11 +1735,11 @@ fn bounded_profile_axis_coordinates(
     for [u, v] in markers.iter().filter_map(|marker| {
         (marker.feature_ref.as_deref() == Some(profile_native)
             && matches!(
-                marker.kind,
+                marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
             && marker.object_index().is_some()
-            && curve_endpoints.contains(marker.id.as_str()))
+            && curve_endpoints.contains(marker.id()))
         .then_some(marker.coordinates_m)
         .flatten()
     }) {

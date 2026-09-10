@@ -66,7 +66,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
     let markers = [&curve, &first, &second, &third];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
 
     for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
@@ -78,7 +78,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
             assert_eq!(
                 marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
                     .iter()
-                    .map(|marker| marker.id.as_str())
+                    .map(|marker| marker.id())
                     .collect::<Vec<_>>(),
                 ["third", "first"]
             );
