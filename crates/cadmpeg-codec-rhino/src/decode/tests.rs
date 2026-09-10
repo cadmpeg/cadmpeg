@@ -272,13 +272,13 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .enumerate()
         .map(|(index, vertices)| crate::brep::RawBrepTrim {
             index: i32::try_from(index).expect("index"),
-            curve: i32::try_from(index).expect("index"),
+            curve: Some(i32::try_from(index).expect("index")),
             proxy_domain: interval,
-            edge: i32::try_from(index).expect("index"),
+            edge: Some(i32::try_from(index).expect("index")),
             vertices,
             reversed_3d: false,
-            trim_type: 1,
-            iso: 0,
+            trim_type: crate::brep::RawTrimKind::Boundary,
+            iso: crate::brep::RawTrimIso::NotIso,
             loop_index: 0,
             tolerances: [0.02, 0.03],
             domain: interval,
@@ -320,7 +320,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             loops: vec![crate::brep::RawBrepLoop {
                 index: 0,
                 trims: vec![0, 1, 2],
-                loop_type: 1,
+                loop_type: crate::brep::RawLoopKind::Outer,
                 face: 0,
                 source_range: 0..0,
             }],

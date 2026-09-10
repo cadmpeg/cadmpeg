@@ -4226,8 +4226,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 format!("rhino:object:coedge#{key}.slot-{trim_index}")
                     .try_into()
                     .expect("valid identity");
-            let edge_id = if trim.edge >= 0 {
-                edge_ids.get(trim.edge as usize).cloned().ok_or_else(|| {
+            let edge_id = if let Some(edge) = trim.edge {
+                edge_ids.get(edge as usize).cloned().ok_or_else(|| {
                     crate::curves::error(trim.source_range.start, "trim edge missing")
                 })?
             } else {
@@ -4247,7 +4247,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 }
                 synthetic_id
             };
-            let pcurve = if trim.trim_type == 6 {
+            let pcurve = if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
                 None
             } else {
                 c2.get(trim_index).cloned()
@@ -4259,7 +4259,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(
                     trim.reversed_3d,
-                    trim.edge >= 0 && raw.edges[trim.edge as usize].proxy_reversed,
+                    trim.edge
+                        .is_some_and(|edge| raw.edges[edge as usize].proxy_reversed),
                 ),
                 pcurves: pcurve
                     .into_iter()
@@ -4756,10 +4757,13 @@ fn decode_pcurves(
     let mut decoded_slots = BTreeMap::<i32, Option<NurbsCurve>>::new();
     let mut warnings = Vec::new();
     for (index, trim) in raw.trims.iter().enumerate() {
-        if trim.trim_type == 6 {
+        if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
             continue;
         }
-        let nurbs = if let Some(nurbs) = decoded_slots.get(&trim.curve) {
+        let Some(trim_curve) = trim.curve else {
+            continue;
+        };
+        let nurbs = if let Some(nurbs) = decoded_slots.get(&trim_curve) {
             let Some(nurbs) = nurbs else { continue };
             nurbs.clone()
         } else {
@@ -4767,7 +4771,7 @@ fn decode_pcurves(
                 let child = raw
                     .c2
                     .slots
-                    .get(trim.curve as usize)
+                    .get(trim_curve as usize)
                     .and_then(Option::as_ref)
                     .ok_or_else(|| {
                         crate::curves::error(trim.source_range.start, "trim C2 slot missing")
@@ -4794,12 +4798,12 @@ fn decode_pcurves(
                             .into_iter()
                             .map(|warning| format!("trim {index}: {warning}")),
                     );
-                    decoded_slots.insert(trim.curve, Some(joined.curve.clone()));
+                    decoded_slots.insert(trim_curve, Some(joined.curve.clone()));
                     joined.curve
                 }
                 Err(error) => {
                     warnings.push(format!("trim {index} C2 omitted: {error}"));
-                    decoded_slots.insert(trim.curve, None);
+                    decoded_slots.insert(trim_curve, None);
                     continue;
                 }
             }
@@ -4967,7 +4971,7 @@ fn brep_free_vertex_indices(
         }
     }
     for trim in &raw.trims {
-        if trim.edge < 0 {
+        if trim.edge.is_none() {
             attached[trim.vertices[0] as usize] = true;
         }
     }
