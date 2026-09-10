@@ -361,8 +361,7 @@ pub struct Occurrence {
     /// Placement relative to the direct container.
     pub transform: Transform,
     /// Linked prototype placement contribution when link-transform policy applies.
-    #[serde(flatten, with = "linked_prototype_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "LinkedPrototypeWire"))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_prototype: Option<Transform>,
     /// Per-axis instance scale.
     #[serde(deserialize_with = "deserialize_occurrence_scale")]
@@ -374,8 +373,7 @@ pub struct Occurrence {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible: Option<bool>,
     /// `FreeCAD` `App::Link`-specific occurrence state.
-    #[serde(flatten, with = "link_state_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkState>,
     /// Format-native object supplying this instance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -383,11 +381,17 @@ pub struct Occurrence {
 }
 
 /// `FreeCAD` `App::Link`-specific occurrence state.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "LinkStateWire")]
 pub struct LinkState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     linked_subelements: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     element_component: Option<ProductDefinitionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     claim_child: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     copy_on_change: Option<CopyOnChange>,
 }
 
@@ -433,15 +437,20 @@ impl LinkState {
 }
 
 /// Copy-on-change ownership state carried by an `App::Link` occurrence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CopyOnChange {
     /// Ownership policy.
     pub policy: CopyOnChangePolicy,
     /// Original component tracked by copy-on-change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<ProductDefinitionId>,
     /// Internal component holding owned copies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<ProductDefinitionId>,
     /// Whether the tracked source was persisted as changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub touched: Option<bool>,
 }
 
@@ -457,135 +466,31 @@ impl Occurrence {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LinkedPrototypeWire {
-    #[serde(default)]
-    prototype_transform: Transform,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    link_transform: Option<bool>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LinkStateWire {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     linked_subelements: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     element_component: Option<ProductDefinitionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     claim_child: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change: Option<CopyOnChangePolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change_source: Option<ProductDefinitionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change_group: Option<ProductDefinitionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change_touched: Option<bool>,
+    #[serde(default)]
+    copy_on_change: Option<CopyOnChange>,
 }
 
-mod linked_prototype_wire {
-    use super::LinkedPrototypeWire;
-    use crate::transform::Transform;
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+impl TryFrom<LinkStateWire> for LinkState {
+    type Error = &'static str;
 
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<Transform>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        LinkedPrototypeWire {
-            prototype_transform: value.unwrap_or_else(Transform::identity),
-            link_transform: value.map(|_| true),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Transform>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = LinkedPrototypeWire::deserialize(deserializer)?;
-        match wire.link_transform {
-            Some(true) => Ok(Some(wire.prototype_transform)),
-            None | Some(false) if wire.prototype_transform == Transform::identity() => Ok(None),
-            None | Some(false) => Err(D::Error::custom(
-                "prototype_transform must be identity unless link_transform is true",
-            )),
-        }
-    }
-}
-
-mod link_state_wire {
-    use super::{CopyOnChange, LinkState, LinkStateWire};
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<LinkState>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = value.as_ref().map_or_else(
-            || LinkStateWire {
-                linked_subelements: Vec::new(),
-                element_component: None,
-                claim_child: None,
-                copy_on_change: None,
-                copy_on_change_source: None,
-                copy_on_change_group: None,
-                copy_on_change_touched: None,
-            },
-            |link| LinkStateWire {
-                linked_subelements: link.linked_subelements.clone(),
-                element_component: link.element_component.clone(),
-                claim_child: link.claim_child,
-                copy_on_change: link.copy_on_change.as_ref().map(|copy| copy.policy.clone()),
-                copy_on_change_source: link
-                    .copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.source.clone()),
-                copy_on_change_group: link
-                    .copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.group.clone()),
-                copy_on_change_touched: link.copy_on_change.as_ref().and_then(|copy| copy.touched),
-            },
-        );
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<LinkState>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = LinkStateWire::deserialize(deserializer)?;
-        let copy_payload_present = wire.copy_on_change_source.is_some()
-            || wire.copy_on_change_group.is_some()
-            || wire.copy_on_change_touched.is_some();
-        let copy_on_change = match wire.copy_on_change {
-            Some(policy) => Some(CopyOnChange {
-                policy,
-                source: wire.copy_on_change_source,
-                group: wire.copy_on_change_group,
-                touched: wire.copy_on_change_touched,
-            }),
-            None if !copy_payload_present => None,
-            None => {
-                return Err(D::Error::custom(
-                    "copy_on_change_source, copy_on_change_group, and \
-                     copy_on_change_touched require copy_on_change",
-                ));
-            }
-        };
-        Ok(LinkState::new(
+    fn try_from(wire: LinkStateWire) -> Result<Self, Self::Error> {
+        Self::new(
             wire.linked_subelements,
             wire.element_component,
             wire.claim_child,
-            copy_on_change,
-        ))
+            wire.copy_on_change,
+        )
+        .ok_or("link state must carry at least one member")
     }
 }
 
@@ -762,33 +667,35 @@ mod tests {
     }
 
     #[test]
-    fn linked_prototype_wire_preserves_the_legacy_fields_and_rejects_ignored_transforms() {
+    fn an_absent_linked_prototype_key_is_the_only_spelling_of_absence() {
         let plain = occurrence("test:model:occurrence#plain", OccurrenceParent::Root, 1.0);
-        let mut plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
+        let plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
+        assert!(plain_wire.get("linked_prototype").is_none());
         assert_eq!(
-            plain_wire.get("prototype_transform"),
-            Some(&serde_json::to_value(Transform::identity()).unwrap())
+            serde_json::from_value::<Occurrence>(plain_wire).unwrap(),
+            plain
         );
-        assert!(plain_wire.get("link_transform").is_none());
-
-        plain_wire["link_transform"] = serde_json::json!(false);
-        let decoded: Occurrence = serde_json::from_value(plain_wire.clone()).unwrap();
-        assert_eq!(decoded.linked_prototype, None);
 
         let mut linked = plain;
         linked.linked_prototype = Some(translation(10.0));
         let linked_wire = serde_json::to_value(&linked).expect("linked occurrence wire");
         assert_eq!(
-            linked_wire.get("link_transform"),
-            Some(&serde_json::json!(true))
+            linked_wire.get("linked_prototype"),
+            Some(&serde_json::to_value(translation(10.0)).unwrap())
         );
         assert_eq!(
             serde_json::from_value::<Occurrence>(linked_wire).unwrap(),
             linked
         );
 
-        plain_wire["prototype_transform"] = serde_json::to_value(translation(10.0)).unwrap();
-        assert!(serde_json::from_value::<Occurrence>(plain_wire).is_err());
+        let mut identity = serde_json::to_value(&linked).unwrap();
+        identity["linked_prototype"] = serde_json::to_value(Transform::identity()).unwrap();
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(identity)
+                .unwrap()
+                .linked_prototype,
+            Some(Transform::identity())
+        );
     }
 
     #[test]
@@ -834,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn link_state_wire_preserves_the_legacy_fields_and_requires_a_copy_policy() {
+    fn the_link_state_is_one_nested_object_with_its_own_copy_on_change() {
         let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
         linked.link = LinkState::new(
             vec!["Face1".into()],
@@ -852,21 +759,49 @@ mod tests {
             }),
         );
         let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
-        assert_eq!(wire["linked_subelements"], serde_json::json!(["Face1"]));
         assert_eq!(
-            wire["copy_on_change"],
-            serde_json::json!({"policy": "owned"})
+            wire["link"]["linked_subelements"],
+            serde_json::json!(["Face1"])
         );
-        assert_eq!(serde_json::from_value::<Occurrence>(wire).unwrap(), linked);
+        assert_eq!(
+            wire["link"]["copy_on_change"],
+            serde_json::json!({
+                "policy": {"policy": "owned"},
+                "source": "test:model:product#source",
+                "group": "test:model:product#group",
+                "touched": true
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
+            linked
+        );
 
-        let mut invalid = serde_json::to_value(occurrence(
-            "test:model:occurrence#invalid-link",
+        let mut without_policy = wire.clone();
+        without_policy["link"]["copy_on_change"]
+            .as_object_mut()
+            .expect("a copy-on-change object")
+            .remove("policy");
+        let error = serde_json::from_value::<Occurrence>(without_policy)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("policy"), "{error}");
+
+        let mut bogus = wire;
+        bogus["link"]["copy_on_change"]["zz_bogus"] = serde_json::json!(1);
+        let error = serde_json::from_value::<Occurrence>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+
+        let mut empty = serde_json::to_value(occurrence(
+            "test:model:occurrence#empty-link",
             OccurrenceParent::Root,
             1.0,
         ))
         .unwrap();
-        invalid["copy_on_change_source"] = serde_json::json!("test:model:product#source");
-        assert!(serde_json::from_value::<Occurrence>(invalid).is_err());
+        empty["link"] = serde_json::json!({});
+        assert!(serde_json::from_value::<Occurrence>(empty).is_err());
     }
 
     #[test]
