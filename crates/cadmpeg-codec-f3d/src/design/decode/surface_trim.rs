@@ -7,7 +7,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::{exact_indexed_header_at, marked_record_reference};
 use crate::design::decode::sketch::{
-    indexed_record_index, next_indexed_record_offset, IndexedRecordOffsets,
+    indexed_record_header_at, next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::ids::{native_design_surface_trim_operation_id, native_stream};
 use crate::records::feature::{
@@ -48,14 +48,13 @@ pub(crate) fn exact_surface_trim_operation(
 
     let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
     let mut next_chain_record = || {
-        let record_index = indexed_record_index(bytes, chain_start)?;
-        let class_tag = exact_indexed_header_at(bytes, chain_start, record_index)?;
+        let parsed = indexed_record_header_at(bytes, chain_start)?;
         let frame_end = next_indexed_record_offset(bytes, chain_start.checked_add(11)?)?;
         let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
         let record = DesignSurfaceTrimChainRecord {
-            record_index,
+            record_index: parsed.record_index,
             byte_offset: u64::try_from(chain_start).ok()?,
-            class_tag: class_tag.try_into().ok()?,
+            class_tag: parsed.class_tag,
             frame_length,
         };
         chain_start = frame_end;
@@ -64,9 +63,9 @@ pub(crate) fn exact_surface_trim_operation(
     let chain_records = [next_chain_record()?, next_chain_record()?];
 
     let cell_table_byte_offset = chain_start;
-    let cell_table_record_index = indexed_record_index(bytes, cell_table_byte_offset)?;
-    let cell_table_class_tag =
-        exact_indexed_header_at(bytes, cell_table_byte_offset, cell_table_record_index)?;
+    let cell_table = indexed_record_header_at(bytes, cell_table_byte_offset)?;
+    let cell_table_record_index = cell_table.record_index;
+    let cell_table_class_tag = cell_table.class_tag;
     if !matches!(cell_table_class_tag.as_str(), "287" | "325") {
         return None;
     }
