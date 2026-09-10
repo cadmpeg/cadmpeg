@@ -201,13 +201,15 @@
         {
           "curve": "iges:model:curve#D5",
           "definition": {
-            "component_parameters": [
-              0.0,
-              0.0
-            ],
             "components": [
-              "iges:model:curve#D1",
-              "iges:model:curve#D3"
+              {
+                "component": "iges:model:curve#D1",
+                "parameter": 0.0
+              },
+              {
+                "component": "iges:model:curve#D3",
+                "parameter": 0.0
+              }
             ],
             "kind": "compound",
             "parameters": [

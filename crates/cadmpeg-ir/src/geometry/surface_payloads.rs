@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural surface payloads.
 
-use super::compound_surface_components_wire;
 #[cfg(feature = "schema")]
-use super::CompoundSurfaceComponentsWire;
 #[cfg(feature = "schema")]
 use super::ExactSplineSchemaWire;
 #[cfg(feature = "schema")]
@@ -1058,15 +1056,12 @@ impl TryFrom<ExactSurfacePayloadWire> for ExactSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfacePayloadWire"))]
 #[serde(try_from = "CompoundSurfacePayloadWire")]
 pub struct CompoundSurfacePayload {
-    #[serde(flatten, with = "compound_surface_components_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfaceComponentsWire"))]
     components: Vec<CompoundComponent<SurfaceId>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct CompoundSurfacePayloadWire {
-    #[serde(flatten, with = "compound_surface_components_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfaceComponentsWire"))]
     components: Vec<CompoundComponent<SurfaceId>>,
 }
 impl CompoundSurfacePayload {
