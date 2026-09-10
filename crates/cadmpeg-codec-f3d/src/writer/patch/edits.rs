@@ -28,6 +28,34 @@ use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_sup
 use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+/// The base-type GUID text and its location, when the entry stores the field.
+fn located_base_guid(guid: &crate::records::BaseTypeGuid) -> Option<(&str, u64)> {
+    match guid {
+        crate::records::BaseTypeGuid::Absent => None,
+        crate::records::BaseTypeGuid::EmptyRoot { offset } => Some(("", *offset)),
+        crate::records::BaseTypeGuid::Guid { value, offset } => Some((value.as_str(), *offset)),
+    }
+}
+
+/// The before base-type GUID carried at the after-record's location.
+fn normalized_base_type_guid(
+    before: &crate::records::BaseTypeGuid,
+    after: &crate::records::BaseTypeGuid,
+) -> crate::records::BaseTypeGuid {
+    match (before, after.offset()) {
+        (crate::records::BaseTypeGuid::Absent, _) | (_, None) => after.clone(),
+        (crate::records::BaseTypeGuid::EmptyRoot { .. }, Some(offset)) => {
+            crate::records::BaseTypeGuid::EmptyRoot { offset }
+        }
+        (crate::records::BaseTypeGuid::Guid { value, .. }, Some(offset)) => {
+            crate::records::BaseTypeGuid::Guid {
+                value: value.clone(),
+                offset,
+            }
+        }
+    }
+}
+
 /// The before-value carried at the after-record's location, for comparing an
 /// edited record against the record it replaces.
 fn normalized_token<T: Clone>(
@@ -1490,10 +1518,8 @@ pub(crate) fn validate_design_type_edits(
         let mut normalized = after.clone();
         normalized.entities.clone_from(&before.entities);
         normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid = normalized_token(
-            before.base_type_guid.as_ref(),
-            after.base_type_guid.as_ref(),
-        );
+        normalized.base_type_guid =
+            normalized_base_type_guid(&before.base_type_guid, &after.base_type_guid);
         normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
@@ -1546,27 +1572,15 @@ pub(crate) fn validate_design_type_edits(
             ));
         }
         if after.base_type_guid != before.base_type_guid {
-            let before_base = before
-                .base_type_guid
-                .as_ref()
-                .map(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map_or("", crate::records::DesignRelaxedGuidText::as_str)
-                })
-                .ok_or_else(|| {
-                    CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
-                })?;
-            let after_field = after.base_type_guid.as_ref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
+            let (before_base, _) = located_base_guid(&before.base_type_guid).ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
             })?;
-            let after_base = after_field
-                .value
-                .as_ref()
-                .map_or("", crate::records::DesignRelaxedGuidText::as_str);
+            let (after_base, after_offset) =
+                located_base_guid(&after.base_type_guid).ok_or_else(|| {
+                    CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
+                })?;
             validate_fixed_design_string(id, before_base, after_base)?;
-            strings.push((after_field.offset, after_base.as_bytes().to_vec()));
+            strings.push((after_offset, after_base.as_bytes().to_vec()));
         }
         if integers.is_empty() && strings.is_empty() {
             continue;
@@ -3800,5 +3814,61 @@ fn spring_patch_shape_agrees(
                     .eq(after_context.discontinuities().iter().map(Vec::len))
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_material_assignment_edits, PatchNatives};
+    use crate::native::F3dNative;
+    use crate::records::DesignMaterialAssignment;
+
+    fn assignment(physical_token: bool) -> DesignMaterialAssignment {
+        let mut document = serde_json::json!({
+            "id": "material#0",
+            "asm_body_key": 42,
+            "asm_body_key_offset": 200,
+            "entity_suffix_offset": 0,
+            "entity_id": "0_985",
+            "entity_id_offset": 8,
+            "visual_guid": "11111111-2222-3333-4444-555555555555",
+            "visual_guid_offset": 18
+        });
+        if physical_token {
+            document["physical_token"] = "Prism-002".into();
+            document["physical_token_offset"] = 90.into();
+        }
+        serde_json::from_value(document).expect("material assignment")
+    }
+
+    fn native(assignments: Vec<DesignMaterialAssignment>) -> F3dNative {
+        F3dNative {
+            design_material_assignments: assignments,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_material_token_cannot_be_added_where_the_baseline_record_has_no_carrier() {
+        let baseline = native(vec![assignment(false)]);
+        let target = native(vec![assignment(true)]);
+        let error = validate_material_assignment_edits(PatchNatives {
+            baseline: Some(&baseline),
+            target: Some(&target),
+        })
+        .expect_err("an added token has no carrier to write it into");
+        assert!(
+            error
+                .to_string()
+                .contains("changes fields outside writable strings"),
+            "{error}"
+        );
+
+        let edits = validate_material_assignment_edits(PatchNatives {
+            baseline: Some(&baseline),
+            target: Some(&baseline),
+        })
+        .expect("an unchanged assignment set is editable");
+        assert!(edits.is_empty());
     }
 }

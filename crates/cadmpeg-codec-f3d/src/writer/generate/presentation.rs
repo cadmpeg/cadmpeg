@@ -39,8 +39,7 @@ impl TryFrom<&SegmentType> for GeneratedDesignType {
                 .map_err(CodecError::Malformed)?,
             base_type_guid: value
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| field.value.as_ref())
+                .value()
                 .map(|guid| DesignGuidText::try_from(guid.as_str().to_owned()))
                 .transpose()
                 .map_err(CodecError::Malformed)?,
@@ -379,12 +378,13 @@ mod tests {
             .unwrap();
         assert!(super::GeneratedDesignType::try_from(&source).is_err());
         source = body_map_type(vec![1]);
-        source.base_type_guid.as_mut().unwrap().value = Some(
-            "____________________________________"
+        source.base_type_guid = crate::records::BaseTypeGuid::Guid {
+            value: "____________________________________"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-        );
+            offset: 0,
+        };
         assert!(super::GeneratedDesignType::try_from(&source).is_err());
     }
 
@@ -397,15 +397,13 @@ mod tests {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue {
-                value: Some(
-                    crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
+            base_type_guid: crate::records::BaseTypeGuid::Guid {
+                value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
                 offset: 0,
-            }),
+            },
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_BODY.into(),
@@ -427,15 +425,13 @@ mod tests {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue {
-                value: Some(
-                    crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
+            base_type_guid: crate::records::BaseTypeGuid::Guid {
+                value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
                 offset: 0,
-            }),
+            },
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_FUSION.into(),

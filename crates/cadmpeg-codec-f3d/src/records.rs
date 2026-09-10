@@ -3528,6 +3528,65 @@ pub enum DesignConfigurationKind {
     Rule,
 }
 
+/// The base-type-GUID field of a type-table entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BaseTypeGuid {
+    /// The entry stores no base-type-GUID field.
+    Absent,
+    /// The entry stores an explicit empty root GUID at this location.
+    EmptyRoot {
+        /// Byte offset of the empty base-GUID bytes in the `MetaStream`.
+        offset: u64,
+    },
+    /// The entry names a base type at this location.
+    Guid {
+        /// GUID naming the base type.
+        value: DesignRelaxedGuidText,
+        /// Byte offset of the base-GUID bytes in the `MetaStream`.
+        offset: u64,
+    },
+}
+
+impl BaseTypeGuid {
+    /// The named base type, when the entry names one.
+    pub fn value(&self) -> Option<&DesignRelaxedGuidText> {
+        match self {
+            Self::Absent | Self::EmptyRoot { .. } => None,
+            Self::Guid { value, .. } => Some(value),
+        }
+    }
+
+    /// Byte offset of the stored base-GUID bytes, when the entry stores them.
+    pub fn offset(&self) -> Option<u64> {
+        match *self {
+            Self::Absent => None,
+            Self::EmptyRoot { offset } | Self::Guid { offset, .. } => Some(offset),
+        }
+    }
+
+    fn from_wire(value: Option<String>, offset: Option<u64>) -> Result<Self, String> {
+        match (value, offset) {
+            (None, None) => Ok(Self::Absent),
+            (Some(value), Some(offset)) if value.is_empty() => Ok(Self::EmptyRoot { offset }),
+            (Some(value), Some(offset)) => Ok(Self::Guid {
+                value: DesignRelaxedGuidText::try_from(value)
+                    .map_err(|error| format!("base_type_guid: {error}"))?,
+                offset,
+            }),
+            (Some(_), None) => Err("base_type_guid requires base_type_guid_offset".into()),
+            (None, Some(_)) => Err("base_type_guid_offset requires base_type_guid".into()),
+        }
+    }
+
+    fn into_wire(self) -> (Option<String>, Option<u64>) {
+        match self {
+            Self::Absent => (None, None),
+            Self::EmptyRoot { offset } => (Some(String::new()), Some(offset)),
+            Self::Guid { value, offset } => (Some(value.into()), Some(offset)),
+        }
+    }
+}
+
 /// One type-table entry from a `MetaStream` segment header. The entry registers
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
@@ -3543,9 +3602,8 @@ pub struct SegmentType {
     pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
-    /// Base GUID field and location; its value is `None` for an explicit empty root GUID.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_type_guid: Option<RecordedValue<Option<DesignRelaxedGuidText>>>,
+    /// Base-type-GUID field and location.
+    pub base_type_guid: BaseTypeGuid,
     /// Record version of this type.
     pub version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
@@ -3612,20 +3670,9 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
                 wire.entity_id_offsets,
                 "entity_ids/entity_id_offsets",
             )?,
-            base_type_guid: RecordedValue::from_wire(
-                wire.base_type_guid
-                    .map(|guid| {
-                        if guid.is_empty() {
-                            Ok(None)
-                        } else {
-                            DesignRelaxedGuidText::try_from(guid)
-                                .map(Some)
-                                .map_err(|error| format!("base_type_guid: {error}"))
-                        }
-                    })
-                    .transpose()?,
+            base_type_guid: BaseTypeGuid::from_wire(
+                wire.base_type_guid,
                 wire.base_type_guid_offset,
-                "base_type_guid",
             )?,
         })
     }
@@ -3634,6 +3681,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
         let (entity_ids, entity_id_offsets) = value.entities.into_wire();
+        let (base_type_guid, base_type_guid_offset) = value.base_type_guid.into_wire();
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
@@ -3644,10 +3692,8 @@ impl From<SegmentType> for SegmentTypeWire {
             module: value.module,
             entity_ids,
             entity_id_offsets,
-            base_type_guid_offset: value.base_type_guid.as_ref().map(|field| field.offset),
-            base_type_guid: value
-                .base_type_guid
-                .map(|field| field.value.map(String::from).unwrap_or_default()),
+            base_type_guid_offset,
+            base_type_guid,
         }
     }
 }

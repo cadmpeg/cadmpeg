@@ -32,13 +32,8 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
         && design_type.module == DESIGN_MODULE_FUSION
         && design_type
             .base_type_guid
-            .as_ref()
-            .and_then(|field| {
-                field
-                    .value
-                    .as_ref()
-                    .map(crate::records::DesignRelaxedGuidText::as_str)
-            })
+            .value()
+            .map(crate::records::DesignRelaxedGuidText::as_str)
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -120,13 +115,8 @@ pub fn decode_component_naming_spaces(
                 design_type.module == COMPONENT_MODULE
                     && design_type
                         .base_type_guid
-                        .as_ref()
-                        .and_then(|field| {
-                            field
-                                .value
-                                .as_ref()
-                                .map(crate::records::DesignRelaxedGuidText::as_str)
-                        })
+                        .value()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
@@ -186,13 +176,8 @@ pub fn decode_component_naming_spaces(
                 design_type.module == COMPONENT_MODULE
                     && design_type
                         .base_type_guid
-                        .as_ref()
-                        .and_then(|field| {
-                            field
-                                .value
-                                .as_ref()
-                                .map(crate::records::DesignRelaxedGuidText::as_str)
-                        })
+                        .value()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })

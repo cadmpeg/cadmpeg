@@ -170,21 +170,34 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
             wire.push_str(suffix);
             let parsed: crate::records::SegmentType =
                 serde_json::from_str(&wire).expect("base GUID");
-            assert_eq!(
-                parsed.base_type_guid.as_ref().unwrap().value.is_none(),
-                value == "\"\""
-            );
+            let expected = if value == "\"\"" {
+                crate::records::BaseTypeGuid::EmptyRoot { offset }
+            } else {
+                crate::records::BaseTypeGuid::Guid {
+                    value: value.trim_matches('"').to_owned().try_into().unwrap(),
+                    offset,
+                }
+            };
+            assert_eq!(parsed.base_type_guid, expected);
             assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
         }
     }
     let wire = format!("{prefix}{suffix}");
     let parsed: crate::records::SegmentType = serde_json::from_str(&wire).expect("root type");
+    assert_eq!(parsed.base_type_guid, crate::records::BaseTypeGuid::Absent);
     assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
     let wire = format!("{prefix},\"base_type_guid_offset\":44{suffix}");
     let error = serde_json::from_str::<crate::records::SegmentType>(&wire)
         .expect_err("orphan base GUID offset")
         .to_string();
     assert!(error.contains("base_type_guid_offset"));
+    let wire =
+        format!("{prefix},\"base_type_guid\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\"{suffix}");
+    let error = serde_json::from_str::<crate::records::SegmentType>(&wire)
+        .expect_err("unlocated base GUID")
+        .to_string();
+    assert!(error.contains("base_type_guid"), "{error}");
+    assert!(error.contains("base_type_guid_offset"), "{error}");
 }
 
 #[test]
