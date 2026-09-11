@@ -387,12 +387,12 @@ fn emit_carrier_surface(
                     } => (
                         Some(u_sense),
                         Some(v_sense),
-                        cadmpeg_ir::geometry::OffsetExtension::Legacy(extension),
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: extension },
                     ),
                     EmbeddedOffsetLayout::Revision(form) => (
                         None,
                         None,
-                        cadmpeg_ir::geometry::OffsetExtension::Revision(*form),
+                        cadmpeg_ir::geometry::OffsetExtension::Revision { form: *form },
                     ),
                 };
                 ProceduralSurfaceDefinition::Offset(

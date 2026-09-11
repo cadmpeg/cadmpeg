@@ -5333,9 +5333,9 @@ pub(crate) fn append_text_surface(
                     None,
                     None,
                     false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    },
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(

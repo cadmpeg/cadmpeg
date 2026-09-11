@@ -131,9 +131,9 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             assert_eq!(*v_sense, None);
             assert_eq!(
                 *extension,
-                cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                )
+                cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                }
             );
             let owner = result
                 .ir()

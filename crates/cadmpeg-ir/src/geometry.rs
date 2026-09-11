@@ -104,83 +104,34 @@ impl<'de> Deserialize<'de> for LegacyExtensionFlags {
     }
 }
 
+#[cfg(feature = "schema")]
+impl JsonSchema for LegacyExtensionFlags {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LegacyExtensionFlags".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Vec::<bool>::json_schema(generator)
+    }
+}
+
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
 // Variant payloads retain the native layout as one value without separate heap ownership.
 #[allow(clippy::large_enum_variant)]
 pub enum OffsetExtension {
     /// Pre-revision conditional flag sequence.
-    Legacy(LegacyExtensionFlags),
+    Legacy {
+        /// Conditional flag sequence in its positional wire form.
+        flags: LegacyExtensionFlags,
+    },
     /// Revision-gated fields with the required four-boolean carrier run.
-    Revision(RevisionSurfaceForm<[bool; 4]>),
-}
-
-#[derive(Serialize)]
-struct OffsetExtensionWriteWire<'a> {
-    extension_flags: Vec<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    revision_form: Option<&'a RevisionSurfaceForm<[bool; 4]>>,
-}
-
-#[derive(Deserialize)]
-struct OffsetExtensionReadWire {
-    extension_flags: Vec<bool>,
-    #[serde(default)]
-    revision_form: Option<RevisionSurfaceForm>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the offset-extension wire schema")]
-struct OffsetExtensionSchemaWire {
-    extension_flags: Vec<bool>,
-    revision_form: Option<RevisionSurfaceForm<[bool; 4]>>,
-}
-
-impl Serialize for OffsetExtension {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (extension_flags, revision_form) = match self {
-            Self::Legacy(flags) => (flags.wire_values(), None),
-            Self::Revision(form) => (Vec::new(), Some(form)),
-        };
-        OffsetExtensionWriteWire {
-            extension_flags,
-            revision_form,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for OffsetExtension {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = OffsetExtensionReadWire::deserialize(deserializer)?;
-        match wire.revision_form {
-            None => LegacyExtensionFlags::try_from(wire.extension_flags)
-                .map(Self::Legacy)
-                .map_err(|_| {
-                    serde::de::Error::custom(
-                        "extension_flags must be [], [false], [true, flag], or [true, flag, flag]",
-                    )
-                }),
-            Some(mut form) if wire.extension_flags.is_empty() => {
-                let flags: [bool; 4] = std::mem::take(&mut form.flags).try_into().map_err(|_| {
-                    serde::de::Error::custom(
-                        "revision_form.flags must contain exactly four booleans for an offset surface",
-                    )
-                })?;
-                Ok(Self::Revision(form.with_flags(flags)))
-            }
-            Some(_) => Err(serde::de::Error::custom(
-                "extension_flags must be empty when revision_form is present",
-            )),
-        }
-    }
+    Revision {
+        /// Revision-gated form whose carrier run is exactly four booleans.
+        form: RevisionSurfaceForm<[bool; 4]>,
+    },
 }
 
 mod carriers;
@@ -960,8 +911,8 @@ impl ProceduralSurfaceDefinition {
             }
             Self::Sum(payload) => payload.revision_form().as_ref().map(|form| &form.cache),
             Self::Offset(payload) => match payload.extension() {
-                OffsetExtension::Revision(form) => Some(&form.cache),
-                OffsetExtension::Legacy(_) => None,
+                OffsetExtension::Revision { form } => Some(&form.cache),
+                OffsetExtension::Legacy { flags: _ } => None,
             },
             Self::Loft(payload) => payload.revision_cache(),
             Self::RevisionCompoundLoft { construction } => Some(&construction.cache),
@@ -2912,22 +2863,6 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
     /// Boolean run following the shared tail.
     #[serde(default)]
     pub trailing_flags: Vec<bool>,
-}
-
-impl<F: Default> RevisionSurfaceForm<F> {
-    fn with_flags<G: Default>(self, flags: G) -> RevisionSurfaceForm<G> {
-        RevisionSurfaceForm {
-            revision: self.revision,
-            support_bounds: self.support_bounds,
-            reference_endpoints: self.reference_endpoints,
-            second_endpoints: self.second_endpoints,
-            flags,
-            cache: self.cache,
-            discontinuities: self.discontinuities,
-            tail_flag: self.tail_flag,
-            trailing_flags: self.trailing_flags,
-        }
-    }
 }
 
 /// Mutually exclusive payloads of a revision-gated approximation cache.

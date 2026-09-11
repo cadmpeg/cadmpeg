@@ -384,7 +384,8 @@
             "distance": -12.5,
             "u_sense": 3,
             "v_sense": -4,
-            "extension_flags": [
+            "layout": "legacy",
+            "flags": [
               true,
               false,
               true
