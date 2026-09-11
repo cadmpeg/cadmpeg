@@ -53,19 +53,21 @@ fn region_loops_reject_repeated_and_outer_holes() {
             .unwrap_err()
             .to_string()
             .contains("holes"));
-        assert!(serde_json::from_value::<SketchProfileRegion>(wire)
+        let region = serde_json::json!({"region": "loops", "outer": 0, "holes": holes});
+        assert!(serde_json::from_value::<SketchProfileRegion>(region)
             .unwrap_err()
             .to_string()
             .contains("holes"));
     }
     for holes in [vec![], vec![2, 1]] {
         let region = SketchProfileRegion::loops(0, holes.clone()).unwrap();
-        let SketchProfileRegion::Loops(loops) = &region else {
+        let SketchProfileRegion::Loops { loops } = &region else {
             panic!("loop region")
         };
         assert_eq!(loops.outer(), 0);
         assert_eq!(loops.holes(), holes);
         let wire = serde_json::to_value(&region).unwrap();
+        assert_eq!(wire["region"], "loops");
         assert_eq!(wire["outer"], 0);
         if holes.is_empty() {
             assert!(wire.get("holes").is_none());
@@ -88,17 +90,14 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     };
     assert!(SketchProfileRegion::trimmed(vec![], vec![]).is_err());
     assert!(SketchProfileRegion::trimmed(vec![boundary.clone()], vec![vec![]]).is_err());
-    for (wire, field) in [
-        (serde_json::json!({"outer_boundary": []}), "outer_boundary"),
-        (
-            serde_json::json!({"outer_boundary": [boundary], "hole_boundaries": [[]]}),
-            "hole_boundaries",
-        ),
+    for wire in [
+        serde_json::json!({"region": "trimmed", "outer_boundary": []}),
+        serde_json::json!({"region": "trimmed", "outer_boundary": [boundary], "hole_boundaries": [[]]}),
     ] {
-        assert!(serde_json::from_value::<SketchProfileRegion>(wire)
+        let error = serde_json::from_value::<SketchProfileRegion>(wire)
             .unwrap_err()
-            .to_string()
-            .contains(field));
+            .to_string();
+        assert!(error.contains("must not be empty"), "{error}");
     }
     let repeated_ring = vec![boundary.clone(), boundary];
     let trimmed = SketchProfileRegion::trimmed(
@@ -124,4 +123,47 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     let profile = ProfileRef::sketch_regions(sketch, vec![trimmed, loops]).unwrap();
     let wire = serde_json::to_value(&profile).unwrap();
     assert_eq!(serde_json::from_value::<ProfileRef>(wire).unwrap(), profile);
+}
+
+#[test]
+fn a_sketch_profile_region_states_which_boundary_form_it_uses() {
+    let boundary = SketchProfileBoundaryUse {
+        entity: SketchEntityId::mint("test:test:sketch-entity#one").unwrap(),
+        parameter_range: DirectedParameterRange::new([5.0, 2.0]).unwrap(),
+        reversed: false,
+    };
+    let loops = SketchProfileRegion::loops(0, vec![2]).unwrap();
+    let trimmed = SketchProfileRegion::trimmed(vec![boundary.clone()], Vec::new()).unwrap();
+
+    let loops_wire = serde_json::to_value(&loops).unwrap();
+    assert_eq!(loops_wire["region"], "loops");
+    let trimmed_wire = serde_json::to_value(&trimmed).unwrap();
+    assert_eq!(trimmed_wire["region"], "trimmed");
+    assert_eq!(
+        serde_json::from_value::<SketchProfileRegion>(loops_wire.clone()).unwrap(),
+        loops
+    );
+    assert_eq!(
+        serde_json::from_value::<SketchProfileRegion>(trimmed_wire.clone()).unwrap(),
+        trimmed
+    );
+
+    let mut cross = loops_wire;
+    cross["outer_boundary"] = serde_json::json!([boundary]);
+    let error = serde_json::from_value::<SketchProfileRegion>(cross)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("outer_boundary"), "{error}");
+
+    let mut stray = trimmed_wire;
+    stray["outer"] = serde_json::json!(0);
+    let error = serde_json::from_value::<SketchProfileRegion>(stray)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("outer"), "{error}");
+
+    let error = serde_json::from_value::<SketchProfileRegion>(serde_json::json!({"outer": 0}))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("region"), "{error}");
 }

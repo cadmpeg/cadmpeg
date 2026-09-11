@@ -4266,7 +4266,7 @@ fn check_feature_sketch_references(
                     let sketch_profile_count =
                         selected_sketch.map_or(0, |sketch| sketch.profiles.len());
                     let invalid = regions.iter().any(|region| match region {
-                        crate::features::SketchProfileRegion::Loops(loops) => {
+                        crate::features::SketchProfileRegion::Loops { loops } => {
                             loops.outer() as usize >= sketch_profile_count
                                 || loops
                                     .holes()
