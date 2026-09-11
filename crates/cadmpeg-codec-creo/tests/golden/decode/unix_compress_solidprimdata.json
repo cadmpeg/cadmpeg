@@ -555,13 +555,10 @@
       "provenance": {
         "creo:container:expanded_section#SolidPrimdata:211": {
           "offset": 211,
-          "stream": 0,
+          "stream": "creo:SolidPrimdata",
           "tag": "unix_compress_expanded_section"
         }
-      },
-      "streams": [
-        "creo:SolidPrimdata"
-      ]
+      }
     }
   }
 }

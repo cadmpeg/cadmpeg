@@ -632,59 +632,55 @@
       "provenance": {
         "catia:e5:body#unbound-points": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "unbound_point_owner"
         },
         "catia:e5:curve#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "circle_carrier"
         },
         "catia:e5:pt#0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "vertex_05_08_01"
         },
         "catia:e5:pt#1": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "vertex_05_08_01"
         },
         "catia:e5:region#unbound-points": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "unbound_point_owner"
         },
         "catia:e5:shell#unbound-points": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "unbound_point_owner"
         },
         "catia:e5:surf#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "analytic_surface"
         },
         "catia:e5:v#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:e5:v#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:payload:unknown#e5": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:e5-stream"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:e5_0d_03"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#e5": {

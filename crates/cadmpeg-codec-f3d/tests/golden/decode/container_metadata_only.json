@@ -243,13 +243,9 @@
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:native",
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh"
-      ],
       "provenance": {
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0": {
-          "stream": 1,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 0,
           "tag": "opaque_brep"
         }

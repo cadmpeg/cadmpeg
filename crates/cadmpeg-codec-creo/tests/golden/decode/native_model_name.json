@@ -596,18 +596,15 @@
       "provenance": {
         "creo:model:occurrence#root": {
           "offset": 30,
-          "stream": 0,
+          "stream": "creo:archive_header",
           "tag": "part_product_occurrence"
         },
         "creo:model:product_definition#root": {
           "offset": 30,
-          "stream": 0,
+          "stream": "creo:archive_header",
           "tag": "part_product"
         }
-      },
-      "streams": [
-        "creo:archive_header"
-      ]
+      }
     }
   }
 }

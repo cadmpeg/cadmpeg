@@ -567,19 +567,15 @@
       "provenance": {
         "creo:NovisGeom:section#143": {
           "offset": 143,
-          "stream": 1,
+          "stream": "creo:NovisGeom",
           "tag": "psb_geometry_section"
         },
         "creo:VisibGeom:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "psb_geometry_section"
         }
-      },
-      "streams": [
-        "creo:VisibGeom",
-        "creo:NovisGeom"
-      ]
+      }
     },
     "retained_records": {
       "creo:NovisGeom:section#143": {

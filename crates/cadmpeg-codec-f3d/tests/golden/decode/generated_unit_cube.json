@@ -1778,468 +1778,464 @@
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
-        "f3d:native"
-      ],
       "provenance": {
         "f3d:brep:attribute#86": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7644,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#87": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7784,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#88": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7924,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#89": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8066,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#90": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8207,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#91": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8347,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#92": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8488,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:entity#1": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 168,
           "tag": "body"
         },
         "f3d:brep:entity#10": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 858,
           "tag": "loop"
         },
         "f3d:brep:entity#11": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 919,
           "tag": "loop"
         },
         "f3d:brep:entity#12": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 980,
           "tag": "loop"
         },
         "f3d:brep:entity#13": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1041,
           "tag": "loop"
         },
         "f3d:brep:entity#14": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1102,
           "tag": "loop"
         },
         "f3d:brep:entity#15": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1163,
           "tag": "loop"
         },
         "f3d:brep:entity#16": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1224,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#17": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1344,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#18": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1464,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#19": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1584,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#2": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 229,
           "tag": "region"
         },
         "f3d:brep:entity#20": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1704,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#21": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1824,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#22": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1944,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#23": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2039,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#24": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2134,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#25": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2229,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#26": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2324,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#27": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2419,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#28": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2514,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#29": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2609,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#3": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 292,
           "tag": "shell"
         },
         "f3d:brep:entity#30": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2704,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#31": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2799,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#32": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2894,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#33": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2989,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#34": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3084,
           "tag": "coedge"
         },
         "f3d:brep:entity#35": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3184,
           "tag": "coedge"
         },
         "f3d:brep:entity#36": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3284,
           "tag": "coedge"
         },
         "f3d:brep:entity#37": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3384,
           "tag": "coedge"
         },
         "f3d:brep:entity#38": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3484,
           "tag": "coedge"
         },
         "f3d:brep:entity#39": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3584,
           "tag": "coedge"
         },
         "f3d:brep:entity#4": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 372,
           "tag": "face"
         },
         "f3d:brep:entity#40": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3684,
           "tag": "coedge"
         },
         "f3d:brep:entity#41": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3784,
           "tag": "coedge"
         },
         "f3d:brep:entity#42": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3884,
           "tag": "coedge"
         },
         "f3d:brep:entity#43": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3984,
           "tag": "coedge"
         },
         "f3d:brep:entity#44": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4084,
           "tag": "coedge"
         },
         "f3d:brep:entity#45": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4184,
           "tag": "coedge"
         },
         "f3d:brep:entity#46": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4284,
           "tag": "coedge"
         },
         "f3d:brep:entity#47": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4384,
           "tag": "coedge"
         },
         "f3d:brep:entity#48": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4484,
           "tag": "coedge"
         },
         "f3d:brep:entity#49": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4584,
           "tag": "coedge"
         },
         "f3d:brep:entity#5": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 453,
           "tag": "face"
         },
         "f3d:brep:entity#50": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4684,
           "tag": "coedge"
         },
         "f3d:brep:entity#51": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4784,
           "tag": "coedge"
         },
         "f3d:brep:entity#52": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4884,
           "tag": "coedge"
         },
         "f3d:brep:entity#53": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4984,
           "tag": "coedge"
         },
         "f3d:brep:entity#54": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5084,
           "tag": "coedge"
         },
         "f3d:brep:entity#55": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5184,
           "tag": "coedge"
         },
         "f3d:brep:entity#56": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5284,
           "tag": "coedge"
         },
         "f3d:brep:entity#57": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5384,
           "tag": "coedge"
         },
         "f3d:brep:entity#58": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5484,
           "tag": "edge"
         },
         "f3d:brep:entity#59": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5582,
           "tag": "edge"
         },
         "f3d:brep:entity#6": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 534,
           "tag": "face"
         },
         "f3d:brep:entity#60": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5680,
           "tag": "edge"
         },
         "f3d:brep:entity#61": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5778,
           "tag": "edge"
         },
         "f3d:brep:entity#62": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5876,
           "tag": "edge"
         },
         "f3d:brep:entity#63": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5974,
           "tag": "edge"
         },
         "f3d:brep:entity#64": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6072,
           "tag": "edge"
         },
         "f3d:brep:entity#65": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6170,
           "tag": "edge"
         },
         "f3d:brep:entity#66": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6268,
           "tag": "edge"
         },
         "f3d:brep:entity#67": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6366,
           "tag": "edge"
         },
         "f3d:brep:entity#68": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6464,
           "tag": "edge"
         },
         "f3d:brep:entity#69": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6562,
           "tag": "edge"
         },
         "f3d:brep:entity#7": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 615,
           "tag": "face"
         },
         "f3d:brep:entity#70": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6660,
           "tag": "vertex"
         },
         "f3d:brep:entity#71": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6723,
           "tag": "vertex"
         },
         "f3d:brep:entity#72": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6786,
           "tag": "vertex"
         },
         "f3d:brep:entity#73": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6849,
           "tag": "vertex"
         },
         "f3d:brep:entity#74": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6912,
           "tag": "vertex"
         },
         "f3d:brep:entity#75": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6975,
           "tag": "vertex"
         },
         "f3d:brep:entity#76": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7038,
           "tag": "vertex"
         },
         "f3d:brep:entity#77": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7101,
           "tag": "vertex"
         },
         "f3d:brep:entity#78": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7164,
           "tag": "point"
         },
         "f3d:brep:entity#79": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7224,
           "tag": "point"
         },
         "f3d:brep:entity#8": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 696,
           "tag": "face"
         },
         "f3d:brep:entity#80": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7284,
           "tag": "point"
         },
         "f3d:brep:entity#81": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7344,
           "tag": "point"
         },
         "f3d:brep:entity#82": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7404,
           "tag": "point"
         },
         "f3d:brep:entity#83": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7464,
           "tag": "point"
         },
         "f3d:brep:entity#84": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7524,
           "tag": "point"
         },
         "f3d:brep:entity#85": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7584,
           "tag": "point"
         },
         "f3d:brep:entity#9": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 777,
           "tag": "face"
         }

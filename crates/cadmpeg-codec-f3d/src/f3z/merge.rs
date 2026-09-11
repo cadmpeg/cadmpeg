@@ -245,7 +245,7 @@ fn merge_annotations(
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.map_exactness_ids(|id| remap_id_text(id, occurrence));
     source = annotations.build();
-    target.merge_interned(source);
+    target.append(source);
 }
 
 fn remap_id_text(text: &str, occurrence: &str) -> String {

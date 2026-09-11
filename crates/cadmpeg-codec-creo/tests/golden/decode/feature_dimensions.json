@@ -1025,65 +1025,60 @@
       "provenance": {
         "creo:depdb:curve_expression#active-7-269": {
           "offset": 295,
-          "stream": 2,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_program"
         },
         "creo:depdb:curve_expression_feature#7-269": {
           "offset": 295,
-          "stream": 2,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_feature"
         },
         "creo:depdb:curve_expression_parameter#7-269-0": {
           "offset": 310,
-          "stream": 2,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         },
         "creo:featdefs:feature_definition#917": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "feature_definition_record"
         },
         "creo:featdefs:parameter#917:42:1": {
           "offset": 144,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "section_dimension"
         },
         "creo:featdefs:parameter#917:42:2": {
           "offset": 197,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "section_dimension"
         },
         "creo:featdefs:sketch#917": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "feature_sketch"
         },
         "creo:mdlstatus:feature_state#40:0": {
           "offset": 227,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:model:feature#40": {
           "offset": 227,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:sketch#917": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "unplaced_section"
         },
         "creo:model:sketch_feature#917": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "section_sketch_feature"
         }
-      },
-      "streams": [
-        "creo:FeatDefs",
-        "creo:MdlStatus",
-        "creo:DEPDB_DATA"
-      ]
+      }
     }
   }
 }

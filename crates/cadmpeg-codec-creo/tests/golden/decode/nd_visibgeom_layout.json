@@ -539,13 +539,10 @@
       "provenance": {
         "creo:VisibGeom:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "psb_geometry_section"
         }
-      },
-      "streams": [
-        "creo:VisibGeom"
-      ]
+      }
     },
     "retained_records": {
       "creo:VisibGeom:section#76": {

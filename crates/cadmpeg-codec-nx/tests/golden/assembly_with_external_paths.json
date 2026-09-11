@@ -140,18 +140,15 @@
         "provenance": {
           "nx:external-reference:/Root/UG_PART/ExternalReferences#0": {
             "offset": 106,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "EXTREFSTREAM_STRING"
           },
           "nx:external-reference:/Root/UG_PART/ExternalReferences#1": {
             "offset": 117,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "EXTREFSTREAM_STRING"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       }
     }
   },

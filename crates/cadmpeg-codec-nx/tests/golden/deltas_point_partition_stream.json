@@ -274,40 +274,35 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 76,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "deltas"
           },
           "nx:derived:point-body#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:derived:point-region#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:derived:point-shell#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:derived:point-vertex#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:s0:pt#0": {
             "offset": 0,
-            "stream": 0,
+            "stream": "nx:parasolid#0:deltas",
             "tag": "POINT"
           }
-        },
-        "streams": [
-          "nx:parasolid#0:deltas",
-          "nx:container",
-          "nx:s0"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

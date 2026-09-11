@@ -1506,383 +1506,379 @@
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
-        "f3d:native"
-      ],
       "provenance": {
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2882": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "construction_recipe"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2832": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "BodiesRoot"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2843": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "BodiesRoot"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#111": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_entity_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#746": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_entity_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3042": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_parameter_scope"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1022": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1228": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1434": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1640": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3042": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3278": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3314": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3347": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#820": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#921": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "EDGE_REFERENCE_LOST"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "material_assignment"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1051": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1257": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1463": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1669": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1875": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1928": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2167": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2425": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2478": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2926": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "persistent_reference"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1846": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_curve"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#2344": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_curve"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1022": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_point"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1228": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_point"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1434": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_point"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1640": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_point"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2086": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_point"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#33": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_relation"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#44": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "sketch_relation"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1105": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1212": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1352": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1492": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#259": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#366": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#447": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#562": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#668": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#772": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#877": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#981": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-entity#7": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTEntity"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#89": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTGuid"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-registry-channel#184": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTRegistryChannel"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-registry-channel#274": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTRegistryChannel"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#370": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTRootComponent"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-table-reference#169": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTTableReference"
         },
         "f3d:appearance:binding#0_985:11111111-2222-3333-4444-555555555555": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "appearance_binding"
         },
         "f3d:brep:entity#1": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 168,
           "tag": "body"
         },
         "f3d:brep:entity#10": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 934,
           "tag": "edge"
         },
         "f3d:brep:entity#11": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1032,
           "tag": "edge"
         },
         "f3d:brep:entity#12": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1130,
           "tag": "edge"
         },
         "f3d:brep:entity#13": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1228,
           "tag": "vertex"
         },
         "f3d:brep:entity#14": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1291,
           "tag": "vertex"
         },
         "f3d:brep:entity#15": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1354,
           "tag": "vertex"
         },
         "f3d:brep:entity#16": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1417,
           "tag": "point"
         },
         "f3d:brep:entity#17": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1477,
           "tag": "point"
         },
         "f3d:brep:entity#18": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 1537,
           "tag": "point"
         },
         "f3d:brep:entity#2": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 229,
           "tag": "region"
         },
         "f3d:brep:entity#3": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 292,
           "tag": "shell"
         },
         "f3d:brep:entity#4": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 372,
           "tag": "face"
         },
         "f3d:brep:entity#5": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 453,
           "tag": "loop"
         },
         "f3d:brep:entity#6": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 514,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#7": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 634,
           "tag": "coedge"
         },
         "f3d:brep:entity#8": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 734,
           "tag": "coedge"
         },
         "f3d:brep:entity#9": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
           "offset": 834,
           "tag": "coedge"
         }

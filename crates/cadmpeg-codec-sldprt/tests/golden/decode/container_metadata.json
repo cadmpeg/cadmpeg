@@ -200,19 +200,15 @@
       "provenance": {
         "sldprt:file:block#54": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid_stream"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "source",
           "tag": "source_image"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "source"
-      ]
+      }
     },
     "retained_records": {
       "sldprt:file:block#54": {

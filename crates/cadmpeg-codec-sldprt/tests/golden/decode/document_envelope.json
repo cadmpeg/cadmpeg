@@ -520,156 +520,150 @@
       "provenance": {
         "sldprt:brep:body#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:coedge#30": {
           "offset": 146,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#31": {
           "offset": 169,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#32": {
           "offset": 192,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:edge#40": {
           "offset": 215,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#41": {
           "offset": 245,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#42": {
           "offset": 275,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:face#10": {
           "offset": 91,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0e"
         },
         "sldprt:brep:loop#20": {
           "offset": 130,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0f"
         },
         "sldprt:brep:point#60": {
           "offset": 383,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#61": {
           "offset": 423,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#62": {
           "offset": 463,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:region#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:shell#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:surf#10": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "compact_surface"
         },
         "sldprt:brep:vertex#50": {
           "offset": 305,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#51": {
           "offset": 331,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#52": {
           "offset": 357,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:file:block#247": {
           "offset": 247,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "unknown"
         },
         "sldprt:file:block#492": {
           "offset": 492,
-          "stream": 2,
+          "stream": "Units",
           "tag": "unknown"
         },
         "sldprt:file:block#8": {
           "offset": 8,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 3,
+          "stream": "source",
           "tag": "source_image"
         },
         "sldprt:metadata:bounding_envelope#247:0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "moBBoxCenterData_c"
         },
         "sldprt:metadata:configuration_manager#247:269": {
           "offset": 269,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "moConfigurationMgr_c"
         },
         "sldprt:metadata:default_reference_plane#247:54": {
           "offset": 54,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "moDefaultRefPlnData_c"
         },
         "sldprt:metadata:part_record#247:248": {
           "offset": 248,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "moPart_c"
         },
         "sldprt:metadata:source_linear_unit_code#492:10": {
           "offset": 10,
-          "stream": 2,
+          "stream": "Units",
           "tag": "SW_UnitsLinear"
         },
         "sldprt:metadata:source_linear_unit_name#247:414": {
           "offset": 414,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "moLengthUserUnits_c"
         },
         "sldprt:metadata:transformed_reference_plane#247:147": {
           "offset": 147,
-          "stream": 1,
+          "stream": "SWObjects",
           "tag": "moTransRefPlaneData_c"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "SWObjects",
-        "Units",
-        "source"
-      ]
+      }
     },
     "retained_records": {
       "sldprt:file:block#247": {

@@ -603,19 +603,15 @@
       "provenance": {
         "catia:a8:surf#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:object_stream_a8_03",
           "tag": "freeform:object_id:decafbad"
         },
         "catia:payload:unknown#freeform": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:float-packed-inner-no-fbb"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:object_stream_a8_03"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#freeform": {

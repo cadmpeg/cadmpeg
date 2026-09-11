@@ -1355,7 +1355,7 @@ fn merge_standard_population_annotations(
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.map_exactness_ids(|id| rescope_standard_id(id, scope));
     source = annotations.build();
-    target.merge_interned(source);
+    target.append(source);
 }
 
 fn try_decode_standard_populations(

@@ -544,13 +544,10 @@
       "provenance": {
         "creo:THMB_IMG_MAIN:section#91": {
           "offset": 91,
-          "stream": 0,
+          "stream": "creo:THMB_IMG_MAIN",
           "tag": "jpeg_thumbnail"
         }
-      },
-      "streams": [
-        "creo:THMB_IMG_MAIN"
-      ]
+      }
     },
     "retained_records": {
       "creo:THMB_IMG_MAIN:section#91": {

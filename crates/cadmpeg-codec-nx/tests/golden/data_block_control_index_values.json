@@ -224,43 +224,40 @@
         "provenance": {
           "nx:om-data-block-control-forms:form#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_FORM"
           },
           "nx:om-data-block-control-index-values-0:value#0": {
             "offset": 124,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_INDEX_VALUE"
           },
           "nx:om-data-block-control-index-values-0:value#1": {
             "offset": 128,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_INDEX_VALUE"
           },
           "nx:om-section-0:block#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
             "offset": 148,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
             "offset": 160,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
             "offset": 132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_STORE_VERSION"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:om-section-0:block#0": {

@@ -661,25 +661,20 @@
       "provenance": {
         "catia:a8-rolling-ball:construction#0": {
           "offset": 32,
-          "stream": 2,
+          "stream": "catia:object_stream_a8_03_32",
           "tag": "object_id:12345678:multiplicities:[6, 6]"
         },
         "catia:a8-rolling-ball:surf#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:object_stream_a8_03_32_cache",
           "tag": "object_id:12345678"
         },
         "catia:payload:unknown#freeform": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:float-packed-inner-no-fbb"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:object_stream_a8_03_32_cache",
-        "catia:object_stream_a8_03_32"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#freeform": {

@@ -1007,54 +1007,50 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 119,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:derived:point-body#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:derived:point-region#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:derived:point-shell#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:derived:point-vertex#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "derived_point_topology"
           },
           "nx:s0:crv#0": {
             "offset": 316,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:pt#0": {
             "offset": 86,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:surf#0": {
             "offset": 126,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
             "offset": 217,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "CYLINDER"
           }
-        },
-        "streams": [
-          "nx:parasolid#0:partition",
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

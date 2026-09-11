@@ -886,73 +886,70 @@
       "provenance": {
         "creo:mdlstatus:feature_state#40:0": {
           "offset": 93,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#40:1": {
           "offset": 174,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#41:0": {
           "offset": 111,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#42:0": {
           "offset": 123,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#43:0": {
           "offset": 144,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#44:0": {
           "offset": 162,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#45:0": {
           "offset": 185,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:model:feature#40": {
           "offset": 94,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state_consensus"
         },
         "creo:model:feature#41": {
           "offset": 111,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#42": {
           "offset": 123,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#43": {
           "offset": 144,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#44": {
           "offset": 162,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#45": {
           "offset": 186,
-          "stream": 0,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         }
-      },
-      "streams": [
-        "creo:MdlStatus"
-      ]
+      }
     }
   }
 }

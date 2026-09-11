@@ -682,28 +682,25 @@
       "provenance": {
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:fbb-only"
         },
         "catia:standard:circle#0": {
           "offset": 297,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60_circle"
         },
         "catia:standard:surf#0": {
           "offset": 131,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_33"
         },
         "catia:standard:surf#1": {
           "offset": 204,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_32"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#brep-stream": {

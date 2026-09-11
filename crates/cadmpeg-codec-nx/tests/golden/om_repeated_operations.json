@@ -1981,398 +1981,395 @@
         "provenance": {
           "nx:feature-history:body-reference#0000000000-0000000000": {
             "offset": 366,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000001": {
             "offset": 440,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000002": {
             "offset": 514,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000003": {
             "offset": 588,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000004": {
             "offset": 662,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000005": {
             "offset": 736,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000006": {
             "offset": 810,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000007": {
             "offset": 884,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000008": {
             "offset": 958,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000009": {
             "offset": 1032,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000010": {
             "offset": 1106,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000011": {
             "offset": 1180,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000": {
             "offset": 366,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000": {
             "offset": 440,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000002-0000000000": {
             "offset": 514,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000003-0000000000": {
             "offset": 588,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000004-0000000000": {
             "offset": 662,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000005-0000000000": {
             "offset": 736,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000006-0000000000": {
             "offset": 810,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000007-0000000000": {
             "offset": 884,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000008-0000000000": {
             "offset": 958,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000009-0000000000": {
             "offset": 1032,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000010-0000000000": {
             "offset": 1106,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000011-0000000000": {
             "offset": 1180,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:boolean#0000000000-0000000000": {
             "offset": 318,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000001": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000002": {
             "offset": 466,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000003": {
             "offset": 540,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000004": {
             "offset": 614,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000005": {
             "offset": 688,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000006": {
             "offset": 762,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000007": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000009": {
             "offset": 984,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000010": {
             "offset": 1058,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000011": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000000": {
             "offset": 318,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000001": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000002": {
             "offset": 466,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000003": {
             "offset": 540,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000004": {
             "offset": 614,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000005": {
             "offset": 688,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000006": {
             "offset": 762,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000007": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000009": {
             "offset": 984,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000010": {
             "offset": 1058,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000011": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:operation-label#0000000000-0000000000": {
             "offset": 318,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000001": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000002": {
             "offset": 466,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000003": {
             "offset": 540,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000004": {
             "offset": 614,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000005": {
             "offset": 688,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000006": {
             "offset": 762,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000007": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000009": {
             "offset": 984,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000010": {
             "offset": 1058,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000011": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-record#0000000000-0000000000": {
             "offset": 296,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000001": {
             "offset": 370,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000002": {
             "offset": 444,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000003": {
             "offset": 518,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000004": {
             "offset": 592,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000005": {
             "offset": 666,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000006": {
             "offset": 740,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000007": {
             "offset": 814,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000008": {
             "offset": 888,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000009": {
             "offset": 962,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000010": {
             "offset": 1036,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000011": {
             "offset": 1110,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:om-record-areas:area#0-177": {
             "offset": 253,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-record-areas:area#1-177": {
             "offset": 253,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-om-links:link#0": {
             "offset": 100,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           },
           "nx:segment-om-links:link#1": {
             "offset": 100,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       }
     }
   },

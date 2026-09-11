@@ -257,14 +257,6 @@ impl Provenance<AnnotationLocation> {
     pub fn stream(&self) -> &str {
         &self.location.stream
     }
-
-    pub(crate) fn stream_ref(&self) -> &Arc<str> {
-        &self.location.stream
-    }
-
-    pub(crate) fn rebind_stream(&mut self, stream: Arc<str>) {
-        self.location.stream = stream;
-    }
 }
 
 impl Provenance<SourceLocation> {
@@ -316,6 +308,57 @@ impl Provenance<SourceLocation> {
     #[must_use]
     pub fn stream(&self) -> Option<&str> {
         self.location.stream.as_ref().map(StreamName::as_str)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct AnnotationProvenanceWire {
+    stream: StreamName,
+    offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tag: Option<String>,
+}
+
+impl Serialize for Provenance<AnnotationLocation> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        AnnotationProvenanceWire {
+            stream: StreamName(std::borrow::Cow::Owned(self.location.stream.to_string())),
+            offset: self.offset,
+            tag: self.tag.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Provenance<AnnotationLocation> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = AnnotationProvenanceWire::deserialize(deserializer)?;
+        Ok(Self {
+            location: AnnotationLocation {
+                stream: Arc::<str>::from(wire.stream.as_str()),
+            },
+            offset: wire.offset,
+            tag: wire.tag,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for Provenance<AnnotationLocation> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AnnotationProvenance".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        AnnotationProvenanceWire::json_schema(generator)
     }
 }
 

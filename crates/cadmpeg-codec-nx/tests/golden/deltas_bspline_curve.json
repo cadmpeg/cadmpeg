@@ -350,31 +350,25 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 76,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
             "offset": 320,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "deltas"
           },
           "nx:s0:nurbs-crv#0": {
             "offset": 625,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "B_SPLINE_CURVE"
           },
           "nx:s0:nurbs-surf#0": {
             "offset": 50,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "B_SPLINE_SURFACE"
           }
-        },
-        "streams": [
-          "nx:parasolid#0:partition",
-          "nx:container",
-          "nx:parasolid#1:deltas",
-          "nx:s1"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

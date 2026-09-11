@@ -3161,534 +3161,530 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 121,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
             "offset": 1660,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:s0:body#2": {
             "offset": 94,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "UNRESOLVED_BODY_REFERENCE"
           },
           "nx:s0:face#300": {
             "offset": 134,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#301": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#302": {
             "offset": 212,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#303": {
             "offset": 251,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#304": {
             "offset": 290,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#305": {
             "offset": 329,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#306": {
             "offset": 368,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#307": {
             "offset": 407,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#308": {
             "offset": 446,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#309": {
             "offset": 485,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#310": {
             "offset": 524,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#311": {
             "offset": 563,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#312": {
             "offset": 602,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#313": {
             "offset": 641,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#314": {
             "offset": 680,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#315": {
             "offset": 719,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#316": {
             "offset": 758,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#317": {
             "offset": 797,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#318": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#319": {
             "offset": 875,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#320": {
             "offset": 914,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#321": {
             "offset": 953,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#322": {
             "offset": 992,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#323": {
             "offset": 1031,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#324": {
             "offset": 1070,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#325": {
             "offset": 1109,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#326": {
             "offset": 1148,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#327": {
             "offset": 1187,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#328": {
             "offset": 1226,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#329": {
             "offset": 1265,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#330": {
             "offset": 1304,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#331": {
             "offset": 1343,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#332": {
             "offset": 1382,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#333": {
             "offset": 1421,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#334": {
             "offset": 1460,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#335": {
             "offset": 1499,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#336": {
             "offset": 1538,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#337": {
             "offset": 1577,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#338": {
             "offset": 1616,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#339": {
             "offset": 1655,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#340": {
             "offset": 1694,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#341": {
             "offset": 1733,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#342": {
             "offset": 1772,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#343": {
             "offset": 1811,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#344": {
             "offset": 1850,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#345": {
             "offset": 1889,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#346": {
             "offset": 1928,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#347": {
             "offset": 1967,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#348": {
             "offset": 2006,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#349": {
             "offset": 2045,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:region#4": {
             "offset": 118,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "REGION"
           },
           "nx:s0:shell#3": {
             "offset": 94,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
           "nx:s0:surf#0": {
             "offset": 2084,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
             "offset": 2175,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#10": {
             "offset": 2994,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#11": {
             "offset": 3085,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#12": {
             "offset": 3176,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#13": {
             "offset": 3267,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#14": {
             "offset": 3358,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#15": {
             "offset": 3449,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#16": {
             "offset": 3540,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#17": {
             "offset": 3631,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#18": {
             "offset": 3722,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#19": {
             "offset": 3813,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#2": {
             "offset": 2266,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#20": {
             "offset": 3904,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#21": {
             "offset": 3995,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#22": {
             "offset": 4086,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#23": {
             "offset": 4177,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#24": {
             "offset": 4268,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#25": {
             "offset": 4359,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#26": {
             "offset": 4450,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#27": {
             "offset": 4541,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#28": {
             "offset": 4632,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#29": {
             "offset": 4723,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#3": {
             "offset": 2357,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#30": {
             "offset": 4814,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#31": {
             "offset": 4905,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#32": {
             "offset": 4996,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#33": {
             "offset": 5087,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#34": {
             "offset": 5178,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#35": {
             "offset": 5269,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#36": {
             "offset": 5360,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#37": {
             "offset": 5451,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#38": {
             "offset": 5542,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#39": {
             "offset": 5633,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#4": {
             "offset": 2448,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#40": {
             "offset": 5724,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#41": {
             "offset": 5815,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#42": {
             "offset": 5906,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#43": {
             "offset": 5997,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#44": {
             "offset": 6088,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#45": {
             "offset": 6179,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#46": {
             "offset": 6270,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#47": {
             "offset": 6361,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#48": {
             "offset": 6452,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#49": {
             "offset": 6543,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#5": {
             "offset": 2539,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#6": {
             "offset": 2630,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#7": {
             "offset": 2721,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#8": {
             "offset": 2812,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#9": {
             "offset": 2903,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           }
-        },
-        "streams": [
-          "nx:parasolid#0:partition",
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

@@ -271,39 +271,35 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "deltas"
           },
           "nx:s0:deltas-inline-schema#67": {
             "offset": 67,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_INLINE_SCHEMA"
           },
           "nx:s0:deltas-record#145-12": {
             "offset": 145,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_RECORD"
           },
           "nx:s0:deltas-residual#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_RESIDUAL"
           },
           "nx:s0:deltas-terminal-null-references#167": {
             "offset": 167,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_TERMINAL_NULL_REFERENCES"
           },
           "nx:s0:intersection-record#12": {
             "offset": 145,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "INTERSECTION_DATA"
           }
-        },
-        "streams": [
-          "nx:container",
-          "nx:s0"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

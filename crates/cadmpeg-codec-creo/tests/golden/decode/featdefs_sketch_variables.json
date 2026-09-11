@@ -754,28 +754,25 @@
       "provenance": {
         "creo:featdefs:feature_definition#40": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "feature_definition_record"
         },
         "creo:featdefs:sketch#40": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "feature_sketch"
         },
         "creo:model:sketch#40": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "unplaced_section"
         },
         "creo:model:sketch_feature#40": {
           "offset": 86,
-          "stream": 0,
+          "stream": "creo:FeatDefs",
           "tag": "section_sketch_feature"
         }
-      },
-      "streams": [
-        "creo:FeatDefs"
-      ]
+      }
     }
   }
 }
