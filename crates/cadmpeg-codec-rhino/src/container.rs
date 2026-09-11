@@ -1170,10 +1170,9 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         }
         let storage = table
             .body_bytes(scan.data)
-            .and_then(|body| {
+            .map_or(EntryStorage::unreported(VerbatimLabel::None), |body| {
                 EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing())
-            })
-            .unwrap_or_else(|| EntryStorage::unreported(VerbatimLabel::None));
+            });
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
             role: ContainerRole::Table,
