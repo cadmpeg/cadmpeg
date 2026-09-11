@@ -1,3 +1,4 @@
+use crate::features::PlanarProfileRef;
 use crate::features::{FeatureId, GeneratedCurveRef, PathRef, ProfileRef};
 use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
@@ -11,7 +12,9 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
     let face = HistoricalFaceId::mint("test:model:historical-face#one").unwrap();
     let profiles = [
         (
-            ProfileRef::sketch_profiles(sketch.clone(), vec![1, 0]).unwrap(),
+            ProfileRef::Planar(
+                PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1, 0]).unwrap(),
+            ),
             "profiles",
         ),
         (
@@ -19,11 +22,15 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
             "profiles",
         ),
         (
-            ProfileRef::sketch_entities(sketch.clone(), vec![entity.clone()]).unwrap(),
+            ProfileRef::Planar(
+                PlanarProfileRef::sketch_entities(sketch.clone(), vec![entity.clone()]).unwrap(),
+            ),
             "entities",
         ),
         (
-            ProfileRef::sketch_selection(sketch.clone(), vec!["group".into()]).unwrap(),
+            ProfileRef::Planar(
+                PlanarProfileRef::sketch_selection(sketch.clone(), vec!["group".into()]).unwrap(),
+            ),
             "selections",
         ),
         (
@@ -31,8 +38,14 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
             "selections",
         ),
         (
-            ProfileRef::historical_faces(state.clone(), vec![face.clone()], vec!["group".into()])
+            ProfileRef::Planar(
+                PlanarProfileRef::historical_faces(
+                    state.clone(),
+                    vec![face.clone()],
+                    vec!["group".into()],
+                )
                 .unwrap(),
+            ),
             "faces",
         ),
     ];
@@ -46,18 +59,21 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         for invalid in [serde_json::json!([]), serde_json::json!([first, first])] {
             let mut invalid_wire = wire.clone();
             invalid_wire["value"][field] = invalid;
-            assert!(serde_json::from_value::<ProfileRef>(invalid_wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(serde_json::from_value::<ProfileRef>(invalid_wire.clone()).is_err());
+            if profile.planar().is_some() {
+                let message = serde_json::from_value::<PlanarProfileRef>(invalid_wire)
+                    .unwrap_err()
+                    .to_string();
+                assert!(message.contains(field), "{message}");
+            }
         }
     }
     for indices in [vec![], vec![0, 0]] {
-        assert!(ProfileRef::sketch_profiles(sketch.clone(), indices.clone()).is_err());
+        assert!(PlanarProfileRef::sketch_profiles(sketch.clone(), indices.clone()).is_err());
         assert!(ProfileRef::spatial_sketch_profiles(spatial.clone(), indices).is_err());
     }
     for entities in [vec![], vec![entity.clone(), entity]] {
-        assert!(ProfileRef::sketch_entities(sketch.clone(), entities).is_err());
+        assert!(PlanarProfileRef::sketch_entities(sketch.clone(), entities).is_err());
     }
     for names in [
         vec![],
@@ -65,15 +81,21 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         vec![" \t".into()],
         vec!["group".into(), "group".into()],
     ] {
-        assert!(ProfileRef::sketch_selection(sketch.clone(), names.clone()).is_err());
+        assert!(PlanarProfileRef::sketch_selection(sketch.clone(), names.clone()).is_err());
         assert!(ProfileRef::spatial_sketch_selection(spatial.clone(), names.clone()).is_err());
-        assert!(ProfileRef::historical_faces(state.clone(), vec![face.clone()], names).is_err());
+        assert!(
+            PlanarProfileRef::historical_faces(state.clone(), vec![face.clone()], names).is_err()
+        );
     }
-    assert!(ProfileRef::historical_faces(state.clone(), vec![], vec!["group".into()]).is_err());
     assert!(
-        ProfileRef::historical_faces(state, vec![face.clone(), face], vec!["group".into()])
-            .is_err()
+        PlanarProfileRef::historical_faces(state.clone(), vec![], vec!["group".into()]).is_err()
     );
+    assert!(PlanarProfileRef::historical_faces(
+        state,
+        vec![face.clone(), face],
+        vec!["group".into()]
+    )
+    .is_err());
 }
 
 #[test]
@@ -156,12 +178,13 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
         .contains("local_id"));
     }
     let curve = GeneratedCurveRef::new(feature, "curve".into()).unwrap();
-    assert!(ProfileRef::generated(vec![], "group".into()).is_err());
+    assert!(PlanarProfileRef::generated(vec![], "group".into()).is_err());
     for native in ["", " \t"] {
-        assert!(ProfileRef::generated(vec![curve.clone()], native.into()).is_err());
+        assert!(PlanarProfileRef::generated(vec![curve.clone()], native.into()).is_err());
     }
-    let profile =
-        ProfileRef::generated(vec![curve.clone(), curve.clone()], "group".into()).unwrap();
+    let profile = ProfileRef::Planar(
+        PlanarProfileRef::generated(vec![curve.clone(), curve.clone()], "group".into()).unwrap(),
+    );
     let wire = serde_json::to_value(&profile).unwrap();
     assert_eq!(wire["value"]["curves"], serde_json::json!([curve, curve]));
     assert_eq!(
@@ -174,9 +197,27 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
     ] {
         let mut invalid = wire.clone();
         invalid["value"][field] = value;
-        assert!(serde_json::from_value::<ProfileRef>(invalid)
+        assert!(serde_json::from_value::<ProfileRef>(invalid.clone()).is_err());
+        assert!(serde_json::from_value::<PlanarProfileRef>(invalid)
             .unwrap_err()
             .to_string()
             .contains(field));
     }
+}
+
+#[test]
+fn a_spatial_profile_where_a_planar_one_is_required_is_refused_as_an_unknown_variant() {
+    let spatial = ProfileRef::spatial_sketch_profiles(
+        SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap(),
+        vec![0],
+    )
+    .unwrap();
+    let wire = serde_json::to_value(&spatial).unwrap();
+    assert_eq!(wire["kind"], "spatial_sketch_profiles");
+    let error = serde_json::from_value::<PlanarProfileRef>(wire.clone())
+        .expect_err("a spatial profile is not a planar profile");
+    assert!(error.to_string().contains("unknown variant"), "{error}");
+    let section = serde_json::json!({ "kind": "profile", "value": wire });
+    assert!(serde_json::from_value::<crate::features::SweepSection>(section).is_err());
+    assert!(spatial.planar().is_none());
 }

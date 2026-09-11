@@ -154,7 +154,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile_ref),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile_ref)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -217,7 +217,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile_ref),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile_ref)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -1695,7 +1695,9 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
 #[test]
 fn profile_consumers_require_a_regeneration_profile() {
     let mut definition = FeatureDefinition::Extrude {
-        profile: ProfileRef::Native("sketch-native".into()),
+        profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(
+            "sketch-native".into(),
+        )),
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
         extent: ExtrudeExtent::OneSided {
@@ -1724,7 +1726,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(_),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_)),
             ..
         }
     ));
@@ -1739,7 +1741,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(ref bound),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref bound)),
             ..
         } if bound == &sketch
     ));
@@ -1772,7 +1774,7 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(feature)),
             ..
         } if feature == &sketch_id
     ));

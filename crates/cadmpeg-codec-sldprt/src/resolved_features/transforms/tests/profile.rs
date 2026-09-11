@@ -19,7 +19,7 @@ use cadmpeg_ir::{
     features::{
         BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
         Feature, FeatureDefinition, FeatureId, LinearTermination, ParameterId, ParameterValue,
-        ProfileRef, RadiusSpec,
+        PlanarProfileRef, ProfileRef, RadiusSpec,
     },
     scalar::Length,
 };
@@ -1115,9 +1115,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Extrude {
-                    profile: ProfileRef::Feature(
+                    profile: ProfileRef::Planar(PlanarProfileRef::Feature(
                         FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
-                    ),
+                    )),
                     direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                     start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
                     extent: ExtrudeExtent::OneSided {
@@ -1151,9 +1151,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         let FeatureDefinition::Extrude { profile, .. } = definition else {
             unreachable!();
         };
-        *profile = ProfileRef::Feature(
+        *profile = ProfileRef::Planar(PlanarProfileRef::Feature(
             FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar"),
-        );
+        ));
     });
     features.push(multi_consumer);
     let sketch = |id: SketchId, profile_count: usize| Sketch {
@@ -1202,7 +1202,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     assert!(matches!(
         features[4].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch),
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
             ..
         } if sketch == &single
     ));
@@ -1213,7 +1213,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     assert!(matches!(
         features[5].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             ..
         } if feature == &FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")
     ));

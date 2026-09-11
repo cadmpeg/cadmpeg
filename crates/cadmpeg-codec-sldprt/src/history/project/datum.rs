@@ -5,7 +5,7 @@ use crate::records::Feature;
 use cadmpeg_ir::{
     features::{
         CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
-        FaceSelection, FeatureDefinition, FeatureId, PathRef, ProfileRef, WrapMode,
+        FaceSelection, FeatureDefinition, FeatureId, PathRef, PlanarProfileRef, WrapMode,
     },
     scalar::{Angle, Length},
 };
@@ -255,7 +255,7 @@ pub(crate) fn project_wrap(
         _ => return None,
     };
     Some(FeatureDefinition::Wrap {
-        profile: (ProfileRef::Native(profile)).try_into().ok()?,
+        profile: PlanarProfileRef::Native(profile),
         face,
         mode,
     })

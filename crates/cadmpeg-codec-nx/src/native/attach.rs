@@ -34,8 +34,9 @@ use cadmpeg_ir::{
         EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
         FeatureDefinition, FeatureId, FeatureResultTopology, FeatureSourceContent,
         FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement, LinearTermination, ParameterId,
-        ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft,
-        SurfaceExtension, ThickenSide, TreeChildren, TrimRegion, UnresolvedFamily,
+        ParameterValue, PathRef, PatternKind, PlanarProfileRef, ProfileRef, RadiusSpec,
+        RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TreeChildren, TrimRegion,
+        UnresolvedFamily,
     },
     scalar::{Angle, Length},
 };
@@ -5100,8 +5101,8 @@ fn extrude_feature_definition(
         .flatten()
         .collect::<Vec<_>>();
     let profile = match constructions.as_slice() {
-        [construction] => ProfileRef::Native((*construction).to_string()),
-        _ => ProfileRef::Unresolved("EXTRUDE".to_string()),
+        [construction] => ProfileRef::Planar(PlanarProfileRef::Native((*construction).to_string())),
+        _ => ProfileRef::Planar(PlanarProfileRef::Unresolved("EXTRUDE".to_string())),
     };
     let solid = match output_kinds {
         [cadmpeg_ir::topology::BodyKind::Solid, rest @ ..]

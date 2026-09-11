@@ -147,7 +147,7 @@ fn semantic_writer_emits_face_records_deterministically() {
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, ProfileRef,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -164,7 +164,9 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Unresolved("native:missing-owner".into()),
+                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
+                    "native:missing-owner".into(),
+                )),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
@@ -206,7 +208,7 @@ fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::{
         features::{
             AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition,
-            FeatureId, LinearTermination, PathRef, ProfileRef, RevolveExtent,
+            FeatureId, LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent,
         },
         scalar::Angle,
     };
@@ -353,12 +355,12 @@ fn encoder_writes_source_less_line_sketches() {
         ),
         native_ref: None,
     });
-    let profile = ProfileRef::Sketch(sketch_id.clone());
+    let profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id.clone());
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
-                profile: (profile.clone()).try_into().unwrap(),
+                profile: profile.clone(),
                 axis: cadmpeg_ir::features::RevolutionAxis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .unwrap(),
@@ -382,7 +384,7 @@ fn encoder_writes_source_less_line_sketches() {
         },
         FeatureDefinition::Sweep {
             shape: cadmpeg_ir::features::SweepShape::new(
-                cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
+                cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
                 Vec::new(),
                 cadmpeg_ir::features::SweepMode::Solid {
                     op: cadmpeg_ir::features::SolidSweepOperation::Join,
@@ -406,8 +408,8 @@ fn encoder_writes_source_less_line_sketches() {
         },
         FeatureDefinition::Loft {
             sections: vec![
-                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
-                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
+                cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(vec![path]),
             op: BooleanOp::NewBody,
@@ -466,7 +468,7 @@ fn encoder_writes_source_less_line_sketches() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Sketch(sketch_id),
+                profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
                 direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                     vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                         0.0, 0.0, 1.0,
@@ -615,7 +617,7 @@ fn encoder_writes_source_less_line_sketches() {
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {

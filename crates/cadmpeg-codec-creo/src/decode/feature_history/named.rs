@@ -19,7 +19,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination,
-    PartialRevolveConstruction, PatternKind, ProfileRef, RevolveConstruction, UnresolvedFamily,
+    PartialRevolveConstruction, PatternKind, PlanarProfileRef, ProfileRef, RevolveConstruction,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -155,8 +156,11 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
     feature_id: u32,
     op: BooleanOp,
 ) -> IrFeatureDefinition {
-    let profile = unique_feature_profile_ref(scan, ir, feature_id)
-        .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
+    let profile = unique_feature_profile_ref(scan, ir, feature_id).unwrap_or_else(|| {
+        ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
+            "creo:model:feature#{feature_id}"
+        )))
+    });
     let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
         BooleanOp::NewBody
@@ -208,9 +212,7 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     let profile = unique_feature_profile_ref(scan, ir, feature_id)
-        .map(TryInto::try_into)
-        .transpose()
-        .ok()?;
+        .and_then(|profile| profile.planar().cloned());
     let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
     let solid = sweep_solid(output_kind);
     Some(IrFeatureDefinition::Revolve {

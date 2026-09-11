@@ -755,7 +755,9 @@ fn scale_feature_definition(
         } => {
             let mut definition = operation.as_ref().clone();
             scale_feature_definition(&mut definition, scale)?;
-            *operation = definition.try_into().map_err(CodecError::malformed)?;
+            *operation = definition
+                .try_into()
+                .map_err(|message: &str| CodecError::Malformed(message.into()))?;
             scale_fuzzy_tolerance(fuzzy_tolerance, scale)?;
         }
         _ => {}
@@ -1842,7 +1844,9 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
         SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => {}
     }
-    *geometry = definition.try_into().map_err(CodecError::malformed)?;
+    *geometry = definition
+        .try_into()
+        .map_err(|message: &str| CodecError::Malformed(message.into()))?;
     Ok(())
 }
 
@@ -1886,7 +1890,9 @@ fn scale_spatial_sketch_geometry(
         }
         SpatialSketchGeometryDefinition::Native { .. } => {}
     }
-    *geometry = definition.try_into().map_err(CodecError::malformed)?;
+    *geometry = definition
+        .try_into()
+        .map_err(|message: &str| CodecError::Malformed(message.into()))?;
     Ok(())
 }
 
@@ -1940,7 +1946,7 @@ mod tests {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
         FeatureDefinition, FuzzyTolerance, LinearTermination, PatternKind, PatternScaleCenter,
-        PatternTransform, ProfileRef,
+        PatternTransform, PlanarProfileRef, ProfileRef,
     };
 
     #[test]
@@ -1951,7 +1957,7 @@ mod tests {
                 .expect("identity grammar"),
             0,
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Unresolved("profile".into()),
+                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved("profile".into())),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: ExtrudeStart::OffsetProfilePlane {
                     offset: Length::new(2.0).expect("finite length fixture"),

@@ -567,7 +567,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
 #[test]
 fn semantic_writer_round_trips_typed_sweep() {
     use cadmpeg_ir::{
-        features::{FeatureDefinition, PathRef, ProfileRef},
+        features::{FeatureDefinition, PathRef, PlanarProfileRef},
         scalar::Angle,
     };
 
@@ -597,7 +597,7 @@ fn semantic_writer_round_trips_typed_sweep() {
             twist: Some(twist),
             scale: Some(scale),
             ..
-        } if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Profile(profile), cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },) if matches!((profile.as_ref(),), (ProfileRef::Feature(profile),) if scale.get() == 1.5 && profile == &profile_a
+        } if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Profile(profile), cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },) if matches!((profile,), (PlanarProfileRef::Feature(profile),) if scale.get() == 1.5 && profile == &profile_a
             && path_ref == &path
             && (twist.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12))));
 
@@ -617,7 +617,7 @@ fn semantic_writer_round_trips_typed_sweep() {
             shape
                 .try_edit(|section, _, mode| {
                     *section = cadmpeg_ir::features::SweepSection::Profile(
-                        (ProfileRef::Feature(profile_b.clone())).try_into().unwrap(),
+                        cadmpeg_ir::features::PlanarProfileRef::Feature(profile_b.clone()),
                     );
                     *mode = cadmpeg_ir::features::SweepMode::Solid {
                         op: cadmpeg_ir::features::SolidSweepOperation::Join,
@@ -789,7 +789,9 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
 
 #[test]
 fn semantic_writer_round_trips_typed_loft() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{
+        BooleanOp, FeatureDefinition, PathRef, PlanarProfileRef, ProfileRef,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -825,9 +827,9 @@ fn semantic_writer_round_trips_typed_loft() {
             closed: false,
             ..
         } if sections == &vec![
-            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(feature_refs[0].clone())),
-            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(feature_refs[1].clone())),
-            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(feature_refs[2].clone())),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Feature(feature_refs[0].clone()))),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Feature(feature_refs[1].clone()))),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Feature(feature_refs[2].clone()))),
         ] && guides == &vec![PathRef::Native(native_refs[3].clone())]
     ));
 
@@ -931,7 +933,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
 
 #[test]
 fn semantic_writer_round_trips_boundary_boss_as_loft() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -961,8 +963,8 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
             closed: false,
             ..
         } if sections == &vec![
-            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(refs[0].clone())),
-            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(refs[1].clone())),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Feature(refs[0].clone()))),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Feature(refs[1].clone()))),
         ] && guides.is_empty()
     ));
     assert!(matches!(
@@ -1085,7 +1087,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
 
 #[test]
 fn semantic_writer_round_trips_typed_rib() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef, RibDraft, RibSide};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RibDraft, RibSide};
     use cadmpeg_ir::math::Vector3;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1109,7 +1111,7 @@ fn semantic_writer_round_trips_typed_rib() {
                 draft: RibDraft::Angle(value),
             },
             op: BooleanOp::Join,
-        } if matches!((profile.as_ref().map(AsRef::as_ref),), (Some(ProfileRef::Feature(profile)),) if ( (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_thickness.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 }))));
+        } if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),) if ( (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_thickness.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 }))));
 
     {
         let mut ir_edit = decoded.ir_mut();

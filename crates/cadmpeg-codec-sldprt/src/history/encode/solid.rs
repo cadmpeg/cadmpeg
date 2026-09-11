@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection, HoleBottom,
     HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
-    LinearTermination, ProfileRef,
+    LinearTermination, PlanarProfileRef, ProfileRef,
 };
 
 #[allow(
@@ -101,7 +101,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if let ProfileRef::Unresolved(owner) = profile {
+            if let ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) = profile {
                 let retained = existing.is_some_and(|record| {
                     record.id == *owner && !record.properties.contains_key("Profile")
                 });
@@ -114,8 +114,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let profile_source = if existing.is_some_and(|record| {
                 !record.properties.contains_key("Profile")
-                    && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
-                        || matches!(profile, ProfileRef::Native(native) if native == &record.id))
+                    && (matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) if owner == &record.id)
+                        || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(native)) if native == &record.id))
             }) {
                 None
             } else {

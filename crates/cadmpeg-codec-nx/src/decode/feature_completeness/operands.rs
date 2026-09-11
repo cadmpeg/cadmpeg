@@ -6,8 +6,8 @@ use cadmpeg_ir::{
     features::{
         AngularTermination, BodySelection, BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart,
         FaceSelection, FeatureId, HoleKind, LinearTermination, LoftPointSection, LoftSection,
-        PathRef, PatternKind, PatternTransform, ProfileRef, RevolveConstruction, RevolveExtent,
-        RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
+        PathRef, PatternKind, PatternTransform, PlanarProfileRef, ProfileRef, RevolveConstruction,
+        RevolveExtent, RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
     },
     scalar::Length,
 };
@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 const EPS_NONZERO_HOLE_DIRECTION: f64 = 1.0e-12;
 
 pub(crate) fn hole_feature_is_incomplete(
-    profile: Option<&ProfileRef>,
+    profile: Option<&PlanarProfileRef>,
     face: Option<&FaceSelection>,
     placements: Option<&[cadmpeg_ir::features::HolePlacement]>,
     treatments: (&HoleKind, Option<&HoleKind>),
@@ -25,7 +25,7 @@ pub(crate) fn hole_feature_is_incomplete(
     extent: Option<&LinearTermination>,
 ) -> bool {
     let (kind, exit_kind) = treatments;
-    let profile_incomplete = profile.is_some_and(profile_ref_is_incomplete);
+    let profile_incomplete = profile.is_some_and(planar_profile_ref_is_incomplete);
     let face_incomplete = face.is_some_and(face_selection_is_incomplete);
     let finite_direction = |vector: cadmpeg_ir::features::FeatureDirection3| {
         vector.norm() > EPS_NONZERO_HOLE_DIRECTION
@@ -48,7 +48,8 @@ pub(crate) fn hole_feature_is_incomplete(
             })
     });
     let placements_incomplete = placements.is_some() && !placements_complete;
-    let location_unresolved = !placements_complete && profile.is_none_or(profile_ref_is_incomplete);
+    let location_unresolved =
+        !placements_complete && profile.is_none_or(planar_profile_ref_is_incomplete);
     let orientation_unresolved =
         !placements_complete && face.is_none_or(face_selection_is_incomplete);
     profile_incomplete
@@ -140,8 +141,8 @@ pub(crate) fn revolve_feature_is_incomplete(
     else {
         return true;
     };
-    profile_ref_is_incomplete(profile)
-        || profile_dependency_is_incomplete(profile, dependencies)
+    planar_profile_ref_is_incomplete(profile)
+        || planar_profile_dependency_is_incomplete(profile, dependencies)
         || !unit_feature_direction(axis.direction.get())
         || {
             let side_is_incomplete = |termination: &AngularTermination| {
@@ -248,8 +249,8 @@ fn angular_termination_dependency_is_incomplete(
 pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: BooleanOp) -> bool {
     construction
         .profile
-        .as_deref()
-        .is_none_or(profile_ref_is_incomplete)
+        .as_ref()
+        .is_none_or(planar_profile_ref_is_incomplete)
         || construction.direction.is_none()
         || construction.thickness.is_none()
         || construction.side.is_none()
@@ -406,21 +407,28 @@ pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
 
 pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
     match profile {
-        ProfileRef::Unresolved(_)
-        | ProfileRef::Native(_)
-        | ProfileRef::SketchSelection { .. }
-        | ProfileRef::SpatialSketchSelection { .. } => true,
-        ProfileRef::Sketch(_) => false,
-        ProfileRef::SketchEntities { .. } => false,
-        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
-        ProfileRef::SketchRegions { .. } => false,
-        ProfileRef::HistoricalFaces { .. } => false,
-        ProfileRef::Generated { curves, .. } => curves
+        ProfileRef::SpatialSketchSelection { .. } => true,
+        ProfileRef::SpatialSketchProfiles { .. } => false,
+        ProfileRef::Planar(planar) => planar_profile_ref_is_incomplete(planar),
+    }
+}
+
+pub(crate) fn planar_profile_ref_is_incomplete(profile: &PlanarProfileRef) -> bool {
+    match profile {
+        PlanarProfileRef::Unresolved(_)
+        | PlanarProfileRef::Native(_)
+        | PlanarProfileRef::SketchSelection { .. } => true,
+        PlanarProfileRef::Sketch(_)
+        | PlanarProfileRef::SketchEntities { .. }
+        | PlanarProfileRef::SketchProfiles { .. }
+        | PlanarProfileRef::SketchRegions { .. }
+        | PlanarProfileRef::HistoricalFaces { .. }
+        | PlanarProfileRef::Feature(_) => false,
+        PlanarProfileRef::Generated { curves, .. } => curves
             .iter()
             .enumerate()
             .any(|(index, curve)| curves[..index].contains(curve)),
-        ProfileRef::Feature(_) => false,
-        ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
+        PlanarProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
     }
 }
 
@@ -429,8 +437,20 @@ pub(crate) fn profile_dependency_is_incomplete(
     dependencies: &[FeatureId],
 ) -> bool {
     match profile {
-        ProfileRef::Feature(feature) => !dependencies.contains(feature),
-        ProfileRef::Generated { curves, .. } => curves
+        ProfileRef::Planar(planar) => planar_profile_dependency_is_incomplete(planar, dependencies),
+        ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
+            false
+        }
+    }
+}
+
+pub(crate) fn planar_profile_dependency_is_incomplete(
+    profile: &PlanarProfileRef,
+    dependencies: &[FeatureId],
+) -> bool {
+    match profile {
+        PlanarProfileRef::Feature(feature) => !dependencies.contains(feature),
+        PlanarProfileRef::Generated { curves, .. } => curves
             .iter()
             .any(|curve| !dependencies.contains(&curve.feature)),
         _ => false,

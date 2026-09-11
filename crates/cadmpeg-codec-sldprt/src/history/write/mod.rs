@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, FeatureId, LinearTermination, ProfileRef, VertexSelection,
+    FeatureDefinition, FeatureId, LinearTermination, PlanarProfileRef, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -231,12 +231,12 @@ pub(crate) fn validate_surface_sweep_profile_edits(
                 return None;
             };
             let section = shape.section();
-            let profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }) =
+            let profile @ (PlanarProfileRef::Feature(_) | PlanarProfileRef::Generated { .. }) =
                 section.referenced_profile()?
             else {
                 return None;
             };
-            (matches!(profile, ProfileRef::Generated { .. })
+            (matches!(profile, PlanarProfileRef::Generated { .. })
                 || !feature.source_properties.contains_key("Profile"))
             .then_some((feature.id, profile.clone()))
         })

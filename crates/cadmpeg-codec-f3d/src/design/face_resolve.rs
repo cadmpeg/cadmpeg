@@ -282,11 +282,13 @@ pub(crate) fn resolved_profile_face_group(
     else {
         return None;
     };
-    Some(ProfileRef::HistoricalFaces {
-        state,
-        faces,
-        native: vec![native.as_str().to_owned()].try_into().ok()?,
-    })
+    Some(ProfileRef::Planar(
+        cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+            state,
+            faces,
+            native: vec![native.as_str().to_owned()].try_into().ok()?,
+        },
+    ))
 }
 
 /// Return the top-level profile groups of one Extrude operand hierarchy.
@@ -543,7 +545,9 @@ pub(crate) fn resolved_extrude_profile_face_group(
 
     let indices = extrude_profile_group_operand_indices(root, groups, operands)?;
     if let Some(faces) = resolved_extrude_profile_active_faces(&indices, operands) {
-        return Some(ProfileRef::Faces(faces));
+        return Some(ProfileRef::Planar(
+            cadmpeg_ir::features::PlanarProfileRef::Faces(faces),
+        ));
     }
     let mut faces = Vec::new();
     for index in indices {
@@ -566,11 +570,13 @@ pub(crate) fn resolved_extrude_profile_face_group(
     else {
         return None;
     };
-    Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
-        state,
-        faces,
-        native: vec![native.as_str().to_owned()].try_into().ok()?,
-    })
+    Some(cadmpeg_ir::features::ProfileRef::Planar(
+        cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+            state,
+            faces,
+            native: vec![native.as_str().to_owned()].try_into().ok()?,
+        },
+    ))
 }
 
 fn resolved_extrude_profile_active_faces(
@@ -691,11 +697,13 @@ pub(crate) fn resolved_loft_edge_profile_group(
     else {
         return None;
     };
-    Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
-        state,
-        faces,
-        native: vec![native.as_str().to_owned()].try_into().ok()?,
-    })
+    Some(cadmpeg_ir::features::ProfileRef::Planar(
+        cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+            state,
+            faces,
+            native: vec![native.as_str().to_owned()].try_into().ok()?,
+        },
+    ))
 }
 
 fn loft_edge_profile_face_slot(
@@ -1762,19 +1770,31 @@ fn extrude_profile_sketch_id(
     use cadmpeg_ir::features::ProfileRef;
 
     match profile {
-        ProfileRef::Sketch(sketch)
-        | ProfileRef::SketchProfiles { sketch, .. }
-        | ProfileRef::SketchRegions { sketch, .. }
-        | ProfileRef::SketchEntities { sketch, .. }
-        | ProfileRef::SketchSelection { sketch, .. } => Some(sketch),
-        ProfileRef::Native(_)
-        | ProfileRef::Unresolved(_)
-        | ProfileRef::Feature(_)
-        | ProfileRef::Generated { .. }
+        ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch))
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            sketch,
+            ..
+        })
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchRegions {
+            sketch,
+            ..
+        })
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchEntities {
+            sketch,
+            ..
+        })
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
+            sketch,
+            ..
+        }) => Some(sketch),
+        ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_))
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_))
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(_))
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Generated { .. })
         | ProfileRef::SpatialSketchProfiles { .. }
         | ProfileRef::SpatialSketchSelection { .. }
-        | ProfileRef::HistoricalFaces { .. }
-        | ProfileRef::Faces(_) => None,
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces { .. })
+        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Faces(_)) => None,
     }
 }
 
@@ -2355,10 +2375,9 @@ mod tests {
                 std::slice::from_ref(&group),
                 &[operand.clone()],
             ),
-            Some(cadmpeg_ir::features::ProfileRef::Faces(vec![
-                face(10),
-                face(20),
-            ]))
+            Some(cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face(10), face(20),])
+            ))
         );
         operand.resolved_active_face =
             Some(FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar"));
@@ -2958,11 +2977,11 @@ mod tests {
         ];
         assert!(matches!(
             super::resolved_loft_edge_profile_group(&scope, &group, &operands),
-            Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
+            Some(cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
                 state,
                 faces,
                 native,
-            }) if state == expected_state && faces.as_slice() == [expected_face] && native.as_slice() == [group.id]
+            })) if state == expected_state && faces.as_slice() == [expected_face] && native.as_slice() == [group.id]
         ));
     }
 

@@ -51,8 +51,8 @@ use cadmpeg_ir::{
     features::{
         BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
         FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
-        LinearTermination, PartialRevolveConstruction, ProfileRef, RadiusSpec, RevolveConstruction,
-        UnresolvedFamily,
+        LinearTermination, PartialRevolveConstruction, PlanarProfileRef, ProfileRef, RadiusSpec,
+        RevolveConstruction, UnresolvedFamily,
     },
     scalar::Length,
 };
@@ -513,7 +513,11 @@ pub(in super::super) fn schema_feature_definition(
                     },
                 );
             let profile = definition.map_or_else(
-                || ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+                || {
+                    ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
+                        "creo:model:feature#{feature_id}"
+                    )))
+                },
                 |definition| {
                     section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
                 },
@@ -537,10 +541,7 @@ pub(in super::super) fn schema_feature_definition(
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-        let profile = profile
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let profile = profile.and_then(|profile| profile.planar().cloned());
         let solid = sweep_solid(output_kind);
         return Ok(IrFeatureDefinition::Revolve {
             construction: match (profile, axis, extent) {
@@ -628,8 +629,11 @@ pub(in super::super) fn schema_feature_definition(
             )
         });
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
-        let profile = profile
-            .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
+        let profile = profile.unwrap_or_else(|| {
+            ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
+                "creo:model:feature#{feature_id}"
+            )))
+        });
         return Ok(IrFeatureDefinition::Extrude {
             profile,
             direction: direction.map_or(

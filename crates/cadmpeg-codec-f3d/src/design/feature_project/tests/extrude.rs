@@ -131,7 +131,7 @@ fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart
 fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-        LinearTermination, ProfileRef,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
     let parameter = |source_kind: &str, unit: &str, value| {
@@ -266,7 +266,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         &blind,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(profile),
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
             direction: ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -465,7 +465,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(ref native),
+            profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)),
             ..
         } if native == &selection.id
     ));
@@ -1028,7 +1028,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         multiple_profiles,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(ref native),
+            profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)),
             op: BooleanOp::NewBody,
             ..
         } if native == &scope.id
@@ -1068,7 +1068,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         direct_profile_with_selection_group,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(ref profile),
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(ref profile)),
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
@@ -1174,7 +1174,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         reversed_native_profile,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(ref native),
+            profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)),
             direction: ExtrudeDirection::ReversedProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1635,9 +1635,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         "synthetic:test:id#f3d:feature:base-flange",
         2,
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: (ProfileRef::Sketch(planar_sketch.clone()))
-                .try_into()
-                .unwrap(),
+            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(planar_sketch.clone()),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         },

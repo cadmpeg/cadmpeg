@@ -544,7 +544,7 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
 #[test]
 fn semantic_writer_round_trips_wrap() {
     use cadmpeg_ir::{
-        features::{FaceSelection, FeatureDefinition, ProfileRef, WrapMode},
+        features::{FaceSelection, FeatureDefinition, PlanarProfileRef, WrapMode},
         scalar::Length,
     };
 
@@ -571,7 +571,7 @@ fn semantic_writer_round_trips_wrap() {
             profile,
             face: FaceSelection::Resolved { faces: targets, native },
             mode: WrapMode::Emboss { depth: actual_depth },
-        } if matches!((profile.as_ref(),), (ProfileRef::Faces(faces),) if (faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face) && actual_depth.get() == 2.0)));
+        } if matches!((profile,), (PlanarProfileRef::Faces(faces),) if (faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face) && actual_depth.get() == 2.0)));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -584,9 +584,7 @@ fn semantic_writer_round_trips_wrap() {
             else {
                 panic!("typed wrap");
             };
-            *profile = (ProfileRef::Faces(vec![face_id.clone()]))
-                .try_into()
-                .unwrap();
+            *profile = cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face_id.clone()]);
             *face = FaceSelection::Faces(vec![face_id.clone()]);
             *mode = WrapMode::Deboss {
                 depth: Length::new(3.5).unwrap(),
@@ -1722,9 +1720,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
 
 #[test]
 fn semantic_writer_round_trips_all_revolution_extents() {
-    use cadmpeg_ir::features::{
-        AngularTermination, BooleanOp, FeatureDefinition, ProfileRef, RevolveExtent,
-    };
+    use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1742,7 +1738,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         FeatureDefinition::Revolve {
             construction,
             op: BooleanOp::Join,
-        } if matches!(construction.profile().map(AsRef::as_ref), Some(ProfileRef::Feature(profile)) if profile == &profile_feature)
+        } if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)) if profile == &profile_feature)
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
                 }) if (value.get() - 90f64.to_radians()).abs() < EPS_REVERSED_REVOLUTION_ANGLE)

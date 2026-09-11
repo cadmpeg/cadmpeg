@@ -1069,7 +1069,9 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     assert_eq!(
         super::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
         FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved("EXTRUDE".into()),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Unresolved("EXTRUDE".into())
+            ),
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {

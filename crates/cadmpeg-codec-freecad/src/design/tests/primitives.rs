@@ -83,7 +83,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         cadmpeg_ir::features::FeatureDefinition::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Join
-        } if matches!(construction.profile().map(std::ops::Deref::deref), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+        } if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle }
                 }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
@@ -879,7 +879,7 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("Standalone"),
         FeatureDefinition::Revolve { construction, op: BooleanOp::NewBody }
-            if matches!(construction.profile().map(std::ops::Deref::deref), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+            if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)))
                 && construction.axis().is_some_and(|axis| axis.direction.z == 1.0
                     && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":AxisLink")))
                 && matches!(construction.extent(), Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }))

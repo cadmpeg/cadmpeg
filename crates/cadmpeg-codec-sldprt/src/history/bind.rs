@@ -2,7 +2,9 @@
 //! Sketch binding, regeneration order, and feature-output derivation.
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PathRef, ProfileRef, SplitFaceTool};
+use cadmpeg_ir::features::{
+    FeatureDefinition, FeatureId, PathRef, PlanarProfileRef, ProfileRef, SplitFaceTool,
+};
 use cadmpeg_ir::topology::Face;
 use std::collections::HashMap;
 
@@ -441,11 +443,11 @@ pub(crate) fn bind_definition_sketch(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let bind_profile = |profile: &mut ProfileRef| {
         if has_profile
-            && (matches!(profile, ProfileRef::Unresolved(owner) if owner == native_ref)
-                || matches!(profile, ProfileRef::Native(value) if value == native_ref)
-                || matches!(profile, ProfileRef::Feature(value) if value == feature_ref))
+            && (matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) if owner == native_ref)
+                || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(value)) if value == native_ref)
+                || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Feature(value)) if value == feature_ref))
         {
-            *profile = ProfileRef::Sketch(sketch.clone());
+            *profile = ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.clone()));
             true
         } else {
             false
@@ -453,9 +455,9 @@ pub(crate) fn bind_definition_sketch(
     };
     let bind_planar_profile = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
         if has_profile
-            && (matches!(profile.as_ref(), ProfileRef::Unresolved(owner) if owner == native_ref)
-                || matches!(profile.as_ref(), ProfileRef::Native(value) if value == native_ref)
-                || matches!(profile.as_ref(), ProfileRef::Feature(value) if value == feature_ref))
+            && (matches!(profile, PlanarProfileRef::Unresolved(owner) if owner == native_ref)
+                || matches!(profile, PlanarProfileRef::Native(value) if value == native_ref)
+                || matches!(profile, PlanarProfileRef::Feature(value) if value == feature_ref))
         {
             *profile = sketch.clone().into();
             true

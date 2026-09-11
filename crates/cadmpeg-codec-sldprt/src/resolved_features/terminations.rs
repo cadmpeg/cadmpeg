@@ -738,7 +738,7 @@ pub(crate) fn project_surface_sweep_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{GeneratedCurveRef, ProfileRef};
+    use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
 
     let history_features = histories
         .iter()
@@ -803,7 +803,7 @@ pub(crate) fn project_surface_sweep_profiles(
                     feature_ids_by_native
                         .get(native.id.as_str())
                         .cloned()
-                        .map(ProfileRef::Feature)
+                        .map(PlanarProfileRef::Feature)
                 });
             let generated = (start..end.saturating_sub(6))
                 .filter(|offset| {
@@ -843,7 +843,7 @@ pub(crate) fn project_surface_sweep_profiles(
                         "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
                     );
                     Some((
-                        ProfileRef::generated(
+                        PlanarProfileRef::generated(
                             vec![GeneratedCurveRef::new(feature_id, local_id).ok()?],
                             native,
                         )
@@ -865,8 +865,8 @@ pub(crate) fn project_surface_sweep_profiles(
                 _ => Vec::new(),
             };
             match &profile {
-                ProfileRef::Feature(feature) => dependencies.push(feature.clone()),
-                ProfileRef::Generated { curves, .. } => {
+                PlanarProfileRef::Feature(feature) => dependencies.push(feature.clone()),
+                PlanarProfileRef::Generated { curves, .. } => {
                     dependencies.extend(curves.iter().map(|curve| curve.feature.clone()));
                 }
                 _ => {}
@@ -887,9 +887,6 @@ pub(crate) fn project_surface_sweep_profiles(
             let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
                 break 'feature_edit;
             };
-            let profile = profile
-                .try_into()
-                .map_err(cadmpeg_core::CodecError::malformed)?;
             shape
                 .try_edit(|section, _, _| {
                     if !matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {

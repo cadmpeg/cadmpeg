@@ -9,9 +9,9 @@ use cadmpeg_ir::features::{
     ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-    HolePlacement, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
-    RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection,
-    ThickenSide, TrimRegion,
+    HolePlacement, LinearTermination, PathRef, PatternKind, PlanarProfileRef, ProfileRef,
+    RadiusSpec, RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode,
+    SweepSection, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::ids::{CurveId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -201,7 +201,7 @@ fn complete_extrude_feature(
         id,
         ordinal,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile.clone()),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile.clone())),
             direction: ExtrudeDirection::ProfileNormal {},
             start: ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {

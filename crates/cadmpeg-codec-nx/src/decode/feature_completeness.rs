@@ -18,6 +18,7 @@ use operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
     hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
+    planar_profile_dependency_is_incomplete, planar_profile_ref_is_incomplete,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
     rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
     termination_dependency_is_incomplete,
@@ -408,7 +409,7 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
             specification,
         } => (
             hole_feature_is_incomplete(
-                profile.as_ref().map(AsRef::as_ref),
+                profile.as_ref(),
                 face.as_ref(),
                 placements.as_deref(),
                 (kind, exit_kind.as_ref()),
@@ -427,7 +428,7 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
             };
             (
                 hole_feature_is_incomplete(
-                    profile.as_ref().map(AsRef::as_ref),
+                    profile.as_ref(),
                     face.as_ref(),
                     placements.as_deref(),
                     (&kind, exit_kind.as_ref()),
@@ -443,9 +444,9 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
         || extent.as_ref().is_some_and(|extent| {
             termination_dependency_is_incomplete(extent, &feature.dependencies)
         })
-        || profile
-            .as_ref()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || profile.as_ref().is_some_and(|profile| {
+            planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
+        })
 }
 
 pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
@@ -640,10 +641,9 @@ pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     rib_feature_is_incomplete(construction, *op)
-        || construction
-            .profile
-            .as_ref()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || construction.profile.as_ref().is_some_and(|profile| {
+            planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
+        })
 }
 
 pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
@@ -666,19 +666,19 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
     matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
         || section
             .referenced_profile()
-            .is_some_and(profile_ref_is_incomplete)
-        || section
-            .referenced_profile()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+            .is_some_and(planar_profile_ref_is_incomplete)
+        || section.referenced_profile().is_some_and(|profile| {
+            planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
+        })
         || sections.iter().any(|section| {
             matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
                 || section
                     .referenced_profile()
-                    .is_some_and(profile_ref_is_incomplete)
+                    .is_some_and(planar_profile_ref_is_incomplete)
         })
         || sections.iter().any(|section| {
             section.referenced_profile().is_some_and(|profile| {
-                profile_dependency_is_incomplete(profile, &feature.dependencies)
+                planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
             })
         })
         || path.as_ref().is_none_or(path_ref_is_incomplete)

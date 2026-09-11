@@ -474,14 +474,16 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FeatureDefinition, LinearTermination, ProfileRef, RevolutionAxis, RevolveConstruction,
-        RevolveExtent,
+        FeatureDefinition, LinearTermination, PlanarProfileRef, ProfileRef, RevolutionAxis,
+        RevolveConstruction, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
 
     let extrude = |op| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()),
+        profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        )),
         direction: ExtrudeDirection::ProfileNormal {},
         start: ExtrudeStart::ProfilePlane {},
         extent: ExtrudeExtent::OneSided {
@@ -501,9 +503,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     let revolve = |op| FeatureDefinition::Revolve {
         construction: RevolveConstruction::Resolved {
-            profile: (ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()))
-                .try_into()
-                .unwrap(),
+            profile: PlanarProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()),
             axis: RevolutionAxis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),

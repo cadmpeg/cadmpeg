@@ -797,9 +797,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("BaseFlange"),
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: (ProfileRef::Sketch(neutral_sketch_id(&placement)))
-                .try_into()
-                .unwrap(),
+            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         }

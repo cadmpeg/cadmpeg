@@ -10,7 +10,7 @@ use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::{
     features::{
         BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-        FaceSelection, FeatureDefinition, LinearTermination, PathRef, ProfileRef,
+        FaceSelection, FeatureDefinition, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
     },
     scalar::Length,
 };
@@ -281,24 +281,18 @@ pub(crate) fn bind_topology_selections(
                 }
                 FeatureDefinition::Revolve { construction, .. } => {
                     if let Some(profile) = construction.profile_mut() {
-                        profile
-                            .try_edit(|profile| resolve_profile_ref(profile, &face_ids))
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        resolve_planar_profile_ref(profile, &face_ids);
                     }
                 }
                 FeatureDefinition::Rib { construction, .. } => {
                     if let Some(profile) = &mut construction.profile {
-                        profile
-                            .try_edit(|profile| resolve_profile_ref(profile, &face_ids))
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        resolve_planar_profile_ref(profile, &face_ids);
                     }
                 }
                 FeatureDefinition::Sweep { shape, path, .. } => {
                     let mut section = shape.section().clone();
                     if let Some(profile) = section.referenced_profile_mut() {
-                        profile
-                            .try_edit(|profile| resolve_profile_ref(profile, &face_ids))
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        resolve_planar_profile_ref(profile, &face_ids);
                     }
                     *shape = cadmpeg_ir::features::SweepShape::new(
                         section,
@@ -432,9 +426,7 @@ pub(crate) fn bind_topology_selections(
                     resolve_face(face);
                 }
                 FeatureDefinition::Wrap { profile, face, .. } => {
-                    profile
-                        .try_edit(|profile| resolve_profile_ref(profile, &face_ids))
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    resolve_planar_profile_ref(profile, &face_ids);
                     resolve_face(face);
                 }
                 FeatureDefinition::ProjectedCurve {
@@ -535,14 +527,23 @@ pub(crate) fn resolve_offset_plane_face_selection(
     resolve_planar_face_selection(selection, origin, normal, faces, surfaces);
 }
 
+pub(crate) fn resolve_planar_profile_ref(
+    profile: &mut PlanarProfileRef,
+    faces: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+) {
+    if let PlanarProfileRef::Native(native) = profile {
+        if let Some(ids) = resolve_ids(native, faces) {
+            *profile = PlanarProfileRef::Faces(ids);
+        }
+    }
+}
+
 pub(crate) fn resolve_profile_ref(
     profile: &mut ProfileRef,
     faces: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
 ) {
-    if let ProfileRef::Native(native) = profile {
-        if let Some(ids) = resolve_ids(native, faces) {
-            *profile = ProfileRef::Faces(ids);
-        }
+    if let ProfileRef::Planar(profile) = profile {
+        resolve_planar_profile_ref(profile, faces);
     }
 }
 

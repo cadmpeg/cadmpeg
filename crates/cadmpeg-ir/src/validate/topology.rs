@@ -2079,7 +2079,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
 }
 
 fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
-    use crate::features::{EdgeSelection, FeatureDefinition, PathRef, ProfileRef, ScaleCenter};
+    use crate::features::{
+        EdgeSelection, FeatureDefinition, PathRef, PlanarProfileRef, ScaleCenter,
+    };
 
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
@@ -3250,14 +3252,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         }
         for profile in definition_profiles(definition) {
             match profile {
-                ProfileRef::Faces(faces) => check_ids(
+                PlanarProfileRef::Faces(faces) => check_ids(
                     findings,
                     feature.id.as_str(),
                     "profile face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 ),
-                ProfileRef::HistoricalFaces { state, faces, .. } => {
+                PlanarProfileRef::HistoricalFaces { state, faces, .. } => {
                     check_historical_members(
                         findings,
                         &feature.id,
@@ -3276,7 +3278,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
-                ProfileRef::Feature(producer) => match features.get(producer.as_str()) {
+                PlanarProfileRef::Feature(producer) => match features.get(producer.as_str()) {
                     None => ref_error(
                         findings,
                         feature.id.as_str(),
@@ -3295,7 +3297,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                     Some(_) => {}
                 },
-                ProfileRef::Generated { curves, .. }
+                PlanarProfileRef::Generated { curves, .. }
                     if curves.iter().any(|curve| {
                         features
                             .get(curve.feature.as_str())
@@ -3728,10 +3730,10 @@ fn regeneration_references(
     );
     for profile in definition_profiles(definition) {
         match profile {
-            crate::features::ProfileRef::Feature(feature) => {
+            crate::features::PlanarProfileRef::Feature(feature) => {
                 references.insert(feature);
             }
-            crate::features::ProfileRef::Generated { curves, .. } => {
+            crate::features::PlanarProfileRef::Generated { curves, .. } => {
                 references.extend(curves.iter().map(|curve| &curve.feature));
             }
             _ => {}
@@ -3742,17 +3744,19 @@ fn regeneration_references(
 
 fn definition_profiles(
     definition: &crate::features::FeatureDefinition,
-) -> impl Iterator<Item = &crate::features::ProfileRef> {
-    let mut profiles: Vec<&crate::features::ProfileRef> = Vec::new();
+) -> impl Iterator<Item = &crate::features::PlanarProfileRef> {
+    let mut profiles: Vec<&crate::features::PlanarProfileRef> = Vec::new();
     match definition {
-        crate::features::FeatureDefinition::Extrude { profile, .. } => profiles.push(profile),
+        crate::features::FeatureDefinition::Extrude { profile, .. } => {
+            profiles.extend(profile.planar());
+        }
         crate::features::FeatureDefinition::SheetMetalBaseFlange { profile, .. }
         | crate::features::FeatureDefinition::Wrap { profile, .. } => profiles.push(profile),
         crate::features::FeatureDefinition::Revolve { construction, .. } => {
-            profiles.extend(construction.profile().map(|profile| &**profile));
+            profiles.extend(construction.profile());
         }
         crate::features::FeatureDefinition::Rib { construction, .. } => {
-            profiles.extend(construction.profile.as_deref());
+            profiles.extend(construction.profile.as_ref());
         }
         crate::features::FeatureDefinition::Sweep { shape, .. } => {
             profiles.extend(shape.section().referenced_profile());
@@ -3768,7 +3772,7 @@ fn definition_profiles(
         }
         crate::features::FeatureDefinition::Loft { sections, .. } => {
             profiles.extend(sections.iter().filter_map(|section| match section {
-                crate::features::LoftSection::Profile(profile) => Some(profile),
+                crate::features::LoftSection::Profile(profile) => profile.planar(),
                 crate::features::LoftSection::Point(_) => None,
             }));
         }
@@ -3980,7 +3984,9 @@ fn check_feature_sketch_references(
     sketches: &HashSet<&str>,
     findings: &mut Vec<Finding>,
 ) {
-    use crate::features::{FeatureDefinition, PathRef, ProfileRef, SketchPointSelection};
+    use crate::features::{
+        FeatureDefinition, PathRef, PlanarProfileRef, ProfileRef, SketchPointSelection,
+    };
 
     let spatial_sketches = ir
         .model
@@ -4108,7 +4114,7 @@ fn check_feature_sketch_references(
     }
 
     for feature in &ir.model.features {
-        let mut profiles: Vec<&crate::features::ProfileRef> = Vec::new();
+        let mut profiles: Vec<crate::features::ProfileRef> = Vec::new();
         let mut paths = Vec::new();
         let definition = match feature.evaluation.definition() {
             FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
@@ -4116,16 +4122,25 @@ fn check_feature_sketch_references(
         };
         match definition {
             FeatureDefinition::Extrude { profile, .. } => {
-                profiles.push(profile);
+                profiles.push(profile.clone());
             }
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
-                profiles.push(profile);
+                profiles.push(ProfileRef::Planar(profile.clone()));
             }
             FeatureDefinition::Rib { construction, .. } => {
-                profiles.extend(construction.profile.as_deref());
+                profiles.extend(
+                    construction
+                        .profile
+                        .as_ref()
+                        .map(|profile| ProfileRef::Planar(profile.clone())),
+                );
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                profiles.extend(construction.profile().map(|profile| &**profile));
+                profiles.extend(
+                    construction
+                        .profile()
+                        .map(|profile| ProfileRef::Planar(profile.clone())),
+                );
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
             }
             FeatureDefinition::Sweep {
@@ -4134,12 +4149,18 @@ fn check_feature_sketch_references(
                 guide_rail,
                 ..
             } => {
-                profiles.extend(shape.section().referenced_profile());
+                profiles.extend(
+                    shape
+                        .section()
+                        .referenced_profile()
+                        .map(|profile| ProfileRef::Planar(profile.clone())),
+                );
                 profiles.extend(
                     shape
                         .sections()
                         .iter()
-                        .filter_map(crate::features::SweepSection::referenced_profile),
+                        .filter_map(crate::features::SweepSection::referenced_profile)
+                        .map(|profile| ProfileRef::Planar(profile.clone())),
                 );
                 paths.extend(path);
                 if let Some(guide_rail) = guide_rail {
@@ -4147,13 +4168,13 @@ fn check_feature_sketch_references(
                 }
             }
             FeatureDefinition::HelicalSweep { construction, .. } => {
-                profiles.push(&construction.profile);
+                profiles.push(ProfileRef::Planar(construction.profile.clone()));
             }
             FeatureDefinition::Loft {
                 sections, guidance, ..
             } => {
                 profiles.extend(sections.iter().filter_map(|section| match section {
-                    crate::features::LoftSection::Profile(profile) => Some(profile),
+                    crate::features::LoftSection::Profile(profile) => Some(profile.clone()),
                     crate::features::LoftSection::Point(_) => None,
                 }));
                 match guidance {
@@ -4166,17 +4187,17 @@ fn check_feature_sketch_references(
             }
             _ => {}
         }
-        for profile in profiles {
+        for profile in &profiles {
             let (sketch, sketch_kind, defined_sketches) = match profile {
                 ProfileRef::SpatialSketchProfiles { sketch, .. }
                 | ProfileRef::SpatialSketchSelection { sketch, .. } => {
                     (sketch.as_str(), "spatial sketch", &spatial_sketches)
                 }
-                ProfileRef::Sketch(sketch)
-                | ProfileRef::SketchProfiles { sketch, .. }
-                | ProfileRef::SketchRegions { sketch, .. }
-                | ProfileRef::SketchEntities { sketch, .. }
-                | ProfileRef::SketchSelection { sketch, .. } => {
+                ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
+                | ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, .. })
+                | ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, .. })
+                | ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, .. })
+                | ProfileRef::Planar(PlanarProfileRef::SketchSelection { sketch, .. }) => {
                     (sketch.as_str(), "sketch", sketches)
                 }
                 _ => continue,
@@ -4219,7 +4240,7 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchProfiles { sketch, profiles } => {
+                ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
                     let sketch_profile_count = ir
                         .model
                         .sketches
@@ -4237,7 +4258,7 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchRegions { sketch, regions } => {
+                ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) => {
                     let selected_sketch = ir
                         .model
                         .sketches
@@ -4277,7 +4298,7 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchEntities { sketch, entities } => {
+                ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
                     if entities.iter().any(|entity| {
                         sketch_entity_owners
                             .get(entity.as_str())
@@ -4290,15 +4311,15 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::Native(_)
-                | ProfileRef::Unresolved(_)
-                | ProfileRef::Feature(_)
-                | ProfileRef::Generated { .. }
-                | ProfileRef::Sketch(_)
-                | ProfileRef::SketchSelection { .. }
+                ProfileRef::Planar(PlanarProfileRef::Native(_))
+                | ProfileRef::Planar(PlanarProfileRef::Unresolved(_))
+                | ProfileRef::Planar(PlanarProfileRef::Feature(_))
+                | ProfileRef::Planar(PlanarProfileRef::Generated { .. })
+                | ProfileRef::Planar(PlanarProfileRef::Sketch(_))
+                | ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
                 | ProfileRef::SpatialSketchSelection { .. }
-                | ProfileRef::HistoricalFaces { .. }
-                | ProfileRef::Faces(_) => {}
+                | ProfileRef::Planar(PlanarProfileRef::HistoricalFaces { .. })
+                | ProfileRef::Planar(PlanarProfileRef::Faces(_)) => {}
             }
         }
         for path in paths {

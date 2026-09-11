@@ -3,7 +3,9 @@
 
 use super::super::{format_angle_rad, format_length_mm, pattern_form, NativePatternClass};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
-use super::support::{path_source, profile_source, require_same_family, resolved_boolean_op};
+use super::support::{
+    path_source, planar_profile_source, require_same_family, resolved_boolean_op,
+};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
@@ -61,7 +63,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             if let Some(profile) = &construction.profile {
                 let profile_source =
-                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing rib profile",

@@ -41,7 +41,8 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 #[test]
 fn decode_projects_compact_extrusion_with_unresolved_extent() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
+        PlanarProfileRef, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -57,7 +58,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Unresolved {},
@@ -83,7 +84,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Unresolved {},
@@ -223,7 +224,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
 
 #[test]
 fn decode_binds_adjacent_profile_feature_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -265,7 +266,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             ..
         } if feature == &profile.id
     ));
@@ -274,7 +275,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_adjacent_profile() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -312,7 +313,7 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(owner),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)),
             ..
         } if owner == extrusion.native_ref.as_deref().unwrap()
     ));
@@ -336,14 +337,14 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     assert!(matches!(
         &state_a.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
         } if profile == &profile_a.id
     ));
     assert!(matches!(
         &state_b.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
         } if profile == &profile_b.id
     ));
@@ -353,7 +354,7 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
 
 #[test]
 fn decode_binds_following_profile_marked_as_dissected_child() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -395,7 +396,7 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             ..
         } if feature == &profile.id
     ));
@@ -404,7 +405,7 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
 
 #[test]
 fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -452,7 +453,7 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             op: BooleanOp::Cut,
             ..
         } if feature == &profile.id
@@ -556,7 +557,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Feature(profile),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),
             ..
         } if profile == &sketch.id
     ));

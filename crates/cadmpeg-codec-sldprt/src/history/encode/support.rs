@@ -7,7 +7,7 @@ use crate::records::Feature;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, EdgeSelection, FaceSelection, FeatureId, FeatureTreeNodeRole,
-    PathRef, ProfileRef, VertexSelection,
+    PathRef, PlanarProfileRef, ProfileRef, VertexSelection,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -180,6 +180,34 @@ pub(super) fn resolved_boolean_op(
     })
 }
 
+pub(super) fn planar_profile_source(
+    profile: &PlanarProfileRef,
+    native: &HashMap<String, String>,
+    features: &HashMap<&FeatureId, &str>,
+    sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
+) -> Option<String> {
+    match profile {
+        PlanarProfileRef::Unresolved(_) => None,
+        PlanarProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
+        PlanarProfileRef::Sketch(id) => sketches.get(id).cloned(),
+        PlanarProfileRef::SketchProfiles { sketch, .. }
+        | PlanarProfileRef::SketchRegions { sketch, .. }
+        | PlanarProfileRef::SketchEntities { sketch, .. }
+        | PlanarProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
+        PlanarProfileRef::HistoricalFaces { .. } => None,
+        PlanarProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
+        PlanarProfileRef::Generated { .. } => None,
+        PlanarProfileRef::Faces(faces) if !faces.is_empty() => Some(
+            faces
+                .iter()
+                .map(cadmpeg_ir::ids::FaceId::as_str)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        PlanarProfileRef::Faces(_) => None,
+    }
+}
+
 pub(super) fn profile_source(
     profile: &ProfileRef,
     native: &HashMap<String, String>,
@@ -187,26 +215,10 @@ pub(super) fn profile_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match profile {
-        ProfileRef::Unresolved(_) => None,
-        ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
-        ProfileRef::Sketch(id) => sketches.get(id).cloned(),
-        ProfileRef::SketchProfiles { sketch, .. }
-        | ProfileRef::SketchRegions { sketch, .. }
-        | ProfileRef::SketchEntities { sketch, .. }
-        | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
-        ProfileRef::SpatialSketchProfiles { .. }
-        | ProfileRef::SpatialSketchSelection { .. }
-        | ProfileRef::HistoricalFaces { .. } => None,
-        ProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
-        ProfileRef::Generated { .. } => None,
-        ProfileRef::Faces(faces) if !faces.is_empty() => Some(
-            faces
-                .iter()
-                .map(cadmpeg_ir::ids::FaceId::as_str)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        ProfileRef::Faces(_) => None,
+        ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
+            None
+        }
+        ProfileRef::Planar(profile) => planar_profile_source(profile, native, features, sketches),
     }
 }
 

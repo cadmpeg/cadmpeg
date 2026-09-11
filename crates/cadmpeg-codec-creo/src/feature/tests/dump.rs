@@ -231,7 +231,9 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+            ),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -264,7 +266,9 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+            ),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -470,7 +474,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert!(matches!(
         model_feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved {},

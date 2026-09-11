@@ -1,4 +1,5 @@
 //! Line reference directions and revolution axis inputs.
+use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::component_paths::is_profile_feature_object;
 use super::curves::compact_bounded_curve_tangent;
@@ -1055,8 +1056,8 @@ pub(crate) fn bind_profile_revolution_axes(
         let Some(profile) = construction.profile() else {
             continue;
         };
-        let (profile_native, sketch_id) = match profile.as_ref() {
-            cadmpeg_ir::features::ProfileRef::Feature(profile_id) => {
+        let (profile_native, sketch_id) = match profile {
+            PlanarProfileRef::Feature(profile_id) => {
                 let Some(&profile_index) = model_by_id.get(profile_id) else {
                     continue;
                 };
@@ -1072,7 +1073,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 (native, sketch)
             }
-            cadmpeg_ir::features::ProfileRef::Sketch(sketch_id) => {
+            PlanarProfileRef::Sketch(sketch_id) => {
                 let mut owners = model_features.iter().filter(|candidate| {
                     matches!(
                     candidate.evaluation.definition(),
@@ -1092,17 +1093,15 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 (native, sketch_id)
             }
-            cadmpeg_ir::features::ProfileRef::Generated { .. }
-            | cadmpeg_ir::features::ProfileRef::SketchProfiles { .. }
-            | cadmpeg_ir::features::ProfileRef::SketchRegions { .. }
-            | cadmpeg_ir::features::ProfileRef::SketchEntities { .. }
-            | cadmpeg_ir::features::ProfileRef::SketchSelection { .. }
-            | cadmpeg_ir::features::ProfileRef::SpatialSketchProfiles { .. }
-            | cadmpeg_ir::features::ProfileRef::SpatialSketchSelection { .. }
-            | cadmpeg_ir::features::ProfileRef::HistoricalFaces { .. }
-            | cadmpeg_ir::features::ProfileRef::Unresolved(_)
-            | cadmpeg_ir::features::ProfileRef::Native(_)
-            | cadmpeg_ir::features::ProfileRef::Faces(_) => continue,
+            PlanarProfileRef::Generated { .. }
+            | PlanarProfileRef::SketchProfiles { .. }
+            | PlanarProfileRef::SketchRegions { .. }
+            | PlanarProfileRef::SketchEntities { .. }
+            | PlanarProfileRef::SketchSelection { .. }
+            | PlanarProfileRef::HistoricalFaces { .. }
+            | PlanarProfileRef::Unresolved(_)
+            | PlanarProfileRef::Native(_)
+            | PlanarProfileRef::Faces(_) => continue,
         };
         if !native_by_id
             .get(profile_native)

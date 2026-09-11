@@ -225,29 +225,11 @@ fn planar_profiles_and_post_processing_reject_invalid_edits() {
         sketch: crate::sketches::SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap(),
         profiles: vec![0].try_into().unwrap(),
     };
-    assert!(PlanarProfileRef::try_from(spatial.clone()).is_err());
+    assert!(spatial.planar().is_none());
     assert!(
         serde_json::from_value::<PlanarProfileRef>(serde_json::to_value(&spatial).unwrap())
             .is_err()
     );
-    let mut planar = PlanarProfileRef::native("profile".into());
-    let before = planar.clone();
-    assert!(planar
-        .try_edit(|profile| *profile = spatial.clone())
-        .is_err());
-    assert_eq!(planar, before);
-    let loft = FeatureDefinition::Loft {
-        sections: vec![LoftSection::Profile(spatial)],
-        guidance: LoftGuidance::default(),
-        op: BooleanOp::NewBody,
-        ruled: false,
-        linearize: false,
-        max_degree: None,
-        allow_multi_profile_faces: None,
-        closed: false,
-        solid: true,
-    };
-    assert!(UnprocessedFeature::try_from(loft).is_err());
     let operation = FeatureDefinition::BaseFeature {
         bodies: BodySelection::Unresolved,
     };

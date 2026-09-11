@@ -2,12 +2,12 @@
 //! Sketch, spatial-sketch, sketch-block, and wrap write encoders.
 
 use super::super::{format_length_mm, sketch_block_placement};
-use super::support::{face_selection_value, profile_source, require_same_family};
+use super::support::{face_selection_value, planar_profile_source, require_same_family};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FaceSelection, FeatureId, ProfileRef, WrapMode};
+use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
 
 #[allow(
     clippy::too_many_arguments,
@@ -88,7 +88,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_wrap(
         &self,
-        profile: &ProfileRef,
+        profile: &PlanarProfileRef,
         face: &FaceSelection,
         mode: &WrapMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -99,13 +99,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         Ok({
             require_same_family(existing, &feature.id, &["Wrap"])?;
-            let profile = profile_source(profile, record_sources, feature_sources, sketch_sources)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "SLDPRT feature {} references a missing wrap profile",
-                        feature.id
-                    ))
-                })?;
+            let profile =
+                planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "SLDPRT feature {} references a missing wrap profile",
+                            feature.id
+                        ))
+                    })?;
             let face = face_selection_value(face).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no wrap target face",
