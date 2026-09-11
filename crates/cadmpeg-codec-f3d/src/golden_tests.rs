@@ -929,3 +929,36 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         .to_string();
     assert!(error.contains("labels"), "{error}");
 }
+
+/// A construction that owns a revision-gated cache form states its
+/// solved-cache fit tolerance there, so the procedural record cannot state it
+/// a second time.
+#[test]
+fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/decode/rolling_ball_blend_surface.json");
+    let whole: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&golden).expect("the rolling-ball golden"))
+            .expect("json");
+    let document = whole["ir"].clone();
+    serde_json::from_value::<CadIr>(document.clone()).expect("the golden is a document");
+
+    let mut restated = document;
+    let mut touched = 0usize;
+    for surface in restated["model"]["procedural_surfaces"]
+        .as_array_mut()
+        .expect("procedural surfaces")
+    {
+        let stored = surface["definition"]["native"]["cache"]["fit_tolerance"].clone();
+        if stored.is_f64() {
+            assert!(surface.get("cache_fit_tolerance").is_none());
+            surface["cache_fit_tolerance"] = stored;
+            touched += 1;
+        }
+    }
+    assert!(touched > 0, "the golden carries a solved revision cache");
+    let error = serde_json::from_value::<CadIr>(restated)
+        .expect_err("the cache form owns the tolerance")
+        .to_string();
+    assert!(error.contains("cache_fit_tolerance"), "{error}");
+}
