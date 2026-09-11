@@ -61,8 +61,20 @@ fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
         assert_eq!(actual.normal_reversed(), expected.normal_reversed());
         assert_same_f64s(actual.u_knots(), expected.u_knots());
         assert_same_f64s(actual.v_knots(), expected.v_knots());
-        assert_same_points3(actual.control_points(), expected.control_points());
-        assert_same_weights(actual.weights(), expected.weights());
+        assert_same_points3(
+            &actual.poles().copied().collect::<Vec<_>>(),
+            &expected.poles().copied().collect::<Vec<_>>(),
+        );
+        assert_same_weights(
+            actual
+                .pole_weights()
+                .map(std::iter::Iterator::collect::<Vec<f64>>)
+                .as_deref(),
+            expected
+                .pole_weights()
+                .map(std::iter::Iterator::collect::<Vec<f64>>)
+                .as_deref(),
+        );
     }
 }
 
@@ -505,7 +517,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let SurfaceGeometry::Nurbs(wide_surface) = wide_surface.geometry else {
         panic!("expected wide NURBS surface");
     };
-    assert_eq!(wide_surface.control_points().len(), 4002);
+    assert_eq!(wide_surface.poles().count(), 4002);
     assert_eq!(wide_surface.u_knots().len(), 2003);
     assert_eq!(wide_surface.v_knots().len(), 4);
 
@@ -646,8 +658,8 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     };
     assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points().len(), 4);
-    assert_eq!(surface.control_points()[3].y, 20.0);
+    assert_eq!(surface.poles().count(), 4);
+    assert_eq!(surface.poles().nth(3).copied().unwrap().y, 20.0);
 }
 
 #[test]
@@ -664,8 +676,8 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
     let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points().len(), 4);
-    assert_eq!(surface.control_points()[3].y, 20.0);
+    assert_eq!(surface.poles().count(), 4);
+    assert_eq!(surface.poles().nth(3).copied().unwrap().y, 20.0);
 }
 
 #[test]
@@ -695,7 +707,7 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points().len(), 4);
+    assert_eq!(surface.poles().count(), 4);
 }
 
 #[test]

@@ -1047,9 +1047,9 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         unreachable!()
     };
     nurbs
-        .edit_control_points(|points| {
-            points[2].x = 17.5;
-            points[2].z = -3.25;
+        .edit_control_points(|rows| {
+            rows[1][0].x = 17.5;
+            rows[1][0].z = -3.25;
         })
         .unwrap();
     nurbs
@@ -1114,7 +1114,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     else {
         unreachable!()
     };
-    nurbs.edit_weights(|weights| weights[1] = 0.65).unwrap();
+    nurbs.edit_weights(|rows| rows[0][1] = 0.65).unwrap();
     *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
     )
@@ -1590,9 +1590,9 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         panic!("expected NURBS blend support")
     };
     nurbs
-        .edit_control_points(|points| {
-            points[1].x = 6.0;
-            points[1].z = 4.0;
+        .edit_control_points(|rows| {
+            rows[0][1].x = 6.0;
+            rows[0][1].z = 4.0;
         })
         .unwrap();
     nurbs

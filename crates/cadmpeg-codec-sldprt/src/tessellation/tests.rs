@@ -380,15 +380,17 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
 fn test_nurbs_surface() -> NurbsSurface {
     let heights = [0.0, 0.25, 0.0, 0.25, 0.9, 0.25, 0.0, 0.25, 0.0];
     let control_points = (0..3)
-        .flat_map(|u| (0..3).map(move |v| Point3::new(u as f64, v as f64, heights[u * 3 + v])))
+        .map(|u| {
+            (0..3)
+                .map(|v| Point3::new(u as f64, v as f64, heights[u * 3 + v]))
+                .collect()
+        })
         .collect();
     NurbsSurface::new(
         2,
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        3,
-        3,
         control_points,
         None,
         false,
@@ -401,8 +403,8 @@ fn test_nurbs_surface() -> NurbsSurface {
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
     surface
-        .edit_control_points(|points| {
-            for point in points {
+        .edit_control_points(|rows| {
+            for point in rows.iter_mut().flatten() {
                 point.z = 0.0;
             }
         })

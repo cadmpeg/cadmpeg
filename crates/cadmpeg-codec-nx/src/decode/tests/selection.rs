@@ -426,8 +426,8 @@ fn decode_transfers_bspline_surface_and_curve() {
         })
         .expect("B-spline surface");
     assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points().len(), 4);
-    assert!((surface.control_points()[1].y - 20.0).abs() < 1.0e-9);
+    assert_eq!(surface.poles().count(), 4);
+    assert!((surface.poles().nth(1).copied().unwrap().y - 20.0).abs() < 1.0e-9);
     let curve = result
         .ir()
         .model
@@ -454,7 +454,7 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Nurbs(nurbs)
-            if nurbs.control_points().iter().any(|point| point.y == 30.0)
+            if nurbs.poles().any(|point| point.y == 30.0)
     )));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

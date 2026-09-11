@@ -22,15 +22,12 @@ fn surface() -> NurbsSurface {
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![2.0, 2.0, 5.0, 5.0],
-        2,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
-        Some(vec![-1.0, 1.0, 2.0, -2.0]),
+        Some(vec![-1.0, 1.0, 2.0, -2.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         true,
         true,
         false,
@@ -120,15 +117,13 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         .is_err());
 
         let source = surface();
-        let mut points = source.control_points().to_vec();
-        points[1].x = invalid;
+        let mut points = source.control_grid().to_vec();
+        points[0][1].x = invalid;
         assert!(NurbsSurface::new(
             1,
             1,
             source.u_knots().to_vec(),
             source.v_knots().to_vec(),
-            2,
-            2,
             points,
             None,
             false,
@@ -155,12 +150,16 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     let mut pcurve = pcurve();
     let mut polar = polar();
     curve.set_weights(Some(vec![1e-200, -1e-200])).unwrap();
-    surface.set_weights(Some(vec![-1e-200; 4])).unwrap();
+    surface
+        .set_weights(Some(vec![vec![-1e-200; 2]; 2]))
+        .unwrap();
     pcurve.set_weights(Some(vec![1e-200; 2])).unwrap();
     polar.set_weights(Some(vec![1e-200; 2])).unwrap();
     for invalid in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(curve.set_weights(Some(vec![invalid, 1.0])).is_err());
-        assert!(surface.set_weights(Some(vec![invalid; 4])).is_err());
+        assert!(surface
+            .set_weights(Some(vec![vec![invalid; 2]; 2]))
+            .is_err());
         assert!(pcurve.set_weights(Some(vec![invalid, 1.0])).is_err());
         assert!(polar.set_weights(Some(vec![invalid, 1.0])).is_err());
     }
@@ -214,10 +213,10 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(surface.edit_u_knots(<[f64]>::reverse).is_err());
     assert!(surface.edit_v_knots(|knots| knots[1] = f64::NAN).is_err());
     assert!(surface
-        .edit_control_points(|points| points[3].y = f64::NEG_INFINITY)
+        .edit_control_points(|points| points[1][1].y = f64::NEG_INFINITY)
         .is_err());
-    assert!(surface.edit_weights(|weights| weights[2] = 0.0).is_err());
-    assert!(surface.set_weights(Some(vec![1.0])).is_err());
+    assert!(surface.edit_weights(|weights| weights[1][0] = 0.0).is_err());
+    assert!(surface.set_weights(Some(vec![vec![1.0]])).is_err());
     assert_eq!(surface, original);
 
     let mut pcurve = pcurve();
@@ -332,4 +331,35 @@ fn support_mapping_preserves_endpoints_despite_subtraction_cancellation() {
     };
     assert_eq!(side.pcurve_parameter([0.0, 1.0], 0.0), Some(1e16));
     assert_eq!(side.pcurve_parameter([0.0, 1.0], 1.0), Some(1.0));
+}
+
+/// The control grid states both pole counts, so the surface wire carries no
+/// `u_count` or `v_count`, and rows of unequal length are refused.
+#[test]
+fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
+    let surface = surface();
+    let wire = serde_json::to_value(&surface).expect("serializes");
+    assert!(wire.get("u_count").is_none());
+    assert!(wire.get("v_count").is_none());
+    assert_eq!(wire["control_points"].as_array().expect("rows").len(), 2);
+    assert_eq!(surface.u_count(), 2);
+    assert_eq!(surface.v_count(), 2);
+    assert_eq!(
+        serde_json::from_value::<NurbsSurface>(wire.clone()).expect("round trip"),
+        surface
+    );
+
+    let mut restated = wire.clone();
+    restated["u_count"] = serde_json::json!(2);
+    let error = serde_json::from_value::<NurbsSurface>(restated)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("u_count"), "{error}");
+
+    let mut ragged = wire;
+    ragged["control_points"][1] = serde_json::json!([{"x": 0.0, "y": 0.0, "z": 0.0}]);
+    let error = serde_json::from_value::<NurbsSurface>(ragged)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("control_points row"), "{error}");
 }

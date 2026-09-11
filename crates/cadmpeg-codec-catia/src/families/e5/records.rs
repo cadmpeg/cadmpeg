@@ -635,6 +635,7 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
         return None;
     }
     view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
+    let row_len = usize::try_from(v_count).ok()?;
     view.is_empty()
         .then(|| {
             NurbsSurface::new(
@@ -642,10 +643,8 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
                 v_degree,
                 u_knots,
                 v_knots,
-                u32::try_from(u_count).ok()?,
-                u32::try_from(v_count).ok()?,
-                control_points,
-                weights,
+                control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+                weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
                 false,
                 false,
                 false,
@@ -888,7 +887,7 @@ mod tests {
             assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
             assert_eq!(nurbs.u_count(), 2);
             assert_eq!(nurbs.v_count(), 2);
-            assert_eq!(nurbs.control_points().len(), 4);
+            assert_eq!(nurbs.poles().count(), 4);
             assert_eq!(nurbs.weights().is_some(), mode == 1);
         }
     }

@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 
 /// A tensor-product NURBS surface.
 ///
-/// Control points use u-major order. `weights == None` denotes a non-rational
-/// surface.
+/// The control grid is stored as rows: the outer index is u, the inner index
+/// is v, so the grid states both pole counts. `weights == None` denotes a
+/// non-rational surface.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsSurface {
@@ -27,15 +28,11 @@ pub struct NurbsSurface {
     u_knots: Vec<f64>,
     /// Full knot vector in v.
     v_knots: Vec<f64>,
-    /// Number of control points along u (poles per row).
-    u_count: u32,
-    /// Number of control points along v (poles per column).
-    v_count: u32,
-    /// Control points, u-major: index `i*v_count + j` is pole `(i, j)`.
-    control_points: Vec<Point3>,
-    /// Per-pole weights in control-point order; `None` denotes non-rational.
+    /// Control grid rows: `control_points[i][j]` is pole `(i, j)`.
+    control_points: Vec<Vec<Point3>>,
+    /// Per-pole weights in control-grid order; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
+    weights: Option<Vec<Vec<f64>>>,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     normal_reversed: bool,
@@ -177,6 +174,18 @@ impl std::fmt::Display for NurbsError {
 
 impl std::error::Error for NurbsError {}
 
+/// Exchange the outer and inner index of a rectangular row grid.
+fn transpose_rows<T: Clone>(rows: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let inner = rows.first().map_or(0, Vec::len);
+    (0..inner)
+        .map(|column| {
+            rows.iter()
+                .filter_map(|row| row.get(column).cloned())
+                .collect()
+        })
+        .collect()
+}
+
 fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usize, NurbsError> {
     pole_count
         .checked_add(degree as usize)
@@ -291,52 +300,52 @@ impl NurbsSurface {
         v_degree: u32,
         u_knots: Vec<f64>,
         v_knots: Vec<f64>,
-        u_count: u32,
-        v_count: u32,
-        control_points: Vec<Point3>,
-        weights: Option<Vec<f64>>,
+        control_points: Vec<Vec<Point3>>,
+        weights: Option<Vec<Vec<f64>>>,
         normal_reversed: bool,
         u_periodic: bool,
         v_periodic: bool,
     ) -> Result<Self, NurbsError> {
-        if u_count <= u_degree {
+        let u_count = control_points.len();
+        let v_count = control_points.first().map_or(0, Vec::len);
+        if u_count <= u_degree as usize {
             return Err(NurbsError(format!(
                 "u_count must exceed u_degree {u_degree}, found {u_count}"
             )));
         }
-        if v_count <= v_degree {
+        if v_count <= v_degree as usize {
             return Err(NurbsError(format!(
                 "v_count must exceed v_degree {v_degree}, found {v_count}"
             )));
         }
-        let pole_count = (u_count as usize)
-            .checked_mul(v_count as usize)
-            .ok_or_else(|| NurbsError("surface pole count overflows usize".into()))?;
-        require_length("control_points", control_points.len(), pole_count)?;
         require_length(
             "u_knots",
             u_knots.len(),
-            checked_knot_count("u", u_count as usize, u_degree)?,
+            checked_knot_count("u", u_count, u_degree)?,
         )?;
         require_length(
             "v_knots",
             v_knots.len(),
-            checked_knot_count("v", v_count as usize, v_degree)?,
+            checked_knot_count("v", v_count, v_degree)?,
         )?;
-        require_finite_points_3("control_points", &control_points)?;
+        for row in &control_points {
+            require_length("control_points row", row.len(), v_count)?;
+            require_finite_points_3("control_points", row)?;
+        }
         require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError(format!("u_{error}")))?;
         require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError(format!("v_{error}")))?;
         if let Some(weights) = &weights {
-            require_length("weights", weights.len(), pole_count)?;
-            require_3d_weights(weights)?;
+            require_length("weights", weights.len(), u_count)?;
+            for row in weights {
+                require_length("weights row", row.len(), v_count)?;
+                require_3d_weights(row)?;
+            }
         }
         Ok(Self {
             u_degree,
             v_degree,
             u_knots,
             v_knots,
-            u_count,
-            v_count,
             control_points,
             weights,
             normal_reversed,
@@ -383,55 +392,86 @@ impl NurbsSurface {
         Ok(())
     }
 
-    /// Number of control points along u.
-    pub const fn u_count(&self) -> u32 {
-        self.u_count
+    /// Number of control points along u, the number of grid rows.
+    pub fn u_count(&self) -> u32 {
+        self.control_points.len() as u32
     }
 
-    /// Number of control points along v.
-    pub const fn v_count(&self) -> u32 {
-        self.v_count
+    /// Number of control points along v, the length of every grid row.
+    pub fn v_count(&self) -> u32 {
+        self.control_points.first().map_or(0, Vec::len) as u32
     }
 
-    /// Control points in u-major order.
-    pub fn control_points(&self) -> &[Point3] {
+    /// Control grid rows, outer index u and inner index v.
+    pub fn control_grid(&self) -> &[Vec<Point3>] {
         &self.control_points
     }
 
-    /// Atomically edit control points and preserve finite coordinates.
+    /// Control points in u-major order.
+    pub fn poles(&self) -> impl Iterator<Item = &Point3> {
+        self.control_points.iter().flatten()
+    }
+
+    /// Pole at grid position `(u, v)`.
+    pub fn pole(&self, u: usize, v: usize) -> Option<&Point3> {
+        self.control_points.get(u)?.get(v)
+    }
+
+    /// Rational weight at grid position `(u, v)`, absent when non-rational.
+    pub fn weight(&self, u: usize, v: usize) -> Option<f64> {
+        self.weights.as_ref()?.get(u)?.get(v).copied()
+    }
+
+    /// Atomically edit control points and preserve the grid invariants.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnOnce(&mut [Point3]),
+        edit: impl FnOnce(&mut Vec<Vec<Point3>>),
     ) -> Result<(), NurbsError> {
         let mut values = self.control_points.clone();
         edit(&mut values);
-        require_finite_points_3("control_points", &values)?;
+        let v_count = values.first().map_or(0, Vec::len);
+        for row in &values {
+            require_length("control_points row", row.len(), v_count)?;
+            require_finite_points_3("control_points", row)?;
+        }
         self.control_points = values;
         Ok(())
     }
 
-    /// Rational weights in control-point order.
-    pub fn weights(&self) -> Option<&[f64]> {
+    /// Rational weight rows in control-grid order.
+    pub fn weights(&self) -> Option<&[Vec<f64>]> {
         self.weights.as_deref()
     }
 
+    /// Rational weights in control-point order.
+    pub fn pole_weights(&self) -> Option<impl Iterator<Item = f64> + '_> {
+        self.weights
+            .as_ref()
+            .map(|rows| rows.iter().flatten().copied())
+    }
+
     /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+    pub fn edit_weights(
+        &mut self,
+        edit: impl FnOnce(&mut Vec<Vec<f64>>),
+    ) -> Result<(), NurbsError> {
         let Some(weights) = &self.weights else {
             return Err(NurbsError("surface has no rational weights".into()));
         };
         let mut values = weights.clone();
         edit(&mut values);
-        require_3d_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
+        self.set_weights(Some(values))
     }
 
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.control_points.len())?;
-            require_3d_weights(values)?;
+    /// Replace rational weights after checking grid cardinality.
+    pub fn set_weights(&mut self, weights: Option<Vec<Vec<f64>>>) -> Result<(), NurbsError> {
+        if let Some(rows) = &weights {
+            require_length("weights", rows.len(), self.control_points.len())?;
+            let v_count = self.control_points.first().map_or(0, Vec::len);
+            for row in rows {
+                require_length("weights row", row.len(), v_count)?;
+                require_3d_weights(row)?;
+            }
         }
         self.weights = weights;
         Ok(())
@@ -470,26 +510,10 @@ impl NurbsSurface {
     /// Exchange the u and v parameter axes and transpose pole storage.
     /// The natural normal changes sign; `normal_reversed` remains unchanged.
     pub fn transpose_parameter_axes(&mut self) {
-        let old_u = self.u_count as usize;
-        let old_v = self.v_count as usize;
-        let old_points = std::mem::take(&mut self.control_points);
-        let old_weights = std::mem::take(&mut self.weights);
-        self.control_points = Vec::with_capacity(old_points.len());
-        self.weights = old_weights
-            .as_ref()
-            .map(|_| Vec::with_capacity(old_points.len()));
-        for new_u in 0..old_v {
-            for new_v in 0..old_u {
-                let old_index = new_v * old_v + new_u;
-                self.control_points.push(old_points[old_index]);
-                if let (Some(source), Some(target)) = (&old_weights, &mut self.weights) {
-                    target.push(source[old_index]);
-                }
-            }
-        }
+        self.control_points = transpose_rows(std::mem::take(&mut self.control_points));
+        self.weights = std::mem::take(&mut self.weights).map(transpose_rows);
         std::mem::swap(&mut self.u_degree, &mut self.v_degree);
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
-        std::mem::swap(&mut self.u_count, &mut self.v_count);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
     }
 }
@@ -500,16 +524,15 @@ impl<'de> Deserialize<'de> for NurbsSurface {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             u_degree: u32,
             v_degree: u32,
             u_knots: Vec<f64>,
             v_knots: Vec<f64>,
-            u_count: u32,
-            v_count: u32,
-            control_points: Vec<Point3>,
+            control_points: Vec<Vec<Point3>>,
             #[serde(default)]
-            weights: Option<Vec<f64>>,
+            weights: Option<Vec<Vec<f64>>>,
             #[serde(default)]
             normal_reversed: bool,
             u_periodic: bool,
@@ -522,8 +545,6 @@ impl<'de> Deserialize<'de> for NurbsSurface {
             wire.v_degree,
             wire.u_knots,
             wire.v_knots,
-            wire.u_count,
-            wire.v_count,
             wire.control_points,
             wire.weights,
             wire.normal_reversed,

@@ -64,13 +64,12 @@ pub(crate) fn native_nurbs_surface(
     native_nurbs_knots(bytes, surface.v_knots())?;
     for v in 0..v_count {
         for u in 0..u_count {
-            let index = u * v_count + v;
-            let point = surface.control_points()[index];
+            let point = surface.control_grid()[u][v];
             native_f64(bytes, point.x / LEN_TO_MM);
             native_f64(bytes, point.y / LEN_TO_MM);
             native_f64(bytes, point.z / LEN_TO_MM);
-            if let Some(weights) = surface.weights() {
-                native_f64(bytes, weights[index]);
+            if let Some(weight) = surface.weight(u, v) {
+                native_f64(bytes, weight);
             }
         }
     }

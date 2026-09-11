@@ -707,7 +707,6 @@ fn same_basis_ruled_surface(
     second: &NurbsCurve,
     weights: &[f64],
 ) -> Option<NurbsSurface> {
-    let u_count = u32::try_from(first.control_points().len()).ok()?;
     let surface_weights = weights
         .iter()
         .copied()
@@ -723,16 +722,14 @@ fn same_basis_ruled_surface(
         1,
         first.knots().to_vec(),
         vec![0.0, 0.0, 1.0, 1.0],
-        u_count,
-        2,
         first
             .control_points()
             .iter()
             .copied()
             .zip(second.control_points().iter().copied())
-            .flat_map(|(first, second)| [first, second])
+            .map(|(first, second)| vec![first, second])
             .collect(),
-        weights,
+        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         first.periodic() && second.periodic(),
         false,
@@ -842,10 +839,11 @@ fn ruled_surface_carrier(
         1,
         u_knots,
         vec![0.0, 0.0, 1.0, 1.0],
-        u32::try_from(u_count).ok()?,
-        2,
-        control_points,
-        weights,
+        control_points
+            .chunks(2 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         first.periodic() && second.periodic(),
         false,
@@ -1616,14 +1614,14 @@ pub(super) fn project(
             .iter()
             .flat_map(|point| [*point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
-        let Ok(u_count) = u32::try_from(placed_directrix.control_points().len()) else {
+        let Ok(_) = u32::try_from(placed_directrix.control_points().len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
             continue;
         };
-        let weights = placed_directrix.weights().map(|weights| {
+        let weights: Option<Vec<Vec<f64>>> = placed_directrix.weights().map(|weights| {
             weights
                 .iter()
-                .flat_map(|weight| [*weight, *weight])
+                .map(|weight| vec![*weight, *weight])
                 .collect()
         });
         let procedural_directrix = if entry.transform == 0 {
@@ -1647,9 +1645,7 @@ pub(super) fn project(
             1,
             placed_directrix.knots().to_vec(),
             vec![0.0, 0.0, 1.0, 1.0],
-            u_count,
-            2,
-            control_points,
+            control_points.chunks(2).map(<[_]>::to_vec).collect(),
             weights,
             false,
             placed_directrix.periodic(),
@@ -1871,7 +1867,7 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
-        let Ok(u_count) = u32::try_from(generatrix.control_points().len()) else {
+        let Ok(_) = u32::try_from(generatrix.control_points().len()) else {
             losses.push(entity_loss(entry, "generatrix pole count exceeds u32"));
             continue;
         };
@@ -1922,10 +1918,12 @@ pub(super) fn project(
             2,
             generatrix.knots().to_vec(),
             v_knots,
-            u_count,
-            v_count,
-            control_points,
-            Some(weights),
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            Some(weights)
+                .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
             false,
             generatrix.periodic(),
             super::curve_conversion::angularly_equal(
@@ -2103,8 +2101,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface pole count overflows"));
             continue;
         };
-        let (Ok(u_count_u32), Ok(v_count_u32)) = (u32::try_from(u_count), u32::try_from(v_count))
-        else {
+        let (Ok(_), Ok(v_count_u32)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
             losses.push(entity_loss(entry, "surface pole dimensions exceed u32"));
             continue;
         };
@@ -2308,10 +2305,16 @@ pub(super) fn project(
             v_degree,
             u_knots,
             v_knots,
-            u_count_u32,
-            v_count_u32,
-            control_points,
-            weights,
+            control_points
+                .chunks(v_count_u32 as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights.map(|values| {
+                values
+                    .chunks(v_count_u32 as usize)
+                    .map(<[_]>::to_vec)
+                    .collect()
+            }),
             false,
             flags[3] == Some(1),
             flags[4] == Some(1),

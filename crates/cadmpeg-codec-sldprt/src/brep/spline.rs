@@ -603,7 +603,7 @@ pub(crate) fn patch_nurbs_surface(
         || old.v_degree() != new.v_degree()
         || old.u_count() != new.u_count()
         || old.v_count() != new.v_count()
-        || old.control_points().len() != new.control_points().len()
+        || old.poles().count() != new.poles().count()
         || old.weights().is_some() != new.weights().is_some()
         || old.u_periodic() != new.u_periodic()
         || old.v_periodic() != new.v_periodic()
@@ -645,8 +645,20 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let old_poles = homogeneous_poles(old.control_points(), old.weights(), scale)?;
-    let poles = homogeneous_poles(new.control_points(), new.weights(), scale)?;
+    let old_poles = homogeneous_poles(
+        &old.poles().copied().collect::<Vec<_>>(),
+        old.pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<f64>>)
+            .as_deref(),
+        scale,
+    )?;
+    let poles = homogeneous_poles(
+        &new.poles().copied().collect::<Vec<_>>(),
+        new.pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<f64>>)
+            .as_deref(),
+        scale,
+    )?;
     let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
     let u_knot_span = unique_surface_knot_span(
         bytes,
@@ -952,10 +964,16 @@ pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier
             descriptor.v_degree,
             u_knots,
             v_knots,
-            descriptor.u_count as u32,
-            descriptor.v_count as u32,
-            points,
-            weights,
+            points
+                .chunks(descriptor.v_count as u32 as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights.map(|values| {
+                values
+                    .chunks(descriptor.v_count as u32 as usize)
+                    .map(<[_]>::to_vec)
+                    .collect()
+            }),
             false,
             descriptor.u_periodic,
             descriptor.v_periodic,

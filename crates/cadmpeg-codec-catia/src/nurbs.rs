@@ -627,13 +627,10 @@ pub(crate) fn nurbs_surface_isocurve(
     if !parameter.is_finite()
         || !surface.u_knots().iter().copied().all(f64::is_finite)
         || !surface.v_knots().iter().copied().all(f64::is_finite)
-        || !surface.control_points().iter().copied().all(finite_point3)
-        || surface.weights().is_some_and(|weights| {
-            weights
-                .iter()
-                .copied()
-                .any(|weight| !weight.is_finite() || weight == 0.0)
-        })
+        || !surface.poles().copied().all(finite_point3)
+        || surface
+            .pole_weights()
+            .is_some_and(|mut weights| weights.any(|weight| !weight.is_finite() || weight == 0.0))
     {
         return None;
     }
@@ -665,16 +662,13 @@ pub(crate) fn nurbs_surface_isocurve(
         let mut numerator = [0.0; 3];
         let mut denominator = 0.0;
         for (fixed, basis) in fixed_basis.iter().copied().enumerate() {
-            let index = if fix_u {
-                fixed.checked_mul(v_count)?.checked_add(varying)?
+            let (pole_u, pole_v) = if fix_u {
+                (fixed, varying)
             } else {
-                varying.checked_mul(v_count)?.checked_add(fixed)?
+                (varying, fixed)
             };
-            let point = surface.control_points().get(index)?;
-            let weight = match surface.weights() {
-                Some(values) => *values.get(index)?,
-                None => 1.0,
-            };
+            let point = surface.pole(pole_u, pole_v)?;
+            let weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
             let factor = basis * weight;
             numerator[0] += factor * point.x;
             numerator[1] += factor * point.y;
@@ -943,15 +937,12 @@ mod tests {
             1,
             vec![0.0, 0.0, tiny, tiny],
             vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
             vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-                Point3::new(2.0, 1.0, 0.0),
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
             ],
-            Some(vec![tiny; 4]),
+            Some(vec![tiny; 4])
+                .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,
@@ -970,16 +961,14 @@ mod tests {
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_rejects_nonfinite_output() {
-        let surface = |control_points, weights| {
+        let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
             NurbsSurface::new(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![0.0, 0.0, 1.0, 1.0],
-                2,
-                2,
-                control_points,
-                weights,
+                control_points.chunks(2).map(<[_]>::to_vec).collect(),
+                weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
                 false,
                 false,
                 false,

@@ -1035,7 +1035,7 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     assert_eq!(nurbs.v_knots(), nurbs.u_knots());
     for u in 0..4 {
         for v in 0..4 {
-            let point = &nurbs.control_points()[u * 4 + v];
+            let point = &nurbs.poles().nth(u * 4 + v).copied().unwrap();
             let expected_u = u as f64 / 3.0;
             let expected_v = v as f64 / 3.0;
             assert!((point.x - expected_u).abs() < 1.0e-12);
@@ -1107,12 +1107,28 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
     .expect("revolution surface");
 
     assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
-    assert_eq!(surface.control_points()[0], Point3::new(2.0, 0.0, 0.0));
-    assert_eq!(surface.control_points()[1], Point3::new(2.0, 2.0, 0.0));
-    assert_eq!(surface.control_points()[2], Point3::new(0.0, 2.0, 0.0));
-    assert_eq!(surface.control_points()[8], surface.control_points()[0]);
     assert_eq!(
-        surface.weights().expect("rational weights")[1],
+        surface.poles().nth(0).copied().unwrap(),
+        Point3::new(2.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        surface.poles().nth(1).copied().unwrap(),
+        Point3::new(2.0, 2.0, 0.0)
+    );
+    assert_eq!(
+        surface.poles().nth(2).copied().unwrap(),
+        Point3::new(0.0, 2.0, 0.0)
+    );
+    assert_eq!(
+        surface.poles().nth(8).copied().unwrap(),
+        surface.poles().nth(0).copied().unwrap()
+    );
+    assert_eq!(
+        surface
+            .pole_weights()
+            .expect("rational weights")
+            .nth(1)
+            .unwrap(),
         std::f64::consts::FRAC_1_SQRT_2
     );
 }
@@ -1162,11 +1178,24 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 9));
     assert_eq!(surface.u_knots(), [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
-    assert_eq!(surface.control_points()[0], Point3::new(2.0, 0.0, 0.0));
-    assert_eq!(surface.control_points()[1], Point3::new(2.0, 0.0, -2.0));
-    assert_eq!(surface.control_points()[9], Point3::new(3.0, 0.75, 0.0));
     assert_eq!(
-        surface.weights().expect("rational surface weights")[10],
+        surface.poles().nth(0).copied().unwrap(),
+        Point3::new(2.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        surface.poles().nth(1).copied().unwrap(),
+        Point3::new(2.0, 0.0, -2.0)
+    );
+    assert_eq!(
+        surface.poles().nth(9).copied().unwrap(),
+        Point3::new(3.0, 0.75, 0.0)
+    );
+    assert_eq!(
+        surface
+            .pole_weights()
+            .expect("rational surface weights")
+            .nth(10)
+            .unwrap(),
         0.75 * std::f64::consts::FRAC_1_SQRT_2
     );
 
@@ -1223,7 +1252,10 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         panic!("reversed spline revolution must retain a NURBS surface");
     };
     assert_eq!(reversed.u_knots(), [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
-    assert_eq!(reversed.control_points()[0], Point3::new(2.0, 2.0, 0.0));
+    assert_eq!(
+        reversed.poles().nth(0).copied().unwrap(),
+        Point3::new(2.0, 2.0, 0.0)
+    );
 }
 
 #[test]
@@ -1365,8 +1397,6 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         1,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        4,
-        2,
         (0..4)
             .flat_map(|u| {
                 [
@@ -1374,8 +1404,12 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                     Point3::new(f64::from(u), 1.0, f64::from(u * u)),
                 ]
             })
+            .collect::<Vec<_>>()
+            .chunks(2 as usize)
+            .map(<[_]>::to_vec)
             .collect(),
-        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1434,8 +1468,8 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     .is_none());
     let mut coplanar = surface.clone();
     coplanar
-        .edit_control_points(|points| {
-            for point in points {
+        .edit_control_points(|rows| {
+            for point in rows.iter_mut().flatten() {
                 point.z = 0.0;
             }
         })
@@ -1449,9 +1483,9 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     )
     .is_none());
     coplanar
-        .edit_control_points(|points| points.copy_from_slice(surface.control_points()))
+        .edit_control_points(|rows| rows.clone_from_slice(surface.control_grid()))
         .expect("finite fixture geometry preserves NURBS invariants");
-    assert!(coplanar.edit_weights(|weights| weights[0] = 0.0).is_err());
+    assert!(coplanar.edit_weights(|rows| rows[0][0] = 0.0).is_err());
 }
 
 #[test]
@@ -1461,15 +1495,12 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        2,
-        2,
         vec![
-            Point3::new(-1.0, 0.0, 0.0),
-            Point3::new(-1.0, 0.0, 1.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 1.0),
+            vec![Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
         ],
-        Some(vec![2.0, 2.0, 3.0, 4.0]),
+        Some(vec![2.0, 2.0, 3.0, 4.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1480,15 +1511,12 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![4.0, 4.0, 8.0, 8.0],
-        2,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 1.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 1.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
+            vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 1.0, 1.0)],
         ],
-        Some(vec![6.0, 8.0, 8.0, 8.0]),
+        Some(vec![6.0, 8.0, 8.0, 8.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1509,24 +1537,24 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 
     let mut reversed = second.clone();
     reversed
-        .edit_control_points(|points| {
-            points.swap(0, 1);
-            points.swap(2, 3);
+        .edit_control_points(|rows| {
+            rows[0].swap(0, 1);
+            rows[1].swap(0, 1);
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     reversed
-        .edit_weights(|weights| {
-            weights.swap(0, 1);
-            weights.swap(2, 3);
+        .edit_weights(|rows| {
+            rows[0].swap(0, 1);
+            rows[1].swap(0, 1);
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &reversed).is_some());
 
     let mut same_side = second.clone();
     same_side
-        .edit_control_points(|points| {
-            points[2] = Point3::new(-2.0, 0.0, 0.0);
-            points[3] = Point3::new(-2.0, 0.0, 1.0);
+        .edit_control_points(|rows| {
+            rows[1][0] = Point3::new(-2.0, 0.0, 0.0);
+            rows[1][1] = Point3::new(-2.0, 0.0, 1.0);
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &same_side).is_none());
@@ -1537,7 +1565,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 
     let mut different_boundary = second;
     different_boundary
-        .edit_control_points(|points| points[1].x = 0.1)
+        .edit_control_points(|rows| rows[0][1].x = 0.1)
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &different_boundary).is_none());
 }
@@ -1549,13 +1577,15 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
         1,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        4,
-        2,
         [-1.0, -0.5, 0.5, 1.0]
             .into_iter()
             .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
+            .collect::<Vec<_>>()
+            .chunks(2 as usize)
+            .map(<[_]>::to_vec)
             .collect(),
-        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,

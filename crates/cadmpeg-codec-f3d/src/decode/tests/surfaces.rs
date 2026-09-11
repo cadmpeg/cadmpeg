@@ -126,12 +126,12 @@ fn nurbs_surface_block_decodes_to_carrier() {
     assert_eq!((s.u_count(), s.v_count()), (2, 2));
     assert_eq!(s.u_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(s.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.control_points().len(), 4);
+    assert_eq!(s.poles().count(), 4);
     assert!(s.weights().is_none());
     // Transposed to u-major: index u*v_count+v. Pole (u1,v0) sits at index 2,
     // and coordinates are cm→mm scaled (×10).
-    assert_eq!(s.control_points()[2].x, 10.0);
-    assert_eq!(s.control_points()[2].y, 0.0);
+    assert_eq!(s.poles().nth(2).copied().unwrap().x, 10.0);
+    assert_eq!(s.poles().nth(2).copied().unwrap().y, 0.0);
 }
 
 #[test]

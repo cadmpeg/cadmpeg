@@ -1341,6 +1341,7 @@ pub fn a8_surface_from_external_grid(
     else {
         return None;
     };
+    let row_len = header.v_count()? as usize;
     Some(FreeformSurface {
         pos: header.pos,
         identity: Some(header.object_id),
@@ -1349,10 +1350,14 @@ pub fn a8_surface_from_external_grid(
             header.v_degree,
             header.u_knots.expanded()?,
             header.v_knots.expanded()?,
-            header.u_count()?,
-            header.v_count()?,
-            control_points.clone(),
-            weights.clone(),
+            control_points
+                .clone()
+                .chunks(row_len)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights
+                .clone()
+                .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,
@@ -1555,10 +1560,11 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
             v_degree,
             u_knots,
             v_knots,
-            u_count,
-            v_count,
-            control_points,
-            weights,
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,
@@ -1717,10 +1723,13 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
             v_degree,
             u_knots.expanded()?,
             v_knots.expanded()?,
-            u_count,
-            v_count,
-            control_points,
-            rational.then_some(weights),
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            rational
+                .then_some(weights)
+                .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,

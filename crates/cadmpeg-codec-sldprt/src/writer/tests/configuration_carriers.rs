@@ -1259,7 +1259,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             panic!("expected NURBS surface");
         };
         surface
-            .edit_control_points(|points| points[3].z += 500.0)
+            .edit_control_points(|rows| rows[1][1].z += 500.0)
             .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)

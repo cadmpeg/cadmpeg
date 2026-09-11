@@ -537,13 +537,9 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
             vec![
-                Point3::new(0.0, 0.0, z),
-                Point3::new(0.0, 2.0, z),
-                Point3::new(3.0, 0.0, z),
-                Point3::new(3.0, 2.0, z),
+                vec![Point3::new(0.0, 0.0, z), Point3::new(0.0, 2.0, z)],
+                vec![Point3::new(3.0, 0.0, z), Point3::new(3.0, 2.0, z)],
             ],
             None,
             false,
@@ -561,17 +557,16 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            3,
-            3,
             [0.0, 1.0, 3.0]
                 .into_iter()
-                .flat_map(|x| {
+                .map(|x| {
                     [0.0, 2.0, 5.0]
                         .into_iter()
-                        .map(move |y| Point3::new(x, y, z))
+                        .map(|y| Point3::new(x, y, z))
+                        .collect()
                 })
                 .collect(),
-            Some(vec![2.0; 9]),
+            Some(vec![2.0; 9]).map(|values| values.chunks(3 as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,
@@ -587,14 +582,13 @@ fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            3,
-            3,
             [0.0, 1.5, 3.0]
                 .into_iter()
-                .flat_map(|x| {
+                .map(|x| {
                     [0.0, 1.0, 2.0]
                         .into_iter()
-                        .map(move |y| Point3::new(x, y, z))
+                        .map(|y| Point3::new(x, y, z))
+                        .collect()
                 })
                 .collect(),
             None,
@@ -615,17 +609,17 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            3,
-            3,
             (0..3)
-                .flat_map(|u| {
-                    (0..3).map(move |v| {
-                        Point3::new(
-                            coordinates[u],
-                            coordinates[v],
-                            square_controls[u] + square_controls[v],
-                        )
-                    })
+                .map(|u| {
+                    (0..3)
+                        .map(|v| {
+                            Point3::new(
+                                coordinates[u],
+                                coordinates[v],
+                                square_controls[u] + square_controls[v],
+                            )
+                        })
+                        .collect()
                 })
                 .collect(),
             None,
@@ -645,7 +639,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         unreachable!();
     };
     candidate
-        .edit_control_points(|points| points[3].z += 0.000_5)
+        .edit_control_points(|rows| rows[1][0].z += 0.000_5)
         .unwrap();
 
     let fit = certified_offset_cache_fit(
@@ -838,10 +832,11 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
             1,
             vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            4,
-            2,
             (0..4)
                 .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect::<Vec<_>>()
+                .chunks(2 as usize)
+                .map(<[_]>::to_vec)
                 .collect(),
             None,
             false,
@@ -866,10 +861,11 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
             1,
             vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            5,
-            2,
             (0..5)
                 .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect::<Vec<_>>()
+                .chunks(2 as usize)
+                .map(<[_]>::to_vec)
                 .collect(),
             None,
             false,
@@ -891,11 +887,11 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
         unreachable!();
     };
     let replacement = (0..3)
-        .map(|v| surface.control_points()[3 + v])
+        .map(|v| surface.control_grid()[1][v])
         .collect::<Vec<_>>();
     surface
-        .edit_control_points(|points| {
-            points[6..9].copy_from_slice(&replacement);
+        .edit_control_points(|rows| {
+            rows[2].copy_from_slice(&replacement);
         })
         .unwrap();
     assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
@@ -908,9 +904,9 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
         unreachable!();
     };
     surface
-        .edit_control_points(|points| {
+        .edit_control_points(|rows| {
             for v in 0..3 {
-                points[6 + v].x = 0.0;
+                rows[2][v].x = 0.0;
             }
         })
         .unwrap();
@@ -931,10 +927,11 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             1,
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            4,
-            2,
             (0..4)
                 .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect::<Vec<_>>()
+                .chunks(2 as usize)
+                .map(<[_]>::to_vec)
                 .collect(),
             None,
             false,
@@ -980,7 +977,7 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     surface
         .set_weights(Some(
             (0..3)
-                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
                 .collect(),
         ))
         .unwrap();
@@ -999,8 +996,8 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         unreachable!();
     };
     surface
-        .edit_control_points(|points| {
-            for point in points {
+        .edit_control_points(|rows| {
+            for point in rows.iter_mut().flatten() {
                 point.x += 1.0e12;
                 point.y -= 2.0e12;
                 point.z += 3.0e12;
@@ -1011,7 +1008,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     surface
         .set_weights(Some(
             (0..3)
-                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
                 .collect(),
         ))
         .unwrap();
@@ -1697,8 +1694,6 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
-            2,
-            4,
             [0.0, 1.0]
                 .into_iter()
                 .flat_map(|y| {
@@ -1706,6 +1701,9 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
                         .into_iter()
                         .map(move |x| Point3::new(x, y, 0.0))
                 })
+                .collect::<Vec<_>>()
+                .chunks(4 as usize)
+                .map(<[_]>::to_vec)
                 .collect(),
             None,
             false,
@@ -1742,7 +1740,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         unreachable!()
     };
     second
-        .edit_control_points(|points| points[1].z = 1.0)
+        .edit_control_points(|rows| rows[0][1].z = 1.0)
         .unwrap();
     assert!(!coincident_pcurve_pair(
         &ir,

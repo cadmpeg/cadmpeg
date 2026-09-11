@@ -62,13 +62,9 @@ fn bilinear_surface() -> NurbsSurface {
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        2,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
         None,
         false,
@@ -399,17 +395,13 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        3,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(0.5, 0.0, 0.2),
-            Point3::new(0.5, 1.0, 0.2),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(0.5, 0.0, 0.2), Point3::new(0.5, 1.0, 0.2)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
-        Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
+        Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -426,7 +418,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
     surface
-        .edit_control_points(|points| points[3].z = 1.0)
+        .edit_control_points(|points| points[1][1].z = 1.0)
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
@@ -460,9 +452,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         0,
         vec![0.0, 1.0],
         vec![0.0, 1.0],
-        1,
-        1,
-        vec![Point3::new(1.0, 2.0, 3.0)],
+        vec![vec![Point3::new(1.0, 2.0, 3.0)]],
         None,
         false,
         false,
@@ -487,9 +477,10 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
         0,
         vec![0.0, 1.0, 2.0],
         vec![0.0, 1.0],
-        2,
-        1,
-        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        vec![
+            vec![Point3::new(1.0, 2.0, 3.0)],
+            vec![Point3::new(4.0, 5.0, 6.0)],
+        ],
         None,
         false,
         false,
@@ -515,17 +506,13 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        3,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(0.5, 0.0, 0.25),
-            Point3::new(0.5, 1.0, 0.25),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(0.5, 0.0, 0.25), Point3::new(0.5, 1.0, 0.25)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
-        Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
+        Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -806,17 +793,13 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
         1,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![-2.0, -2.0, 3.0, 3.0],
-        3,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 4.0),
-            Point3::new(1.0, 2.0, 0.5),
-            Point3::new(1.0, 2.0, 4.5),
-            Point3::new(3.0, -1.0, 1.0),
-            Point3::new(3.0, -1.0, 5.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 4.0)],
+            vec![Point3::new(1.0, 2.0, 0.5), Point3::new(1.0, 2.0, 4.5)],
+            vec![Point3::new(3.0, -1.0, 1.0), Point3::new(3.0, -1.0, 5.0)],
         ],
-        Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+        Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -860,13 +843,9 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        2,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 3.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(2.0, 3.0, 0.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
         ],
         None,
         false,
@@ -887,17 +866,17 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        3,
-        3,
         (0..3)
-            .flat_map(|i| {
-                (0..3).map(move |j| {
-                    Point3::new(
-                        f64::from(i) / 2.0,
-                        f64::from(j) / 2.0,
-                        f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
-                    )
-                })
+            .map(|i| {
+                (0..3)
+                    .map(|j| {
+                        Point3::new(
+                            f64::from(i) / 2.0,
+                            f64::from(j) / 2.0,
+                            f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
+                        )
+                    })
+                    .collect()
             })
             .collect(),
         None,
@@ -1010,14 +989,13 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                     2,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                    2,
-                    3,
                     [0.0, 1.0]
                         .into_iter()
-                        .flat_map(|u| {
+                        .map(|u| {
                             [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
                                 .into_iter()
-                                .map(move |(v, z)| Point3::new(u, v, z))
+                                .map(|(v, z)| Point3::new(u, v, z))
+                                .collect()
                         })
                         .collect(),
                     None,
@@ -1810,15 +1788,12 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        2,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 3.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(2.0, 3.0, 0.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
         ],
-        Some(vec![1.0, 1.0, 2.0, 2.0]),
+        Some(vec![1.0, 1.0, 2.0, 2.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1844,15 +1819,12 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![0.0, 0.0, 1.0, 1.0],
-        2,
-        2,
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 3.0, 0.0),
-            Point3::new(2.0, 0.0, 1.0),
-            Point3::new(2.0, 3.0, 1.0),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+            vec![Point3::new(2.0, 0.0, 1.0), Point3::new(2.0, 3.0, 1.0)],
         ],
-        Some(vec![1.0, 2.0, 3.0, 4.0]),
+        Some(vec![1.0, 2.0, 3.0, 4.0])
+            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,

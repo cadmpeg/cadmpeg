@@ -3263,7 +3263,14 @@ fn write_nurbs_surface(
             "NURBS surface knot vectors must be finite and nondecreasing".into(),
         ));
     }
-    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
+    let poles = homogeneous_poles(
+        &nurbs.poles().copied().collect::<Vec<_>>(),
+        nurbs
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<f64>>)
+            .as_deref(),
+        length_scale,
+    )?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
@@ -3706,9 +3713,10 @@ mod nurbs_write_tests {
             1,
             vec![0.0; 20],
             vec![0.0; 4],
-            10,
-            2,
-            vec![Point3::new(0.0, 0.0, 0.0); 20],
+            vec![Point3::new(0.0, 0.0, 0.0); 20]
+                .chunks(2 as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
             None,
             false,
             false,
@@ -3743,9 +3751,10 @@ mod nurbs_write_tests {
             1,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
-            3,
-            4,
-            vec![Point3::new(0.0, 0.0, 0.0); 12],
+            vec![Point3::new(0.0, 0.0, 0.0); 12]
+                .chunks(4 as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
             None,
             false,
             false,

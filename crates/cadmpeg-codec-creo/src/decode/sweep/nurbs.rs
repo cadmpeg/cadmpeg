@@ -345,9 +345,10 @@ pub(in super::super) fn interpolation_spline_surface(
         3,
         u_knots?,
         v_knots?,
-        u32::try_from(u_control_count).ok()?,
-        u32::try_from(v_control_count).ok()?,
-        control_points,
+        control_points
+            .chunks(u32::try_from(v_control_count).ok()? as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
         None,
         false,
         false,
@@ -415,10 +416,11 @@ pub(in super::super) fn extruded_nurbs_surface(
         1,
         directrix.knots().to_vec(),
         vec![0.0, 0.0, 1.0, 1.0],
-        u32::try_from(directrix.control_points().len()).ok()?,
-        2,
-        control_points,
-        weights,
+        control_points
+            .chunks(2 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         directrix.periodic(),
         false,

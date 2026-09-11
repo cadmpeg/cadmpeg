@@ -6306,15 +6306,14 @@ fn standard_nurbs_line_pair_on_face(
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
-    if surface.weights().is_some_and(|weights| {
-        weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
-    }) {
+    if surface
+        .pole_weights()
+        .is_some_and(|mut weights| weights.any(|weight| !weight.is_finite() || weight <= 0.0))
+    {
         return None;
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
-    for point in surface.control_points() {
+    for point in surface.poles() {
         for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
             if !coordinate.is_finite() {
                 return None;
