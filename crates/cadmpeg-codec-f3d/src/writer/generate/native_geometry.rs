@@ -4903,23 +4903,23 @@ pub(crate) fn native_procedural_curve(
             cadmpeg_ir::geometry::SurfaceCurveFamily::Blend { context, tail } => (
                 "blend_int_cur",
                 context,
-                tail.as_ref().map(|value| (&value.tail, value.flags, None)),
+                tail.as_ref().map(|value| (&value.form, value.flags, None)),
             ),
             cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained { context, tail } => (
                 "surf_int_cur",
                 context,
-                tail.as_ref().map(|value| (&value.tail, value.flags, None)),
+                tail.as_ref().map(|value| (&value.form, value.flags, None)),
             ),
             cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, tail } => (
                 "par_int_cur",
                 context,
                 tail.as_ref()
-                    .map(|value| (&value.tail, value.flags.flag, value.flags.second_flag)),
+                    .map(|value| (&value.form, value.flags.flag, value.flags.second_flag)),
             ),
             cadmpeg_ir::geometry::SurfaceCurveFamily::Skin { context, tail } => (
                 "skin_int_cur",
                 context,
-                tail.as_ref().map(|value| (&value.tail, value.flags, None)),
+                tail.as_ref().map(|value| (&value.form, value.flags, None)),
             ),
         };
         native_curve_base(bytes, "intcurve")?;
