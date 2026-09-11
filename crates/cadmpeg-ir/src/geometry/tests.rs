@@ -1182,11 +1182,11 @@ fn a_law_surface_full_tail_is_an_empty_struct_variant() {
 
 /// One-pcurve document built on the unit cube, used to drive the pcurve
 /// carriers over the same route a checked-in document takes.
-fn document_with_pcurve(geometry: serde_json::Value) -> serde_json::Value {
+fn document_with_pcurve(geometry: &serde_json::Value) -> serde_json::Value {
     let mut document = serde_json::to_value(unit_cube()).unwrap();
     document["model"]["pcurves"] = serde_json::json!([{
         "id": "synthetic:cube:pcurve#0",
-        "geometry": geometry,
+        "geometry": geometry.clone(),
     }]);
     document
 }
@@ -1301,13 +1301,13 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
     ];
     for (kind, geometry) in cases {
-        let document = document_with_pcurve(geometry.clone());
+        let document = document_with_pcurve(&geometry);
         serde_json::from_value::<crate::CadIr>(document)
             .unwrap_or_else(|error| panic!("{kind} is a legal carrier: {error}"));
 
         let mut stray = geometry.as_object().unwrap().clone();
         stray.insert("zz_bogus".into(), serde_json::json!(1));
-        let document = document_with_pcurve(serde_json::Value::Object(stray));
+        let document = document_with_pcurve(&serde_json::Value::Object(stray));
         let error = serde_json::from_value::<crate::CadIr>(document)
             .unwrap_err()
             .to_string();
