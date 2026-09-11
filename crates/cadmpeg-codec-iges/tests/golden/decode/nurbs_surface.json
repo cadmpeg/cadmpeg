@@ -28,19 +28,17 @@
           "definition": {
             "extension": 0,
             "kind": "exact",
-            "parameters": {
-              "kind": "ordered_ranges",
-              "ranges": [
-                [
-                  0.0,
-                  1.0
-                ],
-                [
-                  0.0,
-                  1.0
-                ]
+            "layout": "legacy",
+            "ranges": [
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.0,
+                1.0
               ]
-            }
+            ]
           },
           "id": "iges:model:procedural-surface#D1",
           "record_bounds": [

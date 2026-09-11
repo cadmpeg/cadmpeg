@@ -54,6 +54,70 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
 }
 
 #[test]
+fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
+    use super::ExactSurfacePayload;
+    use crate::geometry::{
+        ExactSpline, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    };
+
+    let form = RevisionSurfaceForm {
+        revision: 1,
+        support_bounds: [None; 4],
+        reference_endpoints: [None; 2],
+        second_endpoints: [None; 2],
+        flags: Vec::new(),
+        cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization::default()),
+        discontinuities: Default::default(),
+        tail_flag: false,
+        trailing_flags: Vec::new(),
+    };
+    let legacy = ExactSurfacePayload::try_new(ExactSpline::Legacy {
+        ranges: [[0.0, 1.0]; 2],
+        extension: 0,
+    })
+    .unwrap();
+    let revision = ExactSurfacePayload::try_new(ExactSpline::Revision {
+        intervals: [[Some(0.0), Some(1.0)]; 2],
+        extension: 0,
+        form: form.clone(),
+    })
+    .unwrap();
+
+    let legacy_wire = serde_json::to_value(&legacy).unwrap();
+    assert_eq!(legacy_wire["layout"], serde_json::json!("legacy"));
+    assert!(legacy_wire.get("parameters").is_none());
+    assert!(legacy_wire.get("revision_form").is_none());
+    let revision_wire = serde_json::to_value(&revision).unwrap();
+    assert_eq!(revision_wire["layout"], serde_json::json!("revision"));
+    assert!(revision_wire.get("form").is_some());
+    assert_eq!(
+        serde_json::from_value::<ExactSurfacePayload>(legacy_wire.clone()).unwrap(),
+        legacy
+    );
+    assert_eq!(
+        serde_json::from_value::<ExactSurfacePayload>(revision_wire.clone()).unwrap(),
+        revision
+    );
+
+    let mut legacy_with_form = legacy_wire;
+    legacy_with_form["form"] = serde_json::to_value(&form).unwrap();
+    let error = serde_json::from_value::<ExactSurfacePayload>(legacy_with_form)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("form"), "{error}");
+
+    let mut revision_without_form = revision_wire;
+    revision_without_form
+        .as_object_mut()
+        .unwrap()
+        .remove("form");
+    let error = serde_json::from_value::<ExactSurfacePayload>(revision_without_form)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("form"), "{error}");
+}
+
+#[test]
 fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
     use super::{CompoundSurfacePayload, ExactSurfacePayload};
     use crate::geometry::{CompoundComponent, ExactSpline};
@@ -74,7 +138,7 @@ fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
         assert!(exact(range).is_err());
     }
     let mut invalid = wire;
-    invalid["parameters"]["ranges"][0] = serde_json::json!([2.0, 1.0]);
+    invalid["ranges"][0] = serde_json::json!([2.0, 1.0]);
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     assert!(CompoundSurfacePayload::try_new(Vec::new()).is_ok());
     for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
