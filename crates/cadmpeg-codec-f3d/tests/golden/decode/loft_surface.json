@@ -630,17 +630,14 @@
                           "first_flag": false,
                           "asm_extension": -1,
                           "subdata": {
-                            "type_code": 211,
-                            "row_count": 4,
-                            "column_count": 0,
-                            "rows": [
-                              {
-                                "parameters": [
-                                  -0.25,
-                                  0.75
-                                ],
-                                "columns": []
-                              }
+                            "form": "type211",
+                            "dimensions": [
+                              4,
+                              0
+                            ],
+                            "row": [
+                              -0.25,
+                              0.75
                             ]
                           },
                           "direction": {
@@ -704,17 +701,14 @@
                           "first_flag": false,
                           "asm_extension": -1,
                           "subdata": {
-                            "type_code": 211,
-                            "row_count": 4,
-                            "column_count": 0,
-                            "rows": [
-                              {
-                                "parameters": [
-                                  -0.25,
-                                  0.75
-                                ],
-                                "columns": []
-                              }
+                            "form": "type211",
+                            "dimensions": [
+                              4,
+                              0
+                            ],
+                            "row": [
+                              -0.25,
+                              0.75
                             ]
                           }
                         }

@@ -801,6 +801,8 @@ mod revision_compound_loft_tail;
 
 mod loft_path;
 
+mod loft_subdata;
+
 mod surface_curve_family;
 
 mod rolling_ball_jet;
