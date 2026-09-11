@@ -560,7 +560,7 @@ fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection 
 }
 
 #[test]
-fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
+fn a_rectangular_pattern_states_its_grid_as_rows() {
     use crate::sketches::{
         SketchConstraintDefinitionInput, SketchEntityId, SketchPatternDistance,
         SketchPatternInstance, SketchRectangularPattern,
@@ -585,32 +585,56 @@ fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
     .unwrap();
     let definition = SketchConstraintDefinitionInput::RectangularPattern { pattern };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["directions"][0]["count"], 2);
-    assert_eq!(wire["directions"][1]["count"], 1);
+    assert!(wire["directions"][0].get("count").is_none());
+    assert!(wire["directions"][1].get("count").is_none());
     assert_eq!(
         wire["directions"][0]["spacing_parameter"],
         "test:test:parameter#spacing"
     );
     assert!(wire["directions"][0].get("span_parameter").is_none());
-    assert_eq!(wire["instances"][0]["indices"], serde_json::json!([0, 0]));
-    assert_eq!(wire["instances"][1]["indices"], serde_json::json!([1, 0]));
+    assert!(wire.get("instances").is_none());
+    assert_eq!(
+        wire["rows"],
+        serde_json::json!([
+            [{ "entities": ["test:test:sketch-entity#0"] }],
+            [{ "entities": ["test:test:sketch-entity#1"] }]
+        ])
+    );
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
-    let mut split_count = wire.clone();
-    split_count["directions"][0]["count"] = serde_json::json!(3);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(split_count).is_err());
+    let mut restated_count = wire.clone();
+    restated_count["directions"][0]
+        .as_object_mut()
+        .unwrap()
+        .insert("count".to_string(), serde_json::json!(2));
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(restated_count)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("count"), "{error}");
+
+    let mut restated_indices = wire.clone();
+    restated_indices["rows"][0][0]
+        .as_object_mut()
+        .unwrap()
+        .insert("indices".to_string(), serde_json::json!([0, 0]));
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(restated_indices)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("indices"), "{error}");
+
     let mut conflicting_distance = wire.clone();
     conflicting_distance["directions"][0]["span_parameter"] =
         serde_json::json!("test:parameter#span");
     assert!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(conflicting_distance).is_err()
     );
-    let mut displaced = wire;
-    displaced["instances"][1]["indices"] = serde_json::json!([0, 1]);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(displaced).is_err());
+
+    let mut ragged = wire;
+    ragged["rows"][1] = serde_json::json!([]);
+    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(ragged).is_err());
 }
 
 #[test]

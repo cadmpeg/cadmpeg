@@ -1629,7 +1629,9 @@ impl SketchPatternDistance {
 }
 
 /// One resolved rectangular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SketchPatternInstance {
     /// Entities in fixed seed-entity order.
     pub entities: Vec<SketchEntityId>,
@@ -1645,7 +1647,12 @@ pub struct SketchCircularPatternInstance {
 }
 
 /// Checked two-axis rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "SketchRectangularPatternWire",
+    into = "SketchRectangularPatternWire"
+)]
 pub struct SketchRectangularPattern {
     directions: [SketchPatternDirection; 2],
     rows: Vec<Vec<SketchPatternInstance>>,
@@ -1799,10 +1806,10 @@ impl SketchCircularPattern {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SketchPatternDirectionWire {
     direction: [f64; 2],
     spacing: Length,
-    count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     spacing_parameter: Option<ParameterId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1812,11 +1819,10 @@ struct SketchPatternDirectionWire {
 }
 
 impl SketchPatternDirectionWire {
-    fn from_direction(value: &SketchPatternDirection, count: u32) -> Self {
+    fn from_direction(value: &SketchPatternDirection) -> Self {
         Self {
             direction: value.direction,
             spacing: value.spacing,
-            count,
             spacing_parameter: match &value.distance {
                 Some(SketchPatternDistance::Spacing(parameter)) => Some(parameter.clone()),
                 _ => None,
@@ -1845,13 +1851,6 @@ impl SketchPatternDirectionWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SketchPatternInstanceWire {
-    indices: [u32; 2],
-    entities: Vec<SketchEntityId>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SketchCircularPatternInstanceWire {
     index: u32,
     angle: Angle,
@@ -1860,9 +1859,11 @@ struct SketchCircularPatternInstanceWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "SketchRectangularPattern"))]
+#[serde(deny_unknown_fields)]
 struct SketchRectangularPatternWire {
     directions: [SketchPatternDirectionWire; 2],
-    instances: Vec<SketchPatternInstanceWire>,
+    rows: Vec<Vec<SketchPatternInstance>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1878,87 +1879,27 @@ struct SketchCircularPatternWire {
     instances: Vec<SketchCircularPatternInstanceWire>,
 }
 
-impl Serialize for SketchRectangularPattern {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let counts = self.counts();
-        SketchRectangularPatternWire {
+impl From<SketchRectangularPattern> for SketchRectangularPatternWire {
+    fn from(pattern: SketchRectangularPattern) -> Self {
+        Self {
             directions: [
-                SketchPatternDirectionWire::from_direction(&self.directions[0], counts[0]),
-                SketchPatternDirectionWire::from_direction(&self.directions[1], counts[1]),
+                SketchPatternDirectionWire::from_direction(&pattern.directions[0]),
+                SketchPatternDirectionWire::from_direction(&pattern.directions[1]),
             ],
-            instances: self
-                .rows
-                .iter()
-                .enumerate()
-                .flat_map(|(first, row)| {
-                    row.iter().enumerate().map(move |(second, instance)| {
-                        SketchPatternInstanceWire {
-                            indices: [first as u32, second as u32],
-                            entities: instance.entities.clone(),
-                        }
-                    })
-                })
-                .collect(),
+            rows: pattern.rows,
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for SketchRectangularPattern {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = SketchRectangularPatternWire::deserialize(deserializer)?;
-        let counts = wire.directions.each_ref().map(|direction| direction.count);
-        let row_count = usize::try_from(counts[0]).map_err(serde::de::Error::custom)?;
-        let column_count = usize::try_from(counts[1]).map_err(serde::de::Error::custom)?;
-        let expected = row_count
-            .checked_mul(column_count)
-            .ok_or_else(|| serde::de::Error::custom("rectangular pattern count overflows"))?;
-        if row_count == 0 || column_count == 0 || wire.instances.len() != expected {
-            return Err(serde::de::Error::custom(
-                "rectangular pattern directions.count must match instances",
-            ));
-        }
-        if wire
-            .instances
-            .iter()
-            .enumerate()
-            .any(|(position, instance)| {
-                usize::try_from(instance.indices[0]).ok() != Some(position / column_count)
-                    || usize::try_from(instance.indices[1]).ok() != Some(position % column_count)
-            })
-        {
-            return Err(serde::de::Error::custom(
-                "rectangular pattern instance indices must match their positions",
-            ));
-        }
+impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchRectangularPatternWire) -> Result<Self, Self::Error> {
         let [first, second] = wire.directions;
-        let directions = [
-            first.into_direction().map_err(serde::de::Error::custom)?,
-            second.into_direction().map_err(serde::de::Error::custom)?,
-        ];
-        let mut instances = wire.instances.into_iter();
-        let rows = (0..row_count)
-            .map(|_| {
-                instances
-                    .by_ref()
-                    .take(column_count)
-                    .map(|instance| SketchPatternInstance {
-                        entities: instance.entities,
-                    })
-                    .collect()
-            })
-            .collect();
-        Self::new(directions, rows).ok_or_else(|| {
-            serde::de::Error::custom(
-                "rectangular pattern instances require one fixed positive entity arity",
-            )
-        })
+        let directions = [first.into_direction()?, second.into_direction()?];
+        Self::new(directions, wire.rows).ok_or(
+            "rectangular pattern rows must form one non-empty grid whose instances have one fixed positive entity arity",
+        )
     }
 }
 
@@ -2029,17 +1970,6 @@ impl<'de> Deserialize<'de> for SketchCircularPattern {
                 "circular pattern instances require one fixed positive entity arity",
             )
         })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for SketchRectangularPattern {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SketchRectangularPattern".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SketchRectangularPatternWire::json_schema(generator)
     }
 }
 
