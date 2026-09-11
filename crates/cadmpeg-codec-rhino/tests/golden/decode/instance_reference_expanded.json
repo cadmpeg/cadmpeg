@@ -220,7 +220,6 @@
         "provenance": {
           "format": "rhino",
           "offset": 159,
-          "stream": "",
           "tag": "INSTANCE_DEFINITION_TABLE"
         },
         "severity": "warning"

@@ -120,7 +120,6 @@
         "provenance": {
           "format": "step",
           "offset": 190,
-          "stream": "",
           "tag": "complex_entity"
         },
         "severity": "warning"

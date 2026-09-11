@@ -171,11 +171,62 @@ pub struct Provenance<Location> {
     pub tag: Option<String>,
 }
 
+/// Name of a container stream inside a source format.
+///
+/// The empty string is not a stream name; the root stream is the absence of
+/// one. Build a compile-time name with `const { StreamName::literal("…") }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "String", into = "String")]
+pub struct StreamName(std::borrow::Cow<'static, str>);
+
+/// The empty string does not name a container stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("a source stream name cannot be empty")]
+pub struct EmptyStreamName;
+
+impl StreamName {
+    /// Names a stream from a non-empty literal.
+    ///
+    /// Call it inside a `const` block: an empty literal is then a compile
+    /// error rather than a run-time panic.
+    #[must_use]
+    pub const fn literal(name: &'static str) -> Self {
+        if name.is_empty() {
+            panic!("a source stream name cannot be empty");
+        }
+        Self(std::borrow::Cow::Borrowed(name))
+    }
+
+    /// Returns the stream name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for StreamName {
+    type Error = EmptyStreamName;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        if name.is_empty() {
+            return Err(EmptyStreamName);
+        }
+        Ok(Self(std::borrow::Cow::Owned(name)))
+    }
+}
+
+impl From<StreamName> for String {
+    fn from(name: StreamName) -> Self {
+        name.0.into_owned()
+    }
+}
+
 /// Source format and optional named stream used by a report loss.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceLocation {
     format: String,
-    stream: Option<String>,
+    stream: Option<StreamName>,
 }
 
 /// Source provenance attached to a report loss.
@@ -232,14 +283,11 @@ impl Provenance<SourceLocation> {
     }
 
     /// Construct provenance relative to a named container stream.
-    ///
-    /// An empty stream is normalized to the typed root-stream state.
-    pub fn in_stream(format: impl Into<String>, stream: impl Into<String>, offset: u64) -> Self {
-        let stream = stream.into();
+    pub fn in_stream(format: impl Into<String>, stream: StreamName, offset: u64) -> Self {
         Self {
             location: SourceLocation {
                 format: format.into(),
-                stream: (!stream.is_empty()).then_some(stream),
+                stream: Some(stream),
             },
             offset,
             tag: None,
@@ -269,18 +317,44 @@ impl Provenance<SourceLocation> {
     /// Return the named container stream, or `None` for the root stream.
     #[must_use]
     pub fn stream(&self) -> Option<&str> {
-        self.location.stream.as_deref()
+        self.location.stream.as_ref().map(StreamName::as_str)
     }
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SourceProvenanceWire {
     format: String,
-    stream: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stream: Option<StreamName>,
     offset: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tag: Option<String>,
+}
+
+impl From<Provenance<SourceLocation>> for SourceProvenanceWire {
+    fn from(provenance: Provenance<SourceLocation>) -> Self {
+        Self {
+            format: provenance.location.format,
+            stream: provenance.location.stream,
+            offset: provenance.offset,
+            tag: provenance.tag,
+        }
+    }
+}
+
+impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
+    fn from(wire: SourceProvenanceWire) -> Self {
+        Self {
+            location: SourceLocation {
+                format: wire.format,
+                stream: wire.stream,
+            },
+            offset: wire.offset,
+            tag: wire.tag,
+        }
+    }
 }
 
 impl Serialize for Provenance<SourceLocation> {
@@ -288,13 +362,7 @@ impl Serialize for Provenance<SourceLocation> {
     where
         S: serde::Serializer,
     {
-        SourceProvenanceWire {
-            format: self.location.format.clone(),
-            stream: self.location.stream.clone().unwrap_or_default(),
-            offset: self.offset,
-            tag: self.tag.clone(),
-        }
-        .serialize(serializer)
+        SourceProvenanceWire::from(self.clone()).serialize(serializer)
     }
 }
 
@@ -303,14 +371,7 @@ impl<'de> Deserialize<'de> for Provenance<SourceLocation> {
     where
         D: serde::Deserializer<'de>,
     {
-        let wire = SourceProvenanceWire::deserialize(deserializer)?;
-        let mut provenance = if wire.stream.is_empty() {
-            Self::root(wire.format, wire.offset)
-        } else {
-            Self::in_stream(wire.format, wire.stream, wire.offset)
-        };
-        provenance.tag = wire.tag;
-        Ok(provenance)
+        SourceProvenanceWire::deserialize(deserializer).map(Self::from)
     }
 }
 
@@ -344,6 +405,36 @@ pub enum Exactness {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_source_provenance_stream_is_named_or_absent() {
+        let root = SourceProvenance::root("iges", 12);
+        let wire = serde_json::to_value(&root).expect("serialize");
+        assert_eq!(wire, serde_json::json!({"format": "iges", "offset": 12}));
+        let read: SourceProvenance = serde_json::from_value(wire).expect("root reads back");
+        assert_eq!(read.stream(), None);
+        assert_eq!(read, root);
+
+        let named = SourceProvenance::in_stream(
+            "fcstd",
+            const { StreamName::literal("Document.xml") },
+            0,
+        );
+        let wire = serde_json::to_value(&named).expect("serialize");
+        assert_eq!(
+            wire,
+            serde_json::json!({"format": "fcstd", "stream": "Document.xml", "offset": 0})
+        );
+        let read: SourceProvenance = serde_json::from_value(wire).expect("named reads back");
+        assert_eq!(read.stream(), Some("Document.xml"));
+
+        let error = serde_json::from_value::<SourceProvenance>(
+            serde_json::json!({"format": "iges", "stream": "", "offset": 0}),
+        )
+        .expect_err("the empty string does not name a stream")
+        .to_string();
+        assert!(error.contains("stream name cannot be empty"), "{error}");
+    }
 
     #[test]
     fn source_object_identity_is_nonempty_and_preserves_wire() {

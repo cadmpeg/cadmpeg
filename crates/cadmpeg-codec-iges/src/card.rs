@@ -224,7 +224,7 @@ impl FramingRecoveries {
                         defect.unit(),
                     ))
                 .with_provenance(
-                    SourceProvenance::in_stream("iges", "iges", recovery.offset)
+                    SourceProvenance::in_stream("iges", const { cadmpeg_ir::StreamName::literal("iges") }, recovery.offset)
                         .with_tag(format!("{}:framing", section.name())),
                 )
             })
