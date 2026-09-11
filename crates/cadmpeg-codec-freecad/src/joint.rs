@@ -326,10 +326,10 @@ fn joint_kind(
             angular_limits,
             linear_limits,
         },
-        "ball" | "spherical" => PairedJointKind::Ball,
+        "ball" | "spherical" => PairedJointKind::Ball {},
         "distance" => PairedJointKind::Distance { distance },
-        "parallel" => PairedJointKind::Parallel,
-        "perpendicular" => PairedJointKind::Perpendicular,
+        "parallel" => PairedJointKind::Parallel {},
+        "perpendicular" => PairedJointKind::Perpendicular {},
         "angle" => PairedJointKind::Angle { angle },
         "rackpinion" | "rack_pinion" => PairedJointKind::RackPinion {
             distance,
@@ -740,7 +740,7 @@ pub(crate) mod tests {
         assert_valid_document(result.ir());
         let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
             .expect("assembly joint wire");
-        wire["operands"][0]["external_document"] = serde_json::json!({
+        wire["operands"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
             "path": "external.FCStd",
             "resolution": "unresolved"
         });
