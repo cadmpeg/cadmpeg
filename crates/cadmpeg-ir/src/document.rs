@@ -226,7 +226,9 @@ macro_rules! model_write_value {
         $model
             .features
             .iter()
-            .map(|feature| FeatureWriteWire::new(feature, $model.feature_parent(&feature.id)))
+            .map(|feature| {
+                FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id))
+            })
             .collect()
     };
     ($model:expr, $field:ident) => {
@@ -309,7 +311,9 @@ macro_rules! sorted_model_value {
     ($model:expr, features) => {
         sorted_refs(&$model.features)
             .into_iter()
-            .map(|feature| FeatureWriteWire::new(feature, $model.feature_parent(&feature.id)))
+            .map(|feature| {
+                FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id))
+            })
             .collect()
     };
     ($model:expr, $field:ident) => {
@@ -379,7 +383,7 @@ macro_rules! declare_model {
                     feature_regeneration_parents: FeatureRegenerationParents::default(),
                 };
                 model.features = features;
-                reconcile_feature_parents(&mut model, feature_parents)
+                admit_feature_regeneration_parents(&mut model, feature_parents)
                     .map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
@@ -751,7 +755,14 @@ impl JsonSchema for CensusKey {
     }
 }
 
-fn reconcile_feature_parents(
+/// Seats the regeneration predecessors a document states beside its features.
+///
+/// The structural tree edge is stated once, in the owning tree node's ordered
+/// `children`, so a feature that a tree node owns states no predecessor of its
+/// own. Predecessor and ordinal are independent data, and the checks between
+/// them are invariants: a feature has at most one tree parent, the named
+/// predecessor exists, and it precedes its child.
+fn admit_feature_regeneration_parents(
     model: &mut Model,
     wire_parents: Vec<Option<crate::features::FeatureId>>,
 ) -> Result<(), String> {
@@ -782,30 +793,22 @@ fn reconcile_feature_parents(
     for (child_index, wire_parent) in wire_parents.into_iter().enumerate() {
         let child_id = model.features[child_index].id.clone();
         let Some(parent_id) = wire_parent else {
-            if let Some(parent) = tree_parents.get(&child_id) {
-                return Err(format!(
-                    "tree child `{child_id}` is missing its serialized parent `{parent}`"
-                ));
-            }
             continue;
         };
+        if let Some(existing) = tree_parents.get(&child_id) {
+            return Err(format!(
+                "tree child `{child_id}` is owned by `{existing}` and states no regeneration parent"
+            ));
+        }
         let Some(&parent_index) = indices.get(&parent_id) else {
             return Err(format!(
-                "feature `{child_id}` names missing parent `{parent_id}`"
+                "feature `{child_id}` names missing regeneration parent `{parent_id}`"
             ));
         };
         if model.features[parent_index].ordinal >= model.features[child_index].ordinal {
             return Err(format!(
-                "parent feature `{parent_id}` does not precede child `{child_id}`"
+                "regeneration parent `{parent_id}` does not precede child `{child_id}`"
             ));
-        }
-        if let Some(existing) = tree_parents.get(&child_id) {
-            if existing != &parent_id {
-                return Err(format!(
-                    "tree child `{child_id}` names parent `{parent_id}` but is owned by `{existing}`"
-                ));
-            }
-            continue;
         }
         model
             .feature_regeneration_parents
@@ -831,7 +834,15 @@ impl Model {
         })
     }
 
-    /// Legacy parent projection: structural owner or regeneration predecessor.
+    /// Regeneration predecessor of a feature that no tree node owns.
+    pub fn feature_regeneration_parent(
+        &self,
+        child: &crate::features::FeatureId,
+    ) -> Option<&crate::features::FeatureId> {
+        self.feature_regeneration_parents.0.get(child)
+    }
+
+    /// Structural owner, or the regeneration predecessor when no tree owns it.
     pub fn feature_parent(
         &self,
         child: &crate::features::FeatureId,

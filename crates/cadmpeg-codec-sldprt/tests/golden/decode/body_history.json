@@ -194,7 +194,7 @@
           "name": "Profile",
           "native_ref": "sldprt:history:feature#247:1",
           "ordinal": 1,
-          "parent": "sldprt:model:feature#247:0",
+          "regeneration_parent": "sldprt:model:feature#247:0",
           "source_tag": "EquationDrivenCurve",
           "suppressed": false
         }

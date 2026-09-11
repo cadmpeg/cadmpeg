@@ -20046,7 +20046,6 @@
           "outputs": [
             "fcstd:model:body#Draft:Shape:Draft.Shape.brp:34"
           ],
-          "parent": "fcstd:design:feature#DraftBody",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "true"
@@ -20068,7 +20067,6 @@
           "outputs": [
             "fcstd:model:body#DraftBase:Shape:DraftBase.Shape.brp:34"
           ],
-          "parent": "fcstd:design:feature#DraftBody",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "false"
@@ -20192,7 +20190,6 @@
             "fcstd:model:body#Hole:AddSubShape:Hole.AddSubShape.brp:22",
             "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53"
           ],
-          "parent": "fcstd:design:feature#HoleBody",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "true"
@@ -20214,7 +20211,6 @@
           "outputs": [
             "fcstd:model:body#HoleBase:Shape:HoleBase.Shape.brp:34"
           ],
-          "parent": "fcstd:design:feature#HoleBody",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "false"
@@ -20264,7 +20260,6 @@
           "outputs": [
             "fcstd:model:body#HoleProfile:Shape:HoleProfile.Shape.brp:3%4076889a8b8100da92"
           ],
-          "parent": "fcstd:design:feature#HoleBody",
           "source_properties": {
             "MapMode": "0",
             "Visibility": "true"
@@ -20311,7 +20306,6 @@
           "outputs": [
             "fcstd:model:body#LinearPattern:Shape:LinearPattern.Shape.brp:35"
           ],
-          "parent": "fcstd:design:feature#PatternBody",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "true"
@@ -20540,7 +20534,6 @@
             "fcstd:model:body#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:34",
             "fcstd:model:body#PatternBase:Shape:PatternBase.Shape.brp:34"
           ],
-          "parent": "fcstd:design:feature#PatternBody",
           "source_properties": {
             "MapMode": "0",
             "Suppressed": "false",

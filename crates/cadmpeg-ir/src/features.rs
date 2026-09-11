@@ -1416,8 +1416,9 @@ pub(crate) struct FeatureWriteWire<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: &'a Option<String>,
     suppressed: &'a Option<bool>,
+    /// Regeneration predecessor of a feature that has no tree parent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    parent: Option<&'a FeatureId>,
+    regeneration_parent: Option<&'a FeatureId>,
     #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
     dependencies: &'a DistinctMembers<FeatureId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -1436,13 +1437,13 @@ pub(crate) struct FeatureWriteWire<'a> {
 }
 
 impl<'a> FeatureWriteWire<'a> {
-    pub(crate) fn new(feature: &'a Feature, parent: Option<&'a FeatureId>) -> Self {
+    pub(crate) fn new(feature: &'a Feature, regeneration_parent: Option<&'a FeatureId>) -> Self {
         Self {
             id: &feature.id,
             ordinal: feature.ordinal,
             name: &feature.name,
             suppressed: &feature.suppressed,
-            parent,
+            regeneration_parent,
             dependencies: &feature.dependencies,
             source_properties: &feature.source_properties,
             source_tag: &feature.source_tag,
@@ -1461,6 +1462,7 @@ impl<'a> FeatureWriteWire<'a> {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FeatureReadWire {
     id: FeatureId,
     ordinal: u64,
@@ -1469,7 +1471,7 @@ pub(crate) struct FeatureReadWire {
     #[serde(default)]
     suppressed: Option<bool>,
     #[serde(default)]
-    parent: Option<FeatureId>,
+    regeneration_parent: Option<FeatureId>,
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
@@ -1503,7 +1505,7 @@ impl FeatureReadWire {
                 evaluation: FeatureEvaluation::new(self.definition, self.outputs),
                 native_ref: self.native_ref,
             },
-            self.parent,
+            self.regeneration_parent,
         )
     }
 }
@@ -1522,8 +1524,9 @@ impl<'de> Deserialize<'de> for Feature {
     where
         D: serde::Deserializer<'de>,
     {
-        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?.into_parts();
-        if parent.is_some() {
+        let (feature, regeneration_parent) =
+            FeatureReadWire::deserialize(deserializer)?.into_parts();
+        if regeneration_parent.is_some() {
             return Err(serde::de::Error::custom(
                 "a feature parent requires its owning model",
             ));
