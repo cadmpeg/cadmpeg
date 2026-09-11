@@ -289,10 +289,12 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
         (matches!(
             surface.geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cylinder(_)
+                    | SolvedSurfaceGeometry::Cone(_)
+                    | SolvedSurfaceGeometry::Sphere(_)
+                    | SolvedSurfaceGeometry::Torus(_)
+            )
         )) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
     }) {
         return Err(CodecError::NotImplemented(format!(
@@ -532,13 +534,15 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         })?)?;
         if !matches!(
             geometry,
-            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_))
+            CurveGeometry::Solved(
+                SolvedCurveGeometry::Line(_)
+                    | SolvedCurveGeometry::Circle(_)
+                    | SolvedCurveGeometry::Ellipse(_)
+                    | SolvedCurveGeometry::Parabola(_)
+                    | SolvedCurveGeometry::Hyperbola(_)
+                    | SolvedCurveGeometry::Nurbs(_)
+                    | SolvedCurveGeometry::Polyline(_)
+            )
         ) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES procedural curve {} has no writable solved carrier",
@@ -5619,12 +5623,14 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
     ensure_finite_point(end, &format!("edge {} end", edge.id))?;
     if matches!(
         geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-            | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
-            | CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
-            | CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
-            | CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-            | CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_))
+        CurveGeometry::Solved(
+            SolvedCurveGeometry::Circle(_)
+                | SolvedCurveGeometry::Ellipse(_)
+                | SolvedCurveGeometry::Parabola(_)
+                | SolvedCurveGeometry::Hyperbola(_)
+                | SolvedCurveGeometry::Nurbs(_)
+                | SolvedCurveGeometry::Polyline(_)
+        )
     ) {
         let evaluated_start = curve_point(geometry, range[0]).ok_or_else(|| {
             CodecError::malformed(format_args!(

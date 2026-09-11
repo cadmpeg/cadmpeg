@@ -786,7 +786,7 @@ pub(crate) fn bind_feature_outputs(
     scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
-) -> Result<(), CodecError> {
+) {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
     for history in histories {
         let by_node = history
@@ -856,7 +856,6 @@ pub(crate) fn bind_feature_outputs(
             bind_base_feature_output_selection(feature);
         }
     }
-    Ok(())
 }
 
 fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Feature) {
@@ -968,7 +967,7 @@ pub(crate) fn bind_feature_body_selections(
     let regions = inputs.regions;
     let shells = inputs.shells;
 
-    bind_pattern_body_selections(features, inputs)?;
+    bind_pattern_body_selections(features, inputs);
     let pattern_body_slots = features
         .iter()
         .filter_map(|feature| {
@@ -1564,7 +1563,7 @@ fn historical_body_slot(id: &str) -> Option<i64> {
 fn bind_pattern_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation, PatternSeed};
 
     let scopes = inputs.scopes;
@@ -1623,8 +1622,6 @@ fn bind_pattern_body_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn unique_external_body_candidate(
@@ -2105,7 +2102,7 @@ pub(crate) fn bind_feature_face_selections(
     entity_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::topology::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
@@ -2286,8 +2283,6 @@ pub(crate) fn bind_feature_face_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2552,7 +2547,7 @@ pub(crate) fn bind_feature_path_selections(
     scopes: &[crate::records::feature::DesignParameterScope],
     groups: &[crate::records::topology::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::DesignEntitySelectionOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
 
     for feature in features {
@@ -2631,8 +2626,6 @@ pub(crate) fn bind_feature_path_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn bind_entity_selection_path(

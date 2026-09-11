@@ -243,8 +243,8 @@ pub(crate) fn swept_nurbs(
         1,
         profile.knots().to_vec(),
         vec![v_start, v_start, v_end, v_end],
-        control.chunks(2 as usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+        control.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         profile.periodic(),
         false,
@@ -329,8 +329,8 @@ pub(crate) fn spun_nurbs(
         2,
         profile.knots().to_vec(),
         v_knots,
-        control.chunks(9 as usize).map(<[_]>::to_vec).collect(),
-        Some(weights).map(|values| values.chunks(9 as usize).map(<[_]>::to_vec).collect()),
+        control.chunks(9_usize).map(<[_]>::to_vec).collect(),
+        Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
         false,
         profile.periodic(),
         true,
@@ -537,10 +537,10 @@ mod tests {
             v_parameter,
         );
         let mut acc = [0.0f64; 4];
-        for u_index in 0..surface.u_count() as usize {
-            for v_index in 0..surface.v_count() as usize {
+        for (u_index, u_weight) in u_basis.iter().enumerate() {
+            for (v_index, v_weight) in v_basis.iter().enumerate() {
                 let weight = surface.weight(u_index, v_index).unwrap_or(1.0);
-                let basis_weight = u_basis[u_index] * v_basis[v_index] * weight;
+                let basis_weight = u_weight * v_weight * weight;
                 let point = &surface.control_grid()[u_index][v_index];
                 acc[0] += basis_weight * point.x;
                 acc[1] += basis_weight * point.y;

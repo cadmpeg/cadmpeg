@@ -3151,11 +3151,13 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -3719,7 +3721,7 @@ mod nurbs_write_tests {
             vec![0.0; 20],
             vec![0.0; 4],
             vec![Point3::new(0.0, 0.0, 0.0); 20]
-                .chunks(2 as usize)
+                .chunks(2_usize)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,
@@ -3757,7 +3759,7 @@ mod nurbs_write_tests {
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0); 12]
-                .chunks(4 as usize)
+                .chunks(4_usize)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,

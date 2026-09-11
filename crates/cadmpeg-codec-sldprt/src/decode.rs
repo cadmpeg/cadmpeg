@@ -1774,8 +1774,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch { .. }
-                ) | cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::SpatialSketch { .. }
+                        | cadmpeg_ir::features::FeatureOperation::SpatialSketch { .. }
                 )
             )
         })
@@ -2305,7 +2304,7 @@ fn build_geometry_ir(
         &histories,
         &lanes,
         &mut pmi_losses,
-    )?;
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
@@ -2315,7 +2314,7 @@ fn build_geometry_ir(
             &mut ir.model.features,
             &histories,
             &sketch_lanes,
-        )?;
+        );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
@@ -2324,14 +2323,14 @@ fn build_geometry_ir(
         &mut sketch_entities,
         &histories,
         &sketch_lanes,
-    )?;
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
         &sketch_lanes,
-    )?;
+    );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories)?;
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
@@ -2344,7 +2343,7 @@ fn build_geometry_ir(
         &lanes,
         &sketches,
         &brep.surfaces,
-    )?;
+    );
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &histories,
@@ -2484,7 +2483,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.shells,
         &ir.model.regions,
-    )?;
+    );
     let topology_selection_inputs = crate::history::TopologySelectionInputs {
         bodies: &ir.model.bodies,
         faces: &ir.model.faces,
@@ -2519,7 +2518,7 @@ fn build_geometry_ir(
         &ir.model.sketch_entities,
         &histories,
         &native.feature_input_lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
@@ -2527,7 +2526,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
         &histories,
         &native.feature_input_lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_generated_hole_axes(
         &mut ir.model.features,
         &histories,
@@ -2535,7 +2534,7 @@ fn build_geometry_ir(
         &face_identities,
         &ir.model.faces,
         &ir.model.surfaces,
-    )?;
+    );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -2562,7 +2561,7 @@ fn build_geometry_ir(
         },
         &histories,
         &native.feature_input_lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_hole_topology_axes(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -2574,7 +2573,7 @@ fn build_geometry_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    )?;
+    );
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -2582,7 +2581,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
         &histories,
         &native.feature_input_lanes,
-    )?;
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
@@ -2612,13 +2611,13 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
         &ir.model.faces,
         &ir.model.surfaces,
-    )?;
+    );
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         &mut ir.model.features,
         &ir.model.faces,
         &ir.model.surfaces,
-    )?;
-    crate::history::inherit_configuration_reference_plane_states(&mut ir)?;
+    );
+    crate::history::inherit_configuration_reference_plane_states(&mut ir);
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::order_model_features_for_regeneration(&mut ir);
     let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
@@ -3358,7 +3357,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
         &mut pmi_losses,
-    )?;
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
@@ -3368,7 +3367,7 @@ fn build_metadata_ir(
             &mut ir.model.features,
             &histories,
             &sketch_lanes,
-        )?;
+        );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
@@ -3377,14 +3376,14 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &histories,
         &sketch_lanes,
-    )?;
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
         &sketch_lanes,
-    )?;
+    );
     crate::history::bind_unique_sketch_feature(
         &mut ir.model.features,
         &ir.model.sketches,
@@ -3401,7 +3400,7 @@ fn build_metadata_ir(
         &lanes,
         &ir.model.sketches,
         &ir.model.surfaces,
-    )?;
+    );
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &histories,
@@ -3474,7 +3473,7 @@ fn build_metadata_ir(
         &ir.model.sketch_entities,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
@@ -3482,7 +3481,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -3509,7 +3508,7 @@ fn build_metadata_ir(
         },
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_hole_topology_axes(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -3521,7 +3520,7 @@ fn build_metadata_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    )?;
+    );
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -3529,7 +3528,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
@@ -3544,12 +3543,12 @@ fn build_metadata_ir(
         &lanes,
         &ir.model.faces,
         &ir.model.surfaces,
-    )?;
+    );
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         &mut ir.model.features,
         &ir.model.faces,
         &ir.model.surfaces,
-    )?;
+    );
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     pmi_losses.extend(crate::history::project_configuration_sketch_states(
@@ -3558,7 +3557,7 @@ fn build_metadata_ir(
         &lanes,
         &mut annotations,
     )?);
-    crate::history::inherit_configuration_reference_plane_states(&mut ir)?;
+    crate::history::inherit_configuration_reference_plane_states(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);

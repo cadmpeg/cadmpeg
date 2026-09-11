@@ -413,7 +413,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
         Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -524,7 +524,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
         Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -813,7 +813,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             vec![Point3::new(3.0, -1.0, 1.0), Point3::new(3.0, -1.0, 5.0)],
         ],
         Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1822,7 +1822,7 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
             vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
         ],
         Some(vec![1.0, 1.0, 2.0, 2.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1853,7 +1853,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
             vec![Point3::new(2.0, 0.0, 1.0), Point3::new(2.0, 3.0, 1.0)],
         ],
         Some(vec![1.0, 2.0, 3.0, 4.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,

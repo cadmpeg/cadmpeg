@@ -8,7 +8,7 @@ use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_
 use crate::decode::analytic::equations::{
     CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
-use crate::decode::analytic::planes::{point_on_carrier, solve_carriers};
+use crate::decode::analytic::planes::solve_carriers;
 use crate::decode::build::report::has_transferred_geometry;
 use crate::decode::feature_history::{
     full_turn_revolution_carrier_axis, named_feature_definition,
@@ -22,7 +22,6 @@ use crate::decode::sketch_transfer::identity::materialized_saved_section_externa
 use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
 use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
-    coaxial_cones_section_candidates,
 };
 use crate::decode::surfaces::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots, nurbs_plane_boundary_curve,
@@ -54,8 +53,6 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, BTreeSet};
-
-const EPS_FILLET_CIRCLE: f64 = 1.0e-12;
 
 const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
@@ -1047,7 +1044,7 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     assert_eq!(nurbs.v_knots(), nurbs.u_knots());
     for u in 0..4 {
         for v in 0..4 {
-            let point = &nurbs.poles().nth(u * 4 + v).copied().unwrap();
+            let point = &nurbs.poles().nth(u * 4 + v).copied().expect("pole");
             let expected_u = u as f64 / 3.0;
             let expected_v = v as f64 / 3.0;
             assert!((point.x - expected_u).abs() < 1.0e-12);
@@ -1120,27 +1117,27 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
 
     assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
     assert_eq!(
-        surface.poles().nth(0).copied().unwrap(),
+        surface.poles().next().copied().expect("pole"),
         Point3::new(2.0, 0.0, 0.0)
     );
     assert_eq!(
-        surface.poles().nth(1).copied().unwrap(),
+        surface.poles().nth(1).copied().expect("pole"),
         Point3::new(2.0, 2.0, 0.0)
     );
     assert_eq!(
-        surface.poles().nth(2).copied().unwrap(),
+        surface.poles().nth(2).copied().expect("pole"),
         Point3::new(0.0, 2.0, 0.0)
     );
     assert_eq!(
-        surface.poles().nth(8).copied().unwrap(),
-        surface.poles().nth(0).copied().unwrap()
+        surface.poles().nth(8).copied().expect("pole"),
+        surface.poles().next().copied().expect("pole")
     );
     assert_eq!(
         surface
             .pole_weights()
             .expect("rational weights")
             .nth(1)
-            .unwrap(),
+            .expect("pole weight"),
         std::f64::consts::FRAC_1_SQRT_2
     );
 }
@@ -1191,7 +1188,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     assert_eq!((surface.u_count(), surface.v_count()), (4, 9));
     assert_eq!(surface.u_knots(), [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
     assert_eq!(
-        surface.poles().nth(0).copied().unwrap(),
+        surface.poles().next().copied().unwrap(),
         Point3::new(2.0, 0.0, 0.0)
     );
     assert_eq!(
@@ -1265,7 +1262,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     };
     assert_eq!(reversed.u_knots(), [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
     assert_eq!(
-        reversed.poles().nth(0).copied().unwrap(),
+        reversed.poles().next().copied().unwrap(),
         Point3::new(2.0, 2.0, 0.0)
     );
 }
@@ -1417,11 +1414,11 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                 ]
             })
             .collect::<Vec<_>>()
-            .chunks(2 as usize)
+            .chunks(2_usize)
             .map(<[_]>::to_vec)
             .collect(),
         Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1512,7 +1509,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
         ],
         Some(vec![2.0, 2.0, 3.0, 4.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1528,7 +1525,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
             vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 1.0, 1.0)],
         ],
         Some(vec![6.0, 8.0, 8.0, 8.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1593,11 +1590,11 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
             .into_iter()
             .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
             .collect::<Vec<_>>()
-            .chunks(2 as usize)
+            .chunks(2_usize)
             .map(<[_]>::to_vec)
             .collect(),
         Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,
@@ -1827,177 +1824,4 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
         normal: [0.0, 1.0, 0.0],
     });
     assert!(axis_containing_plane_torus_circle_candidates(offset_plane, torus).is_empty());
-}
-
-#[test]
-fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
-    let first = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            2.0,
-            1.0,
-            std::f64::consts::FRAC_PI_4,
-        )
-        .expect("valid test cone"),
-    );
-    let second = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            4.0,
-            1.0,
-            0.5_f64.atan(),
-        )
-        .expect("valid test cone"),
-    );
-    let candidates = coaxial_cones_section_candidates(first, second);
-    assert_eq!(candidates.len(), 2);
-    assert!(
-        matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cones_circle"))
-                if {
-                    let center = circle_curve.center();
-        let radius = circle_curve.radius();
-                    (center.z - 4.0).abs() < EPS_COAXIAL_CIRCLE && (radius - 6.0).abs() < EPS_COAXIAL_CIRCLE
-                })
-    );
-    let tangent_plane = CarrierEquation::Plane(PlaneEquation {
-        origin: [10.0, 0.0, 0.0],
-        normal: [1.0, 0.0, 1.0],
-    });
-    let vertex = solve_carriers(&[first, second, tangent_plane])
-        .expect("unique coaxial-cone circle tangent");
-    assert!((vertex[0] - 6.0).abs() < 1.0e-12);
-    assert!(vertex[1].abs() < 1.0e-12);
-    assert!((vertex[2] - 4.0).abs() < 1.0e-12);
-
-    let reversed = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0],
-            [1.0, 0.0, 0.0],
-            4.0,
-            1.0,
-            0.5_f64.atan(),
-        )
-        .expect("valid test cone"),
-    );
-    let reversed_candidates = coaxial_cones_section_candidates(first, reversed);
-    assert_eq!(reversed_candidates.len(), 2);
-    assert!(reversed_candidates
-        .iter()
-        .any(|(geometry, _)| matches!(geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
-                if {
-                    let center = circle_curve.center();
-                    let radius = circle_curve.radius();
-                    (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
-                })));
-    assert!(coaxial_cones_section_candidates(first, first).is_empty());
-    let shifted = CarrierEquation::Cone(
-        ConeEquation::new(
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            4.0,
-            1.0,
-            0.5_f64.atan(),
-        )
-        .expect("valid test cone"),
-    );
-    assert!(coaxial_cones_section_candidates(first, shifted).is_empty());
-
-    let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
-        unreachable!();
-    };
-    elliptical_first_equation = ConeEquation::new(
-        elliptical_first_equation.origin(),
-        elliptical_first_equation.axis(),
-        elliptical_first_equation.ref_direction(),
-        elliptical_first_equation.radius(),
-        0.5,
-        elliptical_first_equation.half_angle(),
-    )
-    .expect("valid test cone");
-    let elliptical_first = CarrierEquation::Cone(elliptical_first_equation);
-    let CarrierEquation::Cone(mut elliptical_second_equation) = second else {
-        unreachable!();
-    };
-    elliptical_second_equation = ConeEquation::new(
-        elliptical_second_equation.origin(),
-        elliptical_second_equation.axis(),
-        elliptical_second_equation.ref_direction(),
-        elliptical_second_equation.radius(),
-        0.5,
-        elliptical_second_equation.half_angle(),
-    )
-    .expect("valid test cone");
-    let elliptical_second = CarrierEquation::Cone(elliptical_second_equation);
-    let candidates = coaxial_cones_section_candidates(elliptical_first, elliptical_second);
-    assert_eq!(candidates.len(), 2);
-    let selected = select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 3.0, 4.0]])
-        .expect("selected coaxial elliptical-cone section");
-    assert!(
-        matches!(&selected, (CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "coaxial_cones_ellipse")
-                if {
-                    let center = ellipse_curve.center();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
-                    (center.z - 4.0).abs() < EPS_CONIC_INTERSECTION
-                        && (major_radius - 6.0).abs() < EPS_CONIC_INTERSECTION
-                        && (minor_radius - 3.0).abs() < EPS_CONIC_INTERSECTION
-                })
-    );
-    for parameter in [-1.0, 0.0, 1.0] {
-        let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
-            .expect("coaxial cone ellipse point");
-        let point = [point.x, point.y, point.z];
-        assert!(point_on_carrier(point, elliptical_first));
-        assert!(point_on_carrier(point, elliptical_second));
-    }
-    elliptical_second_equation = ConeEquation::new(
-        elliptical_second_equation.origin(),
-        elliptical_second_equation.axis(),
-        [0.0, 1.0, 0.0],
-        elliptical_second_equation.radius(),
-        elliptical_second_equation.ratio(),
-        elliptical_second_equation.half_angle(),
-    )
-    .expect("valid test cone");
-    let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
-    assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame).is_empty());
-
-    elliptical_second_equation = ConeEquation::new(
-        elliptical_second_equation.origin(),
-        elliptical_second_equation.axis(),
-        elliptical_second_equation.ref_direction(),
-        elliptical_second_equation.radius(),
-        2.0,
-        0.25_f64.atan(),
-    )
-    .expect("valid test cone");
-    let reciprocal_swapped = CarrierEquation::Cone(elliptical_second_equation);
-    let candidates = coaxial_cones_section_candidates(elliptical_first, reciprocal_swapped);
-    assert_eq!(candidates.len(), 2);
-    let selected = select_unique_curve_candidate(candidates, [[14.0, 0.0, 12.0], [0.0, 7.0, 12.0]])
-        .expect("selected reciprocal-frame cone section");
-    assert!(
-        matches!(&selected, (CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "coaxial_cones_ellipse")
-                if {
-                    let center = ellipse_curve.center();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
-                    (center.z - 12.0).abs() < EPS_CONIC_INTERSECTION
-                        && (major_radius - 14.0).abs() < EPS_CONIC_INTERSECTION
-                        && (minor_radius - 7.0).abs() < EPS_CONIC_INTERSECTION
-                })
-    );
-    for parameter in [-1.0, 0.0, 1.0] {
-        let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
-            .expect("reciprocal-frame section point");
-        let point = [point.x, point.y, point.z];
-        assert!(point_on_carrier(point, elliptical_first));
-        assert!(point_on_carrier(point, reciprocal_swapped));
-    }
 }

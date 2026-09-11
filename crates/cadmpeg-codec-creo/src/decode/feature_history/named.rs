@@ -120,7 +120,9 @@ pub(in super::super) fn named_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return revolve_feature_definition_with_profile(scan, ir, feature_id, op);
+        return Some(revolve_feature_definition_with_profile(
+            scan, ir, feature_id, op,
+        ));
     }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
@@ -212,59 +214,57 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     ir: &CadIr,
     feature_id: u32,
     op: BooleanOp,
-) -> Option<IrFeatureDefinition> {
+) -> IrFeatureDefinition {
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     let profile = unique_feature_profile_ref(scan, ir, feature_id)
         .and_then(|profile| profile.planar().cloned());
     let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
     let solid = sweep_solid(output_kind);
-    Some(IrFeatureDefinition::Operation(
-        IrFeatureOperation::Revolve {
-            construction: match (profile, axis, extent) {
-                (None, axis, extent) => {
-                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
-                        axis,
-                        extent,
-                        solid,
-                        face_maker: None,
-                        fuse_order: None,
-                        allow_multi_profile_faces: None,
-                    })
-                }
-                (Some(profile), None, extent) => {
-                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
-                        profile,
-                        extent,
-                        solid,
-                        face_maker: None,
-                        fuse_order: None,
-                        allow_multi_profile_faces: None,
-                    })
-                }
-                (Some(profile), Some(axis), None) => {
-                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
-                        profile,
-                        axis,
-                        solid,
-                        face_maker: None,
-                        fuse_order: None,
-                        allow_multi_profile_faces: None,
-                    })
-                }
-                (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
-                    profile,
+    IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
+        construction: match (profile, axis, extent) {
+            (None, axis, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
                     axis,
                     extent,
                     solid,
                     face_maker: None,
                     fuse_order: None,
                     allow_multi_profile_faces: None,
-                },
+                })
+            }
+            (Some(profile), None, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                    profile,
+                    extent,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                })
+            }
+            (Some(profile), Some(axis), None) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                    profile,
+                    axis,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                })
+            }
+            (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
             },
-            op,
         },
-    ))
+        op,
+    })
 }
 
 pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {

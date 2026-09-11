@@ -253,13 +253,13 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
                 )
             })
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_))
-        | CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => {
-            cadmpeg_ir::eval::curve_point(geometry, parameter)
-        }
-        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => None,
+        CurveGeometry::Solved(
+            SolvedCurveGeometry::Polyline(_) | SolvedCurveGeometry::Transformed { .. },
+        ) => cadmpeg_ir::eval::curve_point(geometry, parameter),
+        CurveGeometry::Solved(
+            SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. },
+        )
+        | CurveGeometry::Procedural { .. } => None,
     }
 }
 

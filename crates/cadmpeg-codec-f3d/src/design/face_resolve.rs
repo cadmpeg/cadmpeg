@@ -1770,31 +1770,23 @@ fn extrude_profile_sketch_id(
     use cadmpeg_ir::features::ProfileRef;
 
     match profile {
-        ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch))
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
-            sketch,
-            ..
-        })
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchRegions {
-            sketch,
-            ..
-        })
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchEntities {
-            sketch,
-            ..
-        })
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
-            sketch,
-            ..
-        }) => Some(sketch),
-        ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_))
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_))
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(_))
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Generated { .. })
+        ProfileRef::Planar(
+            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch)
+            | cadmpeg_ir::features::PlanarProfileRef::SketchProfiles { sketch, .. }
+            | cadmpeg_ir::features::PlanarProfileRef::SketchRegions { sketch, .. }
+            | cadmpeg_ir::features::PlanarProfileRef::SketchEntities { sketch, .. }
+            | cadmpeg_ir::features::PlanarProfileRef::SketchSelection { sketch, .. },
+        ) => Some(sketch),
+        ProfileRef::Planar(
+            cadmpeg_ir::features::PlanarProfileRef::Native(_)
+            | cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+            | cadmpeg_ir::features::PlanarProfileRef::Feature(_)
+            | cadmpeg_ir::features::PlanarProfileRef::Generated { .. }
+            | cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces { .. }
+            | cadmpeg_ir::features::PlanarProfileRef::Faces(_),
+        )
         | ProfileRef::SpatialSketchProfiles { .. }
-        | ProfileRef::SpatialSketchSelection { .. }
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces { .. })
-        | ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Faces(_)) => None,
+        | ProfileRef::SpatialSketchSelection { .. } => None,
     }
 }
 
@@ -1812,7 +1804,7 @@ pub(crate) fn bind_extrude_start_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
 
     for feature in features {
@@ -1904,8 +1896,6 @@ pub(crate) fn bind_extrude_start_planes(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Resolve a legacy Extrude target face from a unique forward planar face.
@@ -1919,7 +1909,7 @@ pub(crate) fn bind_extrude_target_faces(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{
         ExtrudeDirection, ExtrudeExtent, FeatureDefinition, FeatureOperation,
     };
@@ -1984,8 +1974,6 @@ pub(crate) fn bind_extrude_target_faces(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn bind_extrude_target_face(

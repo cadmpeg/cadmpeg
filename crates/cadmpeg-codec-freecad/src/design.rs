@@ -3470,7 +3470,7 @@ fn revolution_definition(
             None
         };
     let profile: Option<cadmpeg_ir::features::PlanarProfileRef> =
-        profile.map(|profile| profile.planar().cloned()).flatten();
+        profile.and_then(|profile| profile.planar().cloned());
     let solid = Some(if kind == "Part::Revolution" {
         bool_selector(properties, "Solid", false)?
     } else {

@@ -275,8 +275,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         &identities,
         &faces,
         &surfaces,
-    )
-    .unwrap();
+    );
     let updated_hole_evaluation = &mut hole.evaluation;
     let mut updated_hole_definition = updated_hole_evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -299,8 +298,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         &identities,
         &faces,
         &surfaces,
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         hole.evaluation.definition()
     else {
@@ -417,7 +415,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     .unwrap();
     updated_unplaced_evaluation.set_definition(updated_unplaced_definition);
     let mut unique = [unplaced.clone()];
-    project_hole_topology_axes(&mut unique, &topology).unwrap();
+    project_hole_topology_axes(&mut unique, &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         unique[0].evaluation.definition()
     else {
@@ -426,7 +424,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(3));
 
     let mut features = [placed.clone(), unplaced.clone()];
-    project_hole_topology_axes(&mut features, &topology).unwrap();
+    project_hole_topology_axes(&mut features, &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[1].evaluation.definition()
     else {
@@ -454,7 +452,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
     ambiguous[2].id = FeatureId::mint("synthetic:test:id#also-unplaced").expect("identity grammar");
-    project_hole_topology_axes(&mut ambiguous, &topology).unwrap();
+    project_hole_topology_axes(&mut ambiguous, &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous[1].evaluation.definition()
     else {
@@ -486,7 +484,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         points: &[],
     };
     let mut unmatched_signature = [placed.clone(), unplaced.clone()];
-    project_hole_topology_axes(&mut unmatched_signature, &unmatched_topology).unwrap();
+    project_hole_topology_axes(&mut unmatched_signature, &unmatched_topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         unmatched_signature[1].evaluation.definition()
     else {
@@ -506,7 +504,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         };
     });
     let mut incomplete_topology = [placed, unplaced];
-    project_hole_topology_axes(&mut incomplete_topology, &topology).unwrap();
+    project_hole_topology_axes(&mut incomplete_topology, &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete_topology[1].evaluation.definition()
     else {
@@ -637,7 +635,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         *bottom = Some(HoleBottom::Flat);
     });
     let mut exact = [unplaced.clone()];
-    project_hole_topology_axes(&mut exact, &topology).unwrap();
+    project_hole_topology_axes(&mut exact, &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         exact[0].evaluation.definition()
     else {
@@ -647,7 +645,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     let mut ambiguous = [unplaced.clone(), unplaced.clone()];
     ambiguous[1].id = FeatureId::mint("synthetic:test:id#second-hole").expect("identity grammar");
-    project_hole_topology_axes(&mut ambiguous, &topology).unwrap();
+    project_hole_topology_axes(&mut ambiguous, &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous[0].evaluation.definition()
     else {
@@ -663,7 +661,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
             length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
         });
     });
-    project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology).unwrap();
+    project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         unplaced.evaluation.definition()
     else {
@@ -706,7 +704,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     )
     .unwrap();
     updated_drilled_evaluation.set_definition(updated_drilled_definition);
-    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &topology).unwrap();
+    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         drilled.evaluation.definition()
     else {
@@ -752,7 +750,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         };
         *placements = None;
     });
-    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &wrong_topology).unwrap();
+    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &wrong_topology);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         drilled.evaluation.definition()
     else {
@@ -872,7 +870,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     ];
     let mut features = [horizontal.clone(), vertical.clone()];
 
-    partition_seeded_hole_axes(&mut features, &[0, 1], &candidates).unwrap();
+    partition_seeded_hole_axes(&mut features, &[0, 1], &candidates);
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: horizontal_placements,
@@ -894,8 +892,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let mut incomplete = [horizontal.clone(), vertical.clone()];
     let mut candidates_with_unowned_direction = candidates;
     candidates_with_unowned_direction.push(placement(0.0, 0.0, Vector3::new(0.0, 0.0, 1.0)));
-    partition_seeded_hole_axes(&mut incomplete, &[0, 1], &candidates_with_unowned_direction)
-        .unwrap();
+    partition_seeded_hole_axes(&mut incomplete, &[0, 1], &candidates_with_unowned_direction);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete[0].evaluation.definition()
     else {
@@ -911,8 +908,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         *placements = Some(vec![placement(20.0, 0.0, x_axis)]);
     });
     let mut ambiguous = [horizontal, vertical];
-    partition_seeded_hole_axes(&mut ambiguous, &[0, 1], &candidates_with_unowned_direction)
-        .unwrap();
+    partition_seeded_hole_axes(&mut ambiguous, &[0, 1], &candidates_with_unowned_direction);
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous[0].evaluation.definition()
     else {

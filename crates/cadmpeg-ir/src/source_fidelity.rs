@@ -226,7 +226,7 @@ impl SourceFidelity {
             let (id, offset, byte_len, sha256, data, _) = record.into_parts();
             self.retained_records.insert(
                 id.into_string(),
-                retained_source_record(stream.into(), offset, byte_len, sha256, data),
+                retained_source_record(stream, offset, byte_len, &sha256, data),
             );
         }
     }
@@ -262,7 +262,7 @@ impl SourceFidelity {
                 };
                 retained_records.insert(
                     id.into_string(),
-                    retained_source_record(stream, offset, byte_len, sha256, data),
+                    retained_source_record(&stream, offset, byte_len, &sha256, data),
                 );
                 product
             }),
@@ -271,15 +271,15 @@ impl SourceFidelity {
 }
 
 fn retained_source_record(
-    stream: String,
+    stream: &str,
     offset: u64,
     byte_len: u64,
-    sha256: String,
+    sha256: &str,
     data: Option<Vec<u8>>,
 ) -> RetainedSourceRecord {
     data.map_or_else(
-        || RetainedSourceRecord::unavailable(stream.clone(), offset, byte_len, sha256.clone()),
-        |data| RetainedSourceRecord::retained(stream.clone(), offset, data),
+        || RetainedSourceRecord::unavailable(stream, offset, byte_len, sha256),
+        |data| RetainedSourceRecord::retained(stream, offset, data),
     )
 }
 

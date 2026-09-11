@@ -314,7 +314,7 @@ fn equal_arc_length_parameterization(
             .get(&sequence)
             .is_some_and(|record| interval_certified_linear_bezier(curve, record, global))
     };
-    constant_speed(first_sequence, &first) && constant_speed(second_sequence, &second)
+    constant_speed(first_sequence, first) && constant_speed(second_sequence, second)
 }
 
 fn bounded_evaluable_curve(
@@ -327,9 +327,9 @@ fn bounded_evaluable_curve(
     let geometry = &curve.geometry;
     if matches!(
         geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
-            | CurveGeometry::Procedural { .. }
-            | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        CurveGeometry::Solved(
+            SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. }
+        ) | CurveGeometry::Procedural { .. }
     ) {
         return None;
     }
@@ -735,7 +735,7 @@ fn same_basis_ruled_surface(
             .zip(second.control_points().iter().copied())
             .map(|(first, second)| vec![first, second])
             .collect(),
-        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         first.periodic() && second.periodic(),
         false,
@@ -845,11 +845,8 @@ fn ruled_surface_carrier(
         1,
         u_knots,
         vec![0.0, 0.0, 1.0, 1.0],
-        control_points
-            .chunks(2 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         first.periodic() && second.periodic(),
         false,
@@ -2505,11 +2502,13 @@ pub(super) fn project(
                 radius > 0.0
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => true,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-            | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => false,
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+                | SolvedSurfaceGeometry::Polygonal(_)
+                | SolvedSurfaceGeometry::Transformed { .. }
+                | SolvedSurfaceGeometry::Unknown { .. },
+            )
+            | SurfaceGeometry::Procedural { .. } => false,
         };
         if !regular {
             losses.push(entity_loss(

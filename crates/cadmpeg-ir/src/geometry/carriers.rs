@@ -175,7 +175,7 @@ impl std::fmt::Display for NurbsError {
 impl std::error::Error for NurbsError {}
 
 /// Exchange the outer and inner index of a rectangular row grid.
-fn transpose_rows<T: Clone>(rows: Vec<Vec<T>>) -> Vec<Vec<T>> {
+fn transpose_rows<T: Clone>(rows: &[Vec<T>]) -> Vec<Vec<T>> {
     let inner = rows.first().map_or(0, Vec::len);
     (0..inner)
         .map(|column| {
@@ -510,8 +510,8 @@ impl NurbsSurface {
     /// Exchange the u and v parameter axes and transpose pole storage.
     /// The natural normal changes sign; `normal_reversed` remains unchanged.
     pub fn transpose_parameter_axes(&mut self) {
-        self.control_points = transpose_rows(std::mem::take(&mut self.control_points));
-        self.weights = std::mem::take(&mut self.weights).map(transpose_rows);
+        self.control_points = transpose_rows(&self.control_points);
+        self.weights = self.weights.as_deref().map(transpose_rows);
         std::mem::swap(&mut self.u_degree, &mut self.v_degree);
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);

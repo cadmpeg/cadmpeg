@@ -4031,10 +4031,12 @@ fn native_rolling_ball_side(
         native_embedded_surface(bytes, &surface.geometry)?;
         if matches!(
             surface.geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cylinder(_)
+                    | SolvedSurfaceGeometry::Cone(_)
+                    | SolvedSurfaceGeometry::Sphere(_)
+                    | SolvedSurfaceGeometry::Torus(_)
+            )
         ) {
             bytes.truncate(bytes.len() - 4);
         }
@@ -6067,9 +6069,11 @@ fn native_embedded_surface_with_bounds(
             }
         }
         SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => {
+        | SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Unknown { .. }
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed { .. },
+        ) => {
             return Err(CodecError::Malformed(
                 "support bounds require an embeddable analytic or spline support".into(),
             ));
@@ -6333,8 +6337,9 @@ fn native_cache_first_curve_context(
             native_embedded_surface(bytes, &surface.geometry)?;
             if matches!(
                 surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-                    | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Nurbs(_) | SolvedSurfaceGeometry::Plane(_)
+                )
             ) {
                 for bound in bounds {
                     native_optional_f64(bytes, *bound);

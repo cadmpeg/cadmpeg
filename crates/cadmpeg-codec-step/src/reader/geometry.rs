@@ -3652,8 +3652,9 @@ fn trimmed_curve_parameter_range(
 
 fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
     let period = match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-        | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => std::f64::consts::TAU,
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
+            std::f64::consts::TAU
+        }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
             upper - lower
@@ -4888,24 +4889,16 @@ fn directrix_parameter_scale_inner(
         .iter()
         .find(|curve| curve.id == *curve_id)
         .and_then(|curve| {
-            directrix_geometry_parameter_scale(
-                ir,
-                curve.geometry.solved()?,
-                length_scale,
-                angle_scale,
-                active,
-            )
+            directrix_geometry_parameter_scale(curve.geometry.solved()?, length_scale, angle_scale)
         });
     active.remove(curve_id);
     scale
 }
 
 fn directrix_geometry_parameter_scale(
-    ir: &CadIr,
     geometry: &SolvedCurveGeometry,
     length_scale: f64,
     angle_scale: f64,
-    active: &mut BTreeSet<CurveId>,
 ) -> Option<f64> {
     match geometry {
         SolvedCurveGeometry::Line(_) => Some(length_scale),
@@ -4915,7 +4908,7 @@ fn directrix_geometry_parameter_scale(
         | SolvedCurveGeometry::Nurbs(_)
         | SolvedCurveGeometry::Polyline(_) => Some(1.0),
         SolvedCurveGeometry::Transformed { basis, .. } => {
-            directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
+            directrix_geometry_parameter_scale(basis, length_scale, angle_scale)
         }
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }

@@ -191,11 +191,13 @@ pub(in super::super) fn revolution_boundary_pcurve(
             let v = axial.atan2(signed_ring - major_radius);
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => None,
     }
 }
 

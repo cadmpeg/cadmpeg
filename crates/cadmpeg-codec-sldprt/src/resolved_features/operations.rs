@@ -135,8 +135,8 @@ pub(crate) fn bind_feature_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_extrusion_operations(features, histories, lanes, form_padding)?;
-    bind_revolution_operations(features, histories, lanes, form_padding)?;
+    bind_extrusion_operations(features, histories, lanes, form_padding);
+    bind_revolution_operations(features, histories, lanes, form_padding);
     bind_sweep_operations(features, histories, lanes, form_padding)?;
 
     Ok(())
@@ -148,7 +148,7 @@ pub(crate) fn bind_revolution_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -193,8 +193,6 @@ pub(crate) fn bind_revolution_operations(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Project compact solid-sweep Boolean operation discriminators.
@@ -357,7 +355,7 @@ pub(crate) fn bind_extrusion_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -408,8 +406,6 @@ pub(crate) fn bind_extrusion_operations(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -426,7 +422,7 @@ pub(crate) fn inherit_configuration_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let history_by_id = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -488,8 +484,6 @@ pub(crate) fn inherit_configuration_operations(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn operation_carrier_present(

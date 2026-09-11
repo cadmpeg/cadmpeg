@@ -567,7 +567,7 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
                         .collect()
                 })
                 .collect(),
-            Some(vec![2.0; 9]).map(|values| values.chunks(3 as usize).map(<[_]>::to_vec).collect()),
+            Some(vec![2.0; 9]).map(|values| values.chunks(3_usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,
@@ -838,7 +838,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
             (0..4)
                 .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
                 .collect::<Vec<_>>()
-                .chunks(2 as usize)
+                .chunks(2_usize)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,
@@ -867,7 +867,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
             (0..5)
                 .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
                 .collect::<Vec<_>>()
-                .chunks(2 as usize)
+                .chunks(2_usize)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,
@@ -908,8 +908,8 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     };
     surface
         .edit_control_points(|rows| {
-            for v in 0..3 {
-                rows[2][v].x = 0.0;
+            for point in rows[2].iter_mut().take(3) {
+                point.x = 0.0;
             }
         })
         .unwrap();
@@ -933,7 +933,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             (0..4)
                 .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
                 .collect::<Vec<_>>()
-                .chunks(2 as usize)
+                .chunks(2_usize)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,
@@ -1707,7 +1707,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
                         .map(move |x| Point3::new(x, y, 0.0))
                 })
                 .collect::<Vec<_>>()
-                .chunks(4 as usize)
+                .chunks(4_usize)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,

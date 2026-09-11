@@ -1277,8 +1277,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
-    )
-    .unwrap();
+    );
 
     assert_eq!(configured.dependencies.as_slice(), vec![plane_id.clone()]);
     assert!(matches!(
@@ -1307,8 +1306,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut mismatched),
         &[base_plane, base_offset],
-    )
-    .unwrap();
+    );
     assert!(matches!(
         mismatched.evaluation.definition().clone(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -1376,8 +1374,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
-    )
-    .unwrap();
+    );
 
     assert_eq!(configured.dependencies.as_slice(), vec![plane_id]);
     assert!(matches!(
@@ -1412,8 +1409,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut remains_unresolved),
         std::slice::from_ref(&unresolved_base),
-    )
-    .unwrap();
+    );
     assert_eq!(
         remains_unresolved.evaluation.definition().clone(),
         unresolved_base.evaluation.definition().clone()
@@ -1474,8 +1470,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut configured),
         std::slice::from_ref(&base),
-    )
-    .unwrap();
+    );
 
     assert!(matches!(
         configured.evaluation.definition().clone(),

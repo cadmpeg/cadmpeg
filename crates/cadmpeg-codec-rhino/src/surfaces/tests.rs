@@ -592,7 +592,7 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
     assert_eq!(surface.u_knots(), first.knots());
     assert_eq!(surface.v_knots(), second.knots());
     assert_eq!(
-        surface.poles().nth(0).copied().unwrap(),
+        surface.poles().next().copied().unwrap(),
         Point3::new(11.5, 3.5, 5.5)
     );
     assert_eq!(
@@ -714,7 +714,7 @@ fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
         surface
             .pole_weights()
             .expect("rational surface")
-            .nth(0)
+            .next()
             .unwrap(),
         2.0
     );
@@ -729,7 +729,7 @@ fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
             < EPS_EXACT_GEOMETRY
     );
     assert_eq!(
-        surface.poles().nth(0).copied().unwrap(),
+        surface.poles().next().copied().unwrap(),
         profile.control_points()[0]
     );
     assert!((surface.poles().nth(4).copied().unwrap().x - 1.0).abs() < EPS_EXACT_GEOMETRY);
@@ -922,9 +922,9 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     assert!((basepoint.x - 25.4).abs() < 1.0e-12);
     assert!((basepoint.y - 50.8).abs() < 1.0e-12);
     assert!((basepoint.z - 76.2).abs() < 1.0e-12);
-    assert!((geometry.poles().nth(0).copied().unwrap().x - 177.8).abs() < EPS_EXACT_GEOMETRY);
-    assert!((geometry.poles().nth(0).copied().unwrap().y - 50.8).abs() < EPS_EXACT_GEOMETRY);
-    assert!((geometry.poles().nth(0).copied().unwrap().z - 76.2).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().next().copied().unwrap().x - 177.8).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().next().copied().unwrap().y - 50.8).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().next().copied().unwrap().z - 76.2).abs() < EPS_EXACT_GEOMETRY);
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)) = children[0].reported_geometry()
     else {
         panic!("expected first NURBS child");

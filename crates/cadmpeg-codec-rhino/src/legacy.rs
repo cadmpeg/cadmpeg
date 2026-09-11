@@ -3100,23 +3100,23 @@ mod tests {
         let retained = &result.source_fidelity().retained_records;
         assert_eq!(retained.len(), 1);
         assert_eq!(
-            retained.values().nth(0).expect("retained record").offset(),
+            retained.values().next().expect("retained record").offset(),
             record_offset as u64
         );
         assert_eq!(
             retained
                 .values()
-                .nth(0)
+                .next()
                 .expect("retained record")
                 .byte_len(),
             record.len() as u64
         );
         assert_eq!(
-            retained.values().nth(0).expect("retained record").data(),
+            retained.values().next().expect("retained record").data(),
             Some(record.as_slice())
         );
         assert_eq!(
-            retained.values().nth(0).expect("retained record").stream(),
+            retained.values().next().expect("retained record").stream(),
             "rhino"
         );
         assert!(retained

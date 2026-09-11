@@ -274,7 +274,6 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
 
 #[test]
 fn directrix_parameter_units_follow_step_curve_equations() {
-    let ir = CadIr::empty();
     let angle_scale = std::f64::consts::PI / 180.0;
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::ParabolaCurve::try_new(
@@ -303,35 +302,28 @@ fn directrix_parameter_units_follow_step_curve_equations() {
         )
         .unwrap(),
     ));
-    let mut active = BTreeSet::new();
 
     assert_eq!(
         directrix_geometry_parameter_scale(
-            &ir,
             parabola.solved().expect("solved carrier"),
             0.001,
-            angle_scale,
-            &mut active
+            angle_scale
         ),
         Some(1.0)
     );
     assert_eq!(
         directrix_geometry_parameter_scale(
-            &ir,
             hyperbola.solved().expect("solved carrier"),
             0.001,
-            angle_scale,
-            &mut active
+            angle_scale
         ),
         Some(1.0)
     );
     assert_eq!(
         directrix_geometry_parameter_scale(
-            &ir,
             polyline.solved().expect("solved carrier"),
             0.001,
-            angle_scale,
-            &mut active
+            angle_scale
         ),
         Some(1.0)
     );

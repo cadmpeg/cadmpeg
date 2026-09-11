@@ -369,7 +369,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]).unwrap();
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -474,7 +474,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]).unwrap();
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);

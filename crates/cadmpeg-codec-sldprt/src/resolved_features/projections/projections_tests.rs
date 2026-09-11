@@ -194,8 +194,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         &mut features,
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -263,8 +262,7 @@ fn generic_native_offset_plane_support_stays_native() {
         &mut features,
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -393,8 +391,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         &[lane("lane-a", 40), lane("lane-b", 60)],
         &[],
         &[],
-    )
-    .unwrap();
+    );
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, .. },
@@ -452,8 +449,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         &[],
         std::slice::from_ref(&topology_face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(
         features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::CosmeticThread {

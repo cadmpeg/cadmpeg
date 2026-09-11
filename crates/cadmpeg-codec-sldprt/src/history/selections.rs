@@ -416,9 +416,11 @@ pub(crate) fn bind_topology_selections(
                 FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
                     resolve_body_selection(bodies, &body_ids);
                 }
-                FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. })
-                | FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. })
-                | FeatureDefinition::Operation(FeatureOperation::Dome { faces, .. }) => {
+                FeatureDefinition::Operation(
+                    FeatureOperation::DeleteFace { faces, .. }
+                    | FeatureOperation::MoveFace { faces, .. }
+                    | FeatureOperation::Dome { faces, .. },
+                ) => {
                     resolve_face(faces);
                 }
                 FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {

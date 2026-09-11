@@ -286,6 +286,6 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
         let surface = surface_cache(&tokens)
             .unwrap_or_else(|| panic!("owned surface cache at width {int_width}"));
 
-        assert!((surface.poles().nth(0).copied().unwrap().x - 50.0).abs() < f64::EPSILON);
+        assert!((surface.poles().next().copied().unwrap().x - 50.0).abs() < f64::EPSILON);
     }
 }

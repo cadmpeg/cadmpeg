@@ -635,7 +635,7 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
         return None;
     }
     view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
-    let row_len = usize::try_from(v_count).ok()?;
+    let row_len = v_count;
     view.is_empty()
         .then(|| {
             NurbsSurface::new(

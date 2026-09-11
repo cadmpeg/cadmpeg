@@ -49,11 +49,7 @@ impl DesignFeatureTransfer {
     /// Bind parameters to a transferred feature only through their exact
     /// entity-record and object-record ownership chain. The same exact
     /// incidences populate feature-local parameter ordinals.
-    pub(crate) fn assign_parameter_owners(
-        &self,
-        ir: &mut CadIr,
-        native: &CatiaNative,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub(crate) fn assign_parameter_owners(&self, ir: &mut CadIr, native: &CatiaNative) {
         let entities = native
             .entity_records
             .iter()
@@ -109,7 +105,7 @@ impl DesignFeatureTransfer {
         );
         assign_document_parameter_ordinals(ir);
         normalize_parameter_names(ir);
-        assign_native_operation_parameter_values(ir, &exact_feature_owners)
+        assign_native_operation_parameter_values(ir, &exact_feature_owners);
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -342,7 +338,7 @@ fn assign_document_parameter_ordinals(ir: &mut CadIr) {
 fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut values_by_feature = HashMap::<FeatureId, BTreeMap<String, String>>::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
@@ -369,12 +365,14 @@ fn assign_native_operation_parameter_values(
                         }));
                 }
             }
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family:
-                    UnresolvedFamily::Extrude | UnresolvedFamily::Revolve | UnresolvedFamily::Fillet,
-            })
-            | FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
-            | FeatureDefinition::Operation(FeatureOperation::Sweep { .. }) => {
+            FeatureDefinition::Operation(
+                FeatureOperation::Unresolved {
+                    family:
+                        UnresolvedFamily::Extrude | UnresolvedFamily::Revolve | UnresolvedFamily::Fillet,
+                }
+                | FeatureOperation::Pattern { .. }
+                | FeatureOperation::Sweep { .. },
+            ) => {
                 for (name, expression) in values {
                     feature
                         .source_properties
@@ -384,7 +382,6 @@ fn assign_native_operation_parameter_values(
             _ => {}
         }
     }
-    Ok(())
 }
 
 /// Give every neutral parameter a unique name within its ownership scope.

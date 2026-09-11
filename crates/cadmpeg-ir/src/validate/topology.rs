@@ -309,7 +309,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             {
                 ref_error(findings, s.id.as_str(), "unknown record", u.as_str());
             }
-            _ => {}
+            SurfaceGeometry::Solved(_) => {}
         }
     }
     for curve in &ir.model.curves {
@@ -343,7 +343,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            _ => {}
+            CurveGeometry::Solved(_) => {}
         }
     }
     let composite_segments = ir
@@ -4194,14 +4194,14 @@ fn check_feature_sketch_references(
                 | ProfileRef::SpatialSketchSelection { sketch, .. } => {
                     (sketch.as_str(), "spatial sketch", &spatial_sketches)
                 }
-                ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
-                | ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, .. })
-                | ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, .. })
-                | ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, .. })
-                | ProfileRef::Planar(PlanarProfileRef::SketchSelection { sketch, .. }) => {
-                    (sketch.as_str(), "sketch", sketches)
-                }
-                _ => continue,
+                ProfileRef::Planar(
+                    PlanarProfileRef::Sketch(sketch)
+                    | PlanarProfileRef::SketchProfiles { sketch, .. }
+                    | PlanarProfileRef::SketchRegions { sketch, .. }
+                    | PlanarProfileRef::SketchEntities { sketch, .. }
+                    | PlanarProfileRef::SketchSelection { sketch, .. },
+                ) => (sketch.as_str(), "sketch", sketches),
+                ProfileRef::Planar(_) => continue,
             };
             if !defined_sketches.contains(sketch) {
                 ref_error(
@@ -4312,15 +4312,17 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::Planar(PlanarProfileRef::Native(_))
-                | ProfileRef::Planar(PlanarProfileRef::Unresolved(_))
-                | ProfileRef::Planar(PlanarProfileRef::Feature(_))
-                | ProfileRef::Planar(PlanarProfileRef::Generated { .. })
-                | ProfileRef::Planar(PlanarProfileRef::Sketch(_))
-                | ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
-                | ProfileRef::SpatialSketchSelection { .. }
-                | ProfileRef::Planar(PlanarProfileRef::HistoricalFaces { .. })
-                | ProfileRef::Planar(PlanarProfileRef::Faces(_)) => {}
+                ProfileRef::Planar(
+                    PlanarProfileRef::Native(_)
+                    | PlanarProfileRef::Unresolved(_)
+                    | PlanarProfileRef::Feature(_)
+                    | PlanarProfileRef::Generated { .. }
+                    | PlanarProfileRef::Sketch(_)
+                    | PlanarProfileRef::SketchSelection { .. }
+                    | PlanarProfileRef::HistoricalFaces { .. }
+                    | PlanarProfileRef::Faces(_),
+                )
+                | ProfileRef::SpatialSketchSelection { .. } => {}
             }
         }
         for path in paths {

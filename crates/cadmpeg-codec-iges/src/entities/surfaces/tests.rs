@@ -761,7 +761,7 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     else {
         panic!("expected an exact rational revolution cache");
     };
-    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 11.0);
+    assert_eq!(surface.poles().next().copied().unwrap().x, 11.0);
     let procedural = &result.ir().model.procedural_surfaces[0];
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload) =
         procedural.definition()

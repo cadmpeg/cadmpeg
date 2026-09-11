@@ -296,7 +296,7 @@ fn patch_spatial_sketches(
         &mut features,
         &native.feature_histories,
         &native.feature_input_lanes,
-    )?;
+    );
     let mut projected_constraints = Vec::new();
     super::relation_geometry::project_spatial_relation_bindings(
         &mut projected_constraints,

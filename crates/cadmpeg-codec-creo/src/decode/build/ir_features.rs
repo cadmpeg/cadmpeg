@@ -33,10 +33,7 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, row_feature_schema_classes,
 };
 
-fn refresh_feature_outputs(
-    scan: &ContainerScan,
-    ir: &mut CadIr,
-) -> Result<(), cadmpeg_core::CodecError> {
+fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
     let output_updates = ir
         .model
         .features
@@ -58,7 +55,6 @@ fn refresh_feature_outputs(
             feature.evaluation.set_outputs(outputs.clone());
         }
     }
-    Ok(())
 }
 
 fn ordered_row_feature_ids(rows: &[crate::feature::FeatureRow]) -> Vec<u32> {
@@ -170,7 +166,7 @@ pub(super) fn emit_model_features(
             ),
             native_ref: None,
         });
-        refresh_feature_outputs(scan, ir)?;
+        refresh_feature_outputs(scan, ir);
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
@@ -324,7 +320,7 @@ pub(super) fn emit_model_features(
                 }
             }
             existing.evaluation.set_outputs(combined_outputs);
-            refresh_feature_outputs(scan, ir)?;
+            refresh_feature_outputs(scan, ir);
             continue;
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
@@ -356,7 +352,7 @@ pub(super) fn emit_model_features(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
             native_ref,
         });
-        refresh_feature_outputs(scan, ir)?;
+        refresh_feature_outputs(scan, ir);
     }
     for feature_id in row_feature_ids {
         let id = IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
@@ -456,7 +452,7 @@ pub(super) fn emit_model_features(
             ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
-        refresh_feature_outputs(scan, ir)?;
+        refresh_feature_outputs(scan, ir);
     }
     for (child, parent) in regeneration_edges {
         let _ = ir.model.set_feature_regeneration_parent(child, parent);
@@ -472,7 +468,7 @@ pub(super) fn finish_feature_transfers(
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     link_feature_sketch_history(scan, ir);
-    reconcile_feature_links(scan, ir, &prototype_feature_dependencies)?;
+    reconcile_feature_links(scan, ir, &prototype_feature_dependencies);
     let feature_result_topology_count = emit_feature_result_topologies(scan, ir);
     let feature_result_edge_count = ir
         .model

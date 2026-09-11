@@ -1062,8 +1062,7 @@ fn fixed_kind_edge_and_revolve_operations(
             )),
             source_object: None,
         }],
-    )
-    .unwrap();
+    );
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1203,8 +1202,7 @@ fn fixed_kind_edge_and_revolve_operations(
         std::slice::from_ref(&face_axis_operand),
         &axis_faces,
         &axis_surfaces,
-    )
-    .unwrap();
+    );
     assert!(matches!(
         face_axis_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1239,8 +1237,7 @@ fn fixed_kind_edge_and_revolve_operations(
         std::slice::from_ref(&face_axis_operand),
         &axis_faces,
         &axis_surfaces,
-    )
-    .unwrap();
+    );
     assert!(matches!(
         conflicting_face_axis_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {

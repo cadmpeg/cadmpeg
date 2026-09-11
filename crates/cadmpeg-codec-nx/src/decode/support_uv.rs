@@ -1005,7 +1005,7 @@ fn complete_support_uv_wave(
                             }
                             _ => false,
                         }),
-                    _ => false,
+                    SurfaceGeometry::Solved(_) => false,
                 };
                 let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
                     &model_index,
@@ -1275,8 +1275,10 @@ fn complete_support_uv_wave(
                                     .map(|parameters| (parameters, true))
                                 })
                                 }
-                                geometry => analytic_surface_parameters(geometry, *point)
-                                    .map(|parameters| (parameters, false)),
+                                geometry @ SurfaceGeometry::Solved(_) => {
+                                    analytic_surface_parameters(geometry, *point)
+                                        .map(|parameters| (parameters, false))
+                                }
                             };
                             if candidate.is_some() {
                                 solved = candidate;
@@ -1300,10 +1302,12 @@ fn complete_support_uv_wave(
                 };
                 if matches!(
                     surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
-                        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
-                        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+                    SurfaceGeometry::Solved(
+                        SolvedSurfaceGeometry::Cylinder(_)
+                            | SolvedSurfaceGeometry::Cone(_)
+                            | SolvedSurfaceGeometry::Sphere(_)
+                            | SolvedSurfaceGeometry::Torus(_)
+                    )
                 ) {
                     for index in 1..uv.len() {
                         let turns =

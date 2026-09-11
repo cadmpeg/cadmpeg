@@ -166,8 +166,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         &[],
         &[],
         &[],
-    )
-    .unwrap();
+    );
 
     assert!(projected[0].evaluation.outputs().is_empty());
     assert_eq!(
@@ -207,8 +206,7 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
         &[],
         &[],
         &[],
-    )
-    .unwrap();
+    );
 
     assert!(projected
         .iter()

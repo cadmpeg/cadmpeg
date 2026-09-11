@@ -478,16 +478,16 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
 pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            line_curve.reverse_parameterization()
+            line_curve.reverse_parameterization();
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            circle_curve.reverse_parameterization()
+            circle_curve.reverse_parameterization();
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            ellipse_curve.reverse_parameterization()
+            ellipse_curve.reverse_parameterization();
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-            curve.reverse_parameterization()
+            curve.reverse_parameterization();
         }
         _ => {}
     }

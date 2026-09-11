@@ -333,7 +333,7 @@ pub fn bind_component_insert_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     table: &XrefTable,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for scope in scopes {
         let Some(construction) = scope.component_insert_construction() else {
             continue;
@@ -373,8 +373,6 @@ pub fn bind_component_insert_features(
                 ));
         }
     }
-
-    Ok(())
 }
 
 /// Expand container references through their occurrence records in the active

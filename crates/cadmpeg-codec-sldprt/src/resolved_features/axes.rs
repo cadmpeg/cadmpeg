@@ -1031,7 +1031,7 @@ pub(crate) fn bind_profile_revolution_axes(
     lanes: &[FeatureInputLane],
     sketches: &[Sketch],
     surfaces: &[Surface],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let native_by_id = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1164,8 +1164,6 @@ pub(crate) fn bind_profile_revolution_axes(
         }
         model_features[index].evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(super) fn profile_roster_construction_axis(

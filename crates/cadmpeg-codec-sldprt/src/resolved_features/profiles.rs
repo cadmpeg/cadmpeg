@@ -210,7 +210,7 @@ pub(crate) fn bind_sketch_profiles(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(|id| !removed.contains(id));
     *annotations = builder.build();
-    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters)?;
+    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
 
     Ok(())
 }
@@ -315,7 +315,7 @@ pub(crate) fn project_compact_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -805,8 +805,6 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
-
-    Ok(())
 }
 
 fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
@@ -844,7 +842,7 @@ pub(crate) fn project_marker_backed_sketches(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -867,7 +865,7 @@ pub(crate) fn project_marker_backed_sketches(
         &native_features,
         lanes,
         &feature_frames,
-    )?;
+    );
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -1887,8 +1885,6 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
-
-    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1933,7 +1929,7 @@ pub(crate) fn project_sketch_block_profiles(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for lane in lanes {
         for history in histories {
             let mut objects = history
@@ -2131,8 +2127,6 @@ pub(crate) fn project_sketch_block_profiles(
             }
         }
     }
-
-    Ok(())
 }
 
 fn dissectable_child_sources(value: &str) -> Option<HashSet<u32>> {
@@ -2484,7 +2478,7 @@ fn project_detached_legacy_config_sketches(
     native_features: &HashMap<&str, &crate::records::Feature>,
     lanes: &[FeatureInputLane],
     feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -2608,8 +2602,6 @@ fn project_detached_legacy_config_sketches(
             feature.evaluation.set_definition(definition);
         }
     }
-
-    Ok(())
 }
 
 fn legacy_config_hex_sketch(
@@ -3194,8 +3186,7 @@ mod detached_legacy_sketch_tests {
             &mut sketch_entities,
             &[history],
             &[lane],
-        )
-        .unwrap();
+        );
 
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].id, expected_sketch);
@@ -3275,8 +3266,7 @@ mod detached_legacy_sketch_tests {
             &mut sketch_entities,
             &[history],
             &[lane],
-        )
-        .unwrap();
+        );
 
         assert!(sketches.is_empty());
         assert!(matches!(

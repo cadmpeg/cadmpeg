@@ -820,7 +820,7 @@ fn decode_transfers_point_plane_cylinder_line() {
             .source_fidelity()
             .retained_records
             .values()
-            .nth(0)
+            .next()
             .expect("retained record")
             .sha256()
             .len(),

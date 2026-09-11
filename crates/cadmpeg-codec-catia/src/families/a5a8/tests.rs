@@ -443,7 +443,7 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
         .try_into()
         .expect("one resolved surface");
     let surface = resolved.geometry;
-    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 2e12);
+    assert_eq!(surface.poles().next().copied().unwrap().x, 2e12);
 
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
     assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
@@ -741,7 +741,7 @@ fn surface_parsers_accept_finite_large_control_points() {
         .try_into()
         .expect("one consolidated surface");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 2e12);
+    assert_eq!(surface.poles().next().copied().unwrap().x, 2e12);
 
     let mut a8 = a8_surface_stream();
     a8[59..67].copy_from_slice(&le_f64(2e12));
@@ -749,7 +749,7 @@ fn surface_parsers_accept_finite_large_control_points() {
         .try_into()
         .expect("one common-form surface");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 2e12);
+    assert_eq!(surface.poles().next().copied().unwrap().x, 2e12);
 
     a5[47..55].copy_from_slice(&le_f64(f64::NAN));
     a8[59..67].copy_from_slice(&le_f64(f64::NAN));

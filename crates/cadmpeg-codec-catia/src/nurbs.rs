@@ -942,8 +942,7 @@ mod tests {
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
             ],
-            Some(vec![tiny; 4])
-                .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            Some(vec![tiny; 4]).map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,

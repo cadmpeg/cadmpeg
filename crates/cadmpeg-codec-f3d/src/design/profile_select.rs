@@ -320,7 +320,7 @@ pub(crate) fn bind_sweep_sketch_selections(
 pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SplitFaceTool};
 
     let path_resolution = resolution.path_resolution();
@@ -352,15 +352,13 @@ pub(crate) fn bind_split_face_sketch_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
     let path_resolution = resolution.path_resolution();
@@ -392,8 +390,6 @@ pub(crate) fn bind_surface_trim_sketch_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(crate) fn bind_extrude_profile_selections(
@@ -404,7 +400,7 @@ pub(crate) fn bind_extrude_profile_selections(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     for feature in features {
@@ -578,8 +574,6 @@ pub(crate) fn bind_extrude_profile_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn resolve_entity_selection_profile(

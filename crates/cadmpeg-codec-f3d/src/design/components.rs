@@ -125,7 +125,7 @@ pub(crate) fn project_local_components(
 pub(crate) fn project_derived_instance_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for scope in scopes {
         let Some(construction) = scope.derived_instance_construction() else {
             continue;
@@ -152,8 +152,6 @@ pub(crate) fn project_derived_instance_features(
                 },
             ));
     }
-
-    Ok(())
 }
 
 /// Project the occurrence side of an external `Component Insert` when its
@@ -431,8 +429,7 @@ mod tests {
             }),
         );
         feature.native_ref = Some(scope.id.clone());
-        super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope])
-            .unwrap();
+        super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope]);
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {

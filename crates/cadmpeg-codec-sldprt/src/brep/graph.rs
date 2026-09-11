@@ -282,7 +282,7 @@ impl Brep {
                         .try_into()
                         .expect("qualified identity");
                 }
-                _ => {}
+                SurfaceGeometry::Solved(_) => {}
             }
         }
         for procedural in &mut self.procedural_surfaces {
@@ -5673,7 +5673,7 @@ mod tests {
         v_knots: Vec<f64>,
         _u_count: u32,
         v_count: u32,
-        control_points: Vec<cadmpeg_ir::math::Point3>,
+        control_points: &[cadmpeg_ir::math::Point3],
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::NurbsSurface {
         cadmpeg_ir::geometry::NurbsSurface::new(
@@ -6027,7 +6027,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             2,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -6074,7 +6074,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             2,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -6460,7 +6460,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             2,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -6498,7 +6498,7 @@ mod tests {
             vec![-0.1, -0.1, 0.9, 0.9],
             3,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, -1.0),
@@ -6543,7 +6543,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             2,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -6593,7 +6593,7 @@ mod tests {
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             2,
             3,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
@@ -6646,7 +6646,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             2,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -6696,7 +6696,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             3,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0),
@@ -6741,7 +6741,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             2,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -6773,7 +6773,7 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0],
             3,
             2,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
@@ -6813,7 +6813,7 @@ mod tests {
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             2,
             3,
-            vec![
+            &[
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

@@ -1300,9 +1300,7 @@ fn opposite_chart_transfer_priority(
         // can consume a chart-transfer slice without producing a pcurve.
         None if blend_boundary_transfer_available(index, source_surface, target_surface) => 2,
         None => 3,
-        Some(SolvedSurfaceGeometry::Polygonal(_)) | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
-            4
-        }
+        Some(SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. }) => 4,
     }
 }
 

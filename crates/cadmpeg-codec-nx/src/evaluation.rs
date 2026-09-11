@@ -284,24 +284,26 @@ fn rederived_body_census(
             Some(false) => {}
         }
         match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
-            | FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
-            | FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
-            | FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family:
-                    UnresolvedFamily::DatumPlane
-                    | UnresolvedFamily::DatumAxis
-                    | UnresolvedFamily::DatumPoint
-                    | UnresolvedFamily::DatumCoordinateSystem
-                    | UnresolvedFamily::BridgeCurve,
-            })
-            | FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
-            | FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. })
-            | FeatureDefinition::Operation(FeatureOperation::DatumPoint { .. })
-            | FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
-            | FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-            | FeatureDefinition::Operation(FeatureOperation::ProjectedCurve { .. })
-            | FeatureDefinition::Operation(FeatureOperation::SectionShape { .. }) => {
+            FeatureDefinition::Operation(
+                FeatureOperation::TreeNode { .. }
+                | FeatureOperation::DatumPrincipalPlane { .. }
+                | FeatureOperation::DatumPlane { .. }
+                | FeatureOperation::Unresolved {
+                    family:
+                        UnresolvedFamily::DatumPlane
+                        | UnresolvedFamily::DatumAxis
+                        | UnresolvedFamily::DatumPoint
+                        | UnresolvedFamily::DatumCoordinateSystem
+                        | UnresolvedFamily::BridgeCurve,
+                }
+                | FeatureOperation::DatumOffsetPlane { .. }
+                | FeatureOperation::DatumAxis { .. }
+                | FeatureOperation::DatumPoint { .. }
+                | FeatureOperation::DatumCoordinateSystem { .. }
+                | FeatureOperation::Sketch { .. }
+                | FeatureOperation::ProjectedCurve { .. }
+                | FeatureOperation::SectionShape { .. },
+            ) => {
                 if !feature.evaluation.outputs().is_empty() {
                     return Err((
                         feature_boundary(feature),
@@ -686,23 +688,25 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
     feature.evaluation.outputs().is_empty()
         && (matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
-                | FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
-                | FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::DatumPlane
-                        | UnresolvedFamily::DatumAxis
-                        | UnresolvedFamily::DatumPoint
-                        | UnresolvedFamily::DatumCoordinateSystem
-                        | UnresolvedFamily::BridgeCurve,
-                })
-                | FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
-                | FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. })
-                | FeatureDefinition::Operation(FeatureOperation::DatumPoint { .. })
-                | FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-                | FeatureDefinition::Operation(FeatureOperation::ProjectedCurve { .. })
-                | FeatureDefinition::Operation(FeatureOperation::SectionShape { .. })
+            FeatureDefinition::Operation(
+                FeatureOperation::TreeNode { .. }
+                    | FeatureOperation::DatumPrincipalPlane { .. }
+                    | FeatureOperation::DatumPlane { .. }
+                    | FeatureOperation::Unresolved {
+                        family: UnresolvedFamily::DatumPlane
+                            | UnresolvedFamily::DatumAxis
+                            | UnresolvedFamily::DatumPoint
+                            | UnresolvedFamily::DatumCoordinateSystem
+                            | UnresolvedFamily::BridgeCurve,
+                    }
+                    | FeatureOperation::DatumOffsetPlane { .. }
+                    | FeatureOperation::DatumAxis { .. }
+                    | FeatureOperation::DatumPoint { .. }
+                    | FeatureOperation::DatumCoordinateSystem { .. }
+                    | FeatureOperation::Sketch { .. }
+                    | FeatureOperation::ProjectedCurve { .. }
+                    | FeatureOperation::SectionShape { .. }
+            )
         ) || matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
@@ -757,10 +761,12 @@ fn suppression_is_body_census_invariant(
     let output_free_boolean_construction = output_free_local_body_construction(feature)
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Rib { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+            FeatureDefinition::Operation(
+                FeatureOperation::Extrude { .. }
+                    | FeatureOperation::Revolve { .. }
+                    | FeatureOperation::Rib { .. }
+                    | FeatureOperation::Sweep { .. }
+            )
         );
     let in_place_unresolved_extrude = feature.evaluation.outputs().len() == 1
         && bodies.contains(&feature.evaluation.outputs()[0])
@@ -803,24 +809,26 @@ fn suppression_is_body_census_invariant(
                 && bodies.contains(&feature.evaluation.outputs()[0])))
             && matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                        family: UnresolvedFamily::Loft
-                            | UnresolvedFamily::FreeformSurface
-                            | UnresolvedFamily::DeleteFace
-                            | UnresolvedFamily::MirrorFace
-                            | UnresolvedFamily::SubdivisionBody
-                            | UnresolvedFamily::TopologyOptimization,
-                    })
-                    | FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::Hole { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::OffsetSurface { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::Draft { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::TrimSurface { .. }
+                        | FeatureOperation::Unresolved {
+                            family: UnresolvedFamily::Loft
+                                | UnresolvedFamily::FreeformSurface
+                                | UnresolvedFamily::DeleteFace
+                                | UnresolvedFamily::MirrorFace
+                                | UnresolvedFamily::SubdivisionBody
+                                | UnresolvedFamily::TopologyOptimization,
+                        }
+                        | FeatureOperation::ExtendSurface { .. }
+                        | FeatureOperation::Hole { .. }
+                        | FeatureOperation::Chamfer { .. }
+                        | FeatureOperation::Fillet { .. }
+                        | FeatureOperation::FaceBlend { .. }
+                        | FeatureOperation::OffsetSurface { .. }
+                        | FeatureOperation::Thicken { .. }
+                        | FeatureOperation::Draft { .. }
+                        | FeatureOperation::ReplaceFace { .. }
+                )
             ))
 }
 

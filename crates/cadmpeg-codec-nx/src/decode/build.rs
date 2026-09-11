@@ -327,16 +327,18 @@ pub(crate) fn try_decode_geometry(
             match &geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => counts.planes += 1,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-                    counts.cylinders += 1
+                    counts.cylinders += 1;
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => counts.cones += 1,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => counts.spheres += 1,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => counts.tori += 1,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-                | SurfaceGeometry::Procedural { .. }
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {}
+                SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Nurbs(_)
+                    | SolvedSurfaceGeometry::Polygonal(_)
+                    | SolvedSurfaceGeometry::Transformed { .. }
+                    | SolvedSurfaceGeometry::Unknown { .. },
+                )
+                | SurfaceGeometry::Procedural { .. } => {}
             }
             let id: SurfaceId = scope.id("surf", fi);
             annotate_node(

@@ -285,7 +285,7 @@ fn procedural_source_parameter_map(
                 ProceduralSourceParameterMap::Mapped,
             )
         }
-        _ => ProceduralSourceParameterMap::NotApplicable,
+        SurfaceGeometry::Solved(_) => ProceduralSourceParameterMap::NotApplicable,
     }
 }
 
@@ -313,9 +313,11 @@ fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64,
                 Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
             SurfaceGeometry::Procedural { .. } => None,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Polygonal(_)
+                | SolvedSurfaceGeometry::Transformed { .. }
+                | SolvedSurfaceGeometry::Unknown { .. },
+            ) => None,
         },
     }
 }
@@ -1490,7 +1492,7 @@ fn edge_range_matches_curve(
     let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(geometry, range[0]) else {
         return false;
     };
-    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, range[1]) else {
+    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
         return false;
     };
     close(evaluated_start, start, tolerance) && close(evaluated_end, end, tolerance)

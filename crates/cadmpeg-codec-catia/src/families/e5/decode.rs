@@ -2448,8 +2448,9 @@ pub(crate) fn e5_boundary_curve(
     ) || (direction.u == 0.0
         && matches!(
             surface,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_)
+            )
         )))
     {
         return None;
@@ -2561,8 +2562,7 @@ fn e5_occurrence_intersection_cache(
 fn is_exact_e5_analytic_curve(curve: &CurveGeometry) -> bool {
     matches!(
         curve,
-        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
-            | CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_))
     )
 }
 

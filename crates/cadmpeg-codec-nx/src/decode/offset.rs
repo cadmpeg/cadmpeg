@@ -909,7 +909,7 @@ fn offset_support_control_hull_excludes_point(
                                 index, support, point, allowance, visited,
                             )
                     }),
-                _ => false,
+                SurfaceGeometry::Solved(_) => false,
             });
     visited.remove(surface);
     excluded
@@ -1323,7 +1323,7 @@ fn coarse_surface_sample_counts(
                 _ => [9, 9],
             }
         }
-        _ => [9, 9],
+        SurfaceGeometry::Solved(_) => [9, 9],
     }
 }
 
@@ -1370,7 +1370,7 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
                 geometry_budget,
             )
         }
-        geometry => analytic_surface_parameters(geometry, point),
+        geometry @ SurfaceGeometry::Solved(_) => analytic_surface_parameters(geometry, point),
     }
 }
 
@@ -1405,7 +1405,7 @@ pub(crate) fn surface_parameter_domain_with_index(
             let support = definition_payload.support();
             surface_parameter_domain_with_index(index, support)
         }
-        _ => None,
+        SurfaceGeometry::Solved(_) => None,
     }
 }
 
@@ -1649,7 +1649,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                     )
                 })
             }
-            geometry => analytic_surface_parameters(geometry, point),
+            geometry @ SurfaceGeometry::Solved(_) => analytic_surface_parameters(geometry, point),
         }
     };
     let first = [
@@ -1841,7 +1841,7 @@ fn surface_parameter_periods_inner(
                 _ => None,
             })
             .unwrap_or([None, None]),
-        _ => [None, None],
+        SurfaceGeometry::Solved(_) => [None, None],
     };
     visiting.remove(surface);
     periods
@@ -2373,7 +2373,7 @@ mod tests {
                         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
                     ],
                     Some(vec![1.0; 4])
-                        .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+                        .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
                     false,
                     false,
                     false,

@@ -201,7 +201,7 @@ fn container_only_stops_before_geometry() {
         .source_fidelity()
         .retained_records
         .values()
-        .nth(0)
+        .next()
         .expect("retained record");
     assert_eq!(retained.sha256().len(), 64);
     assert!(retained.data().is_some());

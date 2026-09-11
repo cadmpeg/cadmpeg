@@ -670,8 +670,7 @@ mod tests {
             &mut projected,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        )
-        .unwrap();
+        );
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -697,8 +696,7 @@ mod tests {
             anchor.pull_mut().unwrap().direction =
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         });
-        super::super::projections::project_draft_operands(&mut projected, &[history], &[lane])
-            .unwrap();
+        super::super::projections::project_draft_operands(&mut projected, &[history], &[lane]);
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {

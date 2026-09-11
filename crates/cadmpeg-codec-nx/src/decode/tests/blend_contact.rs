@@ -24,7 +24,7 @@ use cadmpeg_ir::math::{Point2, Vector3};
 fn test_surface(
     u_knots: Vec<f64>,
     _u_count: u32,
-    control_points: Vec<cadmpeg_ir::math::Point3>,
+    control_points: &[cadmpeg_ir::math::Point3],
     weights: Option<Vec<f64>>,
     u_periodic: bool,
 ) -> cadmpeg_ir::geometry::NurbsSurface {
@@ -33,11 +33,8 @@ fn test_surface(
         1,
         u_knots,
         vec![0.0, 0.0, 1.0, 1.0],
-        control_points
-            .chunks(2 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         u_periodic,
         false,
@@ -68,7 +65,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let surface = test_surface(
         vec![0.0, 0.0, 1.0, 1.0],
         2,
-        vec![
+        &[
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 10.0, 0.0),
             cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
@@ -296,7 +293,8 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0)]
             .into_iter()
             .flat_map(|(x, y)| [Point3::new(x, y, 0.0), Point3::new(x, y, 1.0)])
-            .collect(),
+            .collect::<Vec<_>>()
+            .as_slice(),
         None,
         true,
     );
@@ -482,7 +480,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let surface = test_surface(
         vec![0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0],
         5,
-        control_points,
+        &control_points,
         None,
         false,
     );
@@ -512,7 +510,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     let surface = test_surface(
         vec![0.0, 0.0, 0.4999, 0.5, 0.5001, 1.0, 1.0],
         5,
-        control_points,
+        &control_points,
         Some(vec![1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]),
         false,
     );

@@ -408,11 +408,8 @@ pub(in super::super) fn revolved_nurbs_surface(
             std::f64::consts::TAU,
             std::f64::consts::TAU,
         ],
-        control_points
-            .chunks(9 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        Some(weights).map(|values| values.chunks(9 as usize).map(<[_]>::to_vec).collect()),
+        control_points.chunks(9_usize).map(<[_]>::to_vec).collect(),
+        Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,

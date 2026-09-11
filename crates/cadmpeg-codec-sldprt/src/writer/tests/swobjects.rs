@@ -423,7 +423,7 @@ fn encoder_writes_source_less_line_sketches() {
         }),
         FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
-                profile: Some((profile).try_into().unwrap()),
+                profile: Some(profile),
                 direction: Some(
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                         .unwrap(),

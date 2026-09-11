@@ -199,7 +199,7 @@ pub(crate) fn project_feature_model(
             }
         });
     }
-    bind_offset_plane_references(&mut features)?;
+    bind_offset_plane_references(&mut features);
     bind_native_construction_features(&mut features, histories)?;
     Ok(FeatureProjection {
         features,
@@ -245,9 +245,7 @@ pub(crate) fn project_semantic_notes(
         .collect()
 }
 
-pub(crate) fn bind_offset_plane_references(
-    features: &mut [cadmpeg_ir::features::Feature],
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
             .native_ref
@@ -383,8 +381,10 @@ pub(crate) fn bind_offset_plane_references(
                     ),
                     matches!(
                         feature.evaluation.definition(),
-                        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
-                            | FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
+                        FeatureDefinition::Operation(
+                            FeatureOperation::DatumPrincipalPlane { .. }
+                                | FeatureOperation::DatumPlane { .. }
+                        )
                     ),
                 ),
             )
@@ -667,8 +667,6 @@ pub(crate) fn bind_offset_plane_references(
 
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(crate) fn bind_native_construction_features(
@@ -722,10 +720,10 @@ pub(crate) fn bind_native_construction_features(
         let mut definition = feature.evaluation.definition().clone();
         match &mut definition {
             FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                bind(profile)
+                bind(profile);
             }
             FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
-                bind_planar(profile)
+                bind_planar(profile);
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
                 if let Some(profile) = construction.profile_mut() {

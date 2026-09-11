@@ -166,17 +166,17 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     assert_eq!(
         retained
             .values()
-            .nth(0)
+            .next()
             .expect("retained record")
             .byte_len(),
         large.len() as u64
     );
     assert_eq!(
-        retained.values().nth(0).expect("retained record").sha256(),
+        retained.values().next().expect("retained record").sha256(),
         sha256_hex(&large)
     );
     assert_eq!(
-        retained.values().nth(0).expect("retained record").data(),
+        retained.values().next().expect("retained record").data(),
         None
     );
     assert_eq!(
@@ -208,7 +208,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
             .source_fidelity()
             .retained_records
             .values()
-            .nth(0)
+            .next()
             .expect("retained record")
             .data(),
         Some(point.as_slice())
@@ -848,7 +848,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .source_fidelity()
             .retained_records
             .values()
-            .nth(0)
+            .next()
             .expect("retained record");
         assert_eq!(retained.byte_len(), failure.len() as u64);
         assert_eq!(retained.sha256(), sha256_hex(&failure));
