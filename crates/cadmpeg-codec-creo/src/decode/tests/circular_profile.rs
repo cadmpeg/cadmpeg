@@ -14,7 +14,7 @@ use crate::decode::sweep::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
-    LinearTermination, PlanarProfileRef, ProfileRef,
+    FeatureOperation as IrFeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -58,7 +58,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             BooleanOp::Join,
             Some(true),
         ),
-        IrFeatureDefinition::Extrude {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
                 SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
             )),
@@ -83,7 +83,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        }
+        })
     );
 }
 

@@ -5,8 +5,8 @@ use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
-        ParameterId, ParameterValue,
+        DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureOperation,
+        FeatureTreeNodeRole, ParameterId, ParameterValue,
     },
     scalar::Length,
 };
@@ -184,10 +184,12 @@ pub(crate) fn global_parameter_owners(
     features
         .iter()
         .filter(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Native { kind, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
                 kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
             }
-            FeatureDefinition::TreeNode { role, .. } => *role == FeatureTreeNodeRole::Equations,
+            FeatureDefinition::Operation(FeatureOperation::TreeNode { role, .. }) => {
+                *role == FeatureTreeNodeRole::Equations
+            }
             _ => false,
         })
         .map(|feature| feature.id.clone())

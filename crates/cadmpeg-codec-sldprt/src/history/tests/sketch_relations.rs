@@ -31,9 +31,11 @@ fn decode_projects_owned_native_sketch_relation() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
-    let cadmpeg_ir::features::FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-    } = feature.evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+        },
+    ) = feature.evaluation.definition()
     else {
         panic!("bound sketch feature");
     };

@@ -8,7 +8,7 @@ use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
@@ -316,10 +316,10 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             continue;
         };
         let mut definition = features[index].evaluation.definition().clone();
-        let FeatureDefinition::Extrude {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: neutral_profile,
             ..
-        } = &mut definition
+        }) = &mut definition
         else {
             continue;
         };
@@ -442,9 +442,9 @@ pub(crate) fn project_dissected_sketches(
     let resolved = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sketch {
+            let FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            }) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -456,7 +456,7 @@ pub(crate) fn project_dissected_sketches(
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch { .. }
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
             )
         })
         .map(|feature| feature.id.clone())
@@ -466,11 +466,11 @@ pub(crate) fn project_dissected_sketches(
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                         | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                     ..
-                }
+                })
             ) && feature
                 .native_ref
                 .as_deref()
@@ -503,10 +503,10 @@ pub(crate) fn project_dissected_sketches(
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
             if aliases.contains_key(&feature.id) {
-                definition = FeatureDefinition::TreeNode {
+                definition = FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
                     children: cadmpeg_ir::features::TreeChildren::default(),
-                };
+                });
                 break 'feature_edit;
             }
             let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
@@ -533,24 +533,28 @@ pub(crate) fn project_dissected_sketches(
                 Some((child, owner.clone()))
             };
             let replaced = match &mut definition {
-                FeatureDefinition::Extrude { profile, .. } => {
+                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                     replace(profile).into_iter().collect()
                 }
-                FeatureDefinition::Wrap { profile, .. } => {
+                FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
                     replace_planar(profile).into_iter().collect()
                 }
-                FeatureDefinition::Rib { construction, .. } => construction
-                    .profile
-                    .as_mut()
-                    .and_then(replace_planar)
-                    .into_iter()
-                    .collect(),
-                FeatureDefinition::Revolve { construction, .. } => construction
+                FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
+                    construction
+                        .profile
+                        .as_mut()
+                        .and_then(replace_planar)
+                        .into_iter()
+                        .collect()
+                }
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
+                    construction, ..
+                }) => construction
                     .profile_mut()
                     .and_then(replace_planar)
                     .into_iter()
                     .collect(),
-                FeatureDefinition::Sweep { shape, .. } => {
+                FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                     let mut replacements = Vec::new();
                     shape
                         .try_edit(|section, _, _| {
@@ -560,7 +564,7 @@ pub(crate) fn project_dissected_sketches(
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                     replacements
                 }
-                FeatureDefinition::Loft { sections, .. } => sections
+                FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => sections
                     .iter_mut()
                     .filter_map(|section| match section {
                         cadmpeg_ir::features::LoftSection::Profile(profile) => replace(profile),

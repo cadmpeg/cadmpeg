@@ -189,7 +189,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .iter()
         .find(|feature| feature.source_tag.as_deref() == Some("Fillet"))
         .expect("typed fillet");
-    let FeatureDefinition::Fillet { groups } = fillet.evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        fillet.evaluation.definition()
+    else {
         panic!("expected typed fillet");
     };
     assert!(matches!(
@@ -206,7 +208,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .expect("typed chamfer");
     assert!(matches!(
         chamfer.evaluation.definition(),
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
@@ -239,7 +241,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
@@ -278,7 +280,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
@@ -308,7 +310,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             placements: Some(placements),
             shape,
@@ -316,7 +318,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: actual_length }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (faces == &vec![FaceId::mint(crate::ids::brep_entity_id(282)).expect("identity grammar")]
@@ -344,11 +346,11 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             bottom: None,
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
                 ..
             },) if drill_point_angle.get() == 118.0_f64.to_radians())));
@@ -375,11 +377,11 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             bottom: None,
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::CounterboreDrilled {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -408,11 +410,11 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -435,7 +437,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::TwoDistances { first, second },
                 ..
@@ -454,7 +456,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::Distance { distance },
                 ..
@@ -476,10 +478,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Fillet,
             parameters,
-        } if parameters.len() == 2
+        }) if parameters.len() == 2
     ));
 
     let (features, _) = project_parameter_design(
@@ -494,10 +496,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Fillet,
             parameters,
-        } if parameters.len() == 1
+        }) if parameters.len() == 1
     ));
 
     let (features, _) = project_parameter_design(
@@ -520,10 +522,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
             parameters,
-        } if parameters.len() == 3
+        }) if parameters.len() == 3
     ));
 
     let (features, _) = project_parameter_design(
@@ -541,10 +543,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
             parameters,
-        } if parameters.len() == 2
+        }) if parameters.len() == 2
     ));
 
     let construction_group = |record_index, scope_reference_ordinal| {
@@ -618,7 +620,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [
                 ChamferGroup {
                     edges: EdgeSelection::Unresolved,
@@ -640,7 +642,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
         DesignEntitySelectionOperand,
     };
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let stream = "f3d:test/Design/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
@@ -795,7 +797,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     };
 
     let (features, _) = project(&selection);
-    let FeatureDefinition::Draft {
+    let FeatureDefinition::Operation(FeatureOperation::Draft {
         anchor:
             cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: neutral_plane,
@@ -804,7 +806,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         angle,
         outward,
         ..
-    } = features[0].evaluation.definition()
+    }) = features[0].evaluation.definition()
     else {
         panic!("expected a typed Draft definition");
     };
@@ -849,10 +851,10 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let (features, _) = project(&selection);
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
             ..
-        }
+        })
     ));
 }
 
@@ -1300,7 +1302,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     );
     assert!(matches!(
         chord_features[0].evaluation.definition(),
-        FeatureDefinition::Fillet { groups }
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::FilletGroup {
@@ -1343,7 +1345,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     );
     assert!(matches!(
         chord_only_features[0].evaluation.definition(),
-        FeatureDefinition::Fillet { groups }
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::FilletGroup {
@@ -1387,7 +1389,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     );
     assert!(matches!(
         asymmetric_features[0].evaluation.definition(),
-        FeatureDefinition::Fillet { groups }
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::FilletGroup {
@@ -1414,7 +1416,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &[],
         &[],
     );
-    let FeatureDefinition::Fillet { groups } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected typed localized Fillet");
     };
     assert_eq!(groups.len(), 2);
@@ -1479,14 +1483,14 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface {
+        Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
             support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
             ref continuity,
             merge_result: Some(false),
-        }) if matches!(continuity.resolved(), Some(
+        })) if matches!(continuity.resolved(), Some(
             cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
                 first: cadmpeg_ir::features::SurfaceContinuity::Contact,
                 rest,
@@ -1519,12 +1523,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface {
+        Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
             ..
-        }) if native == &patch_scope.id
+        })) if native == &patch_scope.id
     ));
 
     patch_scope
@@ -1573,13 +1577,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &identities,
     )
     .expect("resolved multi-group SurfacePatch path");
-    let FeatureDefinition::FilledSurface {
+    let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary:
             cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::HistoricalEdges { edges, native, .. },
             ),
         ..
-    } = resolved
+    }) = resolved
     else {
         panic!("expected historical multi-group SurfacePatch path");
     };
@@ -1610,12 +1614,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface {
+        Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
             ..
-        }) if native == &patch_group.id
+        })) if native == &patch_group.id
     ));
 
     // The earlier scope-envelope generation is fourteen bytes shorter in both
@@ -1634,7 +1638,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface { .. })
+        Some(FeatureDefinition::Operation(
+            FeatureOperation::FilledSurface { .. }
+        ))
     ));
     patch_scope
         .try_edit(|draft| {
@@ -1660,7 +1666,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface { .. })
+        Some(FeatureDefinition::Operation(
+            FeatureOperation::FilledSurface { .. }
+        ))
     ));
     patch_scope
         .try_edit(|draft| {
@@ -1711,13 +1719,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     );
     assert!(matches!(
         grouped_projection,
-        Some(FeatureDefinition::FilledSurface {
+        Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
             ref continuity,
             ..
-        }) if continuity.uniform_value()
+        })) if continuity.uniform_value()
             == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
             && native == &patch_group.id
     ));
@@ -1744,10 +1752,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert!(matches!(
         crate::design::feature_project::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
-        Some(FeatureDefinition::BoundaryFill {
+        Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,
-        }) if tool_selection == &tools.id
+        })) if tool_selection == &tools.id
             && cell_selections.as_slice() == [cadmpeg_ir::features::BodySelection::Native(cell.id)]
     ));
 }
@@ -1788,7 +1796,9 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         &[],
         &[],
     );
-    let FeatureDefinition::Fillet { groups } = variable_features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        variable_features[0].evaluation.definition()
+    else {
         panic!("expected assigned variable Fillet");
     };
     assert_eq!(groups.len(), 1);
@@ -1827,9 +1837,9 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         &[],
         &[],
     );
-    let FeatureDefinition::Fillet {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: unassigned_groups,
-    } = unassigned_features[0].evaluation.definition()
+    }) = unassigned_features[0].evaluation.definition()
     else {
         panic!("expected unassigned variable Fillet");
     };
@@ -1939,7 +1949,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
                 &parameters,
                 "f3d:native"
             ),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
     }
 }

@@ -26,57 +26,59 @@ fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
 
 #[test]
 fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
-    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let direct = FeatureDefinition::DatumPlane {
+    let direct = FeatureDefinition::Operation(FeatureOperation::DatumPlane {
         frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-    };
+    });
     assert!(!feature_definition_is_incomplete(&direct));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Unresolved {
+        &FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     ));
 }
 
 #[test]
 fn trim_surface_completeness_accepts_an_explicit_cell_selection() {
-    let complete = cadmpeg_ir::features::FeatureDefinition::TrimSurface {
-        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
-            "f3d:test:face#target",
-        )
-        .expect("identity grammar")]),
-        tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId::mint(
-            "f3d:test:curve#tool",
-        )
-        .expect("identity grammar")]),
-        keep: cadmpeg_ir::features::TrimRegion::Cells(
-            cadmpeg_ir::features::TrimCellSelection::new(vec![1, 4], 5).unwrap(),
-        ),
-    };
+    let complete = cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::TrimSurface {
+            faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                "f3d:test:face#target",
+            )
+            .expect("identity grammar")]),
+            tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId::mint(
+                "f3d:test:curve#tool",
+            )
+            .expect("identity grammar")]),
+            keep: cadmpeg_ir::features::TrimRegion::Cells(
+                cadmpeg_ir::features::TrimCellSelection::new(vec![1, 4], 5).unwrap(),
+            ),
+        },
+    );
     assert!(!feature_definition_is_incomplete(&complete));
 }
 
 #[test]
 fn datum_axes_require_a_finite_nonzero_direction() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::DatumAxis {
+        &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DatumAxis {
+        &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                 f64::EPSILON / 2.0,
@@ -84,17 +86,17 @@ fn datum_axes_require_a_finite_nonzero_direction() {
                 0.0
             ))
             .unwrap(),
-        }
+        })
     ));
 }
 
 #[test]
 fn coordinate_systems_require_a_finite_right_handed_frame() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::DatumCoordinateSystem {
+        &FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
             frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -102,37 +104,37 @@ fn coordinate_systems_require_a_finite_right_handed_frame() {
                 Vector3::new(0.0, 0.0, 1.0)
             )
             .unwrap()
-        }
+        })
     ));
 }
 
 #[test]
 fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::BaseFeature {
+        &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved {
                 bodies: Vec::new(),
                 native: "native:base-feature".into(),
             },
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::BaseFeature {
+        &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Native("native:base-feature".into()),
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::InsertBodies {
+        &FeatureDefinition::Operation(FeatureOperation::InsertBodies {
             bodies: cadmpeg_ir::features::InsertedBodies::Native("native:insert-bodies".into()),
-        }
+        })
     ));
 }
 
 #[test]
 fn replace_face_requires_resolved_target_and_replacement_faces() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::FaceId;
 
     let resolved = |name: &str| {
@@ -141,79 +143,81 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
         ])
     };
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::ReplaceFace {
+        &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 resolved("target"),
                 resolved("replacement")
             )
             .unwrap(),
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::ReplaceFace {
+        &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 FaceSelection::Native("native:target".into()),
                 resolved("replacement")
             )
             .unwrap(),
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::ReplaceFace {
+        &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 resolved("target"),
                 FaceSelection::Native("native:replacement".into())
             )
             .unwrap(),
-        }
+        })
     ));
 }
 
 #[test]
 fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
-    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::{
+        BodyRetentionMode, BodySelection, FeatureDefinition, FeatureOperation,
+    };
     use cadmpeg_ir::ids::BodyId;
 
-    let complete = FeatureDefinition::DeleteBody {
+    let complete = FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Bodies(vec![
             BodyId::mint("test:model:body#1").expect("identity grammar")
         ]),
         mode: BodyRetentionMode::DeleteSelected,
-    };
+    });
     assert!(!feature_definition_is_incomplete(&complete));
 
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DeleteBody {
+        &FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Native("native:remove-body".into()),
             mode: BodyRetentionMode::DeleteSelected,
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DeleteBody {
+        &FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(vec![
                 BodyId::mint("test:model:body#1").expect("identity grammar")
             ]),
             mode: BodyRetentionMode::Unresolved,
-        }
+        })
     ));
 }
 
 #[test]
 fn product_feature_definitions_require_neutral_reference_ids() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::JointId;
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::InsertComponent {
+        &FeatureDefinition::Operation(FeatureOperation::InsertComponent {
             occurrence: OccurrenceId::mint("model:test:occurrence#component")
                 .expect("identity grammar"),
-        }
+        })
     ));
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::AssemblyJoint {
+        &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
             joint: JointId::mint("model:test:joint#assembly").expect("identity grammar"),
-        }
+        })
     ));
     assert!(OccurrenceId::mint(String::new()).is_err());
     assert!(JointId::mint(String::new()).is_err());
@@ -226,7 +230,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::{
         features::{
             AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition,
-            ScaleCenter, ScaleFactors, ThickenSide,
+            FeatureOperation, ScaleCenter, ScaleFactors, ThickenSide,
         },
         scalar::Length,
     };
@@ -239,57 +243,59 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     ]);
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Sphere {
+        &FeatureDefinition::Operation(FeatureOperation::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
             op: BooleanOp::NewBody,
-        }
+        })
     ));
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Torus {
+        &FeatureDefinition::Operation(FeatureOperation::Torus {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
             major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
             minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             op: BooleanOp::Join,
-        }
+        })
     ));
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::MoveFace {
+        &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: faces.clone(),
             motion: FaceMotion::Offset {
                 distance: Length::new(-2.0).unwrap(),
             },
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::MoveFace {
+        &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: FaceSelection::Native("native:faces".into()),
             motion: FaceMotion::Offset {
                 distance: Length::new(2.0).unwrap(),
             },
-        }
+        })
     ));
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Thicken {
+        &FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: faces.clone(),
             thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
             side: Some(ThickenSide::Forward),
-        }
+        })
     ));
 
-    let shell = |bodies, removed_faces| FeatureDefinition::Shell {
-        bodies,
-        removed_faces,
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
-        outward: Some(true),
-        mode: None,
-        join: None,
-        resolve_intersections: None,
-        allow_self_intersections: None,
+    let shell = |bodies, removed_faces| {
+        FeatureDefinition::Operation(FeatureOperation::Shell {
+            bodies,
+            removed_faces,
+            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
+            outward: Some(true),
+            mode: None,
+            join: None,
+            resolve_intersections: None,
+            allow_self_intersections: None,
+        })
     };
     assert!(!feature_definition_is_incomplete(&shell(
         Some(bodies.clone()),
@@ -311,7 +317,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     )));
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::MoveBody {
+        &FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: bodies.clone(),
             translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 2.0, 3.0))
                 .unwrap(),
@@ -325,43 +331,44 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 angle: cadmpeg_ir::scalar::Angle::new(0.5).unwrap(),
             }),
             copies: 0,
-        }
+        })
     ));
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Scale {
+        &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(vec![
                 BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::ModelOrigin),
             factors: ScaleFactors::Uniform(cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()),
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Scale {
+        &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(vec![
                 BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::Native("native:center".into())),
             factors: ScaleFactors::Uniform(cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()),
-        }
+        })
     ));
 }
 
 #[test]
 fn knit_surfaces_require_resolved_faces_and_operation_settings() {
     use cadmpeg_ir::{
-        features::{FaceSelection, FeatureDefinition},
+        features::{FaceSelection, FeatureDefinition, FeatureOperation},
         scalar::NonNegativeLength,
     };
 
-    let complete =
-        |faces, merge_entities, create_solid, gap_tolerance| FeatureDefinition::KnitSurface {
+    let complete = |faces, merge_entities, create_solid, gap_tolerance| {
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces,
             merge_entities,
             create_solid,
             gap_tolerance,
-        };
+        })
+    };
     let faces = FaceSelection::Faces(vec!["test:model:face#1"
         .try_into()
         .expect("valid identity")]);

@@ -21,8 +21,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
-        ParameterValue,
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        ParameterId, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -340,9 +340,9 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         native_ref: Some("native-feature".into()),
     };
@@ -788,9 +788,9 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };
@@ -1220,9 +1220,9 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     }];
@@ -1394,10 +1394,10 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     assert!(annotations.exactness().is_empty());
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        }
+        })
     ));
 }

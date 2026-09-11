@@ -33,8 +33,8 @@ use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::{
     features::{
         BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
-        FeatureDefinition, FilletGroup, ParameterId, ParameterValue, PatternSeed, RadiusSpec,
-        UnresolvedFamily, VariableRadius,
+        FeatureDefinition, FeatureOperation, FilletGroup, ParameterId, ParameterValue, PatternSeed,
+        RadiusSpec, UnresolvedFamily, VariableRadius,
     },
     scalar::{Angle, Length},
 };
@@ -79,7 +79,9 @@ pub(super) fn bind_circular_profile_by_dimension(
             .filter(|(_, feature)| {
                 matches!(
                     feature.evaluation.definition(),
-                    cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch { .. }
+                    )
                 )
             })
             .filter(|(_, feature)| {
@@ -117,8 +119,9 @@ pub(super) fn bind_circular_profile_by_dimension(
         for feature in features.iter_mut() {
             let mut definition = feature.evaluation.definition().clone();
             'feature_edit: {
-                let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: bound, .. } =
-                    &mut definition
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sketch { sketch: bound, .. },
+                ) = &mut definition
                 else {
                     break 'feature_edit;
                 };
@@ -130,7 +133,10 @@ pub(super) fn bind_circular_profile_by_dimension(
         }
         let name = features[feature_index].name.clone();
         let mut definition = features[feature_index].evaluation.definition().clone();
-        let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } = &mut definition else {
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
+        ) = &mut definition
+        else {
             continue;
         };
         *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone()));
@@ -640,8 +646,12 @@ pub(crate) fn project_compact_body_selections(
                 break 'feature_edit;
             };
             let (bodies, mode) = match &mut definition {
-                FeatureDefinition::DeleteBody { bodies, mode } => (bodies, Some(mode)),
-                FeatureDefinition::MoveBody { bodies, .. } => (bodies, None),
+                FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
+                    (bodies, Some(mode))
+                }
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
+                    (bodies, None)
+                }
                 _ => break 'feature_edit,
             };
             if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
@@ -733,7 +743,7 @@ pub(crate) fn project_compact_edge_selections(
                     if matches!(&existing_edges, EdgeSelection::Unresolved)
                         || radius_groups.len() == 1
                     {
-                        definition = FeatureDefinition::Fillet {
+                        definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: radius_groups
                                 .into_iter()
                                 .map(|(radius, selections)| FilletGroup {
@@ -748,17 +758,17 @@ pub(crate) fn project_compact_edge_selections(
                                 .collect::<Vec<_>>()
                                 .try_into()
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                        };
+                        });
                     }
                 }
             }
             let groups = match &mut definition {
-                FeatureDefinition::Fillet { groups } => groups
+                FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => groups
                     .iter_mut()
                     .filter(|group| matches!(group.edges, EdgeSelection::Unresolved))
                     .map(|group| &mut group.edges)
                     .collect::<Vec<_>>(),
-                FeatureDefinition::Chamfer { groups, .. } => groups
+                FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => groups
                     .iter_mut()
                     .map(|group| &mut group.edges)
                     .collect::<Vec<_>>(),
@@ -1113,7 +1123,9 @@ pub(crate) fn project_compact_surface_selections(
             let Some(feature_selections) = selections.get(native_ref).map(Vec::as_slice) else {
                 break 'feature_edit;
             };
-            if let FeatureDefinition::Pattern { seeds, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                &mut definition
+            {
                 if seeds
                     .iter()
                     .any(|seed| matches!(seed, PatternSeed::Feature(_)))
@@ -1178,7 +1190,9 @@ pub(crate) fn project_compact_surface_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::SplitFace { targets, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
+                &mut definition
+            {
                 if !matches!(
                     targets,
                     cadmpeg_ir::features::FaceSelection::Unresolved
@@ -1229,7 +1243,12 @@ pub(crate) fn project_compact_surface_selections(
                 };
                 break 'feature_edit;
             }
-            if let FeatureDefinition::CutWithSurface { targets, tools, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
+                targets,
+                tools,
+                ..
+            }) = &mut definition
+            {
                 let Some((target, tool)) = cut_with_surface_selection_pair(feature_selections)
                 else {
                     break 'feature_edit;
@@ -1281,7 +1300,7 @@ pub(crate) fn project_compact_surface_selections(
                 break 'feature_edit;
             }
             let unresolved_full_round = match &definition {
-                FeatureDefinition::Fillet { groups } => matches!(
+                FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => matches!(
                     groups.as_slice(),
                     [group]
                         if matches!(group.edges, EdgeSelection::Unresolved)
@@ -1339,7 +1358,7 @@ pub(crate) fn project_compact_surface_selections(
                         }
                         face
                     });
-                definition = FeatureDefinition::FullRoundFillet {
+                definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(
                         cadmpeg_ir::features::FullRoundFilletGroup::new(
                             center_faces,
@@ -1348,14 +1367,14 @@ pub(crate) fn project_compact_surface_selections(
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
-                };
+                });
                 break 'feature_edit;
             }
             if matches!(
                 &definition,
-                FeatureDefinition::Unresolved {
+                FeatureDefinition::Operation(FeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumPlane
-                }
+                })
             ) && feature_selections.len() == 2
             {
                 for selection in feature_selections {
@@ -1372,7 +1391,10 @@ pub(crate) fn project_compact_surface_selections(
                 }
                 break 'feature_edit;
             }
-            let first_component = matches!(&definition, FeatureDefinition::CosmeticThread { .. });
+            let first_component = matches!(
+                &definition,
+                FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
+            );
             let Some(selection) = (if first_component {
                 cosmetic_thread_surface_selection_consensus(feature_selections)
             } else {
@@ -1380,7 +1402,11 @@ pub(crate) fn project_compact_surface_selections(
             }) else {
                 break 'feature_edit;
             };
-            if let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference,
+                ..
+            }) = &mut definition
+            {
                 let native = compact_surface_selection_value(&selection.components);
                 let generated = selection
                     .terminal_feature_ref
@@ -1422,21 +1448,30 @@ pub(crate) fn project_compact_surface_selections(
                 break 'feature_edit;
             }
             let slot = match &mut definition {
-                FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
-                FeatureDefinition::Shell { removed_faces, .. } => {
+                FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }) => {
+                    SelectionSlot::Face(faces)
+                }
+                FeatureDefinition::Operation(FeatureOperation::Shell { removed_faces, .. }) => {
                     SelectionSlot::Face(removed_faces)
                 }
-                FeatureDefinition::OffsetSurface { faces, .. }
-                | FeatureDefinition::KnitSurface { faces, .. }
-                | FeatureDefinition::TrimSurface { faces, .. }
-                | FeatureDefinition::ExtendSurface { faces, .. }
-                | FeatureDefinition::Dome { faces, .. } => SelectionSlot::Face(faces),
-                FeatureDefinition::FilledSurface { support_faces, .. } => {
-                    SelectionSlot::Face(support_faces)
+                FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. })
+                | FeatureDefinition::Operation(FeatureOperation::KnitSurface { faces, .. })
+                | FeatureDefinition::Operation(FeatureOperation::TrimSurface { faces, .. })
+                | FeatureDefinition::Operation(FeatureOperation::ExtendSurface { faces, .. })
+                | FeatureDefinition::Operation(FeatureOperation::Dome { faces, .. }) => {
+                    SelectionSlot::Face(faces)
                 }
-                FeatureDefinition::Draft { faces, .. } => SelectionSlot::Face(faces),
-                FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
-                FeatureDefinition::Extrude {
+                FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                    support_faces,
+                    ..
+                }) => SelectionSlot::Face(support_faces),
+                FeatureDefinition::Operation(FeatureOperation::Draft { faces, .. }) => {
+                    SelectionSlot::Face(faces)
+                }
+                FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) => {
+                    SelectionSlot::Face(face)
+                }
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     extent:
                         cadmpeg_ir::features::ExtrudeExtent::OneSided {
                             side:
@@ -1451,8 +1486,8 @@ pub(crate) fn project_compact_surface_selections(
                                 },
                         },
                     ..
-                } => SelectionSlot::Face(face),
-                FeatureDefinition::Extrude {
+                }) => SelectionSlot::Face(face),
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     extent:
                         cadmpeg_ir::features::ExtrudeExtent::OneSided {
                             side:
@@ -1463,7 +1498,7 @@ pub(crate) fn project_compact_surface_selections(
                                 },
                         },
                     ..
-                } => SelectionSlot::Vertex(vertex),
+                }) => SelectionSlot::Vertex(vertex),
                 _ => break 'feature_edit,
             };
             let native = compact_surface_selection_value(&selection.components);
@@ -1561,7 +1596,8 @@ pub(crate) fn project_compact_surface_selections(
         .iter()
         .filter_map(|feature| {
             let native = feature.native_ref.as_deref()?;
-            let FeatureDefinition::CosmeticThread { face, .. } = feature.evaluation.definition()
+            let FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) =
+                feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1582,7 +1618,10 @@ pub(crate) fn project_compact_surface_selections(
             let Some(face) = face_aliases.get(target.as_str()).cloned() else {
                 break 'feature_edit;
             };
-            let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference, ..
+            }) = &mut definition
+            else {
                 break 'feature_edit;
             };
             if let cadmpeg_ir::features::FaceSelection::Generated { faces, .. } = &face {
@@ -1616,7 +1655,7 @@ pub(crate) fn project_compact_surface_selections(
 fn sole_unresolved_fillet_group(
     definition: &FeatureDefinition,
 ) -> Option<(EdgeSelection, Option<cadmpeg_ir::scalar::FiniteReal>)> {
-    let FeatureDefinition::Fillet { groups } = definition else {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         return None;
     };
     let [group] = groups.as_slice() else {
@@ -1703,7 +1742,9 @@ pub(crate) fn project_draft_operands(
                 break 'feature_edit;
             };
 
-            let FeatureDefinition::Draft { faces, anchor, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             match (&first.anchor, &mut *anchor) {
@@ -1964,7 +2005,12 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             let Some(native_feature) = native_features.get(native_ref).copied() else {
                 break 'feature_edit;
             };
-            let FeatureDefinition::CosmeticThread { face, diameter, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                face,
+                diameter,
+                ..
+            }) = &mut definition
+            else {
                 break 'feature_edit;
             };
             if !matches!(
@@ -2183,7 +2229,10 @@ pub(crate) fn project_unbound_offset_plane_faces(
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference, ..
+            }) = &mut definition
+            else {
                 break 'feature_edit;
             };
             let (origin, normal) = match reference.as_ref() {

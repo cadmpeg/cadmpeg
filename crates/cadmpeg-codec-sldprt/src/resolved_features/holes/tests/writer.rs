@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -24,7 +24,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Hole {
+        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             face: None,
             ref placements,
             shape,
@@ -33,7 +33,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
                 length: actual_length,
             }),
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (placements.is_none()) && actual_diameter.get() == 6.35 && actual_length.get() == 12.0)));
@@ -41,7 +41,9 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
     {
         let mut ir = decoded.ir_mut();
         ir.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Hole { shape, extent, .. } = definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+                definition
+            else {
                 panic!("typed hole feature");
             };
             shape
@@ -72,7 +74,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -90,35 +92,35 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Hole {
+        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, None,))));
     assert!(matches!(
-        decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Hole {
+        decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::PartialCounterbore(
                     cadmpeg_ir::features::PartialPair::First(actual_diameter),
                 ),
                 ..
             }, Some(actual_diameter_2),) if actual_diameter.get() == 10.0 && actual_diameter_2.get() == 6.0)));
     assert!(matches!(
-        decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Hole {
+        decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             ref placements,
             shape,
 
             extent: None,
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
             }, Some(actual_diameter),) if (placements.is_none()) && actual_diameter.get() == 5.0)));
@@ -141,7 +143,9 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     detached.model.features[2].native_ref = None;
     let updated_detached_evaluation = &mut detached.model.features[2].evaluation;
     let mut updated_detached_definition = updated_detached_evaluation.definition().clone();
-    let FeatureDefinition::Hole { shape, .. } = &mut updated_detached_definition else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
+        &mut updated_detached_definition
+    else {
         panic!("partial hole");
     };
     let mut edited_construction = shape.construction().clone();
@@ -192,7 +196,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, HolePlacement, LinearTermination,
+        FaceSelection, FeatureDefinition, FeatureOperation, HolePlacement, LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -210,12 +214,12 @@ fn semantic_writer_round_trips_hole_placement() {
         let mut ir = decoded.ir_mut();
         let updated_ir_evaluation = &mut ir.model.features[0].evaluation;
         let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Hole {
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
             face,
             placements,
             extent,
             ..
-        } = &mut updated_ir_definition
+        }) = &mut updated_ir_definition
         else {
             panic!("typed hole feature");
         };
@@ -262,12 +266,12 @@ fn semantic_writer_round_trips_hole_placement() {
     assert!(!native.parameters.contains_key("Depth"));
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Hole {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Native(face)),
             placements,
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        } if face == "face:13"
+        }) if face == "face:13"
             && placements.as_deref() == Some(&[HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
@@ -277,7 +281,7 @@ fn semantic_writer_round_trips_hole_placement() {
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -293,13 +297,13 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Hole {
+        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -307,11 +311,11 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 ..
             },) if actual_diameter.get() == 10.0 && actual_depth.get() == 4.0 && actual_length.get() == 20.0)));
     assert!(matches!(
-        decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Hole {
+        decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Countersink {
                     diameter: actual_diameter,
                     angle: value,
@@ -323,7 +327,9 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         let mut ir = decoded.ir_mut();
         let updated_ir_evaluation = &mut ir.model.features[0].evaluation;
         let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Hole { shape, extent, .. } = &mut updated_ir_definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+            &mut updated_ir_definition
+        else {
             panic!("counterbore hole");
         };
         let mut edited_construction = shape.construction().clone();
@@ -346,7 +352,9 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         updated_ir_evaluation.set_definition(updated_ir_definition);
         let updated_ir_evaluation = &mut ir.model.features[1].evaluation;
         let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Hole { shape, extent, .. } = &mut updated_ir_definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+            &mut updated_ir_definition
+        else {
             panic!("countersink hole");
         };
         let mut edited_construction = shape.construction().clone();

@@ -15,8 +15,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
-        ParameterValue,
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        ParameterId, ParameterValue,
     },
     scalar::Length,
 };
@@ -1606,9 +1606,9 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: Some(feature_ref.into()),
     };

@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn combine_consumes_tools_and_preserves_the_target_identity() {
@@ -10,14 +11,16 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
     });
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+            },
+        ));
     ir.model.features.push(body_preserving_feature(
         "combine",
         1,
         target.clone(),
-        FeatureDefinition::Combine {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(vec![target.clone()]),
                 BodySelection::Bodies(vec![tool]),
@@ -26,7 +29,7 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -48,14 +51,16 @@ fn combine_preserves_tools_when_requested() {
     });
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+            },
+        ));
     ir.model.features.push(body_preserving_feature(
         "combine",
         1,
         target.clone(),
-        FeatureDefinition::Combine {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(vec![target.clone()]),
                 BodySelection::Bodies(vec![tool.clone()]),
@@ -64,7 +69,7 @@ fn combine_preserves_tools_when_requested() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -83,7 +88,7 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
         "combine",
         1,
         target.clone(),
-        FeatureDefinition::Combine {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(vec![target.clone()]),
                 BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string())
@@ -93,7 +98,7 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
-        },
+        }),
     );
     combine.suppressed = None;
     ir.model.features.push(combine);
@@ -113,7 +118,7 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
     let mut combine = body_neutral_feature(
         "local-combine",
         1,
-        FeatureDefinition::Combine {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("native-target".to_string()),
                 BodySelection::NativeSet(vec!["native-tool".to_string()].try_into().unwrap()),
@@ -122,7 +127,7 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
-        },
+        }),
     );
     combine.suppressed = None;
     ir.model.features.push(combine);
@@ -146,13 +151,15 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         .set_outputs(vec![first.clone(), second.clone(), tool.clone()]);
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
+            },
+        ));
     let mut trim = body_neutral_feature(
         "trim",
         1,
-        FeatureDefinition::TrimBodies {
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(vec![first.clone(), second.clone()]),
                 BodySelection::Bodies(vec![tool.clone()]),
@@ -160,7 +167,7 @@ fn trim_bodies_preserves_all_targets_and_tools() {
             .unwrap(),
 
             keep: BodyTrimSide::Forward,
-        },
+        }),
     );
     trim.evaluation
         .set_outputs(vec![first.clone(), second.clone()]);
@@ -185,14 +192,16 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
     });
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+            },
+        ));
     ir.model.features.push(body_preserving_feature(
         "trim",
         1,
         tool.clone(),
-        FeatureDefinition::TrimBodies {
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(vec![target]),
                 BodySelection::Bodies(vec![tool]),
@@ -200,7 +209,7 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
             .unwrap(),
 
             keep: BodyTrimSide::Reverse,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -226,7 +235,7 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
         "trim",
         1,
         target.clone(),
-        FeatureDefinition::TrimBodies {
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(vec![target]),
                 BodySelection::Bodies(vec![
@@ -236,7 +245,7 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -269,7 +278,7 @@ fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::TrimBodies {
+            FeatureDefinition::Operation(FeatureOperation::TrimBodies {
                 operands: cadmpeg_ir::features::TrimBodyOperands::new(
                     BodySelection::Unresolved,
                     BodySelection::Unresolved,
@@ -277,7 +286,7 @@ fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
                 .unwrap(),
 
                 keep: BodyTrimSide::Unresolved,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -301,19 +310,21 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
         .set_outputs(vec![first.clone(), second.clone()]);
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+            },
+        ));
     let mut feature = body_preserving_feature(
         "sew",
         1,
         sewn.clone(),
-        FeatureDefinition::SewBodies {
+        FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Bodies(vec![first, second]))
                 .try_into()
                 .unwrap(),
             gap_tolerance: None,
-        },
+        }),
     );
     feature.evaluation.set_outputs(vec![sewn.clone()]);
     ir.model.features.push(feature);
@@ -340,7 +351,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::SewBodies {
+            FeatureDefinition::Operation(FeatureOperation::SewBodies {
                 bodies: (BodySelection::local(
                     vec![
                         "historical-sheet".to_string(),
@@ -352,7 +363,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
                 .try_into()
                 .unwrap(),
                 gap_tolerance: None,
-            },
+            }),
             vec![output.clone()],
         ),
         native_ref: None,
@@ -374,7 +385,7 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
         "combine",
         1,
         body.clone(),
-        FeatureDefinition::Combine {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(vec![body]),
                 BodySelection::Bodies(vec![BodyId::mint("test:model:entity#missing".to_string())
@@ -384,7 +395,7 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -417,19 +428,25 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
     ]);
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), unrelated.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![
+                    first.clone(),
+                    second.clone(),
+                    unrelated.clone(),
+                ]),
+            },
+        ));
     ir.model.features.push(body_preserving_feature(
         "sew",
         1,
         unrelated,
-        FeatureDefinition::SewBodies {
+        FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Bodies(vec![first, second]))
                 .try_into()
                 .unwrap(),
             gap_tolerance: None,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -451,9 +468,11 @@ fn native_body_selection_is_an_incomplete_semantic_boundary() {
     let mut ir = complete_block_ir();
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Native("selection".to_string()),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Native("selection".to_string()),
+            },
+        ));
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
@@ -494,7 +513,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
         "chamfer",
         1,
         body.clone(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::All,
                 spec: ChamferSpec::Distance {
@@ -502,13 +521,13 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
                 },
             }),
             flip_direction: false,
-        },
+        }),
     ));
     ir.model.features.push(body_preserving_feature(
         "fillet",
         2,
         body.clone(),
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::All,
                 radius: RadiusSpec::Constant {
@@ -516,7 +535,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
                 },
                 tangency_weight: Some(cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()),
             }),
-        },
+        }),
     ));
 
     assert_eq!(
@@ -533,7 +552,7 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
         "chamfer",
         1,
         body.clone(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::Unresolved,
                 spec: ChamferSpec::Distance {
@@ -541,7 +560,7 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
                 },
             }),
             flip_direction: false,
-        },
+        }),
     ));
 
     assert!(feature_completeness::chamfer_definition_is_incomplete(
@@ -564,24 +583,24 @@ fn complete_single_body_dress_up_families_preserve_identity() {
         FaceId::mint("test:model:entity#second".to_string()).expect("identity grammar")
     ]);
     let definitions = [
-        FeatureDefinition::FaceBlend {
+        FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(first.clone(), second.clone())
                 .unwrap(),
 
             radius: RadiusSpec::Constant {
                 radius: cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap(),
             },
-        },
-        FeatureDefinition::OffsetSurface {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: first.clone(),
             distance: Some(Length::new(0.1).unwrap()),
-        },
-        FeatureDefinition::Thicken {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: first.clone(),
             thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
             side: Some(ThickenSide::Forward),
-        },
-        FeatureDefinition::Draft {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: first.clone(),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: second.clone(),
@@ -595,10 +614,10 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
-        },
-        FeatureDefinition::ReplaceFace {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(first, second).unwrap(),
-        },
+        }),
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(body_preserving_feature(
@@ -626,34 +645,36 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
     });
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+            },
+        ));
     let faces = FaceSelection::Faces(vec![
         FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
     ]);
     let mut trim = body_neutral_feature(
         "trim-surface",
         1,
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: faces.clone(),
             tool: PathRef::Curves(vec![CurveId::mint(
                 "test:model:entity#trim-curve".to_string(),
             )
             .expect("identity grammar")]),
             keep: TrimRegion::Inside,
-        },
+        }),
     );
     trim.evaluation
         .set_outputs(vec![first.clone(), second.clone()]);
     let mut extend = body_neutral_feature(
         "extend-surface",
         2,
-        FeatureDefinition::ExtendSurface {
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces,
             distance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
             method: SurfaceExtension::Natural,
-        },
+        }),
     );
     extend
         .evaluation
@@ -671,16 +692,16 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
 #[test]
 fn output_free_surface_edits_are_body_identity_neutral() {
     let definitions = [
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved("trim".to_string()),
             keep: TrimRegion::Unresolved,
-        },
-        FeatureDefinition::ExtendSurface {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
             method: SurfaceExtension::Unresolved,
-        },
+        }),
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         let mut ir = complete_block_ir();
@@ -690,10 +711,10 @@ fn output_free_surface_edits_are_body_identity_neutral() {
             definition,
         ));
         assert!(match ir.model.features[1].evaluation.definition() {
-            FeatureDefinition::TrimSurface { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. }) => {
                 feature_completeness::trim_surface_definition_is_incomplete(&ir.model.features[1])
             }
-            FeatureDefinition::ExtendSurface { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. }) => {
                 feature_completeness::extend_surface_definition_is_incomplete(&ir.model.features[1])
             }
             _ => unreachable!("surface edit fixture"),
@@ -722,9 +743,9 @@ fn output_free_unresolved_loft_is_body_census_neutral() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Loft,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -751,9 +772,9 @@ fn output_free_unresolved_freeform_surface_is_body_census_neutral() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::FreeformSurface,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -772,7 +793,7 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
     let mut trim = body_neutral_feature(
         "trim-surface",
         1,
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Faces(vec![
                 FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
             ]),
@@ -781,7 +802,7 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
             )
             .expect("identity grammar")]),
             keep: TrimRegion::Outside,
-        },
+        }),
     );
     trim.evaluation.set_outputs(vec![missing]);
     ir.model.features.push(trim);
@@ -816,9 +837,9 @@ fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumCoordinateSystem,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -862,10 +883,10 @@ fn output_free_fset_is_body_census_neutral() {
     let mut fset = body_neutral_feature(
         "fset",
         1,
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "FSET".into(),
             parameters: BTreeMap::new(),
-        },
+        }),
     );
     fset.suppressed = None;
     ir.model.features.push(fset);
@@ -883,9 +904,9 @@ fn output_free_native_snapshot_is_local_to_history() {
     let mut snapshot = body_neutral_feature(
         "snapshot",
         1,
-        FeatureDefinition::BaseFeature {
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Unresolved,
-        },
+        }),
     );
     snapshot.name = Some("MASTER SNAPSHOT BODY".to_string());
     snapshot.suppressed = None;
@@ -941,7 +962,8 @@ fn output_free_hole_is_body_identity_neutral_regardless_of_suppression() {
     let mut hole = complete_hole(body.clone());
     hole.suppressed = None;
     hole.evaluation.edit(|definition, _| {
-        if let FeatureDefinition::Hole { placements, .. } = definition {
+        if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        {
             *placements = None;
         }
     });
@@ -971,10 +993,10 @@ fn native_delete_without_a_primary_body_is_body_neutral() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "DELETE".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     };

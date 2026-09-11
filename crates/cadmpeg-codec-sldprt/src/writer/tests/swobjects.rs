@@ -147,7 +147,7 @@ fn semantic_writer_emits_face_records_deterministically() {
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, PlanarProfileRef, ProfileRef,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -163,7 +163,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
                     "native:missing-owner".into(),
                 )),
@@ -183,7 +183,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -208,7 +208,8 @@ fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::{
         features::{
             AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition,
-            FeatureId, LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent,
+            FeatureId, FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
+            RevolveExtent,
         },
         scalar::Angle,
     };
@@ -349,16 +350,16 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: None,
     });
     let profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id.clone());
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
                 profile: profile.clone(),
                 axis: cadmpeg_ir::features::RevolutionAxis {
@@ -381,8 +382,8 @@ fn encoder_writes_source_less_line_sketches() {
                 allow_multi_profile_faces: None,
             },
             op: BooleanOp::NewBody,
-        },
-        FeatureDefinition::Sweep {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::new(
                 cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
                 Vec::new(),
@@ -405,8 +406,8 @@ fn encoder_writes_source_less_line_sketches() {
             taper: None,
             scale: Some(cadmpeg_ir::scalar::PositiveReal::new(1.5).unwrap()),
             allow_multi_profile_faces: None,
-        },
-        FeatureDefinition::Loft {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
                 cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
                 cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
@@ -419,8 +420,8 @@ fn encoder_writes_source_less_line_sketches() {
             linearize: false,
             max_degree: None,
             allow_multi_profile_faces: None,
-        },
-        FeatureDefinition::Rib {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some((profile).try_into().unwrap()),
                 direction: Some(
@@ -434,7 +435,7 @@ fn encoder_writes_source_less_line_sketches() {
                 ),
             },
             op: BooleanOp::Join,
-        },
+        }),
     ];
     for (index, definition) in generated.into_iter().enumerate() {
         ir.model.features.push(Feature {
@@ -467,7 +468,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
                 direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                     vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -491,7 +492,7 @@ fn encoder_writes_source_less_line_sketches() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -610,13 +611,13 @@ fn encoder_writes_source_less_line_sketches() {
     ));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
-        }
+        })
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -628,23 +629,23 @@ fn encoder_writes_source_less_line_sketches() {
             },
             op: BooleanOp::Join,
             ..
-        } if actual_length.get() == 12.0
+        }) if actual_length.get() == 12.0
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Revolve { .. }
+        FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Sweep { .. }
+        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Loft { .. }
+        FeatureDefinition::Operation(FeatureOperation::Loft { .. })
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Rib { .. }
+        FeatureDefinition::Operation(FeatureOperation::Rib { .. })
     )));
     {
         let mut ir_edit = decoded.ir_mut();
@@ -691,7 +692,7 @@ fn encoder_writes_source_less_line_sketches() {
 
 #[test]
 fn encoder_writes_source_less_spatial_point_and_line_sketches() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
@@ -763,9 +764,9 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -808,7 +809,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     );
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::SpatialSketch { sketch: Some(_) }
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(_) })
     ));
 
     let edited_start = Point3::new(13.0, 14.0, 15.0);

@@ -1813,12 +1813,14 @@ pub(crate) fn bind_extrude_start_planes(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
 
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Extrude { profile, start, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, start, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
@@ -1918,17 +1920,19 @@ pub(crate) fn bind_extrude_target_faces(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{ExtrudeDirection, ExtrudeExtent, FeatureDefinition};
+    use cadmpeg_ir::features::{
+        ExtrudeDirection, ExtrudeExtent, FeatureDefinition, FeatureOperation,
+    };
 
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Extrude {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 direction,
                 extent,
                 ..
-            } = &mut definition
+            }) = &mut definition
             else {
                 break 'feature_edit;
             };

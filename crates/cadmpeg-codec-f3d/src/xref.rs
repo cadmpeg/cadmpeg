@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{Feature, FeatureDefinition};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
     ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
 };
@@ -359,16 +359,18 @@ pub fn bind_component_insert_features(
         };
         if matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
             feature
                 .evaluation
-                .set_definition(FeatureDefinition::InsertComponent {
-                    occurrence: crate::ids::neutral_xref_occurrence_id(
-                        reference.ordinal,
-                        reference.occurrence_ordinal,
-                    ),
-                });
+                .set_definition(FeatureDefinition::Operation(
+                    FeatureOperation::InsertComponent {
+                        occurrence: crate::ids::neutral_xref_occurrence_id(
+                            reference.ordinal,
+                            reference.occurrence_ordinal,
+                        ),
+                    },
+                ));
         }
     }
 

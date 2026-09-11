@@ -5,7 +5,8 @@ use crate::records::Feature;
 use cadmpeg_ir::{
     features::{
         CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
-        FaceSelection, FeatureDefinition, FeatureId, PathRef, PlanarProfileRef, WrapMode,
+        FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef,
+        WrapMode,
     },
     scalar::{Angle, Length},
 };
@@ -21,9 +22,11 @@ pub(crate) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let normal = parse_vector3(feature.properties.get("Normal")?)?;
     let u_axis = parse_vector3(feature.properties.get("UAxis")?)?;
-    valid_plane_frame(normal, u_axis).then_some(FeatureDefinition::DatumPlane {
-        frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)?,
-    })
+    valid_plane_frame(normal, u_axis).then_some(FeatureDefinition::Operation(
+        FeatureOperation::DatumPlane {
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)?,
+        },
+    ))
 }
 
 pub(crate) fn project_offset_plane(
@@ -52,28 +55,32 @@ pub(crate) fn project_offset_plane(
                 face: FaceSelection::Native(native.clone()),
             })
         });
-    Some(FeatureDefinition::DatumOffsetPlane {
-        reference,
-        distance,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::DatumOffsetPlane {
+            reference,
+            distance,
+        },
+    ))
 }
 
 pub(crate) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let direction = parse_vector3(feature.properties.get("Direction")?)?;
-    valid_direction(direction).then_some(FeatureDefinition::DatumAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-    })
+    valid_direction(direction).then_some(FeatureDefinition::Operation(
+        FeatureOperation::DatumAxis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+        },
+    ))
 }
 
 pub(crate) fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::DatumPoint {
+    Some(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
         position: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
             feature.properties.get("Position")?,
         )?)?,
         construction: None,
-    })
+    }))
 }
 
 pub(crate) fn project_datum_coordinate_system(feature: &Feature) -> Option<FeatureDefinition> {
@@ -81,9 +88,13 @@ pub(crate) fn project_datum_coordinate_system(feature: &Feature) -> Option<Featu
     let x_axis = parse_vector3(feature.properties.get("XAxis")?)?;
     let y_axis = parse_vector3(feature.properties.get("YAxis")?)?;
     let z_axis = parse_vector3(feature.properties.get("ZAxis")?)?;
-    Some(FeatureDefinition::DatumCoordinateSystem {
-        frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(origin, x_axis, y_axis, z_axis)?,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::DatumCoordinateSystem {
+            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                origin, x_axis, y_axis, z_axis,
+            )?,
+        },
+    ))
 }
 
 pub(crate) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
@@ -98,16 +109,18 @@ pub(crate) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinit
         .parse::<f64>()
         .ok()?;
     let end = feature.properties.get("End")?.trim().parse::<f64>().ok()?;
-    Some(FeatureDefinition::EquationCurve {
-        curve: cadmpeg_ir::features::FeatureEquationCurve::new(
-            parameter,
-            x_expression,
-            y_expression,
-            z_expression,
-            start,
-            end,
-        )?,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::EquationCurve {
+            curve: cadmpeg_ir::features::FeatureEquationCurve::new(
+                parameter,
+                x_expression,
+                y_expression,
+                z_expression,
+                start,
+                end,
+            )?,
+        },
+    ))
 }
 
 pub(crate) fn project_projected_curve(
@@ -124,18 +137,20 @@ pub(crate) fn project_projected_curve(
         ),
         None => CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
     };
-    Some(FeatureDefinition::ProjectedCurve {
-        source: PathRef::Native(source),
-        target_faces: FaceSelection::Native(feature.properties.get("TargetFaces")?.clone()),
-        direction,
-        bidirectional: Some(
-            feature
-                .properties
-                .get("Bidirectional")
-                .and_then(|value| parse_bool(value))
-                .unwrap_or(false),
-        ),
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::ProjectedCurve {
+            source: PathRef::Native(source),
+            target_faces: FaceSelection::Native(feature.properties.get("TargetFaces")?.clone()),
+            direction,
+            bidirectional: Some(
+                feature
+                    .properties
+                    .get("Bidirectional")
+                    .and_then(|value| parse_bool(value))
+                    .unwrap_or(false),
+            ),
+        },
+    ))
 }
 
 pub(crate) fn project_composite_curve(
@@ -159,13 +174,15 @@ pub(crate) fn project_composite_curve(
     if segments.is_empty() {
         return None;
     }
-    Some(FeatureDefinition::CompositeCurve {
-        segments: segments.try_into().ok()?,
-        closed: feature
-            .properties
-            .get("Closed")
-            .map_or(Some(false), |value| parse_bool(value))?,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::CompositeCurve {
+            segments: segments.try_into().ok()?,
+            closed: feature
+                .properties
+                .get("Closed")
+                .map_or(Some(false), |value| parse_bool(value))?,
+        },
+    ))
 }
 
 pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
@@ -189,7 +206,7 @@ pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         Some(value) => parse_angle_rad(value)?,
         None => 0.0,
     };
-    Some(FeatureDefinition::Helix {
+    Some(FeatureDefinition::Operation(FeatureOperation::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction)?,
         radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
@@ -201,7 +218,7 @@ pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         clockwise,
         segment_turns: None,
         construction_style: None,
-    })
+    }))
 }
 
 pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
@@ -220,14 +237,16 @@ pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         .get("Clockwise")
         .and_then(|value| parse_bool(value))
         .unwrap_or(false);
-    Some(FeatureDefinition::HelixNativeAxis {
-        axis_native_ref: cadmpeg_ir::NonEmptyString::new(feature.id.clone())?,
-        axial_rise: Length::new(axial_rise)?,
-        pitch: Length::new(pitch)?,
-        revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
-        start_angle,
-        clockwise,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::HelixNativeAxis {
+            axis_native_ref: cadmpeg_ir::NonEmptyString::new(feature.id.clone())?,
+            axial_rise: Length::new(axial_rise)?,
+            pitch: Length::new(pitch)?,
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+            start_angle,
+            clockwise,
+        },
+    ))
 }
 
 pub(crate) fn project_wrap(
@@ -254,9 +273,9 @@ pub(crate) fn project_wrap(
         "scribe" => WrapMode::Scribe,
         _ => return None,
     };
-    Some(FeatureDefinition::Wrap {
+    Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
         profile: PlanarProfileRef::Native(profile),
         face,
         mode,
-    })
+    }))
 }

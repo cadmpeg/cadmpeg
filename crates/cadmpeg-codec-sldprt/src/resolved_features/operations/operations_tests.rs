@@ -474,54 +474,60 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FeatureDefinition, LinearTermination, PlanarProfileRef, ProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent,
+        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+        RevolutionAxis, RevolveConstruction, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
 
-    let extrude = |op| FeatureDefinition::Extrude {
-        profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
-            SketchId::mint("synthetic:test:id#sketch").unwrap(),
-        )),
-        direction: ExtrudeDirection::ProfileNormal {},
-        start: ExtrudeStart::ProfilePlane {},
-        extent: ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+    let extrude = |op| {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            )),
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: ExtrudeStart::ProfilePlane {},
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                    },
+                    draft: None,
                 },
-                draft: None,
             },
-        },
-        op,
-        solid: Some(true),
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
-    };
-    let revolve = |op| FeatureDefinition::Revolve {
-        construction: RevolveConstruction::Resolved {
-            profile: PlanarProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()),
-            axis: RevolutionAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 0.0, 1.0,
-                ))
-                .unwrap(),
-                reference: None,
-            },
-            extent: RevolveExtent::OneSided {
-                termination: AngularTermination::ThroughAll {},
-            },
+            op,
             solid: Some(true),
             face_maker: None,
-            fuse_order: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        },
-        op,
+        })
+    };
+    let revolve = |op| {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
+            construction: RevolveConstruction::Resolved {
+                profile: PlanarProfileRef::Sketch(
+                    SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                ),
+                axis: RevolutionAxis {
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
+                    reference: None,
+                },
+                extent: RevolveExtent::OneSided {
+                    termination: AngularTermination::ThroughAll {},
+                },
+                solid: Some(true),
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+            op,
+        })
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
         id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
@@ -594,17 +600,17 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
 
     assert!(matches!(
         configured[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
     assert!(matches!(
         configured[1].evaluation.definition(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             op: BooleanOp::Join,
             ..
-        }
+        })
     ));
 
     configured[0]
@@ -613,10 +619,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::NewBody,
             ..
-        }
+        })
     ));
 
     let mut operation_lane = FeatureInputLane {
@@ -664,10 +670,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     .unwrap();
     assert!(matches!(
         inherited[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
 
     operation_lane.native_payload[25..29].copy_from_slice(&999_u32.to_le_bytes());
@@ -686,9 +692,9 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     .unwrap();
     assert!(matches!(
         unresolved[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Unresolved,
             ..
-        }
+        })
     ));
 }

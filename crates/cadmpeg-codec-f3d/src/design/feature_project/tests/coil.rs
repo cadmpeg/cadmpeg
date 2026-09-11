@@ -13,7 +13,7 @@ use crate::records::feature::{
     DesignExtrudeOperation, DesignParameterScope,
 };
 use crate::records::DesignParameter;
-use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition};
+use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition, FeatureOperation};
 
 fn parameter(
     record_index: u32,
@@ -123,7 +123,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
         .map(|(ordinal, parameter)| (ordinal as u32, parameter))
         .collect::<Vec<_>>();
 
-    let FeatureDefinition::Coil { construction, .. } =
+    let FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. }) =
         project_coil(&scope, &owned, &[]).expect("typed long Coil")
     else {
         panic!("expected Coil definition")

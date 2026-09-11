@@ -13,7 +13,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
     };
     use crate::records::ConstructionRecipeKind;
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, SplitFaceTool,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, SplitFaceTool,
     };
     use cadmpeg_ir::ids::FaceId;
 
@@ -155,12 +155,12 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SplitFace {
+            FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 targets: FaceSelection::Native(group_id.clone()),
                 tool: SplitFaceTool::Plane {
                     plane: FeatureId::mint("f3d:test:feature#plane").expect("identity grammar"),
                 },
-            },
+            }),
         ),
         native_ref: Some(scope_id),
     }];
@@ -179,10 +179,10 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
 
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::SplitFace {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
             targets: FaceSelection::Resolved { faces, native },
             ..
-        } if faces == &[face_id] && native == &group_id
+        }) if faces == &[face_id] && native == &group_id
     ));
 }
 
@@ -526,7 +526,9 @@ fn history_binding_budget_charges_materialized_state_tables() {
 
 #[test]
 fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SweepMode, SweepSection};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, SweepMode, SweepSection,
+    };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -551,7 +553,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Sweep {
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape: cadmpeg_ir::features::SweepShape::new(
                     SweepSection::Unresolved(None),
                     Vec::new(),
@@ -572,7 +574,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 taper: None,
                 scale: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
             outputs,
         ),
         native_ref: None,
@@ -606,7 +608,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     bind_sweep_result_modes(&mut features, &bodies).unwrap();
 
     let modes = features.map(|feature| match feature.evaluation.definition() {
-        FeatureDefinition::Sweep { shape, .. } => shape.mode(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.mode(),
         _ => unreachable!(),
     });
     assert_eq!(modes[0], SweepMode::Surface {});
@@ -698,8 +700,8 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     };
     use crate::records::topology::DesignEntitySelectionFaceCandidate;
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
-        LinearTermination,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
+        FeatureOperation, HoleKind, LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -771,7 +773,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     let mut feature = Feature::new(
         feature_id.clone(),
         0,
-        FeatureDefinition::Hole {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
             profile: None,
             profile_filter: None,
             face: Some(FaceSelection::Native(scope_id.into())),
@@ -797,7 +799,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             bottom: None,
             taper_angle: None,
             allow_multi_profile_faces: None,
-        },
+        }),
     );
     feature.native_ref = Some(scope_id.into());
     let mut input_topologies = vec![FeatureInputTopology {
@@ -859,7 +861,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     )
     .unwrap();
 
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:
             Some(FaceSelection::Historical {
                 state,
@@ -867,7 +869,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 native,
             }),
         ..
-    } = feature.evaluation.definition()
+    }) = feature.evaluation.definition()
     else {
         panic!("Hole support face remains unresolved");
     };

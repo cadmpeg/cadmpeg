@@ -52,7 +52,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
 fn historical_vertex_selection_requires_input_state_membership() {
     use crate::features::{
         DatumPointConstruction, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        VertexSelection,
+        FeatureOperation, VertexSelection,
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
     use crate::schema::EntitySchema;
@@ -86,7 +86,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DatumPoint {
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(crate::math::Point3::new(
                     1.0, 2.0, 3.0,
                 ))
@@ -99,7 +99,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
                     )
                     .unwrap(),
                 })),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -115,10 +115,10 @@ fn historical_vertex_selection_requires_input_state_membership() {
 
     let missing = "test:model:historical-vertex#missing";
     ir.model.features[0].evaluation.edit(|definition, _| {
-        let FeatureDefinition::DatumPoint {
+        let FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction),
             ..
-        } = definition
+        }) = definition
         else {
             unreachable!("test feature is a constructed datum point")
         };
@@ -144,13 +144,13 @@ fn historical_vertex_selection_requires_input_state_membership() {
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
+        FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
     };
     use crate::sketches::SketchId;
 
     let sketch = SketchId::mint("synthetic:test:sketch#missing").unwrap();
     let definitions = [
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.clone())),
             direction: ExtrudeDirection::ProfileNormal {},
             start: crate::features::ExtrudeStart::ProfilePlane {},
@@ -168,8 +168,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        },
-        FeatureDefinition::Sweep {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: crate::features::SweepShape::new(
                 crate::features::SweepSection::Profile(PlanarProfileRef::Sketch(sketch.clone())),
                 Vec::new(),
@@ -192,7 +192,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             taper: None,
             scale: None,
             allow_multi_profile_faces: None,
-        },
+        }),
     ];
     let json = serde_json::to_string(&definitions).unwrap();
     assert_eq!(
@@ -231,8 +231,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureSourceContent, LinearTermination, ParameterId, PlanarProfileRef,
-        ProfileRef,
+        FeatureId, FeatureOperation, FeatureSourceContent, LinearTermination, ParameterId,
+        PlanarProfileRef, ProfileRef,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
@@ -258,7 +258,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         .unwrap(),
 
         evaluation: crate::features::FeatureEvaluation::new(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Faces(vec![FaceId::mint(
                     "synthetic:test:face#profile-missing",
                 )
@@ -283,7 +283,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
             vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
         ),
         native_ref: None,
@@ -300,10 +300,10 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Marker".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -330,7 +330,9 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 
 #[test]
 fn feature_parameters_require_unique_names_and_ordinals() {
-    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
@@ -347,10 +349,10 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -384,7 +386,9 @@ fn feature_parameters_require_unique_names_and_ordinals() {
 
 #[test]
 fn parameter_dependencies_must_exist_and_precede_consumers() {
-    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
@@ -402,10 +406,10 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -446,7 +450,9 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
 
 #[test]
 fn document_parameters_can_feed_feature_parameters() {
-    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
@@ -463,10 +469,10 @@ fn document_parameters_can_feed_feature_parameters() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -505,7 +511,7 @@ fn document_parameters_can_feed_feature_parameters() {
 #[test]
 fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     use crate::{
-        features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId},
+        features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, FeatureOperation},
         scalar::Length,
     };
 
@@ -528,24 +534,24 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     ir.model.features.push(feature(
         "synthetic:test:feature#offset",
         0,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature {
                 feature: principal.clone(),
             }),
             distance: Length::new(5.0).unwrap(),
-        },
+        }),
     ));
     ir.model.features.push(feature(
         principal.as_str(),
         1,
-        FeatureDefinition::DatumPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: crate::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        },
+        }),
     ));
     ir.finalize();
 
@@ -558,10 +564,12 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     let offset = ir.model.features[0].id.clone();
     ir.model.features[1]
         .evaluation
-        .set_definition(FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature { feature: offset }),
-            distance: Length::new(5.0).unwrap(),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature { feature: offset }),
+                distance: Length::new(5.0).unwrap(),
+            },
+        ));
     let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
@@ -574,7 +582,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
         BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        GeneratedVertexRef, LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
+        FeatureOperation, GeneratedVertexRef, LinearTermination, PlanarProfileRef, ProfileRef,
+        VertexSelection,
     };
     use std::collections::BTreeMap;
 
@@ -593,10 +602,10 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DatumPoint {
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -612,7 +621,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Native("test:profile".into())),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane {},
@@ -634,7 +643,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -694,7 +703,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
 #[test]
 fn pattern_feature_seeds_must_be_declared_dependencies() {
     use crate::features::{
-        Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed, PatternTransform,
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternSeed,
+        PatternTransform,
     };
 
     let mut ir = unit_cube();
@@ -711,10 +721,10 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DatumPoint {
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -730,14 +740,14 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(seed.clone())],
                 pattern: PatternKind::new(PatternTransform::Mirror {
                     plane_origin: Point3::new(0.0, 0.0, 0.0),
                     plane_normal: Vector3::new(1.0, 0.0, 0.0),
                 })
                 .unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -763,9 +773,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         features::{
             BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
             DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-            ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef,
-            LinearTermination, PatternKind, PatternSeed, PatternTransform, PlanarProfileRef,
-            ProfileRef,
+            ExtrudeStart, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+            GeneratedCurveRef, LinearTermination, PatternKind, PatternSeed, PatternTransform,
+            PlanarProfileRef, ProfileRef,
         },
         scalar::Length,
     };
@@ -798,61 +808,61 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         feature(
             source.clone(),
             0,
-            FeatureDefinition::DatumPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane {
                 frame: crate::features::FeatureDatumPlaneFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            },
+            }),
         ),
         feature(
             offset.clone(),
             1,
-            FeatureDefinition::DatumOffsetPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature {
                     feature: source.clone(),
                 }),
                 distance: Length::new(5.0).unwrap(),
-            },
+            }),
         ),
         feature(
             derived.clone(),
             2,
-            FeatureDefinition::DerivedGeometry {
+            FeatureDefinition::Operation(FeatureOperation::DerivedGeometry {
                 source: source.clone(),
-            },
+            }),
         ),
         feature(
             pattern.clone(),
             3,
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(source.clone())],
                 pattern: PatternKind::new(PatternTransform::Mirror {
                     plane_origin: Point3::new(0.0, 0.0, 0.0),
                     plane_normal: Vector3::new(1.0, 0.0, 0.0),
                 })
                 .unwrap(),
-            },
+            }),
         ),
         feature(
             block.clone(),
             4,
-            FeatureDefinition::SketchBlockDefinition { sketch: None },
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None }),
         ),
         feature(
             instance.clone(),
             5,
-            FeatureDefinition::SketchBlockInstance {
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
                 block: Some(block.clone()),
                 placement: Some(crate::transform::Transform::identity()),
-            },
+            }),
         ),
         feature(
             profile.clone(),
             6,
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::generated(
                         vec![GeneratedCurveRef::new(source.clone(), "curve-0".into()).unwrap()],
@@ -876,7 +886,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
     ];
     ir.model.features[2].dependencies.insert(source.clone());
@@ -967,8 +977,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
 #[test]
 fn generated_body_selection_must_name_a_declared_producer_result() {
     use crate::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureResultTopology,
-        GeneratedBodyRef,
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        FeatureResultTopology, GeneratedBodyRef,
     };
     use crate::ids::FeatureResultTopologyId;
 
@@ -986,10 +996,10 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "producer".into(),
                 parameters: BTreeMap::default(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1018,7 +1028,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::generated(
                     vec![GeneratedBodyRef {
                         feature: producer,
@@ -1027,7 +1037,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
                     "synthetic:native-selection#0".into(),
                 )
                 .unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1035,9 +1045,9 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.is_empty(), "{:?}", report.findings);
     ir.model.features[1].evaluation.edit(|definition, _| {
-        let FeatureDefinition::BaseFeature {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Generated { bodies, .. },
-        } = definition
+        }) = definition
         else {
             panic!("test consumer must retain its generated body selection");
         };
@@ -1056,7 +1066,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
 #[test]
 fn reference_images_require_valid_assets_and_plane_placements() {
     use crate::assets::{Asset, AssetContent, AssetId};
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::math::Point2;
 
     let asset_id = AssetId::mint("synthetic:test:asset#reference-image").expect("identity grammar");
@@ -1087,7 +1097,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::ReferenceImage {
+            FeatureDefinition::Operation(FeatureOperation::ReferenceImage {
                 asset: asset_id,
                 visible: true,
                 mirror_u: false,
@@ -1104,7 +1114,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
                 ])
                 .unwrap(),
                 opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1126,7 +1136,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
 #[test]
 fn decals_require_valid_assets_faces_and_opacity() {
     use crate::assets::{Asset, AssetContent, AssetId};
-    use crate::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId};
+    use crate::features::{
+        DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
@@ -1155,12 +1167,14 @@ fn decals_require_valid_assets_faces_and_opacity() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(FeatureDefinition::Decal {
-            asset: asset_id,
-            faces: FaceSelection::Faces(vec![face_id]),
-            mapping: DecalMapping::FitToFaces,
-            opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
-        }),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Decal {
+                asset: asset_id,
+                faces: FaceSelection::Faces(vec![face_id]),
+                mapping: DecalMapping::FitToFaces,
+                opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
+            }),
+        ),
         native_ref: None,
     });
     ir.finalize();

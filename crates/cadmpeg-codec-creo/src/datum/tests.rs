@@ -564,7 +564,9 @@ fn decode_transfers_exact_datum_plane_carrier() {
     assert_eq!(feature.id.as_str(), "creo:model:feature#1");
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+        )
     ));
 }
 
@@ -606,7 +608,9 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
     assert_eq!(feature.name.as_deref(), Some("Datum Plane id 4"));
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+        )
     ));
     assert_eq!(
         result
@@ -674,9 +678,11 @@ fn decode_retains_named_datum_plane_with_unresolved_placement() {
 
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Unresolved {
-            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+            }
+        )
     ));
 }
 

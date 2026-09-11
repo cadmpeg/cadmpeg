@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn complete_hole_preserves_the_existing_body_identity() {
@@ -30,12 +31,12 @@ fn complete_sphere_rederives_a_new_body() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Sphere {
+            FeatureDefinition::Operation(FeatureOperation::Sphere {
                 center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                     .unwrap(),
                 radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
-            },
+            }),
             vec![body.clone()],
         ),
         native_ref: None,
@@ -66,12 +67,12 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::BaseFeature {
+                FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
                         bodies: Vec::new(),
                         native: "nx:segment-body-bindings".to_string(),
                     },
-                },
+                }),
             ),
             native_ref: None,
         },
@@ -109,19 +110,19 @@ fn curve_construction_families_do_not_change_the_body_census() {
         body_neutral_feature(
             "projected-curve",
             1,
-            FeatureDefinition::ProjectedCurve {
+            FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
                 source: PathRef::Unresolved("source".to_string()),
                 target_faces: FaceSelection::Unresolved,
                 direction: CurveProjectionDirection::State(
                     CurveProjectionDirectionState::Unresolved,
                 ),
                 bidirectional: None,
-            },
+            }),
         ),
         body_neutral_feature(
             "section",
             2,
-            FeatureDefinition::SectionShape {
+            FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands: cadmpeg_ir::features::SectionOperands::new(
                     BodySelection::Unresolved,
                     BodySelection::Unresolved,
@@ -129,7 +130,7 @@ fn curve_construction_families_do_not_change_the_body_census() {
                 .unwrap(),
 
                 approximate: None,
-            },
+            }),
         ),
     ]);
 
@@ -146,7 +147,7 @@ fn curve_construction_family_cannot_claim_a_body_output() {
     let mut section = body_neutral_feature(
         "section",
         1,
-        FeatureDefinition::SectionShape {
+        FeatureDefinition::Operation(FeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
@@ -154,7 +155,7 @@ fn curve_construction_family_cannot_claim_a_body_output() {
             .unwrap(),
 
             approximate: None,
-        },
+        }),
     );
     section.evaluation.edit(|_, outputs| {
         outputs.push(body);
@@ -180,7 +181,7 @@ fn curve_construction_family_cannot_claim_a_body_output() {
 fn unresolved_block_result_mode_stops_before_body_effect_evaluation() {
     let mut ir = complete_block_ir();
     ir.model.features[0].evaluation.edit(|definition, _| {
-        let FeatureDefinition::Block { op, .. } = definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Block { op, .. }) = definition else {
             unreachable!("block fixture")
         };
         *op = BooleanOp::Unresolved;
@@ -209,7 +210,7 @@ fn boolean_block_preserves_its_existing_output_body() {
         "joined-block",
         1,
         body.clone(),
-        FeatureDefinition::Block {
+        FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: Some([
                 cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
                 cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
@@ -217,7 +218,7 @@ fn boolean_block_preserves_its_existing_output_body() {
             ]),
             placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
             op: BooleanOp::Join,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -234,7 +235,7 @@ fn unresolved_block_mode_preserves_a_proven_existing_output() {
         "existing-block",
         1,
         body.clone(),
-        FeatureDefinition::Block {
+        FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: Some([
                 cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
@@ -242,7 +243,7 @@ fn unresolved_block_mode_preserves_a_proven_existing_output() {
             ]),
             placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
             op: BooleanOp::Unresolved,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -262,9 +263,9 @@ fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
     ir.model.features.push(body_neutral_feature(
         "profile",
         1,
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-        },
+        }),
     ));
     ir.model.features.extend([
         complete_extrude_feature(
@@ -300,9 +301,9 @@ fn new_body_operation_cannot_reuse_an_existing_body_identity() {
     ir.model.features.push(body_neutral_feature(
         "profile",
         1,
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-        },
+        }),
     ));
     ir.model.features.push(complete_extrude_feature(
         "extrude",
@@ -351,7 +352,7 @@ fn unresolved_extrude_preserves_an_existing_output_without_construction_replay()
 #[test]
 fn profile_driven_families_report_incomplete_construction_before_lineage() {
     let definitions = [
-        FeatureDefinition::Loft {
+        FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: Vec::new(),
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
             op: BooleanOp::NewBody,
@@ -361,7 +362,7 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
             linearize: false,
             max_degree: None,
             allow_multi_profile_faces: None,
-        },
+        }),
         complete_extrude_feature(
             "fixture",
             1,
@@ -372,7 +373,7 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
         .evaluation
         .definition()
         .clone(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: RevolveConstruction::Unresolved(
                 cadmpeg_ir::features::PartialRevolveConstruction::Profile {
                     axis: None,
@@ -384,8 +385,8 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
                 },
             ),
             op: BooleanOp::NewBody,
-        },
-        FeatureDefinition::Rib {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: RibConstruction {
                 profile: None,
                 direction: None,
@@ -394,8 +395,8 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
                 draft: RibDraft::Unresolved,
             },
             op: BooleanOp::Join,
-        },
-        FeatureDefinition::Sweep {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::new(
                 SweepSection::Unresolved(None),
                 Vec::new(),
@@ -416,7 +417,7 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
             taper: None,
             scale: None,
             allow_multi_profile_faces: None,
-        },
+        }),
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
         let mut ir = complete_block_ir();
@@ -471,9 +472,9 @@ fn body_neutral_history_needs_only_exact_configuration_body_membership() {
     let mut datum = body_neutral_feature(
         "datum",
         0,
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem,
-        },
+        }),
     );
     datum.suppressed = None;
     ir.model.features.push(datum);
@@ -492,9 +493,9 @@ fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
     ir.model.features.push(body_neutral_feature(
         "datum",
         0,
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem,
-        },
+        }),
     ));
     attach_complete_active_configuration(&mut ir);
     ir.model.configurations[0].active = false;
@@ -512,7 +513,8 @@ fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
     let body = ir.model.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
     hole.evaluation.edit(|definition, _| {
-        let FeatureDefinition::Hole { placements, .. } = definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
             unreachable!("hole fixture")
         };
         *placements = None;
@@ -614,9 +616,11 @@ fn base_feature_introduces_its_complete_selected_outputs() {
     let body = ir.model.bodies[0].id.clone();
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![body.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![body.clone()]),
+            },
+        ));
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
@@ -643,9 +647,9 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::ExtractBody {
+            FeatureDefinition::Operation(FeatureOperation::ExtractBody {
                 source: BodySelection::Bodies(vec![source]),
-            },
+            }),
             vec![extracted.clone()],
         ),
         native_ref: None,
@@ -678,13 +682,13 @@ fn output_free_local_extract_does_not_change_the_saved_body_census() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::ExtractBody {
+            FeatureDefinition::Operation(FeatureOperation::ExtractBody {
                 source: BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#736".to_string()],
                     "nx:om-object-index#736".to_string(),
                 )
                 .unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -712,10 +716,10 @@ fn delete_body_removes_an_existing_selected_body() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DeleteBody {
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Bodies(vec![body]),
                 mode: BodyRetentionMode::DeleteSelected,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -743,14 +747,14 @@ fn delete_body_ignores_a_complete_feature_local_body() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DeleteBody {
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::local(
                     vec!["input-body".to_string()],
                     "native-selection".to_string(),
                 )
                 .unwrap(),
                 mode: BodyRetentionMode::DeleteSelected,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -778,10 +782,10 @@ fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DeleteBody {
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Bodies(vec![body]),
                 mode: BodyRetentionMode::DeleteSelected,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -811,16 +815,18 @@ fn keep_selected_removes_every_unselected_body() {
     });
     ir.model.features[0]
         .evaluation
-        .set_definition(FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
-        });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
+            },
+        ));
     ir.model.features.push(body_neutral_feature(
         "retain",
         1,
-        FeatureDefinition::DeleteBody {
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(vec![retained.clone()]),
             mode: BodyRetentionMode::KeepSelected,
-        },
+        }),
     ));
 
     assert_eq!(

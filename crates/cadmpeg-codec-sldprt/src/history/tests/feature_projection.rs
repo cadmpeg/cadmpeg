@@ -5,6 +5,7 @@
 use super::super::*;
 use super::*;
 use crate::records::ObjectId;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::UnresolvedFamily;
 
 const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
@@ -78,7 +79,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
     assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
     assert!(matches!(
         project_extrude(&feature, &HashMap::new(), &HashMap::new()),
-        Some(FeatureDefinition::Extrude {
+        Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -88,7 +89,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
                 }
             },
             ..
-        }) if actual_length.get() == 2.1
+        })) if actual_length.get() == 2.1
     ));
 }
 
@@ -102,7 +103,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
 
     assert!(matches!(
         project_extrude(&feature, &HashMap::new(), &HashMap::new()),
-        Some(FeatureDefinition::Extrude {
+        Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -112,7 +113,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
                 }
             },
             ..
-        }) if actual_length.get() == 6.4
+        })) if actual_length.get() == 6.4
     ));
 }
 
@@ -153,7 +154,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
     assert!(profile.ordinal < extrusion.ordinal);
     assert!(matches!(
         extrusion.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile_ref)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -163,7 +164,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
             },
             op: BooleanOp::Join,
             ..
-        } if (profile_ref == &profile.id) && actual_length.get() == 6.8
+        }) if (profile_ref == &profile.id) && actual_length.get() == 6.8
     ));
 }
 
@@ -216,7 +217,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
 
     assert!(matches!(
         extrusion.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile_ref)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -226,7 +227,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
             },
             op: BooleanOp::Cut,
             ..
-        } if (profile_ref == &profile.id) && actual_length.get() == 4.2
+        }) if (profile_ref == &profile.id) && actual_length.get() == 4.2
     ));
 }
 
@@ -266,7 +267,7 @@ fn spatial_profile_class_projects_a_spatial_sketch() {
             &HashMap::new(),
             std::slice::from_ref(&spatial),
         ),
-        FeatureDefinition::SpatialSketch { sketch: None }
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
     );
 }
 
@@ -284,7 +285,7 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
             &HashMap::new(),
             std::slice::from_ref(&base_body),
         ),
-        FeatureDefinition::StoredGeometry {}
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     );
 }
 
@@ -493,13 +494,13 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     )
     .unwrap();
     assert!(matches!(
-        projected, FeatureDefinition::Hole {
+        projected, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length
             }),
             ..
-        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.6 && actual_length.get() == 9.4)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.6 && actual_length.get() == 9.4)));
 
     let mut canonical = feature("hole", Some("8"), 0);
     canonical.parameters = [
@@ -516,12 +517,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         std::slice::from_ref(&canonical),
     )
     .unwrap();
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,
 
         extent: Some(LinearTermination::Blind { length }),
         ..
-    } = projected
+    }) = projected
     else {
         panic!("expected canonical threaded hole: {projected:?}");
     };
@@ -936,14 +937,14 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
             &HashMap::new(),
             std::slice::from_ref(&plane),
         ),
-        FeatureDefinition::DatumPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 70.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(-1.0, 0.0, 0.0)
             )
             .unwrap(),
-        }
+        })
     );
 }
 
@@ -962,10 +963,10 @@ fn length_plane_parameter_claims_offset_semantics() {
             &HashMap::new(),
             std::slice::from_ref(&plane),
         ),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: Length::new(70.0).unwrap(),
-        }
+        })
     );
 }
 
@@ -982,9 +983,9 @@ fn frameless_reference_plane_remains_typed_unresolved() {
             &HashMap::new(),
             std::slice::from_ref(&plane),
         ),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     );
 }
 
@@ -1168,23 +1169,23 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
     let mut configured = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
-        FeatureDefinition::Native { .. }
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
     let mut base = configured.clone();
     base[0]
         .evaluation
-        .set_definition(FeatureDefinition::TreeNode {
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::DirectionalLight,
             children: cadmpeg_ir::features::TreeChildren::default(),
-        });
+        }));
 
     restore_configuration_tree_node_definitions(&mut configured, &base).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::DirectionalLight,
             ..
-        }
+        })
     ));
 }
 
@@ -1216,7 +1217,9 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     };
 
     let projected = project_features(std::slice::from_ref(&history)).unwrap();
-    let FeatureDefinition::Hole { shape, extent, .. } = projected[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+        projected[0].evaluation.definition()
+    else {
         panic!("expected a hole definition");
     };
     let diameter = shape.diameter();
@@ -1236,7 +1239,9 @@ fn simple_hole_uses_its_profile_dimension_roles() {
         .parameters
         .insert("another length".into(), "2".into());
     let ambiguous = project_features(&[ambiguous]).unwrap();
-    let FeatureDefinition::Hole { shape, extent, .. } = ambiguous[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+        ambiguous[0].evaluation.definition()
+    else {
         panic!("expected a hole definition");
     };
     let diameter = shape.diameter();
@@ -1280,12 +1285,12 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].evaluation.definition(), FeatureDefinition::Hole {
+        projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
             extent: None,
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, None,))));
@@ -1327,14 +1332,14 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].evaluation.definition(), FeatureDefinition::Hole {
+        projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::SimpleDrilled {
                     drill_point_angle,
                 },
@@ -1373,10 +1378,10 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: BooleanOp::Cut,
-        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+        }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value }
                 }) if (value.get() - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
     ));
@@ -1400,10 +1405,10 @@ fn localized_cut_extrusion_uses_its_native_class_operation() {
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
 }
 
@@ -1427,10 +1432,10 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             ..
-        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+        }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value }
                 }) if (value.get() - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
     ));
@@ -1464,7 +1469,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
-        FeatureDefinition::Chamfer { ref groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::ChamferGroup {
@@ -1487,7 +1492,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         .push(FeatureContent::Dimension("localized distance".into()));
     assert!(matches!(
         project_chamfer(&distance),
-        FeatureDefinition::Chamfer { ref groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::ChamferGroup {
@@ -1507,7 +1512,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
     ));
     assert!(matches!(
         project_chamfer(&distance),
-        FeatureDefinition::Chamfer { ref groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::ChamferGroup {
@@ -1539,13 +1544,13 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
     let projected = project_features(&[history]).unwrap();
     assert_eq!(
         *projected[0].evaluation.definition(),
-        FeatureDefinition::CosmeticThread {
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
             diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Blind {
                 length: cadmpeg_ir::scalar::PositiveLength::new(16.0).unwrap(),
             }),
-        }
+        })
     );
 }
 
@@ -1566,11 +1571,11 @@ fn cosmetic_thread_without_blind_length_is_through() {
     let projected = project_features(&[history]).unwrap();
     assert_eq!(
         *projected[0].evaluation.definition(),
-        FeatureDefinition::CosmeticThread {
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
             diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Through),
-        }
+        })
     );
 }
 
@@ -1595,11 +1600,11 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
         let projected = project_features(&[history]).unwrap();
         assert_eq!(
             *projected[0].evaluation.definition(),
-            FeatureDefinition::CosmeticThread {
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: FaceSelection::Unresolved,
                 diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()),
                 extent: Some(CosmeticThreadExtent::Through),
-            }
+            })
         );
     }
 }
@@ -1624,7 +1629,8 @@ fn cosmetic_thread_requires_one_named_diameter() {
     };
 
     let projected = project_features(&[history]).unwrap();
-    let FeatureDefinition::CosmeticThread { diameter, .. } = projected[0].evaluation.definition()
+    let FeatureDefinition::Operation(FeatureOperation::CosmeticThread { diameter, .. }) =
+        projected[0].evaluation.definition()
     else {
         panic!("expected a cosmetic thread");
     };
@@ -1694,7 +1700,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
 
 #[test]
 fn profile_consumers_require_a_regeneration_profile() {
-    let mut definition = FeatureDefinition::Extrude {
+    let mut definition = FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(
             "sketch-native".into(),
         )),
@@ -1712,7 +1718,7 @@ fn profile_consumers_require_a_regeneration_profile() {
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    };
+    });
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
 
     assert!(!bind_definition_sketch(
@@ -1725,10 +1731,10 @@ fn profile_consumers_require_a_regeneration_profile() {
     .unwrap());
     assert!(matches!(
         definition,
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_)),
             ..
-        }
+        })
     ));
     assert!(bind_definition_sketch(
         &mut definition,
@@ -1740,10 +1746,10 @@ fn profile_consumers_require_a_regeneration_profile() {
     .unwrap());
     assert!(matches!(
         definition,
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref bound)),
             ..
-        } if bound == &sketch
+        }) if bound == &sketch
     ));
 }
 
@@ -1773,10 +1779,10 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
     let sketch_id = neutral_feature_id("sketch");
     assert!(matches!(
         projected[1].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(feature)),
             ..
-        } if feature == &sketch_id
+        }) if feature == &sketch_id
     ));
     assert_eq!(projected[1].dependencies.as_slice(), [sketch_id]);
 }

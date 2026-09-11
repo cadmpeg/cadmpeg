@@ -26,8 +26,8 @@ use crate::decode::sweep::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, LinearTermination,
-    RadiusSpec,
+    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
+    FeatureOperation as IrFeatureOperation, LinearTermination, RadiusSpec,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -795,9 +795,9 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
 
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
-        IrFeatureDefinition::Fillet {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             ref groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
                 radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
@@ -924,9 +924,9 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
-        IrFeatureDefinition::Fillet {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
                 radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
@@ -1000,9 +1000,9 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
-        IrFeatureDefinition::Fillet {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
                 radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
@@ -1080,9 +1080,9 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
-        IrFeatureDefinition::Fillet {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
                 radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },

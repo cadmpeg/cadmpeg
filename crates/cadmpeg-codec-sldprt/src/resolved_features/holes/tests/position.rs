@@ -3,7 +3,7 @@
 use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HolePlacement};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, HolePlacement};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -599,11 +599,11 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                     SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
                 )),
-            },
+            }),
         ),
         native_ref: Some("native-position-sketch".into()),
     };
@@ -737,7 +737,9 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     )
     .unwrap();
 
-    let FeatureDefinition::Hole { placements, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected hole");
     };
     let placements = placements.as_deref().expect("resolved placements");
@@ -771,10 +773,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         std::slice::from_ref(&paired_lane),
     )
     .unwrap();
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: paired_placements,
         ..
-    } = paired_features[0].evaluation.definition()
+    }) = paired_features[0].evaluation.definition()
     else {
         panic!("expected hole");
     };
@@ -835,7 +837,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         std::slice::from_ref(&incomplete_lane),
     )
     .unwrap();
-    let FeatureDefinition::Hole { placements, .. } = incomplete_features[0].evaluation.definition()
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        incomplete_features[0].evaluation.definition()
     else {
         panic!("expected hole");
     };
@@ -857,11 +860,11 @@ fn unique_unindexed_point_locus_is_projected() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                     SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
                 )),
-            },
+            }),
         ),
         native_ref: Some("native-position-sketch".into()),
     };
@@ -930,7 +933,9 @@ fn unique_unindexed_point_locus_is_projected() {
     )
     .unwrap();
 
-    let FeatureDefinition::Hole { placements, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected hole");
     };
     assert!(matches!(
@@ -960,7 +965,8 @@ fn unique_unindexed_point_locus_is_projected() {
         std::slice::from_ref(&lane),
     )
     .unwrap();
-    let FeatureDefinition::Hole { placements, .. } = ambiguous_features[0].evaluation.definition()
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        ambiguous_features[0].evaluation.definition()
     else {
         panic!("expected hole");
     };
@@ -983,9 +989,9 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
-            },
+            }),
         ),
         native_ref: Some("native-position-sketch".into()),
     };
@@ -1104,7 +1110,9 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     )
     .unwrap();
 
-    let FeatureDefinition::Hole { placements, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected hole");
     };
     assert_eq!(
@@ -1136,9 +1144,9 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
-            },
+            }),
         ),
         native_ref: Some("native-position-sketch".into()),
     };
@@ -1201,7 +1209,9 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
     )
     .unwrap();
 
-    let FeatureDefinition::Hole { placements, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected hole");
     };
     assert_eq!(
@@ -1247,9 +1257,9 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
-            },
+            }),
         ),
         native_ref: Some("native-position-sketch".into()),
     };
@@ -1330,7 +1340,9 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     )
     .unwrap();
 
-    let FeatureDefinition::Hole { placements, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected hole");
     };
     assert_eq!(
@@ -1710,7 +1722,9 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         std::slice::from_ref(&lane),
     )
     .unwrap();
-    let FeatureDefinition::Hole { placements, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());

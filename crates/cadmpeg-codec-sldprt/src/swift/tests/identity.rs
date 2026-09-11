@@ -2,23 +2,25 @@ use super::*;
 
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PatternKind, PatternSeed};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternSeed,
+    };
 
     let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
-    let pattern_definition = FeatureDefinition::Pattern {
+    let pattern_definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds: vec![PatternSeed::Feature(seed.clone())],
         pattern: PatternKind::UNRESOLVED,
-    };
+    });
     let features = vec![
         neutral_feature(
             "seed",
             "Sketch20",
             1,
             Vec::new(),
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Sketch".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),
         neutral_feature(
@@ -89,7 +91,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         simple_hole_definition(6.1468),
     );
     unresolved_hole.evaluation.edit(|definition, _| {
-        let FeatureDefinition::Hole { shape, .. } = definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = definition else {
             panic!("expected hole definition");
         };
         shape.try_edit(|_, _, diameter| *diameter = None).unwrap();

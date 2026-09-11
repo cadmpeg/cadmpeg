@@ -924,7 +924,7 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     fn fixture() -> FixtureEvidence {
@@ -1030,7 +1030,7 @@ mod tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::Block {
+                FeatureDefinition::Operation(FeatureOperation::Block {
                     dimensions: Some([
                         cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("valid block fixture"),
@@ -1038,7 +1038,7 @@ mod tests {
                     ]),
                     placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                     op: cadmpeg_ir::features::BooleanOp::NewBody,
-                },
+                }),
                 vec![body],
             ),
             native_ref: None,
@@ -1067,11 +1067,11 @@ mod tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::Block {
+                FeatureDefinition::Operation(FeatureOperation::Block {
                     dimensions: None,
                     placement: None,
                     op: cadmpeg_ir::features::BooleanOp::Unresolved,
-                },
+                }),
                 vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
             ),
             native_ref: None,
@@ -1148,10 +1148,10 @@ mod tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::TreeNode {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
-                },
+                }),
             ),
             native_ref: None,
         });

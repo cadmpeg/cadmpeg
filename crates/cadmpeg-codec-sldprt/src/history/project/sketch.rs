@@ -3,7 +3,8 @@
 
 use crate::records::Feature;
 use cadmpeg_ir::features::{
-    CosmeticThreadExtent, FaceSelection, FeatureDefinition, PathRef, SplitFaceTool,
+    CosmeticThreadExtent, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
+    SplitFaceTool,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -26,10 +27,10 @@ pub(crate) fn project_split_face(feature: &Feature) -> Option<FeatureDefinition>
         .properties
         .get(crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY)
         .map(String::as_str)?;
-    Some(FeatureDefinition::SplitFace {
+    Some(FeatureDefinition::Operation(FeatureOperation::SplitFace {
         targets: FaceSelection::Unresolved,
         tool: SplitFaceTool::Path(PathRef::Native(native.into())),
-    })
+    }))
 }
 
 pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
@@ -59,7 +60,7 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             }),
         None => Some(CosmeticThreadExtent::Through),
     };
-    FeatureDefinition::CosmeticThread {
+    FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
         face: feature
             .properties
             .get("Face")
@@ -67,7 +68,7 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         diameter,
         extent,
-    }
+    })
 }
 
 pub(crate) fn sketch_block_placement(feature: &Feature) -> Option<Transform> {

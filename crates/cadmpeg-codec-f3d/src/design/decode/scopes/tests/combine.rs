@@ -127,25 +127,27 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     }
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
-        Some(cadmpeg_ir::features::FeatureDefinition::Combine {
-            operands: cadmpeg_ir::features::CombineOperands::new(
-                cadmpeg_ir::features::BodySelection::Native(
-                    "Design1/BulkStream.dat:design-record#96".into(),
-                ),
-                cadmpeg_ir::features::BodySelection::NativeSet(
-                    vec![
-                        "Design1/BulkStream.dat:design-record#92".into(),
-                        "Design1/BulkStream.dat:design-record#94".into(),
-                    ]
-                    .try_into()
-                    .unwrap()
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Combine {
+                operands: cadmpeg_ir::features::CombineOperands::new(
+                    cadmpeg_ir::features::BodySelection::Native(
+                        "Design1/BulkStream.dat:design-record#96".into(),
+                    ),
+                    cadmpeg_ir::features::BodySelection::NativeSet(
+                        vec![
+                            "Design1/BulkStream.dat:design-record#92".into(),
+                            "Design1/BulkStream.dat:design-record#94".into(),
+                        ]
+                        .try_into()
+                        .unwrap()
+                    )
                 )
-            )
-            .unwrap(),
+                .unwrap(),
 
-            op: cadmpeg_ir::features::BooleanKind::Join,
-            keep_tools: true,
-        })
+                op: cadmpeg_ir::features::BooleanKind::Join,
+                keep_tools: true,
+            }
+        ))
     );
 
     let mut compact_bytes = bytes.clone();

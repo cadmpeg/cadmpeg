@@ -10,6 +10,7 @@ use super::prelude::*;
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
@@ -442,7 +443,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             features.as_slice(), [Feature {
                 evaluation,
                 ..
-            }] if matches!((evaluation.definition(),), (FeatureDefinition::DatumAxis { .. },))));
+            }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. }),))));
     }
 }
 

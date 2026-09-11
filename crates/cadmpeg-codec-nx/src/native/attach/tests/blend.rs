@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use super::*;
 
@@ -15,13 +15,13 @@ fn nx_body_writing_blend_retains_unresolved_fillet_family() {
 
     assert_eq!(
         definition,
-        Some(FeatureDefinition::Fillet {
+        Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
-        })
+        }))
     );
     assert_eq!(definition.unwrap().body_output_family(), Some("fillet"));
 }
@@ -46,7 +46,7 @@ fn nx_body_writing_face_blend_retains_unresolved_face_blend_family() {
 
     assert_eq!(
         definition,
-        Some(FeatureDefinition::FaceBlend {
+        Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved
@@ -54,7 +54,7 @@ fn nx_body_writing_face_blend_retains_unresolved_face_blend_family() {
             .unwrap(),
 
             radius: RadiusSpec::Unresolved { form: None },
-        })
+        }))
     );
     assert_eq!(definition.unwrap().body_output_family(), Some("face blend"));
 }

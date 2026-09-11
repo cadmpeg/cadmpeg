@@ -46,8 +46,8 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 #[test]
 fn typed_reference_walk_treats_historical_members_as_state_local() {
     use crate::features::{
-        EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FilletGroup,
-        RadiusSpec,
+        EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
+        FeatureOperation, FilletGroup, RadiusSpec,
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
@@ -78,7 +78,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Fillet {
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: crate::features::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::historical(
                         state_id.clone(),
@@ -91,7 +91,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                     },
                     tangency_weight: None,
                 }),
-            },
+            }),
         ),
         native_ref: None,
     };
@@ -114,7 +114,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let missing = "test:model:historical-edge#missing";
     ir.model.features[0].evaluation.edit(|definition, _| {
-        let FeatureDefinition::Fillet { groups } = definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
             unreachable!("test feature is a fillet")
         };
         let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {

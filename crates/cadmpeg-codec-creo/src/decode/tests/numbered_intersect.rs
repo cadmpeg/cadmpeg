@@ -41,8 +41,9 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::{
     features::{
         EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
-        FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, GeneratedEdgeRef,
-        GeneratedFaceRef, LinearTermination, RadiusSpec, RevolutionAxis,
+        FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+        FeatureOperation as IrFeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
+        LinearTermination, RadiusSpec, RevolutionAxis,
     },
     scalar::{Angle, Length},
 };
@@ -867,7 +868,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
 fn generated_face_dependencies_follow_the_producer_feature() {
     let producer =
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
-    let definition = IrFeatureDefinition::Thicken {
+    let definition = IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
         faces: FaceSelection::generated(
             vec![
                 GeneratedFaceRef::new(producer.clone(), "surface#98".to_string())
@@ -878,7 +879,7 @@ fn generated_face_dependencies_follow_the_producer_feature() {
         .expect("valid test fixture"),
         thickness: None,
         side: None,
-    };
+    });
     assert_eq!(feature_generated_dependencies(&definition), vec![producer]);
 }
 
@@ -894,25 +895,25 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
         "creo:allfeatur:fillet#9".to_string(),
     )
     .expect("valid test fixture");
-    let fillet = IrFeatureDefinition::Fillet {
+    let fillet = IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: generated_edges.clone(),
             radius: RadiusSpec::Unresolved { form: None },
             tangency_weight: None,
         }),
-    };
+    });
     assert_eq!(
         feature_generated_dependencies(&fillet),
         vec![producer.clone()]
     );
 
-    let chamfer = IrFeatureDefinition::Chamfer {
+    let chamfer = IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: generated_edges,
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
         }),
         flip_direction: false,
-    };
+    });
     assert_eq!(feature_generated_dependencies(&chamfer), vec![producer]);
 }
 
@@ -1086,10 +1087,10 @@ fn mixed_current_and_generated_edges_remain_native() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            IrFeatureDefinition::Native {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                 kind: "producer".into(),
                 parameters: std::collections::BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     });

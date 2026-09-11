@@ -77,7 +77,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         .expect("delete-body feature");
     assert!(matches!(
         delete_feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode }
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode })
             if bodies == &cadmpeg_ir::features::BodySelection::local(vec!["287".into(), "115".into()], "sldprt:feature-input:body-ids:287,115".into()).unwrap() && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
     ));
     crate::test_support::plan_inherited_write(
@@ -124,7 +124,9 @@ fn decode_and_validate_compact_delete_body_selection() {
                 .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
                 .expect("delete-body feature");
             delete_feature.evaluation.edit(|definition, _| {
-                let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } = definition
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, .. },
+                ) = definition
                 else {
                     panic!("typed delete-body feature");
                 };
@@ -154,8 +156,9 @@ fn decode_and_validate_compact_delete_body_selection() {
                 .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
                 .expect("delete-body feature");
             delete_feature.evaluation.edit(|definition, _| {
-                let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode } =
-                    definition
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode },
+                ) = definition
                 else {
                     unreachable!("typed delete-body feature");
                 };

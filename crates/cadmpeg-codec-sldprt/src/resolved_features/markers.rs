@@ -27,7 +27,7 @@ use crate::records::{
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
@@ -65,12 +65,12 @@ pub(crate) fn spatial_sketches(
     for feature in model_features {
         let declared_spatial = matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::SpatialSketch { .. }
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { .. })
         );
         if !declared_spatial
             && !matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch { .. }
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
             )
         {
             continue;
@@ -237,9 +237,11 @@ pub(crate) fn spatial_sketches(
             ));
             feature
                 .evaluation
-                .set_definition(FeatureDefinition::SpatialSketch {
-                    sketch: Some(sketch_id),
-                });
+                .set_definition(FeatureDefinition::Operation(
+                    FeatureOperation::SpatialSketch {
+                        sketch: Some(sketch_id),
+                    },
+                ));
             continue;
         }
         if !declared_spatial {
@@ -317,9 +319,11 @@ pub(crate) fn spatial_sketches(
         entities.extend(projected);
         feature
             .evaluation
-            .set_definition(FeatureDefinition::SpatialSketch {
-                sketch: Some(sketch_id),
-            });
+            .set_definition(FeatureDefinition::Operation(
+                FeatureOperation::SpatialSketch {
+                    sketch: Some(sketch_id),
+                },
+            ));
     }
     Ok((sketches, entities))
 }

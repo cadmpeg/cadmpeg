@@ -6,8 +6,8 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
     features::{
         AxisAngle, BodyRetentionMode, BodySelection, ChamferSpec, EdgeSelection, FaceMotion,
-        FaceSelection, FeatureDefinition, FlexForm, FlexMode, RadiusSpec, ScaleCenter,
-        ScaleFactors, VariableRadius,
+        FaceSelection, FeatureDefinition, FeatureOperation, FlexForm, FlexMode, RadiusSpec,
+        ScaleCenter, ScaleFactors, VariableRadius,
     },
     scalar::{Angle, Length},
 };
@@ -103,7 +103,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                 |points| RadiusSpec::Variable { points },
             )
     };
-    FeatureDefinition::Fillet {
+    FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: feature
                 .properties
@@ -113,7 +113,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
             radius,
             tangency_weight: None,
         }),
-    }
+    })
 }
 
 pub(crate) fn fillet_radius_parameter_has_native_display(
@@ -156,7 +156,7 @@ pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Outward")
         .and_then(|value| parse_bool(value));
-    FeatureDefinition::Shell {
+    FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
         removed_faces: feature
             .properties
@@ -169,7 +169,7 @@ pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
         join: None,
         resolve_intersections: None,
         allow_self_intersections: None,
-    }
+    })
 }
 
 pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
@@ -200,7 +200,7 @@ pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
         (Some(Some(false)), _) | (_, Some(Some(false))) => Some(ThickenSide::Forward),
         (None, None) => Some(ThickenSide::Forward),
     };
-    FeatureDefinition::Thicken {
+    FeatureDefinition::Operation(FeatureOperation::Thicken {
         faces: feature
             .properties
             .get("Faces")
@@ -208,7 +208,7 @@ pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness: thickness.and_then(cadmpeg_ir::scalar::PositiveLength::new),
         side,
-    }
+    })
 }
 
 pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
@@ -230,7 +230,7 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
         plane: neutral_plane,
         pull,
     };
-    FeatureDefinition::Draft {
+    FeatureDefinition::Operation(FeatureOperation::Draft {
         faces: feature
             .properties
             .get("Faces")
@@ -247,7 +247,7 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Outward")
             .and_then(|value| parse_bool(value)),
-    }
+    })
 }
 
 pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
@@ -257,7 +257,7 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         .and_then(|value| parse_boolean_op(value))?
         .try_into()
         .ok()?;
-    Some(FeatureDefinition::Combine {
+    Some(FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             feature
                 .properties
@@ -274,7 +274,7 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
 
         op,
         keep_tools: false,
-    })
+    }))
 }
 
 pub(crate) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
@@ -299,7 +299,7 @@ pub(crate) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode
 }
 
 pub(crate) fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::CutWithSurface {
+    FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets: feature
             .properties
             .get("Targets")
@@ -314,35 +314,37 @@ pub(crate) fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Reverse")
             .and_then(|value| parse_bool(value)),
-    }
+    })
 }
 
 pub(crate) fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::DeleteBody {
+    Some(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: feature
             .properties
             .get("Bodies")
             .cloned()
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         mode: body_retention_mode(feature)?,
-    })
+    }))
 }
 
 pub(crate) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::DeleteFace {
+    Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         heal: parse_bool(feature.properties.get("Heal")?)?,
-    })
+    }))
 }
 
 pub(crate) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::ReplaceFace {
-        operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
-            FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-            FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
-        )
-        .ok()?,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::ReplaceFace {
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+                FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
+            )
+            .ok()?,
+        },
+    ))
 }
 
 pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
@@ -385,14 +387,14 @@ pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
         },
         _ => return None,
     };
-    Some(FeatureDefinition::MoveFace {
+    Some(FeatureDefinition::Operation(FeatureOperation::MoveFace {
         faces: feature
             .properties
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         motion,
-    })
+    }))
 }
 
 pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
@@ -419,16 +421,16 @@ pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
         .properties
         .get("Copies")
         .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
-    Some(FeatureDefinition::MoveBody {
+    Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies,
         translation: cadmpeg_ir::features::FiniteVector3::new(translation)?,
         rotation,
         copies,
-    })
+    }))
 }
 
 pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::Dome {
+    FeatureDefinition::Operation(FeatureOperation::Dome {
         faces: feature
             .properties
             .get("Faces")
@@ -448,7 +450,7 @@ pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Reverse")
             .and_then(|value| parse_bool(value)),
-    }
+    })
 }
 
 pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
@@ -491,7 +493,7 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
         (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
         (form, _, _, _) => FlexMode::Unresolved(form),
     };
-    FeatureDefinition::Flex { axis, mode }
+    FeatureDefinition::Operation(FeatureOperation::Flex { axis, mode })
 }
 
 pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
@@ -529,7 +531,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
         (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis([x, y, z]),
         _ => ScaleFactors::Unresolved,
     };
-    FeatureDefinition::Scale {
+    FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies: feature
             .properties
             .get("Bodies")
@@ -537,7 +539,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         center,
         factors,
-    }
+    })
 }
 
 pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
@@ -634,7 +636,7 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             ChamferSpec::Unresolved { form: None }
         }
     });
-    FeatureDefinition::Chamfer {
+    FeatureDefinition::Operation(FeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: feature
                 .properties
@@ -644,5 +646,5 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             spec,
         }),
         flip_direction: false,
-    }
+    })
 }

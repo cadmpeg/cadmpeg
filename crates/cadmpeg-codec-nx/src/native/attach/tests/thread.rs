@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_body_writing_thread_labels_retain_distinct_unresolved_families() {
@@ -15,15 +15,15 @@ fn nx_body_writing_thread_labels_retain_distinct_unresolved_families() {
 
     assert_eq!(
         threads,
-        Some(FeatureDefinition::Unresolved {
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Thread
-        })
+        }))
     );
     assert_eq!(
         detailed,
-        Some(FeatureDefinition::Unresolved {
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DetailedThread
-        })
+        }))
     );
 }
 

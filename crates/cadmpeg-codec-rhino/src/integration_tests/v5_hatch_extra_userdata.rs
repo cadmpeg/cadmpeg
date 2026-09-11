@@ -82,9 +82,11 @@ fn hatch_parameters(
         .features
         .iter()
         .find_map(|feature| match feature.evaluation.definition() {
-            cadmpeg_ir::features::FeatureDefinition::Native {
-                kind, parameters, ..
-            } if kind.as_str() == "hatch" => Some(parameters),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native {
+                    kind, parameters, ..
+                },
+            ) if kind.as_str() == "hatch" => Some(parameters),
             _ => None,
         })
         .expect("typed hatch feature")

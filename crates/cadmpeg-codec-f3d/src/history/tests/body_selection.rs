@@ -14,7 +14,9 @@ fn move_body_selection_uses_unique_owning_history() {
         AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
         AsmHistoricalTransition, AsmHistory,
     };
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -122,7 +124,7 @@ fn move_body_selection_uses_unique_owning_history() {
     let mut feature = Feature::new(
         FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         0,
-        FeatureDefinition::MoveBody {
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
             translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
                 1.0, 2.0, 3.0,
@@ -130,7 +132,7 @@ fn move_body_selection_uses_unique_owning_history() {
             .unwrap(),
             rotation: None,
             copies: 0,
-        },
+        }),
     );
     feature.native_ref = Some(scope.id.clone());
     let inputs = FeatureBodySelectionInputs {
@@ -150,9 +152,9 @@ fn move_body_selection_uses_unique_owning_history() {
         crate::ids::history_input_body_id(&crate::ids::history_input_prefix("move", 41), 1);
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::MoveBody {
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Historical { ref bodies, ref native, .. },
             ..
-        } if bodies.as_slice() == [expected_body] && native.as_str() == group_id
+        }) if bodies.as_slice() == [expected_body] && native.as_str() == group_id
     ));
 }

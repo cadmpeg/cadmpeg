@@ -27,8 +27,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
     ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
-    SurfaceBoundary, ThickenSide, UnresolvedFamily,
+    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, LinearTermination, PathRef,
+    PlanarProfileRef, ProfileRef, SurfaceBoundary, ThickenSide, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
@@ -475,12 +475,12 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             "Surface"
         )
         .expect("valid test fixture"),
-        IrFeatureDefinition::Extrude {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        }
+        })
     ));
 
     scan.features.reference_names[0].name_bytes = b"Boundary Blend 1".to_vec();
@@ -499,9 +499,9 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             "Surface"
         )
         .expect("valid test fixture"),
-        IrFeatureDefinition::Unresolved {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::BoundarySurface
-        }
+        })
     ));
 }
 
@@ -530,7 +530,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
 
     assert!(matches!(
         schema_feature_definition(&scan, &CadIr::empty(), 942, Some(SchemaClass::Surface), "Surface").expect("valid test fixture"),
-        IrFeatureDefinition::Native { kind, .. } if kind.as_str() == "Surface"
+        IrFeatureDefinition::Operation(IrFeatureOperation::Native { kind, .. }) if kind.as_str() == "Surface"
     ));
 }
 
@@ -625,7 +625,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
 
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 942, Some(SchemaClass::Surface), "Surface").expect("valid test fixture"),
-        IrFeatureDefinition::Extrude {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 ..
@@ -641,7 +641,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        } if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.get() == 6.0
+        }) if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.get() == 6.0
     ));
 }
 
@@ -654,27 +654,33 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
     assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
     assert!(matches!(
         reference_named_feature_definition("Boundary Blend 1"),
-        Some(IrFeatureDefinition::Unresolved {
-            family: UnresolvedFamily::BoundarySurface
-        })
+        Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Unresolved {
+                family: UnresolvedFamily::BoundarySurface
+            }
+        ))
     ));
     assert!(matches!(
         reference_named_feature_definition("Thicken 1"),
-        Some(IrFeatureDefinition::Thicken {
-            faces: FaceSelection::Unresolved,
-            thickness: None,
-            side: None,
-        })
+        Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Thicken {
+                faces: FaceSelection::Unresolved,
+                thickness: None,
+                side: None,
+            }
+        ))
     ));
     assert!(reference_named_feature_definition("Fill 1").is_none());
     assert!(matches!(
         reference_named_feature_definition("Merge 2"),
-        Some(IrFeatureDefinition::KnitSurface {
-            faces: FaceSelection::Unresolved,
-            merge_entities: Some(true),
-            create_solid: Some(false),
-            gap_tolerance: None,
-        })
+        Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::KnitSurface {
+                faces: FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            }
+        ))
     ));
     assert!(reference_named_feature_definition("Extrude 2").is_none());
 }
@@ -1004,10 +1010,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
             named_feature_definition(&scan, &ir, 822, kind),
-            Some(IrFeatureDefinition::Revolve {
+            Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
                 ref construction,
                 op: BooleanOp::Unresolved,
-            }) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
+            })) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
                 if profile == "creo:featdefs:sketch#822")
                 && construction.axis().is_none()
                 && construction.extent().is_none()
@@ -1022,10 +1028,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         });
     assert!(matches!(
         named_feature_definition(&scan, &ir, 822, "Revolve"),
-        Some(IrFeatureDefinition::Revolve {
+        Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
             ref construction,
             ..
-        }) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+        })) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
                 }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
@@ -1042,10 +1048,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     });
     assert!(matches!(
         filled_surface_feature_definition(&scan, &ir, 822),
-        IrFeatureDefinition::FilledSurface {
+        IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
             ..
-        } if boundary == sketch
+        }) if boundary == sketch
     ));
 
     scan.features
@@ -1053,10 +1059,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         .push(scan.features.definitions[0].clone());
     assert!(matches!(
         filled_surface_feature_definition(&scan, &ir, 822),
-        IrFeatureDefinition::FilledSurface {
+        IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             ..
-        }
+        })
     ));
 }
 
@@ -1111,7 +1117,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
-    let IrFeatureDefinition::Extrude {
+    let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         direction: ExtrudeDirection::Explicit {
             vector: direction, ..
         },
@@ -1124,7 +1130,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
                     },
             },
         ..
-    } = named_feature_definition(&scan, &ir, 7, "Protrusion").expect("named sweep")
+    }) = named_feature_definition(&scan, &ir, 7, "Protrusion").expect("named sweep")
     else {
         panic!("named sweep did not resolve the cap extent");
     };
@@ -1317,26 +1323,26 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
             .expect("valid test fixture"),
-        IrFeatureDefinition::DatumPlane {
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0)
             )
             .expect("valid test fixture"),
-        }
+        })
     );
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, None, "Native Feature")
             .expect("valid test fixture"),
-        IrFeatureDefinition::DatumPlane {
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0)
             )
             .expect("valid test fixture"),
-        }
+        })
     );
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -1351,14 +1357,14 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
             .expect("valid test fixture"),
-        IrFeatureDefinition::Unresolved {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     );
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, None, "Native Feature")
             .expect("valid test fixture"),
-        IrFeatureDefinition::Native { .. }
+        IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ));
 }
 
@@ -1391,14 +1397,14 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
             "Datum Plane",
         )
         .expect("valid test fixture"),
-        IrFeatureDefinition::DatumPlane {
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0)
             )
             .expect("valid test fixture"),
-        }
+        })
     );
 }
 
@@ -1451,14 +1457,14 @@ fn datum_feature_uses_its_unique_complete_local_system() {
             "Datum Plane"
         )
         .expect("valid test fixture"),
-        IrFeatureDefinition::DatumPlane {
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(3.0, 4.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
             .expect("valid test fixture"),
-        }
+        })
     );
 }
 
@@ -1511,7 +1517,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
             "PRT_CSYS_DEF"
         )
         .expect("valid test fixture"),
-        IrFeatureDefinition::DatumCoordinateSystem {
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumCoordinateSystem {
             frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
                 Point3::new(5.0, 6.0, 7.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -1519,7 +1525,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
                 Vector3::new(0.0, 0.0, 1.0)
             )
             .expect("valid test fixture")
-        }
+        })
     );
 }
 
@@ -1562,9 +1568,9 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
             "PRT_CSYS_DEF"
         )
         .expect("valid test fixture"),
-        IrFeatureDefinition::Unresolved {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem
-        }
+        })
     );
 }
 
@@ -1586,7 +1592,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     };
     let mut ir = CadIr::empty();
     ir.model.features.push(feature(
-        IrFeatureDefinition::Chamfer {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
@@ -1594,7 +1600,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
                 },
             ),
             flip_direction: false,
-        },
+        }),
         Vec::new(),
     ));
     assert!(!preceding_features_establish_body(&ir));
@@ -1607,7 +1613,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     assert!(preceding_features_establish_body(&ir));
 
     ir.model.features[0] = feature(
-        IrFeatureDefinition::Extrude {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Native("creo:section#1".to_string())),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
@@ -1626,7 +1632,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        },
+        }),
         Vec::new(),
     );
     assert!(preceding_features_establish_body(&ir));
@@ -1634,7 +1640,8 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     assert!(!preceding_features_establish_body(&ir));
     ir.model.features[0].suppressed = Some(false);
     ir.model.features[0].evaluation.edit(|definition, _| {
-        let IrFeatureDefinition::Extrude { op, .. } = definition else {
+        let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, .. }) = definition
+        else {
             unreachable!();
         };
         *op = BooleanOp::Join;

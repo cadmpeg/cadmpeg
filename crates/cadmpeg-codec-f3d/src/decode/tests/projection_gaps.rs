@@ -454,7 +454,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("lost-reference construction group"),
     );
     ir.model.features[2].evaluation.edit(|definition, _| {
-        let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+        ) = definition
+        else {
             unreachable!();
         };
         groups[2].edges =

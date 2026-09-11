@@ -51,7 +51,9 @@ use crate::decode::sketch_transfer::profiles::{
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
-use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::{
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchConstraint, SketchEntity, SketchGeometry};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -884,11 +886,11 @@ pub(in super::super) fn transfer_sketches(
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                    IrFeatureDefinition::Sketch {
+                    IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                             sketch_id.clone(),
                         )),
-                    },
+                    }),
                 ),
                 native_ref: Some(sketch_native_ref(&sketch_id)),
             });

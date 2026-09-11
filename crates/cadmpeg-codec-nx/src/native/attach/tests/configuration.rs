@@ -462,10 +462,10 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::TreeNode {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
-                },
+                }),
                 outputs,
             ),
             native_ref: None,
@@ -548,10 +548,10 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::TreeNode {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            },
+            }),
             outputs,
         ),
         native_ref: None,
@@ -621,10 +621,10 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::TreeNode {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            },
+            }),
             vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         ),
         native_ref: None,
@@ -937,13 +937,15 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             parameters,
         )
         .unwrap(),
-        cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: "UNKNOWN OPERATION".into(),
-            parameters: std::collections::BTreeMap::from([
-                ("p1_length".to_string(), "p2_length * 2".to_string()),
-                ("p2_length".to_string(), "12.5".to_string()),
-            ]),
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: "UNKNOWN OPERATION".into(),
+                parameters: std::collections::BTreeMap::from([
+                    ("p1_length".to_string(), "p2_length * 2".to_string()),
+                    ("p2_length".to_string(), "12.5".to_string()),
+                ]),
+            }
+        )
     );
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(
@@ -954,7 +956,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             super::HoleProjection::default(),
             std::collections::BTreeMap::default(),
         ).unwrap(),
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind.as_str() == "DELETE"
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "DELETE"
     ));
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(
@@ -966,9 +968,11 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             std::collections::BTreeMap::new(),
         )
         .unwrap(),
-        cadmpeg_ir::features::FeatureDefinition::Unresolved {
-            family: cadmpeg_ir::features::UnresolvedFamily::Loft
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::Loft
+            }
+        )
     ));
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(
@@ -978,12 +982,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             super::HoleProjection::default(),
             std::collections::BTreeMap::new(),
-        ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Sweep {
+        ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             path: None,
 
             ..
-        } if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), cadmpeg_ir::features::SweepMode::Unresolved {},))));
+        }) if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), cadmpeg_ir::features::SweepMode::Unresolved {},))));
     let duplicate_expressions = vec![
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
@@ -1007,11 +1011,11 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
                 None,
                 super::HoleProjection::default(),
                 std::collections::BTreeMap::default(),
-            ).unwrap(), cadmpeg_ir::features::FeatureDefinition::SectionShape {
+            ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::SectionShape {
                 operands,
 
                 approximate: None,
-            } if matches!((operands.first(), operands.second(),), (cadmpeg_ir::features::BodySelection::Unresolved, cadmpeg_ir::features::BodySelection::Unresolved,))));
+            }) if matches!((operands.first(), operands.second(),), (cadmpeg_ir::features::BodySelection::Unresolved, cadmpeg_ir::features::BodySelection::Unresolved,))));
     }
 }
 
@@ -1026,10 +1030,10 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
                 super::HoleProjection::default(),
                 std::collections::BTreeMap::default(),
             ).unwrap()),
-            cadmpeg_ir::features::FeatureDefinition::Pattern {
+            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
                 seeds,
                 pattern: admitted_pattern,
-            } if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved { form: None } if seeds.is_empty())
+            }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved { form: None } if seeds.is_empty())
         )
     );
 }
@@ -1073,11 +1077,11 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
 
 #[test]
 fn boolean_target_output_requires_one_resolved_segment_body() {
-    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     let body = BodyId::mint("nx:s0:body#0").expect("identity grammar");
-    let definition = FeatureDefinition::Combine {
+    let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Resolved {
                 bodies: vec![body.clone()],
@@ -1089,10 +1093,10 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
         op: BooleanKind::Join,
         keep_tools: false,
-    };
+    });
     assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
 
-    let ambiguous = FeatureDefinition::Combine {
+    let ambiguous = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Unresolved,
             BodySelection::Unresolved,
@@ -1101,13 +1105,13 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
         op: BooleanKind::Join,
         keep_tools: false,
-    };
+    });
     assert!(super::boolean_target_output(Some(&ambiguous)).is_none());
 }
 
 #[test]
 fn topology_inferred_hole_axis_is_not_an_authored_direction() {
-    use cadmpeg_ir::features::{FeatureDefinition, HolePlacement};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HolePlacement};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     for kind in ["SIMPLE HOLE", "HOLE PACKAGE"] {
@@ -1126,10 +1130,10 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 },
                 std::collections::BTreeMap::new(),
             ).unwrap(),
-            FeatureDefinition::Hole {
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
                 ..
-            } if placements.as_deref() == Some(&[HolePlacement::Axis {
+            }) if placements.as_deref() == Some(&[HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
                 axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             }][..])
@@ -1140,8 +1144,8 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 #[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
     assert_eq!(
@@ -1151,7 +1155,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             BooleanOp::NewBody,
             &[cadmpeg_ir::topology::BodyKind::Solid],
         ),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             extent: ExtrudeExtent::OneSided {
@@ -1167,7 +1171,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        }
+        })
     );
     assert!(matches!(
         super::extrude_feature_definition(
@@ -1176,11 +1180,11 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             BooleanOp::Unresolved,
             &[cadmpeg_ir::topology::BodyKind::Sheet],
         ),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             solid: Some(false),
             ..
-        }
+        })
     ));
     assert!(matches!(
         super::extrude_feature_definition(
@@ -1192,11 +1196,11 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
                 cadmpeg_ir::topology::BodyKind::Sheet,
             ],
         ),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             solid: None,
             ..
-        }
+        })
     ));
 }
 

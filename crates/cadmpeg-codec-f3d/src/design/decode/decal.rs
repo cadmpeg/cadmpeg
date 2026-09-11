@@ -17,7 +17,9 @@ use crate::records::{DesignDecalAsset, DesignDecalImage};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
-use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
+use cadmpeg_ir::features::{
+    DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureOperation,
+};
 
 const DECAL_TARGET_ROLE: crate::records::topology::DesignOperandRole =
     crate::records::topology::DesignOperandRole::BODIES_A;
@@ -107,15 +109,17 @@ pub fn project_decal_images(
         else {
             continue;
         };
-        feature.evaluation.set_definition(FeatureDefinition::Decal {
-            asset: asset.id.clone(),
-            faces: FaceSelection::Resolved {
-                faces,
-                native: operand.id.clone(),
-            },
-            mapping: DecalMapping::FitToFaces,
-            opacity: None,
-        });
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
+                asset: asset.id.clone(),
+                faces: FaceSelection::Resolved {
+                    faces,
+                    native: operand.id.clone(),
+                },
+                mapping: DecalMapping::FitToFaces,
+                opacity: None,
+            }));
         assets.push(asset);
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));

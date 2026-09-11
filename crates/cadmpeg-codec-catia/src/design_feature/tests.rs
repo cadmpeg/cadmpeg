@@ -55,7 +55,7 @@ fn feature(id: &str, native_ref: &str) -> Feature {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::StoredGeometry {},
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: Some(native_ref.to_string()),
     }
@@ -485,15 +485,15 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     );
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Extrude
-        }
+        })
     ));
     assert!(matches!(
         ir.model.features[1].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Fillet
-        }
+        })
     ));
     assert!(ir
         .model
@@ -613,21 +613,22 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
                     feature.evaluation.definition(),
-                    FeatureDefinition::Unresolved {
+                    FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Extrude
-                    }
+                    })
                 ));
             }
             Some("Revol_ThickThin1") => {
                 assert!(matches!(
                     feature.evaluation.definition(),
-                    FeatureDefinition::Unresolved {
+                    FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Revolve
-                    }
+                    })
                 ));
             }
             Some("Sweep_ThickThin1") => {
-                let FeatureDefinition::Sweep { shape, path, .. } = feature.evaluation.definition()
+                let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) =
+                    feature.evaluation.definition()
                 else {
                     panic!("expected a typed unresolved sweep");
                 };
@@ -649,13 +650,14 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             Some("EdgeFillet") => {
                 assert!(matches!(
                     feature.evaluation.definition(),
-                    FeatureDefinition::Unresolved {
+                    FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Fillet
-                    }
+                    })
                 ));
             }
             Some("CircPattern_RadialNumber") => {
-                let FeatureDefinition::Pattern { seeds, pattern } = feature.evaluation.definition()
+                let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                    feature.evaluation.definition()
                 else {
                     panic!("expected a typed unresolved circular pattern");
                 };
@@ -913,10 +915,10 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Prism_ThickThin1".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: Some("native-feature".to_string()),
     });
@@ -943,7 +945,8 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     )
     .unwrap();
 
-    let FeatureDefinition::Native { parameters, .. } = ir.model.features[0].evaluation.definition()
+    let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
+        ir.model.features[0].evaluation.definition()
     else {
         panic!("expected an opaque native operation");
     };
@@ -971,10 +974,10 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_CIRCULAR,
-            },
+            }),
         ),
         native_ref: Some("pattern-feature".to_string()),
     });
@@ -1235,9 +1238,11 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
+            }
+        )
     ));
     assert!(ir.model.sketches[0].profiles.is_empty());
     assert_eq!(
@@ -1434,7 +1439,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
 
 #[test]
 fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
-    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrincipalPlane};
 
     for (class, plane) in [
         ("xy-plane", PrincipalPlane::Top),
@@ -1466,7 +1471,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         assert_eq!(ir.model.features.len(), 1);
         assert_eq!(
             ir.model.features[0].evaluation.definition(),
-            &FeatureDefinition::DatumPrincipalPlane { plane }
+            &FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane })
         );
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class));
         assert_eq!(

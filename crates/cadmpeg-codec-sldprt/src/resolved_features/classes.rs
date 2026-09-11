@@ -22,7 +22,7 @@ use crate::records::FeatureInputClass;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 #[cfg(test)]
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, LinearTermination};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, LinearTermination};
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -761,9 +761,9 @@ mod idless_history_binding_tests {
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Sketch {
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                    },
+                    }),
                 ),
                 native_ref: Some("profile-native".into()),
             },
@@ -780,7 +780,7 @@ mod idless_history_binding_tests {
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Extrude {
+                    FeatureDefinition::Operation(FeatureOperation::Extrude {
                         profile: cadmpeg_ir::features::ProfileRef::Planar(
                             cadmpeg_ir::features::PlanarProfileRef::Unresolved(
                                 "extrusion-native".into(),
@@ -802,7 +802,7 @@ mod idless_history_binding_tests {
                         inner_wire_taper: None,
                         length_along_profile_normal: None,
                         allow_multi_profile_faces: None,
-                    },
+                    }),
                 ),
                 native_ref: Some("extrusion-native".into()),
             },
@@ -817,10 +817,10 @@ mod idless_history_binding_tests {
 
         assert!(matches!(
             features[1].evaluation.definition(),
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(actual)),
                 ..
-            } if actual == &profile_id
+            }) if actual == &profile_id
         ));
         assert_eq!(features[1].dependencies.as_slice(), [profile_id]);
     }

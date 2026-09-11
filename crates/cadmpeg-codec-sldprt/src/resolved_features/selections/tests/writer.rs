@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_rejects_compact_edge_selection_edits() {
-    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -74,7 +74,8 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
             .find(|feature| feature.name.as_deref() == Some("Round"))
             .unwrap();
         feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Fillet { groups } = definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition
+            else {
                 panic!("typed fillet");
             };
             groups[0].edges = EdgeSelection::Native("changed".into());
@@ -98,7 +99,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 #[test]
 fn semantic_writer_rejects_compact_surface_selection_edits() {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, FaceSelection, FeatureDefinition, LinearTermination,
+        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -174,10 +175,10 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             .unwrap();
         let updated_feature_evaluation = &mut feature.evaluation;
         let mut updated_feature_definition = updated_feature_evaluation.definition().clone();
-        let FeatureDefinition::Extrude {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
-        } = &mut updated_feature_definition
+        }) = &mut updated_feature_definition
         else {
             panic!("typed extrusion");
         };

@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_fixed_reference_plane_frame() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plano", 42)]);
@@ -50,7 +50,7 @@ fn decode_projects_fixed_reference_plane_frame() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::DatumPlane { frame } if matches!(frame.origin(),  Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin(),  Point3 {
                 x: 2500.0,
                 y: -250.0,
                 z: 1500.0,
@@ -68,7 +68,7 @@ fn decode_projects_fixed_reference_plane_frame() {
 
 #[test]
 fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
-    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plane", 42)]);
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
@@ -97,15 +97,15 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     ));
 }
 
 #[test]
 fn incomplete_coordinate_system_projects_as_typed_unresolved() {
-    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -119,8 +119,8 @@ fn incomplete_coordinate_system_projects_as_typed_unresolved() {
 
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem
-        }
+        })
     ));
 }

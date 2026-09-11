@@ -13,7 +13,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, LinearTermination};
+use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::WritePath;
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
@@ -322,10 +322,10 @@ fn visit_blind_extrude_lengths(
     mut visit: impl FnMut(&mut cadmpeg_ir::scalar::NonZeroLength),
 ) -> usize {
     fn depth(definition: &mut FeatureDefinition) -> Option<&mut cadmpeg_ir::scalar::NonZeroLength> {
-        let FeatureDefinition::Extrude {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
-        } = definition
+        }) = definition
         else {
             return None;
         };

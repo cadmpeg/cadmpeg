@@ -32,11 +32,11 @@ use cadmpeg_ir::{
         ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
         EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
-        FeatureDefinition, FeatureId, FeatureResultTopology, FeatureSourceContent,
-        FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement, LinearTermination, ParameterId,
-        ParameterValue, PathRef, PatternKind, PlanarProfileRef, ProfileRef, RadiusSpec,
-        RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TreeChildren, TrimRegion,
-        UnresolvedFamily,
+        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
+        FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement,
+        LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind, PlanarProfileRef,
+        ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, ThickenSide,
+        TreeChildren, TrimRegion, UnresolvedFamily,
     },
     scalar::{Angle, Length},
 };
@@ -1148,12 +1148,12 @@ fn attach_initial_segment_bodies(
         source_content: FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
                     bodies: outputs.clone(),
                     native: "nx:segment-body-bindings".to_string(),
                 },
-            },
+            }),
             outputs.clone(),
         ),
         native_ref: None,
@@ -2027,7 +2027,7 @@ fn attach_feature_operations(
         if let (
             Some(operation),
             Some(resolution),
-            Some(FeatureDefinition::Combine { operands, .. }),
+            Some(FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })),
         ) = (
             booleans.get(label.id.as_str()),
             boolean_offset_store_resolution.as_ref(),
@@ -3369,9 +3369,9 @@ fn attach_feature_operations(
                     .evaluation
                     .edit(|definition, initial_outputs| {
                         initial_outputs.retain(|body| !outputs.contains(body));
-                        if let FeatureDefinition::BaseFeature {
+                        if let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                             bodies: BodySelection::Resolved { bodies, .. },
-                        } = definition
+                        }) = definition
                         {
                             bodies.retain(|body| !outputs.contains(body));
                         }
@@ -3388,11 +3388,13 @@ fn attach_feature_operations(
         );
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
-            (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Sphere {
-                center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
-                radius: cadmpeg_ir::scalar::PositiveLength::new(radius.get())?,
-                op: sphere_op,
-            })
+            (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
+                FeatureOperation::Sphere {
+                    center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius.get())?,
+                    op: sphere_op,
+                },
+            ))
         });
         let sew_projection = (label.value == "SEW")
             .then(|| {
@@ -3584,9 +3586,9 @@ fn attach_feature_operations(
             }) {
             definition
         } else if let Some(sketch) = sketch {
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            }
+            })
         } else {
             let mut definition = if let Some(definition) = non_modeling_history_definition(
                 &label.value,
@@ -3646,7 +3648,9 @@ fn attach_feature_operations(
                     native_parameters,
                 )?
             };
-            if let FeatureDefinition::Block { op, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::Block { op, .. }) =
+                &mut definition
+            {
                 *op = block_op;
             }
             definition
@@ -5121,7 +5125,7 @@ fn extrude_feature_definition(
         }
         _ => None,
     };
-    FeatureDefinition::Extrude {
+    FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
         start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
@@ -5137,7 +5141,7 @@ fn extrude_feature_definition(
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    }
+    })
 }
 
 fn extrude_boolean_op(
@@ -5351,7 +5355,7 @@ fn blend_feature_definition(
                     );
                     match (&first_faces, &second_faces) {
                         (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                            Some(FeatureDefinition::FaceBlend {
+                            Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
                                 operands: cadmpeg_ir::features::FaceBlendOperands::new(
                                     first_faces,
                                     second_faces,
@@ -5359,7 +5363,7 @@ fn blend_feature_definition(
                                 .ok()?,
 
                                 radius: radius.clone(),
-                            })
+                            }))
                         }
                         _ => None,
                     }
@@ -5367,14 +5371,14 @@ fn blend_feature_definition(
         })
         .flatten();
     let unresolved = match family {
-        NxBlendFamily::Edge => FeatureDefinition::Fillet {
+        NxBlendFamily::Edge => FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius,
                 tangency_weight: None,
             }),
-        },
-        NxBlendFamily::Face => FeatureDefinition::FaceBlend {
+        }),
+        NxBlendFamily::Face => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved,
@@ -5382,7 +5386,7 @@ fn blend_feature_definition(
             .ok()?,
 
             radius,
-        },
+        }),
     };
     Some((face_blend.unwrap_or(unresolved), surfaces))
 }
@@ -5463,10 +5467,10 @@ fn offset_surface_feature_definition(
             Sense::Reversed => -distance,
         });
     Some((
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces,
             distance: distance.and_then(Length::new),
-        },
+        }),
         supports,
     ))
 }
@@ -5534,11 +5538,11 @@ fn thicken_feature_definition(
             .map(|sense| thicken_side(distance, sense)),
     };
     Some((
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(thickness)?),
             side,
-        },
+        }),
         supports,
     ))
 }
@@ -6015,23 +6019,23 @@ fn body_writing_unresolved_feature_definition(
         return None;
     }
     match kind {
-        "BREP" => Some(FeatureDefinition::Unresolved {
+        "BREP" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Brep,
-        }),
-        "CONE" => Some(FeatureDefinition::Unresolved {
+        })),
+        "CONE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Cone,
-        }),
-        "SPHERE" => Some(FeatureDefinition::Unresolved {
+        })),
+        "SPHERE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Sphere,
-        }),
-        "BLEND" => Some(FeatureDefinition::Fillet {
+        })),
+        "BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
-        }),
-        "FACE_BLEND" => Some(FeatureDefinition::FaceBlend {
+        })),
+        "FACE_BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved,
@@ -6039,25 +6043,27 @@ fn body_writing_unresolved_feature_definition(
             .ok()?,
 
             radius: RadiusSpec::Unresolved { form: None },
-        }),
-        "DELETE FACE" => Some(FeatureDefinition::Unresolved {
+        })),
+        "DELETE FACE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DeleteFace,
-        }),
-        "MIRROR_FACE" => Some(FeatureDefinition::Unresolved {
+        })),
+        "MIRROR_FACE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::MirrorFace,
-        }),
-        "SUBDIVISION_BODY" => Some(FeatureDefinition::Unresolved {
+        })),
+        "SUBDIVISION_BODY" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::SubdivisionBody,
-        }),
-        "TOPOLOGY_OPTIMIZATION" => Some(FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::TopologyOptimization,
-        }),
-        "THREADS" => Some(FeatureDefinition::Unresolved {
+        })),
+        "TOPOLOGY_OPTIMIZATION" => {
+            Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::TopologyOptimization,
+            }))
+        }
+        "THREADS" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Thread,
-        }),
-        "DETAILED_THREAD" => Some(FeatureDefinition::Unresolved {
+        })),
+        "DETAILED_THREAD" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DetailedThread,
-        }),
+        })),
         _ => None,
     }
 }
@@ -6112,10 +6118,10 @@ fn non_modeling_history_definition(
         && source_properties.contains_key("operation_record")
         && source_properties.contains_key("operation_terminal_frame")
         && operation_identity_only)
-        .then_some(FeatureDefinition::TreeNode {
+        .then_some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: TreeChildren::default(),
-        })
+        }))
 }
 
 /// Permutation-invariant hole properties derived from one complete body partition.
@@ -6145,20 +6151,20 @@ fn non_boolean_feature_definition_with_parameters(
 ) -> Result<FeatureDefinition, CodecError> {
     let hole_template = unique_simple_hole_template(payload_strings);
     if matches!(kind, "BLEND" | "FACE_BLEND") {
-        return Ok(FeatureDefinition::Native {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: kind.into(),
             parameters: native_parameters,
-        });
+        }));
     }
     if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
         kind,
         block_dimensions.map(|dimensions| dimensions.map(cadmpeg_ir::scalar::PositiveLength::new)),
     ) {
-        return Ok(FeatureDefinition::Block {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: Some([length, width, height]),
             placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
             op: BooleanOp::Unresolved,
-        });
+        }));
     }
     if let Some(op) = match kind {
         "UNITE" => Some(cadmpeg_ir::features::BooleanKind::Join),
@@ -6166,7 +6172,7 @@ fn non_boolean_feature_definition_with_parameters(
         "INTERSECT" => Some(cadmpeg_ir::features::BooleanKind::Intersect),
         _ => None,
     } {
-        return Ok(FeatureDefinition::Combine {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
@@ -6175,48 +6181,52 @@ fn non_boolean_feature_definition_with_parameters(
 
             op,
             keep_tools: false,
-        });
+        }));
     }
     Ok(match kind {
-        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumPlane,
-        },
-        "DATUM_AXIS" | "EXTRACT_DATUM_AXIS" => FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumAxis,
-        },
-        "BRIDGE_CURVE" => FeatureDefinition::Unresolved {
+        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            })
+        }
+        "DATUM_AXIS" | "EXTRACT_DATUM_AXIS" => {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::DatumAxis,
+            })
+        }
+        "BRIDGE_CURVE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::BridgeCurve,
-        },
-        "POINT" => FeatureDefinition::Unresolved {
+        }),
+        "POINT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPoint,
-        },
-        "DATUM_CSYS" => FeatureDefinition::Unresolved {
+        }),
+        "DATUM_CSYS" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem,
-        },
-        "BLOCK" => FeatureDefinition::Block {
+        }),
+        "BLOCK" => FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: None,
             placement: None,
             op: BooleanOp::Unresolved,
-        },
-        "SKETCH" => FeatureDefinition::Sketch {
+        }),
+        "SKETCH" => FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-        },
-        "EXTRACT_BODY" => FeatureDefinition::ExtractBody {
+        }),
+        "EXTRACT_BODY" => FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Unresolved,
-        },
-        "MASTER SNAPSHOT BODY" => FeatureDefinition::BaseFeature {
+        }),
+        "MASTER SNAPSHOT BODY" => FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Unresolved,
-        },
-        "SKIN" | "THRU_CURVE" => FeatureDefinition::Unresolved {
+        }),
+        "SKIN" | "THRU_CURVE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Loft,
-        },
-        "THRU_CURVE_MESH" => FeatureDefinition::Unresolved {
+        }),
+        "THRU_CURVE_MESH" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::ThroughCurveMesh,
-        },
-        "Studio Surface" => FeatureDefinition::Unresolved {
+        }),
+        "Studio Surface" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FreeformSurface,
-        },
-        "SWP104" => FeatureDefinition::Sweep {
+        }),
+        "SWP104" => FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::unresolved(None),
             path: None,
             path_extent: None,
@@ -6230,48 +6240,48 @@ fn non_boolean_feature_definition_with_parameters(
             twist: None,
             scale: None,
             allow_multi_profile_faces: None,
-        },
-        "DRAFT" => FeatureDefinition::Unresolved {
+        }),
+        "DRAFT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Draft,
-        },
-        "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
+        }),
+        "CPROJ" | "CPROJ_CMB" => FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: PathRef::Unresolved("nx:unresolved".into()),
             target_faces: FaceSelection::Unresolved,
             direction: CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
             bidirectional: None,
-        },
-        "TRIMMED_SH" => FeatureDefinition::TrimSurface {
+        }),
+        "TRIMMED_SH" => FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved("nx:unresolved".into()),
             keep: TrimRegion::Unresolved,
-        },
-        "EXTRACT_FACE" => FeatureDefinition::Unresolved {
+        }),
+        "EXTRACT_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::ExtractFace,
-        },
-        "COPY_FACE" => FeatureDefinition::Unresolved {
+        }),
+        "COPY_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::CopyFace,
-        },
-        "LINKED_FACE" => FeatureDefinition::Unresolved {
+        }),
+        "LINKED_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::LinkedFace,
-        },
-        "FILL_HOLE" => FeatureDefinition::Unresolved {
+        }),
+        "FILL_HOLE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FillHole,
-        },
-        "MOVE_FACE" => FeatureDefinition::Unresolved {
+        }),
+        "MOVE_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::MoveFace,
-        },
-        "MOVE_OBJECT" => FeatureDefinition::Unresolved {
+        }),
+        "MOVE_OBJECT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::MoveObject,
-        },
-        "CYLINDER" => FeatureDefinition::Unresolved {
+        }),
+        "CYLINDER" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Cylinder,
-        },
+        }),
         "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
-        "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
+        "EXTEND_SHEET" => FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
-        },
+        }),
         "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE" => {
             let measured_chamfer = hole.chamfer;
             let (template_kind, template_exit_kind, template_extent) = hole_template.map_or(
@@ -6332,7 +6342,7 @@ fn non_boolean_feature_definition_with_parameters(
                 },
                 _ => template_kind,
             };
-            FeatureDefinition::Hole {
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
@@ -6376,9 +6386,9 @@ fn non_boolean_feature_definition_with_parameters(
                 bottom: None,
                 taper_angle: None,
                 allow_multi_profile_faces: None,
-            }
+            })
         }
-        "HOLE PACKAGE" => FeatureDefinition::Hole {
+        "HOLE PACKAGE" => FeatureDefinition::Operation(FeatureOperation::Hole {
             profile: None,
             profile_filter: None,
             face: None,
@@ -6407,8 +6417,8 @@ fn non_boolean_feature_definition_with_parameters(
             bottom: None,
             taper_angle: None,
             allow_multi_profile_faces: None,
-        },
-        "RIB" => FeatureDefinition::Rib {
+        }),
+        "RIB" => FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: RibConstruction {
                 profile: None,
                 direction: None,
@@ -6417,10 +6427,10 @@ fn non_boolean_feature_definition_with_parameters(
                 draft: RibDraft::Unresolved,
             },
             op: BooleanOp::Unresolved,
-        },
+        }),
         "SHELL" => shell_feature_definition(),
         "ENLARGE" => enlarge_feature_definition(),
-        "CHAMFER" => FeatureDefinition::Chamfer {
+        "CHAMFER" => FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
@@ -6428,15 +6438,15 @@ fn non_boolean_feature_definition_with_parameters(
                 },
             ),
             flip_direction: false,
-        },
-        "BLEND" => FeatureDefinition::Fillet {
+        }),
+        "BLEND" => FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
-        },
-        "FACE_BLEND" => FeatureDefinition::FaceBlend {
+        }),
+        "FACE_BLEND" => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved,
@@ -6444,14 +6454,14 @@ fn non_boolean_feature_definition_with_parameters(
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             radius: RadiusSpec::Unresolved { form: None },
-        },
-        "SEW" => FeatureDefinition::SewBodies {
+        }),
+        "SEW" => FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: BodySelection::Unresolved
                 .try_into()
                 .map_err(CodecError::malformed)?,
             gap_tolerance: None,
-        },
-        "TRIM BODY" => FeatureDefinition::TrimBodies {
+        }),
+        "TRIM BODY" => FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
@@ -6459,39 +6469,41 @@ fn non_boolean_feature_definition_with_parameters(
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
-        },
+        }),
         "EXTRUDE" => extrude_feature_definition(None, None, BooleanOp::Unresolved, &[]),
-        "OFFSET" => FeatureDefinition::OffsetSurface {
+        "OFFSET" => FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
-        },
-        "THICKEN_SHEET" => FeatureDefinition::Thicken {
+        }),
+        "THICKEN_SHEET" => FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: None,
             side: None,
-        },
+        }),
         "Pattern Feature"
         | "Pattern Geometry"
         | "Geometry Instance"
         | "Multi Instance Output"
         | "IDENTICAL INSTANCE OUTPUT"
-        | "Instance Feature" => FeatureDefinition::Pattern {
+        | "Instance Feature" => FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED,
-        },
-        "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => FeatureDefinition::SectionShape {
-            operands: cadmpeg_ir::features::SectionOperands::new(
-                BodySelection::Unresolved,
-                BodySelection::Unresolved,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+        }),
+        "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => {
+            FeatureDefinition::Operation(FeatureOperation::SectionShape {
+                operands: cadmpeg_ir::features::SectionOperands::new(
+                    BodySelection::Unresolved,
+                    BodySelection::Unresolved,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
 
-            approximate: None,
-        },
-        _ => FeatureDefinition::Native {
+                approximate: None,
+            })
+        }
+        _ => FeatureDefinition::Operation(FeatureOperation::Native {
             kind: kind.into(),
             parameters: native_parameters,
-        },
+        }),
     })
 }
 
@@ -6501,14 +6513,16 @@ fn non_boolean_feature_definition_with_parameters(
 /// retaining the native definition preserves the unresolved history edge.
 fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
     (!outputs.is_empty() && outputs.iter().collect::<BTreeSet<_>>().len() == outputs.len())
-        .then_some(FeatureDefinition::StoredGeometry {})
+        .then_some(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        ))
 }
 
 /// Preserve a SHELL operation as a typed neutral family while its construction roles remain
 /// unresolved. The operation label identifies the family, but does not assign bodies, opening
 /// faces, thickness, side, offset mode, corner join, or intersection policy.
 fn shell_feature_definition() -> FeatureDefinition {
-    FeatureDefinition::Shell {
+    FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
         removed_faces: FaceSelection::Unresolved,
         thickness: None,
@@ -6517,27 +6531,27 @@ fn shell_feature_definition() -> FeatureDefinition {
         join: None,
         resolve_intersections: None,
         allow_self_intersections: None,
-    }
+    })
 }
 
 /// Preserve an ENLARGE operation as a typed surface-extension family while its selected faces,
 /// extension law, and extent remain unresolved.
 fn enlarge_feature_definition() -> FeatureDefinition {
-    FeatureDefinition::ExtendSurface {
+    FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: FaceSelection::Unresolved,
         distance: None,
         method: SurfaceExtension::Unresolved,
-    }
+    })
 }
 
 /// Preserve a `SYMBOLIC_THREAD` operation as a cosmetic-thread family while its cylindrical face,
 /// nominal diameter, and axial extent remain unresolved.
 fn symbolic_thread_feature_definition() -> FeatureDefinition {
-    FeatureDefinition::CosmeticThread {
+    FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
         face: FaceSelection::Unresolved,
         diameter: None,
         extent: None,
-    }
+    })
 }
 
 fn native_feature_parameters(
@@ -8337,7 +8351,7 @@ fn boolean_target_writer(
     definition: &FeatureDefinition,
     native_body: u32,
 ) -> (Option<u32>, Option<&str>) {
-    if let FeatureDefinition::Combine { operands, .. } = definition {
+    if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = definition {
         if let BodySelection::Local { bodies, .. } = operands.target() {
             if let [body] = bodies.as_slice() {
                 if offset_store_identity(body).is_some() {
@@ -8350,7 +8364,8 @@ fn boolean_target_writer(
 }
 
 fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyId> {
-    let Some(FeatureDefinition::Combine { operands, .. }) = definition else {
+    let Some(FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })) = definition
+    else {
         return None;
     };
     let BodySelection::Resolved { bodies, .. } = operands.target() else {
@@ -8407,7 +8422,7 @@ pub(crate) fn boolean_feature_definition(
             ),
         ),
     };
-    Ok(FeatureDefinition::Combine {
+    Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(target, tools)
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -8423,7 +8438,7 @@ pub(crate) fn boolean_feature_definition(
             }
         },
         keep_tools: false,
-    })
+    }))
 }
 
 #[derive(Clone, Copy)]
@@ -8463,12 +8478,12 @@ fn delete_body_feature_definition(
             format!("nx:om-object-index#{object_index}"),
         ),
     };
-    FeatureDefinition::DeleteBody {
+    FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    }
+    })
 }
 
 /// Project the exact source body of an `EXTRACT_BODY` operation.
@@ -8496,7 +8511,7 @@ fn extract_body_feature_definition(
             .into_selection()
         },
     );
-    FeatureDefinition::ExtractBody { source }
+    FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
 }
 
 /// Project exact feature-local input-store identities for a trim target and
@@ -8554,7 +8569,7 @@ fn offset_store_trim_body_feature_definition(
             }
         }
     };
-    Some(FeatureDefinition::TrimBodies {
+    Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
         operands: cadmpeg_ir::features::TrimBodyOperands::new(
             local_body_selection(
                 vec![data_block.clone()],
@@ -8565,7 +8580,7 @@ fn offset_store_trim_body_feature_definition(
         .ok()?,
 
         keep: BodyTrimSide::Unresolved,
-    })
+    }))
 }
 
 fn sew_body_feature_definition(
@@ -8642,10 +8657,10 @@ fn sew_body_feature_definition(
     } else {
         BodySelection::Native(native)
     };
-    Some(FeatureDefinition::SewBodies {
+    Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
         bodies: (bodies).try_into().ok()?,
         gap_tolerance: None,
-    })
+    }))
 }
 
 fn trim_body_feature_definition(
@@ -8656,7 +8671,7 @@ fn trim_body_feature_definition(
 ) -> Result<FeatureDefinition, CodecError> {
     let native_target = format!("nx:om-object-index#{target_object_index}");
     if operands.is_empty() {
-        return Ok(FeatureDefinition::TrimBodies {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 feature_body_selection(
                     &[target_object_index],
@@ -8670,7 +8685,7 @@ fn trim_body_feature_definition(
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
-        });
+        }));
     }
     let tool_object_indices = operands
         .iter()
@@ -8687,7 +8702,7 @@ fn trim_body_feature_definition(
     if operands.iter().any(|operand| {
         operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
     }) {
-        return Ok(FeatureDefinition::TrimBodies {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Native(native_target),
                 BodySelection::Native(native_tools),
@@ -8695,7 +8710,7 @@ fn trim_body_feature_definition(
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
-        });
+        }));
     }
     let (targets, tools) = atomic_disjoint_body_selections(
         feature_body_selection(
@@ -8711,12 +8726,12 @@ fn trim_body_feature_definition(
             native_tools,
         ),
     );
-    Ok(FeatureDefinition::TrimBodies {
+    Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
         operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools)
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         keep: BodyTrimSide::Unresolved,
-    })
+    }))
 }
 
 fn feature_body_outputs(
@@ -8998,10 +9013,10 @@ pub(crate) fn attach_expression_parameters(
             source_content,
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::TreeNode {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::Equations,
                     children: TreeChildren::default(),
-                },
+                }),
             ),
             native_ref: None,
         });

@@ -190,7 +190,9 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
 
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::StoredGeometry {}
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::StoredGeometry {}
+        )
     ));
     assert_eq!(
         result
@@ -454,7 +456,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(result.ir().model.features[1].ordinal, 1);
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })
             if kind.as_str() == "Native Feature"
     ));
     assert_annotation(
@@ -467,9 +469,9 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     );
     assert!(matches!(
         result.ir().model.features[1].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));

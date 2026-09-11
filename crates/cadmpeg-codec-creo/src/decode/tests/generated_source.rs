@@ -32,7 +32,8 @@ use crate::decode::sweep::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, LinearTermination,
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation, HoleForm,
+    HoleKind, LinearTermination,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -787,7 +788,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             9,
             Some(SchemaClass::Hole),
             "Hole"
-        ).expect("valid test fixture"), IrFeatureDefinition::Hole {
+        ).expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
 
             extent: Some(LinearTermination::Blind {
@@ -795,7 +796,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             }),
             bottom: None,
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::SimpleDrilled {
                     drill_point_angle: angle,
                 },
@@ -832,12 +833,12 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Hole {
+        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
 
             extent: None,
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, None,))));

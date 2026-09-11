@@ -18,8 +18,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::{
     features::{
         BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-        Feature, FeatureDefinition, FeatureId, LinearTermination, ParameterId, ParameterValue,
-        PlanarProfileRef, ProfileRef, RadiusSpec,
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, ParameterId,
+        ParameterValue, PlanarProfileRef, ProfileRef, RadiusSpec,
     },
     scalar::Length,
 };
@@ -141,14 +141,14 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let producer = feature(
         "synthetic:test:id#producer",
         "producer-native",
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        },
+        }),
     );
     let target = feature(
         "synthetic:test:id#target",
         "target-native",
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant {
@@ -156,7 +156,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
                 },
                 tangency_weight: None,
             }),
-        },
+        }),
     );
     let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
         id: format!("selection-{ordinal}"),
@@ -195,7 +195,9 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
 
     project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
 
-    let FeatureDefinition::Fillet { groups } = features[1].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        features[1].evaluation.definition()
+    else {
         panic!("generated edge selection");
     };
     let [cadmpeg_ir::features::FilletGroup {
@@ -380,17 +382,17 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             "synthetic:test:id#plane",
             "plane-native",
             0,
-            FeatureDefinition::DatumPrincipalPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: cadmpeg_ir::features::PrincipalPlane::Front,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#sketch",
             "sketch-native",
             1,
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
     ];
     let mut payload = vec![0; 100];
@@ -589,17 +591,17 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert_eq!(sketches[0].profiles[0].len(), 3);
     assert!(matches!(
         features[1].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
-        }
+        })
     ));
     let expected_sketch = sketches[0].id.clone();
     let mut configured_features = features.clone();
     configured_features[1]
         .evaluation
-        .set_definition(FeatureDefinition::Sketch {
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        });
+        }));
     project_marker_backed_sketches(
         &mut configured_features,
         &mut sketches,
@@ -612,9 +614,9 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert_eq!(entities.len(), 13);
     assert!(matches!(
         configured_features[1].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-        } if sketch == &expected_sketch
+        }) if sketch == &expected_sketch
     ));
 
     let compact_id = SketchId::mint("sldprt:model:sketch#compact:lane:7").unwrap();
@@ -634,9 +636,9 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let mut replacement_features = features.clone();
     replacement_features[1]
         .evaluation
-        .set_definition(FeatureDefinition::Sketch {
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(compact_id)),
-        });
+        }));
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
     project_marker_backed_sketches(
@@ -694,9 +696,9 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     }];
@@ -736,7 +738,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     )));
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
+        FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. })
             if sketch == &sketches[0].id
     ));
 }
@@ -870,9 +872,9 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };
@@ -1065,9 +1067,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
-            },
+            }),
         ),
         native_ref: Some(native_ref.into()),
     };
@@ -1114,7 +1116,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Extrude {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     profile: ProfileRef::Planar(PlanarProfileRef::Feature(
                         FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
                     )),
@@ -1134,7 +1136,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                     inner_wire_taper: None,
                     length_along_profile_normal: None,
                     allow_multi_profile_faces: None,
-                },
+                }),
             ),
             native_ref: Some("consumer-native".into()),
         },
@@ -1148,7 +1150,8 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             .try_into()
             .unwrap();
     multi_consumer.evaluation.edit(|definition, _| {
-        let FeatureDefinition::Extrude { profile, .. } = definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition
+        else {
             unreachable!();
         };
         *profile = ProfileRef::Planar(PlanarProfileRef::Feature(
@@ -1187,24 +1190,24 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
 
     assert!(matches!(
         features[1].evaluation.definition(),
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
             ..
-        }
+        })
     ));
     assert!(matches!(
         features[3].evaluation.definition(),
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
             ..
-        }
+        })
     ));
     assert!(matches!(
         features[4].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
             ..
-        } if sketch == &single
+        }) if sketch == &single
     ));
     assert_eq!(
         features[4].dependencies.as_slice(),
@@ -1212,10 +1215,10 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     );
     assert!(matches!(
         features[5].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             ..
-        } if feature == &FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")
+        }) if feature == &FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")
     ));
     assert_eq!(
         features[5].dependencies.as_slice(),

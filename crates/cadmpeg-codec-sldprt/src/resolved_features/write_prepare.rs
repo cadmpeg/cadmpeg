@@ -16,7 +16,7 @@ use super::write_generate::{
 };
 use super::{SKETCH_MARKER, SKETCH_POINT_TOLERANCE, SPATIAL_VERTEX_PREFIX};
 use crate::records::{FeatureInputLane, SketchRelationKind};
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity,
@@ -112,9 +112,9 @@ fn patch_spatial_sketches(
             .filter(|feature| {
                 matches!(
                     feature.evaluation.definition(),
-                    FeatureDefinition::SpatialSketch {
+                    FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                         sketch: Some(candidate),
-                    } if candidate == &sketch.id
+                    }) if candidate == &sketch.id
                 )
             })
             .collect::<Vec<_>>();
@@ -400,9 +400,9 @@ fn validate_generated_marker_constraint(
     if !ir.model.features.iter().any(|feature| {
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } if sketch == &constraint.sketch
+            }) if sketch == &constraint.sketch
         )
     }) {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
@@ -532,7 +532,7 @@ fn validate_generated_marker_constraint(
         let owner = ir.model.features.iter().find(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
+                FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. })
                     if sketch == &constraint.sketch
             )
         });
@@ -1286,9 +1286,9 @@ fn unique_planar_sketch_owner<'a>(
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
-            } if candidate == sketch
+            }) if candidate == sketch
         )
     })
 }
@@ -1300,9 +1300,9 @@ fn unique_spatial_sketch_owner<'a>(
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(candidate),
-            } if candidate == sketch
+            }) if candidate == sketch
         )
     })
 }
@@ -1591,11 +1591,13 @@ mod source_less_lane_tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                        sketch.id.clone(),
-                    )),
-                },
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                            sketch.id.clone(),
+                        )),
+                    },
+                ),
             ),
             native_ref: None,
         });

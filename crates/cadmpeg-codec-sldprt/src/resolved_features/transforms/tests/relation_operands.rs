@@ -14,7 +14,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue,
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+        ParameterValue,
     },
     scalar::Length,
 };
@@ -646,9 +647,9 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };
@@ -728,9 +729,9 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };
@@ -799,9 +800,9 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };

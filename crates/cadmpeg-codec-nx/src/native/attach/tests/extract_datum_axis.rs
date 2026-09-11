@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_extract_datum_axis_retains_unresolved_axis_family() {
@@ -9,9 +9,9 @@ fn nx_extract_datum_axis_retains_unresolved_axis_family() {
 
         assert_eq!(
             definition,
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumAxis
-            }
+            })
         );
         assert_eq!(definition.body_output_family(), None);
     }

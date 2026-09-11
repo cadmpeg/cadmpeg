@@ -4829,10 +4829,12 @@ mod tests {
 
         let mut operation_owned = unevaluated;
         operation_owned.model.features[0].evaluation.set_definition(
-            cadmpeg_ir::features::FeatureDefinition::Native {
-                kind: "TEST_OPERATION".into(),
-                parameters: BTreeMap::default(),
-            },
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native {
+                    kind: "TEST_OPERATION".into(),
+                    parameters: BTreeMap::default(),
+                },
+            ),
         );
         assert_eq!(
             feature_completeness::incomplete_expression_parameters(&operation_owned),
@@ -5630,10 +5632,12 @@ mod tests {
         assert_eq!(result.ir().model.features.len(), 1);
         assert!(matches!(
             result.ir().model.features[0].evaluation.definition(),
-            cadmpeg_ir::features::FeatureDefinition::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
-                ..
-            }
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::TreeNode {
+                    role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+                    ..
+                }
+            )
         ));
         assert_eq!(result.ir().model.features[0].suppressed, Some(false));
         assert_eq!(result.ir().model.parameters.len(), 1);

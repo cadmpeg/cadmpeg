@@ -37,7 +37,7 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
 
 #[test]
 fn encoder_writes_source_less_datum_features() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -48,23 +48,23 @@ fn encoder_writes_source_less_datum_features() {
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None).unwrap());
     let definitions = [
-        FeatureDefinition::DatumPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        },
-        FeatureDefinition::DatumAxis {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::DatumAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
                 .unwrap(),
-        },
-        FeatureDefinition::DatumPoint {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
             construction: None,
-        },
+        }),
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
@@ -94,15 +94,15 @@ fn encoder_writes_source_less_datum_features() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::DatumPlane { .. }
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::DatumAxis { .. }
+        FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. })
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
-        FeatureDefinition::DatumPoint { .. }
+        FeatureDefinition::Operation(FeatureOperation::DatumPoint { .. })
     ));
 }
 
@@ -624,7 +624,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
 #[test]
 fn encoder_writes_source_less_neutral_parameters() {
     use cadmpeg_ir::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId,
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
     };
     use std::collections::BTreeMap;
 
@@ -649,10 +649,10 @@ fn encoder_writes_source_less_neutral_parameters() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "EquationDriven".into(),
                 parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
-            },
+            }),
         ),
         native_ref: None,
     });

@@ -5,9 +5,9 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::{
     features::{
-        AngularTermination, BooleanOp, FeatureDefinition, PartialRevolveConstruction, PathRef,
-        PlanarProfileRef, ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent,
-        RibConstruction, RibDraft, RibSide, SweepMode,
+        AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation,
+        PartialRevolveConstruction, PathRef, PlanarProfileRef, ProfileRef, RevolutionAxis,
+        RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
     },
     scalar::Angle,
 };
@@ -41,7 +41,7 @@ pub(crate) fn project_rib(
             .map_or(RibDraft::Unresolved, RibDraft::Angle),
         None => RibDraft::None,
     };
-    FeatureDefinition::Rib {
+    FeatureDefinition::Operation(FeatureOperation::Rib {
         construction: RibConstruction {
             profile,
             direction,
@@ -69,7 +69,7 @@ pub(crate) fn project_rib(
             .get("Operation")
             .and_then(|value| parse_boolean_op(value))
             .unwrap_or(BooleanOp::Unresolved),
-    }
+    })
 }
 
 pub(crate) fn project_loft(
@@ -95,7 +95,7 @@ pub(crate) fn project_loft(
         || Some(Vec::new()),
         |value| resolve_native_refs(value, native_by_source),
     )?;
-    Some(FeatureDefinition::Loft {
+    Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
         guidance: cadmpeg_ir::features::LoftGuidance::Guides(
             guides.into_iter().map(PathRef::Native).collect(),
@@ -125,7 +125,7 @@ pub(crate) fn project_loft(
         linearize: false,
         max_degree: None,
         allow_multi_profile_faces: None,
-    })
+    }))
 }
 
 pub(crate) fn resolve_native_refs(
@@ -195,7 +195,7 @@ pub(crate) fn project_sweep(
         ),
         None => None,
     };
-    Some(FeatureDefinition::Sweep {
+    Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: cadmpeg_ir::features::SweepShape::new(
             profile.map_or(
                 cadmpeg_ir::features::SweepSection::Unresolved(None),
@@ -219,7 +219,7 @@ pub(crate) fn project_sweep(
         taper: None,
         scale,
         allow_multi_profile_faces: None,
-    })
+    }))
 }
 
 fn sweep_mode(op: BooleanOp) -> SweepMode {
@@ -335,7 +335,7 @@ pub(crate) fn project_revolve(
         })
         .unwrap_or(BooleanOp::Unresolved);
     let solid = Some(true);
-    FeatureDefinition::Revolve {
+    FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match (profile, axis, extent) {
             (None, axis, extent) => {
                 RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
@@ -378,5 +378,5 @@ pub(crate) fn project_revolve(
             },
         },
         op,
-    }
+    })
 }

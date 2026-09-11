@@ -14,7 +14,9 @@ use crate::records::topology::DesignOperandRole;
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     use crate::records::topology::DesignConstructionOperandGroupFrame;
 
-    use cadmpeg_ir::features::{FeatureDefinition, GeneratedSweepSection, PathRef, SweepSection};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, GeneratedSweepSection, PathRef, SweepSection,
+    };
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:pipe-scope#1",
@@ -141,11 +143,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .expect("exact legacy Pipe reference form");
     assert!(matches!(
-        definition, FeatureDefinition::Sweep {
+        definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: Some(PathRef::Native(path)),
             ..
-        } if matches!((shape.section(),), (SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+        }) if matches!((shape.section(),), (SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region,
 
             }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, None,) if (path == path_group.id) && actual_outer_radius.get() == 3.0))));
@@ -180,11 +182,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .expect("exact hollow circular Pipe reference form");
     assert!(matches!(
-        hollow_definition, FeatureDefinition::Sweep {
+        hollow_definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: Some(PathRef::Native(path)),
             ..
-        } if matches!((shape.section(),), (SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+        }) if matches!((shape.section(),), (SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region,
 
             }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, Some(actual_wall_thickness),) if (path == path_group.id) && actual_outer_radius.get() == 3.0 && actual_wall_thickness.get() == 1.5))));

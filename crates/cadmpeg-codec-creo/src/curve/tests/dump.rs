@@ -52,16 +52,18 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
     assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
     assert_eq!(result.ir().model.features.len(), 1);
-    let cadmpeg_ir::features::FeatureDefinition::Helix {
-        axis_origin,
-        axis_direction,
-        radius,
-        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions,
-        start_angle,
-        clockwise,
-        ..
-    } = result.ir().model.features[0].evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Helix {
+            axis_origin,
+            axis_direction,
+            radius,
+            shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+            revolutions,
+            start_angle,
+            clockwise,
+            ..
+        },
+    ) = result.ir().model.features[0].evaluation.definition()
     else {
         panic!("complete curve-equation frame transfers a neutral helix");
     };

@@ -147,7 +147,10 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
     let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
     let definition = project_fixed_fillet(&scope, &[group], &[], &[identity])
         .expect("fixed Fillet from sole compact identity group");
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+    ) = definition
+    else {
         panic!("expected Fillet");
     };
     assert!(matches!(

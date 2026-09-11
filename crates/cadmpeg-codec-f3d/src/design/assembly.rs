@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{Feature, FeatureDefinition};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocumentReference, JointConnector, JointLimits, JointOperand,
     PairedJointKind,
@@ -408,7 +408,7 @@ fn project_qualified_operands(
                     &crate::records::feature::DesignFeatureKind::ComponentInsert,
                 )?;
                 let feature = unique_feature(features, &target_scope.id)?;
-                let FeatureDefinition::InsertComponent { occurrence } =
+                let FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) =
                     feature.evaluation.definition()
                 else {
                     return None;
@@ -446,7 +446,7 @@ fn project_joint_origin_operand(
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::DatumCoordinateSystem { .. }
+            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
         ) {
             return None;
         }
@@ -487,7 +487,7 @@ mod tests {
     use crate::records::feature::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1007,13 +1007,13 @@ mod tests {
         let features = [
             feature(
                 &component_scope.id,
-                FeatureDefinition::InsertComponent {
+                FeatureDefinition::Operation(FeatureOperation::InsertComponent {
                     occurrence: occurrence.clone(),
-                },
+                }),
             ),
             feature(
                 &origin_scope.id,
-                FeatureDefinition::DatumCoordinateSystem {
+                FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
                     frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -1021,7 +1021,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                     )
                     .unwrap(),
-                },
+                }),
             ),
         ];
         let targets = [

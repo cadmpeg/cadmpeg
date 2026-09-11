@@ -12,7 +12,10 @@ use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
 use cadmpeg_ir::{
-    features::{BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId},
+    features::{
+        BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId,
+        FeatureOperation,
+    },
     scalar::Length,
 };
 use std::collections::BTreeMap;
@@ -172,7 +175,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DatumOffsetPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
                     frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
                         Point3::new(0.0, 0.0, 5.0),
@@ -182,7 +185,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
                     .unwrap(),
                 }),
                 distance: Length::new(4.0).unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     }];
@@ -194,10 +197,10 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     )
     .unwrap();
 
-    let FeatureDefinition::DatumOffsetPlane {
+    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
         ..
-    } = features[0].evaluation.definition()
+    }) = features[0].evaluation.definition()
     else {
         panic!("expected offset-plane face reference");
     };
@@ -246,12 +249,12 @@ fn generic_native_offset_plane_support_stays_native() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DatumOffsetPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Face {
                     face: FaceSelection::Native(native.into()),
                 }),
                 distance: Length::new(4.0).unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     }];
@@ -263,10 +266,10 @@ fn generic_native_offset_plane_support_stays_native() {
     )
     .unwrap();
 
-    let FeatureDefinition::DatumOffsetPlane {
+    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
         ..
-    } = features[0].evaluation.definition()
+    }) = features[0].evaluation.definition()
     else {
         panic!("expected offset-plane face reference");
     };
@@ -321,18 +324,22 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         neutral_feature(
             "synthetic:test:id#producer",
             "producer-native",
-            cadmpeg_ir::features::FeatureDefinition::BaseFeature {
-                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            },
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::BaseFeature {
+                    bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                },
+            ),
         ),
         neutral_feature(
             "synthetic:test:id#thread",
             "thread-native",
-            cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
-                face: cadmpeg_ir::features::FaceSelection::Unresolved,
-                diameter: None,
-                extent: None,
-            },
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::CosmeticThread {
+                    face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    diameter: None,
+                    extent: None,
+                },
+            ),
         ),
     ];
     let mut signature = [0; 12];
@@ -389,8 +396,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     )
     .unwrap();
 
-    let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } =
-        features[1].evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, .. },
+    ) = features[1].evaluation.definition()
     else {
         panic!("expected cosmetic thread");
     };
@@ -429,8 +437,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         tolerance: None,
     };
     features[1].evaluation.edit(|definition, _| {
-        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, diameter, .. } =
-            definition
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, diameter, .. },
+        ) = definition
         else {
             panic!("expected cosmetic thread");
         };
@@ -447,10 +456,10 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::CosmeticThread {
             face: cadmpeg_ir::features::FaceSelection::Faces(faces),
             ..
-        } if faces == std::slice::from_ref(&topology_face.id)
+        }) if faces == std::slice::from_ref(&topology_face.id)
     ));
 }
 
@@ -502,18 +511,18 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         feature(
             "synthetic:test:id#producer",
             "producer-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#thread",
             "thread-native",
-            FeatureDefinition::CosmeticThread {
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: FaceSelection::Unresolved,
                 diameter: None,
                 extent: None,
-            },
+            }),
         ),
     ];
     let mut face_signature = [0; 12];
@@ -575,10 +584,10 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
 
     assert!(matches!(
         features[1].evaluation.definition(),
-        FeatureDefinition::CosmeticThread {
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
-        } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
+        }) if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
 }
 
@@ -598,10 +607,10 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::OffsetSurface {
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
                 distance: None,
-            },
+            }),
         ),
         native_ref: Some("operation-native".into()),
     }];
@@ -639,7 +648,9 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
     };
     project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
-    let FeatureDefinition::OffsetSurface { faces, .. } = features[0].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected offset surface");
     };
     assert!(matches!(faces, FaceSelection::Native(value) if value.contains(":7")));
@@ -665,14 +676,14 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         feature(
             "synthetic:test:id#producer",
             "producer-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#fillet",
             "fillet-native",
-            FeatureDefinition::Fillet {
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
                     cadmpeg_ir::features::FilletGroup {
                         edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
@@ -680,7 +691,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
                         tangency_weight: None,
                     },
                 ),
-            },
+            }),
         ),
     ];
     let signature = [0x34, 0x80, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0];
@@ -728,7 +739,9 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     }
     project_compact_surface_selections(&mut features, &[], &[lane, lane_two]).unwrap();
 
-    let FeatureDefinition::FullRoundFillet { groups } = features[1].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) =
+        features[1].evaluation.definition()
+    else {
         panic!("expected full-round fillet");
     };
     let [group] = groups.as_slice() else {
@@ -779,25 +792,25 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         feature(
             "synthetic:test:id#target",
             "target-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#tool",
             "tool-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#cut",
             "cut-native",
-            FeatureDefinition::CutWithSurface {
+            FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                 targets: BodySelection::Unresolved,
                 tools: FaceSelection::Unresolved,
                 reverse: None,
-            },
+            }),
         ),
     ];
     let signature = |source: u32| {
@@ -856,11 +869,11 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
 
     project_compact_surface_selections(&mut features, &[], &[lane, lane2]).unwrap();
 
-    let FeatureDefinition::CutWithSurface {
+    let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets,
         tools,
         reverse,
-    } = features[2].evaluation.definition()
+    }) = features[2].evaluation.definition()
     else {
         panic!("expected cut with surface");
     };
@@ -904,23 +917,23 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         feature(
             "synthetic:test:id#first",
             "first-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#second",
             "second-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved,
-            },
+            }),
         ),
         feature(
             "synthetic:test:id#plane",
             "plane-native",
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            },
+            }),
         ),
     ];
     let component = |source: u32, local_id: u32| {
@@ -970,9 +983,9 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
 
     assert!(matches!(
         features[2].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     ));
     assert_eq!(
         features[2].dependencies.as_slice(),
@@ -1031,18 +1044,22 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         feature(
             "synthetic:test:id#producer",
             "producer-native",
-            cadmpeg_ir::features::FeatureDefinition::BaseFeature {
-                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            },
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::BaseFeature {
+                    bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                },
+            ),
         ),
         feature(
             "synthetic:test:id#thread",
             "thread-native",
-            cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
-                face: cadmpeg_ir::features::FaceSelection::Unresolved,
-                diameter: None,
-                extent: None,
-            },
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::CosmeticThread {
+                    face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    diameter: None,
+                    extent: None,
+                },
+            ),
         ),
     ];
     let mut first_signature = [0; 12];
@@ -1093,8 +1110,9 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     )
     .unwrap();
 
-    let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } =
-        features[1].evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, .. },
+    ) = features[1].evaluation.definition()
     else {
         panic!("expected cosmetic thread");
     };
@@ -1107,7 +1125,9 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
 
     features[1].dependencies.clear();
     features[1].evaluation.edit(|definition, _| {
-        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } = definition
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, .. },
+        ) = definition
         else {
             panic!("expected cosmetic thread");
         };
@@ -1126,10 +1146,12 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
-            face: cadmpeg_ir::features::FaceSelection::Unresolved,
-            ..
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::CosmeticThread {
+                face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                ..
+            }
+        )
     ));
 }
 
@@ -1182,26 +1204,26 @@ fn split_face_collects_distinct_generated_target_faces() {
         neutral_feature(
             "synthetic:test:id#producer-a",
             "producer-a-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            },
+            }),
         ),
         neutral_feature(
             "synthetic:test:id#producer-b",
             "producer-b-native",
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            },
+            }),
         ),
         neutral_feature(
             "synthetic:test:id#split",
             "split-native",
-            FeatureDefinition::SplitFace {
+            FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 targets: FaceSelection::Unresolved,
                 tool: cadmpeg_ir::features::SplitFaceTool::Path(
                     cadmpeg_ir::features::PathRef::Native("tool".into()),
                 ),
-            },
+            }),
         ),
     ];
     let selection = |ordinal: u32, producer: &str, source: u32, local_id: u32| {
@@ -1256,7 +1278,9 @@ fn split_face_collects_distinct_generated_target_faces() {
 
     project_compact_surface_selections(&mut features, &[history], &[lane]).unwrap();
 
-    let FeatureDefinition::SplitFace { targets, .. } = features[2].evaluation.definition() else {
+    let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
+        features[2].evaluation.definition()
+    else {
         panic!("expected split face");
     };
     assert!(matches!(
@@ -1636,10 +1660,12 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
         tangency_weight: None,
     };
     let native = EdgeSelection::Native("native:fillet-edges".into());
-    let fillet = |groups: Vec<FilletGroup>| FeatureDefinition::Fillet {
-        groups: groups
-            .try_into()
-            .expect("a fillet keeps one or more groups"),
+    let fillet = |groups: Vec<FilletGroup>| {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: groups
+                .try_into()
+                .expect("a fillet keeps one or more groups"),
+        })
     };
 
     let carried = sole_unresolved_fillet_group(&fillet(vec![group(
@@ -1678,7 +1704,7 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
         None
     );
     assert_eq!(
-        sole_unresolved_fillet_group(&FeatureDefinition::Chamfer {
+        sole_unresolved_fillet_group(&FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: native,
                 spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
@@ -1688,7 +1714,7 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
             .try_into()
             .expect("a chamfer keeps one or more groups"),
             flip_direction: false,
-        }),
+        })),
         None
     );
 }
@@ -1698,16 +1724,18 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
     use cadmpeg_ir::features::{EdgeSelection, FilletGroup, RadiusSpec};
 
     let weight = cadmpeg_ir::scalar::FiniteReal::new(0.75).expect("a finite tangency weight");
-    let fillet = |tangency_weight| FeatureDefinition::Fillet {
-        groups: vec![FilletGroup {
-            edges: EdgeSelection::Unresolved,
-            radius: RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
-            },
-            tangency_weight,
-        }]
-        .try_into()
-        .expect("a fillet keeps one or more groups"),
+    let fillet = |tangency_weight| {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: vec![FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                },
+                tangency_weight,
+            }]
+            .try_into()
+            .expect("a fillet keeps one or more groups"),
+        })
     };
 
     assert_eq!(

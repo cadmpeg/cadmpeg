@@ -2080,7 +2080,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
 
 fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     use crate::features::{
-        EdgeSelection, FeatureDefinition, PathRef, PlanarProfileRef, ScaleCenter,
+        EdgeSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ScaleCenter,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -2229,7 +2229,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     Some(_) => {}
                 }
             }
-            for reference in regeneration_references(&state.definition) {
+            for reference in regeneration_references(state.definition.operation()) {
                 match features.get(reference.as_str()) {
                     None => ref_error(
                         findings,
@@ -2335,10 +2335,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             positions.insert(cursor, path.len());
             path.push(cursor);
             let Some(next) = feature_records.get(cursor).and_then(|feature| {
-                let FeatureDefinition::DatumOffsetPlane {
+                let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: Some(DatumPlaneReference::Feature { feature: reference }),
                     ..
-                } = feature.evaluation.definition()
+                }) = feature.evaluation.definition()
                 else {
                     return None;
                 };
@@ -2492,15 +2492,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         let mut vertex_selections = Vec::new();
         let mut body_selections = Vec::new();
         let definition = match feature.evaluation.definition() {
-            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
-            definition => definition,
+            FeatureDefinition::PostProcess { operation, .. }
+            | FeatureDefinition::Operation(operation) => operation,
         };
         match definition {
-            FeatureDefinition::Unresolved { .. }
-            | FeatureDefinition::Primitive { .. }
-            | FeatureDefinition::SheetMetalBaseFlange { .. }
-            | FeatureDefinition::PlanarPatch { .. } => {}
-            FeatureDefinition::ReferenceImage { asset, .. } => {
+            FeatureOperation::Unresolved { .. }
+            | FeatureOperation::Primitive { .. }
+            | FeatureOperation::SheetMetalBaseFlange { .. }
+            | FeatureOperation::PlanarPatch { .. } => {}
+            FeatureOperation::ReferenceImage { asset, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
                     ref_error(
                         findings,
@@ -2510,20 +2510,20 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            FeatureDefinition::Decal { asset, faces, .. } => {
+            FeatureOperation::Decal { asset, faces, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
                     ref_error(findings, feature.id.as_str(), "decal asset", asset.as_str());
                 }
                 face_selections.push(faces);
             }
-            FeatureDefinition::Block { .. } => {}
+            FeatureOperation::Block { .. } => {}
 
-            FeatureDefinition::ExtractBody { source } => body_selections.push(source),
-            FeatureDefinition::FaceBlend { operands, .. } => {
+            FeatureOperation::ExtractBody { source } => body_selections.push(source),
+            FeatureOperation::FaceBlend { operands, .. } => {
                 face_selections.push(operands.first_faces());
                 face_selections.push(operands.second_faces());
             }
-            FeatureDefinition::FullRoundFillet { groups } => {
+            FeatureOperation::FullRoundFillet { groups } => {
                 for group in groups {
                     face_selections.push(group.center_faces());
                     for side in [group.side_one_faces(), group.side_two_faces()] {
@@ -2533,9 +2533,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::SewBodies { bodies, .. } => body_selections.push(bodies),
-            FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
-            FeatureDefinition::MeshImport { tessellations } => {
+            FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
+            FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureOperation::MeshImport { tessellations } => {
                 for tessellation in tessellations {
                     if ids.tessellations(tessellation).is_none() {
                         ref_error(
@@ -2547,8 +2547,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::InsertBodies { .. } => {}
-            FeatureDefinition::InsertComponent { occurrence } => {
+            FeatureOperation::InsertBodies { .. } => {}
+            FeatureOperation::InsertComponent { occurrence } => {
                 if !ir
                     .model
                     .occurrences
@@ -2563,7 +2563,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            FeatureDefinition::AssemblyJoint { joint } => {
+            FeatureOperation::AssemblyJoint { joint } => {
                 if !ir
                     .model
                     .assembly_joints
@@ -2578,7 +2578,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            FeatureDefinition::Form { cages } => {
+            FeatureOperation::Form { cages } => {
                 check_ids(
                     findings,
                     feature.id.as_str(),
@@ -2587,8 +2587,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     |identity| ids.subds(identity).is_some(),
                 );
             }
-            FeatureDefinition::CosmeticThread { face, .. } => face_selections.push(face),
-            FeatureDefinition::Extrude {
+            FeatureOperation::CosmeticThread { face, .. } => face_selections.push(face),
+            FeatureOperation::Extrude {
                 direction, start, ..
             } => {
                 if let crate::features::ExtrudeDirection::Explicit {
@@ -2602,7 +2602,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     face_selections.push(face);
                 }
             }
-            FeatureDefinition::SheetMetalEdgeFlange { edges, height, .. } => {
+            FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
                 edge_selections.push(edges);
                 if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
                     target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
@@ -2615,11 +2615,11 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            FeatureDefinition::SheetMetalHem { edges, .. } => edge_selections.push(edges),
-            FeatureDefinition::Revolve { construction, .. } => {
+            FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
+            FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
             }
-            FeatureDefinition::Sweep {
+            FeatureOperation::Sweep {
                 path,
                 orientation,
                 guide_rail,
@@ -2638,7 +2638,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     face_selections.push(faces);
                 }
             }
-            FeatureDefinition::Loft {
+            FeatureOperation::Loft {
                 sections, guidance, ..
             } => {
                 for section in sections {
@@ -2666,14 +2666,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
                 }
             }
-            FeatureDefinition::Rib { .. } => {}
-            FeatureDefinition::Fillet { groups } => {
+            FeatureOperation::Rib { .. } => {}
+            FeatureOperation::Fillet { groups } => {
                 edge_selections.extend(groups.iter().map(|group| &group.edges));
             }
-            FeatureDefinition::Chamfer { groups, .. } => {
+            FeatureOperation::Chamfer { groups, .. } => {
                 edge_selections.extend(groups.iter().map(|group| &group.edges));
             }
-            FeatureDefinition::Shell {
+            FeatureOperation::Shell {
                 bodies,
                 removed_faces,
                 ..
@@ -2683,19 +2683,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 face_selections.push(removed_faces);
             }
-            FeatureDefinition::OffsetShape { source, .. } => body_selections.push(source),
-            FeatureDefinition::Compound { members } => body_selections.push(members),
-            FeatureDefinition::RefineShape { source }
-            | FeatureDefinition::ReverseShape { source } => body_selections.push(source),
-            FeatureDefinition::RuledBetweenCurves { first, second, .. } => {
+            FeatureOperation::OffsetShape { source, .. } => body_selections.push(source),
+            FeatureOperation::Compound { members } => body_selections.push(members),
+            FeatureOperation::RefineShape { source }
+            | FeatureOperation::ReverseShape { source } => body_selections.push(source),
+            FeatureOperation::RuledBetweenCurves { first, second, .. } => {
                 paths.push(first);
                 paths.push(second);
             }
-            FeatureDefinition::SectionShape { operands, .. } => {
+            FeatureOperation::SectionShape { operands, .. } => {
                 body_selections.push(operands.first());
                 body_selections.push(operands.second());
             }
-            FeatureDefinition::MirrorShape {
+            FeatureOperation::MirrorShape {
                 source,
                 plane_reference,
                 ..
@@ -2703,16 +2703,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 body_selections.push(source);
                 face_selections.extend(plane_reference);
             }
-            FeatureDefinition::Thicken { faces, .. } => {
+            FeatureOperation::Thicken { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::OffsetSurface { faces, .. } => {
+            FeatureOperation::OffsetSurface { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::KnitSurface { faces, .. } => {
+            FeatureOperation::KnitSurface { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::FilledSurface {
+            FeatureOperation::FilledSurface {
                 boundary,
                 support_faces,
                 ..
@@ -2725,14 +2725,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 face_selections.push(support_faces);
             }
-            FeatureDefinition::TrimSurface { faces, tool, .. } => {
+            FeatureOperation::TrimSurface { faces, tool, .. } => {
                 face_selections.push(faces);
                 paths.push(tool);
             }
-            FeatureDefinition::ExtendSurface { faces, .. } => {
+            FeatureOperation::ExtendSurface { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::RuledSurface {
+            FeatureOperation::RuledSurface {
                 edges,
                 support_faces,
                 ..
@@ -2740,7 +2740,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 edge_selections.push(edges);
                 face_selections.push(support_faces);
             }
-            FeatureDefinition::Draft { faces, anchor, .. } => {
+            FeatureOperation::Draft { faces, anchor, .. } => {
                 face_selections.push(faces);
                 match anchor {
                     crate::features::DraftAnchor::NeutralPlane { plane, .. } => {
@@ -2760,15 +2760,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            FeatureDefinition::BoundaryFill { tools, cells } => {
+            FeatureOperation::BoundaryFill { tools, cells } => {
                 body_selections.push(tools);
                 body_selections.extend(cells);
             }
-            FeatureDefinition::SplitBody { targets, tools } => {
+            FeatureOperation::SplitBody { targets, tools } => {
                 body_selections.push(targets);
                 face_selections.push(tools);
             }
-            FeatureDefinition::SplitFace { targets, tool } => {
+            FeatureOperation::SplitFace { targets, tool } => {
                 face_selections.push(targets);
                 match tool {
                     SplitFaceTool::Path(path) => paths.push(path),
@@ -2792,24 +2792,24 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DeleteFace { faces, .. } => {
+            FeatureOperation::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::ReplaceFace { operands } => {
+            FeatureOperation::ReplaceFace { operands } => {
                 face_selections.push(operands.targets());
                 face_selections.push(operands.replacements());
             }
-            FeatureDefinition::MoveFace { faces, .. } => {
+            FeatureOperation::MoveFace { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::MoveBody { bodies, .. } => {
+            FeatureOperation::MoveBody { bodies, .. } => {
                 body_selections.push(bodies);
             }
-            FeatureDefinition::Dome { faces, .. } => {
+            FeatureOperation::Dome { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::Flex { .. } => {}
-            FeatureDefinition::Scale { bodies, center, .. } => {
+            FeatureOperation::Flex { .. } => {}
+            FeatureOperation::Scale { bodies, center, .. } => {
                 body_selections.push(bodies);
                 let center_valid = center.as_ref().is_none_or(|center| match center {
                     ScaleCenter::Point(_) => true,
@@ -2820,23 +2820,23 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "scale transform is invalid");
                 }
             }
-            FeatureDefinition::Combine { operands, .. } => {
+            FeatureOperation::Combine { operands, .. } => {
                 body_selections.push(operands.target());
                 body_selections.push(operands.tools());
             }
-            FeatureDefinition::CutWithSurface { targets, tools, .. } => {
+            FeatureOperation::CutWithSurface { targets, tools, .. } => {
                 body_selections.push(targets);
                 face_selections.push(tools);
             }
-            FeatureDefinition::TrimBodies { operands, .. } => {
+            FeatureOperation::TrimBodies { operands, .. } => {
                 body_selections.push(operands.targets());
                 body_selections.push(operands.tools());
             }
-            FeatureDefinition::DeleteBody { bodies, .. } => {
+            FeatureOperation::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
             }
-            FeatureDefinition::Hole { face, .. } => face_selections.extend(face),
-            FeatureDefinition::Pattern { seeds, pattern } => {
+            FeatureOperation::Hole { face, .. } => face_selections.extend(face),
+            FeatureOperation::Pattern { seeds, pattern } => {
                 collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
                     match seed {
@@ -2893,7 +2893,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::Sketch { sketch, .. } => {
+            FeatureOperation::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch.id() {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(
@@ -2905,7 +2905,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::SpatialSketch { sketch } => {
+            FeatureOperation::SpatialSketch { sketch } => {
                 if let Some(sketch) = sketch {
                     if !ir
                         .model
@@ -2922,10 +2922,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DatumCoordinateSystem { .. } => {}
-            FeatureDefinition::EquationCurve { .. } => {}
+            FeatureOperation::DatumCoordinateSystem { .. } => {}
+            FeatureOperation::EquationCurve { .. } => {}
 
-            FeatureDefinition::ProjectedCurve {
+            FeatureOperation::ProjectedCurve {
                 source,
                 target_faces,
                 ..
@@ -2933,7 +2933,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 paths.push(source);
                 face_selections.push(target_faces);
             }
-            FeatureDefinition::ProjectOnSurface {
+            FeatureOperation::ProjectOnSurface {
                 sources,
                 support_face,
                 ..
@@ -2941,20 +2941,20 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 paths.push(sources);
                 face_selections.push(support_face);
             }
-            FeatureDefinition::CompositeCurve { segments, .. } => {
+            FeatureOperation::CompositeCurve { segments, .. } => {
                 paths.extend(segments);
             }
-            FeatureDefinition::Helix { .. } => {}
-            FeatureDefinition::HelixNativeAxis { .. } => {}
-            FeatureDefinition::Coil { result, .. } => {
+            FeatureOperation::Helix { .. } => {}
+            FeatureOperation::HelixNativeAxis { .. } => {}
+            FeatureOperation::Coil { result, .. } => {
                 use crate::features::CoilResult;
                 if let CoilResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
             }
-            FeatureDefinition::HelicalSweep { .. } => {}
+            FeatureOperation::HelicalSweep { .. } => {}
 
-            FeatureDefinition::Binder {
+            FeatureOperation::Binder {
                 sources,
                 construction,
             } => {
@@ -2993,25 +2993,25 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::Wrap { face, .. } => {
+            FeatureOperation::Wrap { face, .. } => {
                 face_selections.push(face);
             }
-            FeatureDefinition::Sphere { .. } => {}
-            FeatureDefinition::Torus { .. } => {}
-            FeatureDefinition::PointGeometry { .. } => {}
-            FeatureDefinition::LineSegment { .. } => {}
+            FeatureOperation::Sphere { .. } => {}
+            FeatureOperation::Torus { .. } => {}
+            FeatureOperation::PointGeometry { .. } => {}
+            FeatureOperation::LineSegment { .. } => {}
 
-            FeatureDefinition::CircularArc { .. } => {}
+            FeatureOperation::CircularArc { .. } => {}
 
-            FeatureDefinition::EllipticArc { .. } => {}
+            FeatureOperation::EllipticArc { .. } => {}
 
-            FeatureDefinition::Polyline { .. } => {}
+            FeatureOperation::Polyline { .. } => {}
 
-            FeatureDefinition::RegularPolygonCurve { .. } => {}
-            FeatureDefinition::FaceFromShapes { sources, .. } => {
+            FeatureOperation::RegularPolygonCurve { .. } => {}
+            FeatureOperation::FaceFromShapes { sources, .. } => {
                 body_selections.push(sources);
             }
-            FeatureDefinition::TreeNode { children, .. } => {
+            FeatureOperation::TreeNode { children, .. } => {
                 for child in children {
                     if !ir
                         .model
@@ -3023,14 +3023,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DatumPlane { .. } => {}
-            FeatureDefinition::DatumThreePointPlane { points, .. } => {
+            FeatureOperation::DatumPlane { .. } => {}
+            FeatureOperation::DatumThreePointPlane { points, .. } => {
                 for point in points.iter() {
                     vertex_selections.push((point, "three-point datum-plane"));
                 }
             }
-            FeatureDefinition::DatumAxis { .. } => {}
-            FeatureDefinition::DatumPoint { construction, .. } => {
+            FeatureOperation::DatumAxis { .. } => {}
+            FeatureOperation::DatumPoint { construction, .. } => {
                 let mut plane_references = Vec::new();
                 if let Some(construction) = construction.as_deref() {
                     match construction {
@@ -3069,13 +3069,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 ),
                                 Some(record)
                                     if !matches!(
-                                        record.evaluation.definition(),
-                                        FeatureDefinition::DatumPrincipalPlane { .. }
-                                            | FeatureDefinition::DatumPlane { .. }
-                                            | FeatureDefinition::Unresolved {
+                                        record.evaluation.definition().operation(),
+                                        FeatureOperation::DatumPrincipalPlane { .. }
+                                            | FeatureOperation::DatumPlane { .. }
+                                            | FeatureOperation::Unresolved {
                                                 family: UnresolvedFamily::DatumPlane
                                             }
-                                            | FeatureDefinition::DatumOffsetPlane { .. }
+                                            | FeatureOperation::DatumOffsetPlane { .. }
                                     ) =>
                                 {
                                     feature_geometry_error(
@@ -3110,11 +3110,11 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DatumPrincipalPlane { .. }
-            | FeatureDefinition::SketchBlockDefinition { .. }
-            | FeatureDefinition::StoredGeometry {}
-            | FeatureDefinition::Native { .. } => {}
-            FeatureDefinition::SketchBlockInstance {
+            FeatureOperation::DatumPrincipalPlane { .. }
+            | FeatureOperation::SketchBlockDefinition { .. }
+            | FeatureOperation::StoredGeometry {}
+            | FeatureOperation::Native { .. } => {}
+            FeatureOperation::SketchBlockInstance {
                 block,
                 placement: _,
             } => {
@@ -3135,8 +3135,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             if !ir.model.features.iter().any(|candidate| {
                                 candidate.id == *block
                                     && matches!(
-                                        candidate.evaluation.definition(),
-                                        FeatureDefinition::SketchBlockDefinition { .. }
+                                        candidate.evaluation.definition().operation(),
+                                        FeatureOperation::SketchBlockDefinition { .. }
                                     )
                             }) =>
                         {
@@ -3161,7 +3161,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DerivedGeometry { source } => match features.get(source.as_str()) {
+            FeatureOperation::DerivedGeometry { source } => match features.get(source.as_str()) {
                 None => ref_error(
                     findings,
                     feature.id.as_str(),
@@ -3188,8 +3188,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }),
                 Some(_) => {}
             },
-            FeatureDefinition::ImportedGeometry { .. } | FeatureDefinition::PostProcess { .. } => {}
-            FeatureDefinition::DatumOffsetPlane { reference, .. } => {
+            FeatureOperation::ImportedGeometry { .. } => {}
+            FeatureOperation::DatumOffsetPlane { reference, .. } => {
                 if let Some(reference) = reference {
                     match reference {
                         DatumPlaneReference::Feature { feature: reference } => {
@@ -3204,13 +3204,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 }
                                 Some(record)
                                     if !matches!(
-                                        record.evaluation.definition(),
-                                        FeatureDefinition::DatumPrincipalPlane { .. }
-                                            | FeatureDefinition::DatumPlane { .. }
-                                            | FeatureDefinition::Unresolved {
+                                        record.evaluation.definition().operation(),
+                                        FeatureOperation::DatumPrincipalPlane { .. }
+                                            | FeatureOperation::DatumPlane { .. }
+                                            | FeatureOperation::Unresolved {
                                                 family: UnresolvedFamily::DatumPlane
                                             }
-                                            | FeatureDefinition::DatumOffsetPlane { .. }
+                                            | FeatureOperation::DatumOffsetPlane { .. }
                                     ) =>
                                 {
                                     feature_geometry_error(
@@ -3678,24 +3678,24 @@ fn check_historical_members<'a, I, F>(
 }
 
 fn regeneration_references(
-    definition: &crate::features::FeatureDefinition,
+    definition: &crate::features::FeatureOperation,
 ) -> impl Iterator<Item = &crate::features::FeatureId> {
     let mut references = BTreeSet::new();
     match definition {
         // A datum offset plane regenerates from its reference only when that
         // reference names a feature; a face-supported plane carries its frame
         // inline and is checked through the face selection instead.
-        crate::features::FeatureDefinition::DatumOffsetPlane {
+        crate::features::FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             ..
         } => {
             references.insert(reference);
         }
-        crate::features::FeatureDefinition::DatumPoint {
+        crate::features::FeatureOperation::DatumPoint {
             construction: Some(construction),
             ..
         } => references.extend(construction.feature_references()),
-        crate::features::FeatureDefinition::DatumThreePointPlane { points, .. } => {
+        crate::features::FeatureOperation::DatumThreePointPlane { points, .. } => {
             references.extend(points.iter().filter_map(|point| match point {
                 crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
                 crate::features::VertexSelection::Historical { .. }
@@ -3703,14 +3703,14 @@ fn regeneration_references(
                 | crate::features::VertexSelection::Unresolved => None,
             }));
         }
-        crate::features::FeatureDefinition::DerivedGeometry { source: reference }
-        | crate::features::FeatureDefinition::SketchBlockInstance {
+        crate::features::FeatureOperation::DerivedGeometry { source: reference }
+        | crate::features::FeatureOperation::SketchBlockInstance {
             block: Some(reference),
             ..
         } => {
             references.insert(reference);
         }
-        crate::features::FeatureDefinition::Pattern { seeds, .. } => {
+        crate::features::FeatureOperation::Pattern { seeds, .. } => {
             references.extend(seeds.iter().filter_map(|seed| match seed {
                 crate::features::PatternSeed::Feature(feature) => Some(feature),
                 crate::features::PatternSeed::Faces(_)
@@ -3743,22 +3743,22 @@ fn regeneration_references(
 }
 
 fn definition_profiles(
-    definition: &crate::features::FeatureDefinition,
+    definition: &crate::features::FeatureOperation,
 ) -> impl Iterator<Item = &crate::features::PlanarProfileRef> {
     let mut profiles: Vec<&crate::features::PlanarProfileRef> = Vec::new();
     match definition {
-        crate::features::FeatureDefinition::Extrude { profile, .. } => {
+        crate::features::FeatureOperation::Extrude { profile, .. } => {
             profiles.extend(profile.planar());
         }
-        crate::features::FeatureDefinition::SheetMetalBaseFlange { profile, .. }
-        | crate::features::FeatureDefinition::Wrap { profile, .. } => profiles.push(profile),
-        crate::features::FeatureDefinition::Revolve { construction, .. } => {
+        crate::features::FeatureOperation::SheetMetalBaseFlange { profile, .. }
+        | crate::features::FeatureOperation::Wrap { profile, .. } => profiles.push(profile),
+        crate::features::FeatureOperation::Revolve { construction, .. } => {
             profiles.extend(construction.profile());
         }
-        crate::features::FeatureDefinition::Rib { construction, .. } => {
+        crate::features::FeatureOperation::Rib { construction, .. } => {
             profiles.extend(construction.profile.as_ref());
         }
-        crate::features::FeatureDefinition::Sweep { shape, .. } => {
+        crate::features::FeatureOperation::Sweep { shape, .. } => {
             profiles.extend(shape.section().referenced_profile());
             profiles.extend(
                 shape
@@ -3767,16 +3767,16 @@ fn definition_profiles(
                     .filter_map(crate::features::SweepSection::referenced_profile),
             );
         }
-        crate::features::FeatureDefinition::HelicalSweep { construction, .. } => {
+        crate::features::FeatureOperation::HelicalSweep { construction, .. } => {
             profiles.push(&construction.profile);
         }
-        crate::features::FeatureDefinition::Loft { sections, .. } => {
+        crate::features::FeatureOperation::Loft { sections, .. } => {
             profiles.extend(sections.iter().filter_map(|section| match section {
                 crate::features::LoftSection::Profile(profile) => profile.planar(),
                 crate::features::LoftSection::Point(_) => None,
             }));
         }
-        crate::features::FeatureDefinition::Hole {
+        crate::features::FeatureOperation::Hole {
             profile: Some(profile),
             ..
         } => profiles.push(profile),
@@ -3822,11 +3822,11 @@ impl<'a> TerminationRef<'a> {
 }
 
 fn definition_terminations(
-    definition: &crate::features::FeatureDefinition,
+    definition: &crate::features::FeatureOperation,
 ) -> impl Iterator<Item = TerminationRef<'_>> {
     let mut terminations = Vec::new();
     match definition {
-        crate::features::FeatureDefinition::Extrude { extent, .. } => match extent {
+        crate::features::FeatureOperation::Extrude { extent, .. } => match extent {
             crate::features::ExtrudeExtent::OneSided { side }
             | crate::features::ExtrudeExtent::Symmetric { side } => {
                 terminations.push(TerminationRef::Linear(&side.termination));
@@ -3838,7 +3838,7 @@ fn definition_terminations(
                 ]);
             }
         },
-        crate::features::FeatureDefinition::Revolve { construction, .. } => {
+        crate::features::FeatureOperation::Revolve { construction, .. } => {
             match construction.extent() {
                 Some(
                     crate::features::RevolveExtent::OneSided { termination }
@@ -3853,7 +3853,7 @@ fn definition_terminations(
                 None => {}
             }
         }
-        crate::features::FeatureDefinition::Hole {
+        crate::features::FeatureOperation::Hole {
             extent: Some(extent),
             ..
         } => terminations.push(TerminationRef::Linear(extent)),
@@ -3919,13 +3919,13 @@ fn check_plane_feature_reference(
         ),
         Some(record)
             if !matches!(
-                record.evaluation.definition(),
-                crate::features::FeatureDefinition::DatumPrincipalPlane { .. }
-                    | crate::features::FeatureDefinition::DatumPlane { .. }
-                    | crate::features::FeatureDefinition::Unresolved {
+                record.evaluation.definition().operation(),
+                crate::features::FeatureOperation::DatumPrincipalPlane { .. }
+                    | crate::features::FeatureOperation::DatumPlane { .. }
+                    | crate::features::FeatureOperation::Unresolved {
                         family: crate::features::UnresolvedFamily::DatumPlane
                     }
-                    | crate::features::FeatureDefinition::DatumOffsetPlane { .. }
+                    | crate::features::FeatureOperation::DatumOffsetPlane { .. }
             ) =>
         {
             feature_geometry_error(
@@ -3985,7 +3985,8 @@ fn check_feature_sketch_references(
     findings: &mut Vec<Finding>,
 ) {
     use crate::features::{
-        FeatureDefinition, PathRef, PlanarProfileRef, ProfileRef, SketchPointSelection,
+        FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
+        SketchPointSelection,
     };
 
     let spatial_sketches = ir
@@ -4009,13 +4010,13 @@ fn check_feature_sketch_references(
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
         let sketch = match feature.evaluation.definition() {
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
-            } => sketch.as_str(),
-            FeatureDefinition::SpatialSketch {
+            }) => sketch.as_str(),
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch),
-            } => sketch.as_str(),
+            }) => sketch.as_str(),
             _ => continue,
         };
         if owners
@@ -4032,10 +4033,10 @@ fn check_feature_sketch_references(
     }
 
     for feature in &ir.model.features {
-        let FeatureDefinition::DatumPoint {
+        let FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction),
             ..
-        } = feature.evaluation.definition()
+        }) = feature.evaluation.definition()
         else {
             continue;
         };
@@ -4117,17 +4118,17 @@ fn check_feature_sketch_references(
         let mut profiles: Vec<crate::features::ProfileRef> = Vec::new();
         let mut paths = Vec::new();
         let definition = match feature.evaluation.definition() {
-            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
-            definition => definition,
+            FeatureDefinition::PostProcess { operation, .. }
+            | FeatureDefinition::Operation(operation) => operation,
         };
         match definition {
-            FeatureDefinition::Extrude { profile, .. } => {
+            FeatureOperation::Extrude { profile, .. } => {
                 profiles.push(profile.clone());
             }
-            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+            FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
                 profiles.push(ProfileRef::Planar(profile.clone()));
             }
-            FeatureDefinition::Rib { construction, .. } => {
+            FeatureOperation::Rib { construction, .. } => {
                 profiles.extend(
                     construction
                         .profile
@@ -4135,7 +4136,7 @@ fn check_feature_sketch_references(
                         .map(|profile| ProfileRef::Planar(profile.clone())),
                 );
             }
-            FeatureDefinition::Revolve { construction, .. } => {
+            FeatureOperation::Revolve { construction, .. } => {
                 profiles.extend(
                     construction
                         .profile()
@@ -4143,7 +4144,7 @@ fn check_feature_sketch_references(
                 );
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
             }
-            FeatureDefinition::Sweep {
+            FeatureOperation::Sweep {
                 shape,
                 path,
                 guide_rail,
@@ -4167,10 +4168,10 @@ fn check_feature_sketch_references(
                     paths.push(&guide_rail.path);
                 }
             }
-            FeatureDefinition::HelicalSweep { construction, .. } => {
+            FeatureOperation::HelicalSweep { construction, .. } => {
                 profiles.push(ProfileRef::Planar(construction.profile.clone()));
             }
-            FeatureDefinition::Loft {
+            FeatureOperation::Loft {
                 sections, guidance, ..
             } => {
                 profiles.extend(sections.iter().filter_map(|section| match section {
@@ -4182,7 +4183,7 @@ fn check_feature_sketch_references(
                     crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
                 }
             }
-            FeatureDefinition::Pattern { pattern, .. } => {
+            FeatureOperation::Pattern { pattern, .. } => {
                 collect_pattern_paths(pattern, &mut paths);
             }
             _ => {}

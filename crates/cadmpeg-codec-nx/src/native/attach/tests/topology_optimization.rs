@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_body_writing_topology_optimization_retains_unresolved_family() {
@@ -16,9 +16,9 @@ fn nx_body_writing_topology_optimization_retains_unresolved_family() {
 
     assert_eq!(
         definition,
-        Some(FeatureDefinition::Unresolved {
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::TopologyOptimization
-        })
+        }))
     );
     assert_eq!(
         definition.unwrap().body_output_family(),

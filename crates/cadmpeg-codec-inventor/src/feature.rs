@@ -16,8 +16,9 @@ use cadmpeg_ir::{
     features::{
         BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
         ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource,
-        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureResultTopology, FilletGroup,
-        HoleKind, HolePlacement, LinearTermination, ParameterValue, RadiusSpec,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+        FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, LinearTermination,
+        ParameterValue, RadiusSpec,
     },
     scalar::{Angle, Length},
 };
@@ -988,10 +989,10 @@ impl FeatureFamily {
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
         match definition {
-            FeatureDefinition::Extrude { .. } => Some(Self::Extrusion),
-            FeatureDefinition::Fillet { .. } => Some(Self::Fillet),
-            FeatureDefinition::Chamfer { .. } => Some(Self::Chamfer),
-            FeatureDefinition::Hole { .. } => Some(Self::Hole),
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
+            FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
+            FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
             _ => None,
         }
     }
@@ -1230,7 +1231,7 @@ fn project_extrusion(
         source_content: FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
                 ),
@@ -1246,7 +1247,7 @@ fn project_extrusion(
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: Some(source.id()),
     };
@@ -1334,9 +1335,9 @@ fn project_fillet(
             source_content: FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Fillet {
+                FeatureDefinition::Operation(FeatureOperation::Fillet {
                     groups: groups.try_into().ok()?,
-                },
+                }),
             ),
             native_ref: Some(source.id()),
         },
@@ -1377,7 +1378,7 @@ fn project_chamfer(
             source_content: FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Chamfer {
+                FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                         edges: EdgeSelection::Native(edges.id()),
                         spec: ChamferSpec::Distance {
@@ -1387,7 +1388,7 @@ fn project_chamfer(
                         },
                     }),
                     flip_direction: boolean(source, 5, index)?,
-                },
+                }),
             ),
             native_ref: Some(source.id()),
         },
@@ -1486,7 +1487,7 @@ fn project_hole(
             source_content: FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Hole {
+                FeatureDefinition::Operation(FeatureOperation::Hole {
                     profile: None,
                     profile_filter: None,
                     face: None,
@@ -1513,7 +1514,7 @@ fn project_hole(
                     bottom: None,
                     taper_angle: None,
                     allow_multi_profile_faces: None,
-                },
+                }),
             ),
             native_ref: Some(source.id()),
         },
@@ -2254,7 +2255,7 @@ mod tests {
         let (projected, result) = project_fillet(&fillet, &label, &index).expect("fillet");
         assert!(matches!(
             projected.evaluation.definition(),
-            FeatureDefinition::Fillet { groups }
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                 if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
         ));
         assert_eq!(result.bodies(), vec![fillet_properties[8].id()]);
@@ -2330,10 +2331,10 @@ mod tests {
         let (projected, _) = project_chamfer(&chamfer, &label, &index).expect("chamfer");
         assert!(matches!(
             projected.evaluation.definition(),
-            FeatureDefinition::Chamfer {
+            FeatureDefinition::Operation(FeatureOperation::Chamfer {
                 groups,
                 flip_direction: true
-            } if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
+            }) if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
         ));
     }
 
@@ -2506,7 +2507,7 @@ mod tests {
         let (projected, _) = project_extrusion(&feature, &label, &index).expect("extrusion");
         assert!(matches!(
             projected.evaluation.definition(),
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 direction: ExtrudeDirection::Explicit {
                     vector: geometry_1,
                     ..
@@ -2522,7 +2523,7 @@ mod tests {
                 },
                 op: BooleanOp::NewBody,
                 ..
-            } if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
+            }) if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
     }
 
@@ -2654,13 +2655,13 @@ mod tests {
         );
         let (projected, _) = project_hole(&feature, &label, &index).expect("hole");
         assert!(matches!(
-            projected.evaluation.definition(), FeatureDefinition::Hole {
+            projected.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
                 shape,
 
                 extent: Some(LinearTermination::ThroughAll {}),
                 ..
-            } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+            }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                     kind: HoleKind::CounterboreDrilled {
                         diameter: actual_diameter,
                         depth: actual_depth,

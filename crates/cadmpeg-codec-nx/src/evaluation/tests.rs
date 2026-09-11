@@ -2,6 +2,7 @@ mod body_operations;
 mod history;
 mod patterns;
 
+use cadmpeg_ir::features::FeatureOperation;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
@@ -48,7 +49,7 @@ fn complete_block_ir() -> CadIr {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Block {
+            FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
                     cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
@@ -56,7 +57,7 @@ fn complete_block_ir() -> CadIr {
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
-            },
+            }),
             vec![body],
         ),
         native_ref: None,
@@ -120,7 +121,7 @@ fn complete_hole(body: BodyId) -> Feature {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Hole {
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
@@ -144,7 +145,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 bottom: None,
                 taper_angle: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
             vec![body],
         ),
         native_ref: None,
@@ -200,7 +201,7 @@ fn complete_extrude_feature(
     let mut feature = body_neutral_feature(
         id,
         ordinal,
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile.clone())),
             direction: ExtrudeDirection::ProfileNormal {},
             start: ExtrudeStart::ProfilePlane {},
@@ -218,7 +219,7 @@ fn complete_extrude_feature(
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        },
+        }),
     );
     feature.dependencies.insert(profile);
     feature.evaluation.set_outputs(outputs);

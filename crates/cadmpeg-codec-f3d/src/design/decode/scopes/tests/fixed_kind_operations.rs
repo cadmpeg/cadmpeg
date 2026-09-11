@@ -8,6 +8,7 @@
 )]
 use super::prelude::*;
 use crate::records::topology::DesignOperandRole;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 pub(super) fn continue_fixed_kind_operations(
@@ -971,10 +972,10 @@ fn fixed_kind_edge_and_revolve_operations(
     );
     assert!(matches!(
         projected,
-        Some(FeatureDefinition::Revolve {
+        Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        }) if construction.axis().is_some_and(|axis|
+        })) if construction.axis().is_some_and(|axis|
             axis.origin == Point3::new(1.0, 2.0, 3.0)
                 && axis.direction == Vector3::new(0.0, -1.0, 0.0))
     ));
@@ -1012,10 +1013,10 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert!(matches!(
         historical_definition,
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             ..
-        } if construction.axis().is_none()
+        }) if construction.axis().is_none()
     ));
     let mut feature = cadmpeg_ir::features::Feature {
         id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
@@ -1065,10 +1066,10 @@ fn fixed_kind_edge_and_revolve_operations(
     .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             ..
-        } if construction.axis().is_some_and(|axis|
+        }) if construction.axis().is_some_and(|axis|
             axis.origin == Point3::new(4.0, 5.0, 6.0)
                 && axis.direction == Vector3::new(0.0, 0.0, -1.0))
     ));
@@ -1206,10 +1207,10 @@ fn fixed_kind_edge_and_revolve_operations(
     .unwrap();
     assert!(matches!(
         face_axis_feature.evaluation.definition(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             ..
-        } if construction.axis().is_some_and(|axis|
+        }) if construction.axis().is_some_and(|axis|
             axis.origin == Point3::new(1.0, 2.0, 3.0)
                 && axis.direction == Vector3::new(0.0, 0.0, 1.0))
     ));
@@ -1242,10 +1243,10 @@ fn fixed_kind_edge_and_revolve_operations(
     .unwrap();
     assert!(matches!(
         conflicting_face_axis_feature.evaluation.definition(),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             ..
-        } if construction.axis().is_none()
+        }) if construction.axis().is_none()
     ));
 
     (bytes, scope)

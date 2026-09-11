@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 use cadmpeg_ir::ids::BodyId;
 
 #[test]
@@ -10,7 +10,9 @@ fn nx_brep_projects_to_stored_geometry_only_with_unique_result_bodies() {
     let body = BodyId::mint("test:model:entity#body%231").expect("identity grammar");
     assert!(matches!(
         super::brep_feature_definition(std::slice::from_ref(&body)),
-        Some(FeatureDefinition::StoredGeometry {})
+        Some(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {}
+        ))
     ));
     assert!(super::brep_feature_definition(&[]).is_none());
     assert!(super::brep_feature_definition(&[body.clone(), body]).is_none());
@@ -23,9 +25,9 @@ fn nx_body_writing_brep_retains_unresolved_family() {
 
     assert_eq!(
         super::body_writing_unresolved_feature_definition("BREP", &source_properties),
-        Some(FeatureDefinition::Unresolved {
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Brep
-        })
+        }))
     );
 }
 

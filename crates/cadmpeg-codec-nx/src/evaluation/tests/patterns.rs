@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::PatternTransform;
 
 #[test]
@@ -16,7 +17,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
     let mut pattern = body_neutral_feature(
         "pattern",
         1,
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![
                 seed.clone()
             ]))],
@@ -27,7 +28,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                 second: None,
             })
             .unwrap(),
-        },
+        }),
     );
     pattern
         .evaluation
@@ -57,10 +58,10 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -80,14 +81,14 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         "pattern",
         1,
         seed.clone(),
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![seed]))],
             pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: Point3::new(0.0, 0.0, 0.0),
                 plane_normal: Vector3::new(1.0, 0.0, 0.0),
             })
             .unwrap(),
-        },
+        }),
     ));
 
     assert_eq!(
@@ -114,14 +115,14 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
         "pattern",
         1,
         body,
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
             pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: Point3::new(0.0, 0.0, 0.0),
                 plane_normal: Vector3::new(1.0, 0.0, 0.0),
             })
             .unwrap(),
-        },
+        }),
     );
     pattern.dependencies.insert(seed);
     ir.model.features.push(pattern);

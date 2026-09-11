@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
     SketchGeometryDefinition, SketchId, SketchPlacement,
 };
 use cadmpeg_ir::{
-    features::{Feature, FeatureDefinition, FeatureId},
+    features::{Feature, FeatureDefinition, FeatureId, FeatureOperation},
     scalar::Length,
 };
 
@@ -73,9 +73,9 @@ fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
     let mut feature = Feature::new(
         FeatureId::mint("synthetic:test:id#neutral-feature").expect("identity grammar"),
         0,
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        }),
     );
     feature.native_ref = Some(feature_ref.into());
     feature

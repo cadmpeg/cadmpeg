@@ -401,7 +401,10 @@ fn decode_evaluates_parameter_dependency_expressions() {
 #[test]
 fn decode_projects_evaluated_equations_into_feature_semantics() {
     use cadmpeg_ir::{
-        features::{BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination},
+        features::{
+            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+            LinearTermination,
+        },
         scalar::Length,
     };
 
@@ -418,7 +421,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -429,7 +432,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
             },
             op: BooleanOp::Join,
             ..
-        } if actual_length.get() == 8.0
+        }) if actual_length.get() == 8.0
     ));
     let depth = decoded
         .ir()
@@ -465,7 +468,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     );
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -475,7 +478,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
                 }
             },
             ..
-        } if actual_length.get() == 8.0
+        }) if actual_length.get() == 8.0
     ));
 }
 
@@ -483,8 +486,8 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     use cadmpeg_ir::{
         features::{
-            ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, LinearTermination,
-            ParameterValue,
+            ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole,
+            LinearTermination, ParameterValue,
         },
         scalar::Length,
     };
@@ -508,10 +511,10 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .expect("equations node");
     assert!(matches!(
         equations.evaluation.definition(),
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
-        }
+        })
     ));
     let width = decoded
         .ir()
@@ -547,7 +550,9 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         ir.model.features[extrusion]
             .evaluation
             .edit(|definition, _| {
-                let FeatureDefinition::Extrude { extent, .. } = definition else {
+                let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+                    definition
+                else {
                     panic!("typed extrusion");
                 };
                 *extent = ExtrudeExtent::OneSided {
@@ -588,10 +593,10 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .expect("equations node");
     assert!(matches!(
         equations.evaluation.definition(),
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
-        }
+        })
     ));
     let depth = regenerated
         .ir()
@@ -615,7 +620,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .expect("extrusion");
     assert!(matches!(
         extrusion.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -625,7 +630,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
                 }
             },
             ..
-        } if actual_length.get() == 12.0
+        }) if actual_length.get() == 12.0
     ));
 }
 
@@ -715,7 +720,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 #[test]
 fn decode_preserves_configuration_local_parameter_values() {
     use cadmpeg_ir::{
-        features::{FeatureDefinition, ParameterValue, RadiusSpec},
+        features::{FeatureDefinition, FeatureOperation, ParameterValue, RadiusSpec},
         scalar::Length,
     };
 
@@ -834,11 +839,12 @@ fn decode_preserves_configuration_local_parameter_values() {
         dependent_id,
         ParameterValue::Length(Length::new(150.0).unwrap()),
     );
-    let FeatureDefinition::Fillet { groups, .. } = &mut edited.model.configurations[1]
-        .feature_states
-        .get_mut(feature_id.as_ref().expect("feature-owned parameter"))
-        .unwrap()
-        .definition
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups, .. }) =
+        &mut edited.model.configurations[1]
+            .feature_states
+            .get_mut(feature_id.as_ref().expect("feature-owned parameter"))
+            .unwrap()
+            .definition
     else {
         panic!("configuration fillet state");
     };
@@ -896,9 +902,9 @@ fn decode_preserves_configuration_local_parameter_values() {
     );
     assert!(matches!(
         regenerated.ir().model.configurations[1].feature_states[&regenerated_feature.id].definition,
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: actual_radius
             },
@@ -911,8 +917,8 @@ fn decode_preserves_configuration_local_parameter_values() {
 fn decode_separates_document_expression_from_evaluated_feature_scalar() {
     use cadmpeg_ir::{
         features::{
-            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
-            ParameterValue,
+            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+            LinearTermination, ParameterValue,
         },
         scalar::Length,
     };
@@ -941,7 +947,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         .expect("projected extrusion");
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -952,7 +958,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
             },
             op: BooleanOp::Join,
             ..
-        } if actual_length.get() == 25.0
+        }) if actual_length.get() == 25.0
     ));
     let parameter = decoded
         .ir()

@@ -7,7 +7,7 @@ use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
@@ -157,7 +157,9 @@ pub(crate) fn bind_revolution_operations(
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Revolve { op, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             if *op != BooleanOp::Unresolved {
@@ -210,7 +212,9 @@ pub(crate) fn bind_sweep_operations(
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             shape
@@ -365,7 +369,9 @@ pub(crate) fn bind_extrusion_operations(
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Extrude { op, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             if *op != BooleanOp::Unresolved {
@@ -445,14 +451,14 @@ pub(crate) fn inherit_configuration_operations(
             };
             let operation_kind = match (&definition, *base_definition) {
                 (
-                    FeatureDefinition::Extrude { op, .. },
-                    FeatureDefinition::Extrude { op: base_op, .. },
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op: base_op, .. }),
                 ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
                     OperationKind::Extrusion
                 }
                 (
-                    FeatureDefinition::Revolve { op, .. },
-                    FeatureDefinition::Revolve { op: base_op, .. },
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op: base_op, .. }),
                 ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
                     OperationKind::Revolution
                 }
@@ -466,14 +472,14 @@ pub(crate) fn inherit_configuration_operations(
             }
             match (&mut definition, operation_kind, *base_definition) {
                 (
-                    FeatureDefinition::Extrude { op, .. },
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
                     OperationKind::Extrusion,
-                    FeatureDefinition::Extrude { op: base_op, .. },
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op: base_op, .. }),
                 )
                 | (
-                    FeatureDefinition::Revolve { op, .. },
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
                     OperationKind::Revolution,
-                    FeatureDefinition::Revolve { op: base_op, .. },
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op: base_op, .. }),
                 ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
                     *op = *base_op;
                 }

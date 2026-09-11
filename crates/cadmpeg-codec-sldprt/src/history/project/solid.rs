@@ -5,8 +5,8 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::{
     features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-        HoleConstruction, HoleKind, LinearTermination, PlanarProfileRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
+        HoleBottom, HoleConstruction, HoleKind, LinearTermination, PlanarProfileRef, ProfileRef,
         VertexSelection,
     },
     scalar::Length,
@@ -217,7 +217,7 @@ pub(crate) fn project_extrude(
     } else {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone()))
     };
-    Some(FeatureDefinition::Extrude {
+    Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -231,7 +231,7 @@ pub(crate) fn project_extrude(
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    })
+    }))
 }
 
 pub(crate) fn project_hole(
@@ -364,7 +364,7 @@ pub(crate) fn project_hole(
         Some("ThroughAll") => Some(LinearTermination::ThroughAll {}),
         Some(_) => None,
     };
-    Some(FeatureDefinition::Hole {
+    Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: feature
@@ -401,7 +401,7 @@ pub(crate) fn project_hole(
         bottom: profile.as_ref().and_then(|profile| profile.bottom),
         taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
         allow_multi_profile_faces: None,
-    })
+    }))
 }
 
 pub(crate) fn threaded_hole_major_diameter(
@@ -412,7 +412,7 @@ pub(crate) fn threaded_hole_major_diameter(
     if classify(feature) != Some(FeatureClass::Hole) {
         return None;
     }
-    let FeatureDefinition::Hole { shape, .. } =
+    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
         project_hole(feature, features_by_source, history_features)?
     else {
         return None;

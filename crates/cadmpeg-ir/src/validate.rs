@@ -175,7 +175,7 @@ mod tests {
     use super::validate_neutral;
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, PrincipalPlane, SplitFaceTool,
+        FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SplitFaceTool,
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
@@ -199,9 +199,9 @@ mod tests {
             source_content: crate::features::FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: crate::features::SketchFeatureBinding::Unresolved,
-                },
+                }),
             ),
             native_ref: None,
         });
@@ -240,9 +240,9 @@ mod tests {
                         outputs: crate::features::DistinctMembers::default(),
                     },
                     dependencies: crate::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::Sketch {
+                    definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    },
+                    }),
                 },
             )]),
             native_ref: None,
@@ -281,28 +281,28 @@ mod tests {
                 first.clone(),
                 0,
                 Vec::new(),
-                FeatureDefinition::DatumPrincipalPlane {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                     plane: PrincipalPlane::Front,
-                },
+                }),
             ),
             feature(
                 second.clone(),
                 1,
                 Vec::new(),
-                FeatureDefinition::DatumPrincipalPlane {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                     plane: PrincipalPlane::Right,
-                },
+                }),
             ),
             feature(
                 split,
                 2,
                 vec![first.clone(), second.clone()],
-                FeatureDefinition::SplitFace {
+                FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
                     tool: SplitFaceTool::Planes {
                         planes: vec![first.clone(), second.clone()].try_into().unwrap(),
                     },
-                },
+                }),
             ),
         ];
 

@@ -6,15 +6,15 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn feature_operation_geometry_is_validated() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let definitions = vec![
-        FeatureDefinition::Form { cages: Vec::new() },
-        FeatureDefinition::Form {
+        FeatureDefinition::Operation(FeatureOperation::Form { cages: Vec::new() }),
+        FeatureDefinition::Operation(FeatureOperation::Form {
             cages: vec![
                 crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
             ],
-        },
+        }),
     ];
     let expected = ["references missing Form control cage `synthetic:test:subd#missing`"];
     let mut ir = unit_cube();

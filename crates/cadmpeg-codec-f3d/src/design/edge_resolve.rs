@@ -2331,7 +2331,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::{
-        features::{FeatureDefinition, FilletGroup, RadiusSpec, VariableRadius},
+        features::{FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec, VariableRadius},
         scalar::Length,
     };
 
@@ -2471,9 +2471,9 @@ pub(crate) fn project_fixed_fillet_with_corners(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(FeatureDefinition::Fillet {
+    Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: groups.try_into().ok()?,
-    })
+    }))
 }
 
 #[cfg(test)]

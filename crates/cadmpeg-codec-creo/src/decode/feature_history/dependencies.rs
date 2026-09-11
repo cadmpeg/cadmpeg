@@ -8,7 +8,7 @@ use crate::decode::sketch_transfer::recipe::current_feature_recipe_parent;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId,
+    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -516,18 +516,20 @@ pub(in super::super) fn feature_generated_dependencies(
     definition: &IrFeatureDefinition,
 ) -> Vec<IrFeatureId> {
     let face_selections = match definition {
-        IrFeatureDefinition::Hole {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             face: Some(face), ..
+        })
+        | IrFeatureDefinition::Operation(IrFeatureOperation::Thicken { faces: face, .. })
+        | IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface { faces: face, .. }) => {
+            vec![face]
         }
-        | IrFeatureDefinition::Thicken { faces: face, .. }
-        | IrFeatureDefinition::KnitSurface { faces: face, .. } => vec![face],
         _ => Vec::new(),
     };
     let edge_selections = match definition {
-        IrFeatureDefinition::Fillet { groups } => {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { groups }) => {
             groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
         }
-        IrFeatureDefinition::Chamfer { groups, .. } => {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer { groups, .. }) => {
             groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
         }
         _ => Vec::new(),

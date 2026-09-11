@@ -9,8 +9,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
         ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
-        FeatureDefinition, FeatureId, FeatureSourceContent, ParameterId, PathRef, PlanarProfileRef,
-        ProfileRef, SplitFaceTool, UnresolvedFamily,
+        FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, ParameterId, PathRef,
+        PlanarProfileRef, ProfileRef, SplitFaceTool, UnresolvedFamily,
     },
     scalar::Length,
 };
@@ -173,7 +173,7 @@ pub(crate) fn project_feature_model(
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::TreeNode { .. }
+                FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
             )
         })
         .map(|feature| feature.id.clone())
@@ -192,7 +192,9 @@ pub(crate) fn project_feature_model(
             continue;
         };
         parent.evaluation.edit(|definition, _| {
-            if let FeatureDefinition::TreeNode { children, .. } = definition {
+            if let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
+                definition
+            {
                 children.insert(child);
             }
         });
@@ -364,23 +366,25 @@ pub(crate) fn bind_offset_plane_references(
                 (
                     feature.ordinal,
                     match feature.evaluation.definition() {
-                        FeatureDefinition::DatumPrincipalPlane { plane } => {
-                            Some(principal_frame(*plane))
-                        }
-                        FeatureDefinition::DatumPlane { frame } => {
+                        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                            plane,
+                        }) => Some(principal_frame(*plane)),
+                        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
                             Some((frame.origin(), frame.normal(), frame.u_axis()))
                         }
-                        FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
+                        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                            ..
+                        }) => stored_frame(feature),
                         _ => None,
                     },
                     matches!(
                         feature.evaluation.definition(),
-                        FeatureDefinition::DatumPrincipalPlane { .. }
+                        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
                     ),
                     matches!(
                         feature.evaluation.definition(),
-                        FeatureDefinition::DatumPrincipalPlane { .. }
-                            | FeatureDefinition::DatumPlane { .. }
+                        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
+                            | FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
                     ),
                 ),
             )
@@ -392,10 +396,10 @@ pub(crate) fn bind_offset_plane_references(
     let zero_offset_parents = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::DatumOffsetPlane {
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
-            } = feature.evaluation.definition()
+            }) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -419,10 +423,10 @@ pub(crate) fn bind_offset_plane_references(
         let result_frame = stored_frame(feature);
         let source_reference_frame = serialized_reference_frame(feature);
         let mut definition = feature.evaluation.definition().clone();
-        let FeatureDefinition::DatumOffsetPlane {
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference,
             distance,
-        } = &mut definition
+        }) = &mut definition
         else {
             continue;
         };
@@ -484,8 +488,10 @@ pub(crate) fn bind_offset_plane_references(
         .iter()
         .filter_map(|feature| {
             let frame = match feature.evaluation.definition() {
-                FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(*plane),
-                FeatureDefinition::DatumPlane { frame } => {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
+                    principal_frame(*plane)
+                }
+                FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
                     (frame.origin(), frame.normal(), frame.u_axis())
                 }
                 _ => return None,
@@ -497,10 +503,10 @@ pub(crate) fn bind_offset_plane_references(
     loop {
         let mut changed = false;
         for feature in features.iter() {
-            let FeatureDefinition::DatumOffsetPlane {
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
-            } = feature.evaluation.definition()
+            }) = feature.evaluation.definition()
             else {
                 continue;
             };
@@ -530,10 +536,10 @@ pub(crate) fn bind_offset_plane_references(
             .iter()
             .enumerate()
             .filter_map(|(index, feature)| {
-                let FeatureDefinition::DatumOffsetPlane {
+                let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference,
                     distance,
-                } = feature.evaluation.definition()
+                }) = feature.evaluation.definition()
                 else {
                     return None;
                 };
@@ -615,10 +621,10 @@ pub(crate) fn bind_offset_plane_references(
             .collect::<Vec<_>>();
         for (index, (reference, distance)) in bindings {
             let mut definition = features[index].evaluation.definition().clone();
-            let FeatureDefinition::DatumOffsetPlane {
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: slot,
                 distance: stored_distance,
-            } = &mut definition
+            }) = &mut definition
             else {
                 continue;
             };
@@ -642,10 +648,10 @@ pub(crate) fn bind_offset_plane_references(
     }
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
-        let FeatureDefinition::DatumOffsetPlane {
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: reference @ None,
             ..
-        } = &mut definition
+        }) = &mut definition
         else {
             continue;
         };
@@ -715,19 +721,23 @@ pub(crate) fn bind_native_construction_features(
         };
         let mut definition = feature.evaluation.definition().clone();
         match &mut definition {
-            FeatureDefinition::Extrude { profile, .. } => bind(profile),
-            FeatureDefinition::Wrap { profile, .. } => bind_planar(profile),
-            FeatureDefinition::Revolve { construction, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
+                bind(profile)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
+                bind_planar(profile)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
                 if let Some(profile) = construction.profile_mut() {
                     bind_planar(profile);
                 }
             }
-            FeatureDefinition::Rib { construction, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
                 if let Some(profile) = &mut construction.profile {
                     bind_planar(profile);
                 }
             }
-            FeatureDefinition::Sweep { shape, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                 let mut section = shape.section().clone();
                 if let Some(profile) = section.referenced_profile_mut() {
                     bind_planar(profile);
@@ -739,17 +749,17 @@ pub(crate) fn bind_native_construction_features(
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            FeatureDefinition::Loft { sections, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
                 for section in sections {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
                         bind(profile);
                     }
                 }
             }
-            FeatureDefinition::SplitFace {
+            FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 tool: SplitFaceTool::Path(PathRef::Native(native)),
                 ..
-            } => {
+            }) => {
                 if let Some(target) = feature_ids_by_native.get(native.as_str()) {
                     dependencies.push(target.clone());
                 }
@@ -967,18 +977,18 @@ pub(crate) fn project_definition(
     history_features: &[Feature],
 ) -> FeatureDefinition {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
-        return FeatureDefinition::StoredGeometry {};
+        return FeatureDefinition::Operation(FeatureOperation::StoredGeometry {});
     }
     if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
-        return FeatureDefinition::Unresolved {
+        return FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        };
+        });
     }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
-        return FeatureDefinition::TreeNode {
+        return FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role,
             children: cadmpeg_ir::features::TreeChildren::default(),
-        };
+        });
     }
     let class = classify(feature);
     if class == Some(FeatureClass::CosmeticThread) {
@@ -988,40 +998,42 @@ pub(crate) fn project_definition(
         return if feature.kind.eq_ignore_ascii_case("3DSketch")
             || feature.input_class.as_deref() == Some("mo3DProfileFeature_c")
         {
-            FeatureDefinition::SpatialSketch { sketch: None }
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
         } else {
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            }
+            })
         };
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {
-        return FeatureDefinition::SketchBlockDefinition { sketch: None };
+        return FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition {
+            sketch: None,
+        });
     }
     if class == Some(FeatureClass::SketchBlockInstance) {
-        return FeatureDefinition::SketchBlockInstance {
+        return FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
             block: feature
                 .properties
                 .get("BlockDefinition")
                 .and_then(|source| by_source.get(source.as_str()).cloned()),
             placement: sketch_block_placement(feature),
-        };
+        });
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
         return project_offset_plane(feature, by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
     if let Some(plane) = principal_plane_in_history(feature, features_by_source, history_features) {
-        return FeatureDefinition::DatumPrincipalPlane { plane };
+        return FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane });
     }
     if class == Some(FeatureClass::ReferencePlane) {
         return project_datum_plane(feature).unwrap_or_else(|| {
             if feature.properties.contains_key("NativeRole") {
                 native_definition(feature)
             } else {
-                FeatureDefinition::Unresolved {
+                FeatureDefinition::Operation(FeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumPlane,
-                }
+                })
             }
         });
     }
@@ -1032,9 +1044,11 @@ pub(crate) fn project_definition(
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::CoordinateSystem) {
-        return project_datum_coordinate_system(feature).unwrap_or(FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumCoordinateSystem,
-        });
+        return project_datum_coordinate_system(feature).unwrap_or(FeatureDefinition::Operation(
+            FeatureOperation::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
+        ));
     }
     if class == Some(FeatureClass::EquationCurve) {
         return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
@@ -1156,10 +1170,10 @@ pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> Paramet
 }
 
 pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::Native {
+    FeatureDefinition::Operation(FeatureOperation::Native {
         kind: feature.kind.clone().into(),
         parameters: feature.parameters.clone(),
-    }
+    })
 }
 
 pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {

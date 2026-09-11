@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{Feature, FeatureDefinition};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -138,17 +138,19 @@ pub(crate) fn project_derived_instance_features(
         };
         if !matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
             continue;
         }
         feature
             .evaluation
-            .set_definition(FeatureDefinition::InsertComponent {
-                occurrence: crate::ids::neutral_component_occurrence_id(
-                    construction.occurrence_guid.as_str(),
-                ),
-            });
+            .set_definition(FeatureDefinition::Operation(
+                FeatureOperation::InsertComponent {
+                    occurrence: crate::ids::neutral_component_occurrence_id(
+                        construction.occurrence_guid.as_str(),
+                    ),
+                },
+            ));
     }
 
     Ok(())
@@ -180,7 +182,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         };
         if !matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
             continue;
         }
@@ -188,9 +190,11 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
         feature
             .evaluation
-            .set_definition(FeatureDefinition::InsertComponent {
-                occurrence: occurrence_id.clone(),
-            });
+            .set_definition(FeatureDefinition::Operation(
+                FeatureOperation::InsertComponent {
+                    occurrence: occurrence_id.clone(),
+                },
+            ));
         occurrences.push(Occurrence {
             id: occurrence_id,
             prototype: PrototypeReference::Unresolved,
@@ -288,7 +292,7 @@ mod tests {
         DesignComponentOccurrence, DesignCopyPasteComponentOperation,
         DesignDerivedInstanceConstruction, DesignParameterScope,
     };
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::products::PrototypeReference;
 
     #[test]
@@ -421,19 +425,19 @@ mod tests {
         let mut feature = Feature::new(
             FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
             1,
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "DerivedInstance".into(),
                 parameters: std::collections::BTreeMap::new(),
-            },
+            }),
         );
         feature.native_ref = Some(scope.id.clone());
         super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope])
             .unwrap();
         assert_eq!(
             *feature.evaluation.definition(),
-            FeatureDefinition::InsertComponent {
+            FeatureDefinition::Operation(FeatureOperation::InsertComponent {
                 occurrence: crate::ids::neutral_component_occurrence_id(OCCURRENCE),
-            }
+            })
         );
     }
 

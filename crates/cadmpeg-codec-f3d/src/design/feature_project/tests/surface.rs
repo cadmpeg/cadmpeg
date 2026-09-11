@@ -6,6 +6,7 @@
 )]
 
 use super::prelude::*;
+use cadmpeg_ir::features::FeatureOperation;
 
 const EPS_SURFACE_DISTANCE_MM: f64 = 1.0e-12;
 
@@ -37,11 +38,11 @@ fn dispatcher_projects_perpendicular_surface_extend() {
     let [Feature { evaluation, .. }] = features.as_slice() else {
         panic!("perpendicular SurfaceExtend did not project as a typed feature");
     };
-    let FeatureDefinition::ExtendSurface {
+    let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: FaceSelection::Native(native),
         distance: Some(distance),
         method: cadmpeg_ir::features::SurfaceExtension::Perpendicular,
-    } = evaluation.definition()
+    }) = evaluation.definition()
     else {
         panic!("perpendicular SurfaceExtend did not project as a typed feature");
     };

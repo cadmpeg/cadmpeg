@@ -2,6 +2,7 @@ use super::super::*;
 use super::*;
 use crate::records::FeatureSource;
 use crate::resolved_features::curves::sketch_plane_frames;
+use cadmpeg_ir::features::FeatureOperation;
 use std::collections::HashSet;
 
 #[test]
@@ -201,19 +202,19 @@ fn offset_plane_frame_translates_its_reference_frame() {
         neutral(
             "synthetic:test:id#plane",
             "plane-native",
-            FeatureDefinition::DatumPrincipalPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: PrincipalPlane::Top,
-            },
+            }),
         ),
         neutral(
             "synthetic:test:id#offset",
             "offset-native",
-            FeatureDefinition::DatumOffsetPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
                     feature: FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
                 }),
                 distance: Length::new(3.0).unwrap(),
-            },
+            }),
         ),
     ];
     let history = crate::records::FeatureHistory {

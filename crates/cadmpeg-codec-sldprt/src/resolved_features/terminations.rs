@@ -16,7 +16,7 @@ use super::selections::{
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
@@ -884,7 +884,9 @@ pub(crate) fn project_surface_sweep_profiles(
             else {
                 break 'feature_edit;
             };
-            let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             shape
@@ -1098,7 +1100,9 @@ pub(crate) fn project_compact_combine_paths(
             else {
                 break 'feature_edit;
             };
-            let FeatureDefinition::Combine { operands, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             operands

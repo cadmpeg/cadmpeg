@@ -1,3 +1,4 @@
+use crate::features::FeatureOperation;
 use crate::features::*;
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 use crate::scalar::{InteriorAngle, PositiveLength};
@@ -156,11 +157,11 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
 #[test]
 fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
     let body = body_id("inserted");
-    let definition = FeatureDefinition::InsertBodies {
+    let definition = FeatureDefinition::Operation(FeatureOperation::InsertBodies {
         bodies: crate::features::InsertedBodies::Resolved {
             native: "copied".into(),
         },
-    };
+    });
     let mut feature = Feature::new(feature_id("insert"), 0, definition);
     assert!(feature.evaluation.outputs().is_empty());
     feature.evaluation.set_outputs(vec![body.clone()]);
@@ -177,9 +178,11 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
 
     let mut restated = wire;
     restated["definition"]["bodies"]["value"]["bodies"] = serde_json::json!([body.as_str()]);
-    let error = serde_json::from_value::<Feature>(restated)
-        .unwrap_err()
-        .to_string();
+    assert!(serde_json::from_value::<Feature>(restated.clone()).is_err());
+    let error =
+        serde_json::from_value::<crate::features::FeatureOperation>(restated["definition"].clone())
+            .unwrap_err()
+            .to_string();
     assert!(error.contains("bodies"), "{error}");
 }
 
@@ -220,7 +223,7 @@ fn local_feature_wire_rejects_empty_collections_and_invalid_strings() {
 }
 
 #[test]
-fn planar_profiles_and_post_processing_reject_invalid_edits() {
+fn a_post_process_inside_a_post_process_is_refused_as_an_unknown_variant() {
     let spatial = ProfileRef::SpatialSketchProfiles {
         sketch: crate::sketches::SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap(),
         profiles: vec![0].try_into().unwrap(),
@@ -230,25 +233,27 @@ fn planar_profiles_and_post_processing_reject_invalid_edits() {
         serde_json::from_value::<PlanarProfileRef>(serde_json::to_value(&spatial).unwrap())
             .is_err()
     );
-    let operation = FeatureDefinition::BaseFeature {
-        bodies: BodySelection::Unresolved,
-    };
-    let mut unprocessed = UnprocessedFeature::try_from(operation).unwrap();
-    let nested = FeatureDefinition::PostProcess {
-        operation: unprocessed.clone(),
+
+    let inner = FeatureDefinition::PostProcess {
+        operation: FeatureOperation::BaseFeature {
+            bodies: BodySelection::Unresolved,
+        },
         refine: true,
         fuzzy_tolerance: FuzzyTolerance::KernelDefault,
     };
-    assert!(UnprocessedFeature::try_from(nested.clone()).is_err());
-    assert!(
-        serde_json::from_value::<UnprocessedFeature>(serde_json::to_value(&nested).unwrap())
-            .is_err()
+    let wire = serde_json::to_value(&inner).unwrap();
+    assert_eq!(wire["definition"], "post_process");
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        inner
     );
-    let before = unprocessed.clone();
-    assert!(unprocessed
-        .try_edit(|operation| *operation = nested)
-        .is_err());
-    assert_eq!(unprocessed, before);
+
+    let mut nested = wire.clone();
+    nested["operation"] = wire.clone();
+    assert!(serde_json::from_value::<FeatureDefinition>(nested).is_err());
+    let error = serde_json::from_value::<FeatureOperation>(wire)
+        .expect_err("a post-processed operation carries no post-processing layer of its own");
+    assert!(error.to_string().contains("unknown variant"), "{error}");
 }
 
 #[test]
@@ -325,7 +330,7 @@ fn local_wire_errors_name_the_rejected_field() {
             serde_json::json!({"definition":"imported_geometry","path":"","format":"step"}),
         ),
     ] {
-        let error = serde_json::from_value::<FeatureDefinition>(wire).unwrap_err();
+        let error = serde_json::from_value::<FeatureOperation>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{field}: {error}");
     }
     for (field, wire) in [

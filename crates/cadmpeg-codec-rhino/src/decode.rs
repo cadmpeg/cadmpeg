@@ -1128,7 +1128,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_hatch(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.unit_scale() else {
             self.scan_warning(
@@ -1250,10 +1250,10 @@ impl<'a> DecodeContext<'a> {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "hatch".into(),
                     parameters,
-                },
+                }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
@@ -1292,7 +1292,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_polyedge(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let identity = &object.identity;
         let polyedge = match crate::polyedge::decode(
@@ -1340,10 +1340,10 @@ impl<'a> DecodeContext<'a> {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "polyedge_reference".into(),
                     parameters,
-                },
+                }),
             ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
         };
@@ -1365,7 +1365,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_detail(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let identity = &object.identity;
         let detail = match crate::detail::decode(
@@ -1413,7 +1413,7 @@ impl<'a> DecodeContext<'a> {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "detail_view".into(),
                     parameters: BTreeMap::from([
                         ("boundary".to_string(), curve_id.clone()),
@@ -1422,7 +1422,7 @@ impl<'a> DecodeContext<'a> {
                             detail.page_per_model_ratio.to_string(),
                         ),
                     ]),
-                },
+                }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
@@ -1453,7 +1453,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_cage(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.unit_scale() else {
             self.scan_warning(
@@ -1541,7 +1541,7 @@ impl<'a> DecodeContext<'a> {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "nurbs_cage".into(),
                     parameters: BTreeMap::from([
                         ("dimension".to_string(), cage.dimension.to_string()),
@@ -1555,7 +1555,7 @@ impl<'a> DecodeContext<'a> {
                             format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
                         ),
                     ]),
-                },
+                }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
@@ -1636,7 +1636,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_curve_on_surface(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.unit_scale() else {
             self.scan_warning(
@@ -1701,13 +1701,13 @@ impl<'a> DecodeContext<'a> {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "curve_on_surface".into(),
                     parameters: BTreeMap::from([
                         ("parameter_curve".to_string(), parameter_id.clone()),
                         ("support_surface".to_string(), surface_id.to_string()),
                     ]),
-                },
+                }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };

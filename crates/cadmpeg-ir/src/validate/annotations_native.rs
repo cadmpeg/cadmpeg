@@ -158,10 +158,12 @@ pub(super) fn check_native_links(
                 });
             }
         }
-        if let crate::features::FeatureDefinition::HelixNativeAxis {
-            axis_native_ref: target,
-            ..
-        } = feature.evaluation.definition()
+        if let crate::features::FeatureDefinition::Operation(
+            crate::features::FeatureOperation::HelixNativeAxis {
+                axis_native_ref: target,
+                ..
+            },
+        ) = feature.evaluation.definition()
         {
             if !native_ids.contains(target.as_str()) {
                 findings.push(Finding {

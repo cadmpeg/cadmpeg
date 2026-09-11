@@ -863,9 +863,11 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
     if feature.evaluation.outputs().is_empty() {
         return;
     }
-    let cadmpeg_ir::features::FeatureDefinition::BaseFeature {
-        bodies: cadmpeg_ir::features::BodySelection::Native(native),
-    } = feature.evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        },
+    ) = feature.evaluation.definition()
     else {
         return;
     };
@@ -875,14 +877,16 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
     };
     feature
         .evaluation
-        .set_definition(cadmpeg_ir::features::FeatureDefinition::BaseFeature { bodies });
+        .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::BaseFeature { bodies },
+        ));
 }
 
 pub(crate) fn bind_sweep_result_modes(
     features: &mut [cadmpeg_ir::features::Feature],
     bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode};
     use cadmpeg_ir::topology::BodyKind;
 
     let body_kinds = bodies
@@ -892,7 +896,9 @@ pub(crate) fn bind_sweep_result_modes(
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             if shape.mode() != (SweepMode::Unresolved {}) || feature.evaluation.outputs().is_empty()
@@ -952,7 +958,7 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
     let scopes = inputs.scopes;
     let groups = inputs.groups;
@@ -966,7 +972,8 @@ pub(crate) fn bind_feature_body_selections(
     let pattern_body_slots = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Pattern { seeds, pattern } = feature.evaluation.definition()
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1016,10 +1023,15 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             let feature_id = feature.id.clone();
-            if matches!(&definition, FeatureDefinition::Pattern { .. }) {
+            if matches!(
+                &definition,
+                FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
+            ) {
                 break 'feature_edit;
             }
-            if let FeatureDefinition::BoundaryFill { tools, cells } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells }) =
+                &mut definition
+            {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
                         tools,
@@ -1047,7 +1059,9 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Combine { operands, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+                &mut definition
+            {
                 operands
                     .try_edit(|target, tools| {
                         let (Some(state_id), Some(previous_state_id)) =
@@ -1255,10 +1269,10 @@ pub(crate) fn bind_feature_body_selections(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Coil {
+            if let FeatureDefinition::Operation(FeatureOperation::Coil {
                 result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
                 ..
-            } = &mut definition
+            }) = &mut definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -1274,7 +1288,9 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::DeleteBody { bodies, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) =
+                &mut definition
+            {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
                         bodies,
@@ -1289,7 +1305,9 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Scale { bodies, .. } = &mut definition {
+            if let FeatureDefinition::Operation(FeatureOperation::Scale { bodies, .. }) =
+                &mut definition
+            {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
                         bodies,
@@ -1308,14 +1326,14 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             let (bodies, proof) = match &mut definition {
-                FeatureDefinition::MoveBody { bodies, .. } => {
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
                     (bodies, BodySelectionProof::TopologyStableRevision)
                 }
-                FeatureDefinition::Shell {
+                FeatureDefinition::Operation(FeatureOperation::Shell {
                     bodies: Some(bodies),
                     ..
-                } => (bodies, BodySelectionProof::RevisedInput),
-                FeatureDefinition::SplitBody { targets, .. } => {
+                }) => (bodies, BodySelectionProof::RevisedInput),
+                FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. }) => {
                     (targets, BodySelectionProof::RevisedInput)
                 }
                 _ => break 'feature_edit,
@@ -1547,7 +1565,7 @@ fn bind_pattern_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, PatternSeed};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation, PatternSeed};
 
     let scopes = inputs.scopes;
     let groups = inputs.groups;
@@ -1556,7 +1574,9 @@ fn bind_pattern_body_selections(
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Pattern { seeds, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -2123,7 +2143,9 @@ pub(crate) fn bind_feature_face_selections(
             };
             let feature_id = feature.id.clone();
             match &mut definition {
-                cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { start, extent, .. },
+                ) => {
                     if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
                         bind_face_selection(
                             face,
@@ -2164,7 +2186,9 @@ pub(crate) fn bind_feature_face_selections(
                         }
                     }
                 }
-                cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
+                ) => {
                     for seed in seeds {
                         let cadmpeg_ir::features::PatternSeed::Faces(faces) = seed else {
                             continue;
@@ -2188,7 +2212,9 @@ pub(crate) fn bind_feature_face_selections(
                         );
                     }
                 }
-                cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::MoveFace { faces, .. },
+                ) => {
                     bind_face_selection(
                         faces,
                         scope,
@@ -2197,7 +2223,9 @@ pub(crate) fn bind_feature_face_selections(
                         &transition.topology.faces.updated,
                     );
                 }
-                cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. },
+                ) => {
                     bind_face_selection(
                         faces,
                         scope,
@@ -2214,7 +2242,9 @@ pub(crate) fn bind_feature_face_selections(
                         body_recipe_operands,
                     );
                 }
-                cadmpeg_ir::features::FeatureDefinition::KnitSurface { faces, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
+                ) => {
                     bind_surface_stitch_face_selection(
                         faces,
                         &feature_id,
@@ -2226,7 +2256,9 @@ pub(crate) fn bind_feature_face_selections(
                         input_topologies,
                     );
                 }
-                cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
+                ) => {
                     bind_face_selection(
                         targets,
                         scope,
@@ -2235,9 +2267,11 @@ pub(crate) fn bind_feature_face_selections(
                         &transition.topology.faces.updated,
                     );
                 }
-                cadmpeg_ir::features::FeatureDefinition::Hole {
-                    face: Some(face), ..
-                } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Hole {
+                        face: Some(face), ..
+                    },
+                ) => {
                     bind_hole_face_selection(
                         face,
                         &feature_id,
@@ -2519,7 +2553,7 @@ pub(crate) fn bind_feature_path_selections(
     groups: &[crate::records::topology::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::DesignEntitySelectionOperand],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, SurfaceBoundary};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
 
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
@@ -2539,10 +2573,10 @@ pub(crate) fn bind_feature_path_selections(
             };
             let feature_id = feature.id.clone();
             match &mut definition {
-                FeatureDefinition::FilledSurface {
+                FeatureDefinition::Operation(FeatureOperation::FilledSurface {
                     boundary: SurfaceBoundary::Path(path),
                     ..
-                } => bind_entity_selection_path(
+                }) => bind_entity_selection_path(
                     path,
                     &feature_id,
                     previous_state_id,
@@ -2550,7 +2584,7 @@ pub(crate) fn bind_feature_path_selections(
                     groups,
                     operands,
                 ),
-                FeatureDefinition::Loft { guidance, .. } => {
+                FeatureDefinition::Operation(FeatureOperation::Loft { guidance, .. }) => {
                     let paths = match guidance {
                         cadmpeg_ir::features::LoftGuidance::Guides(paths) => paths,
                         cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
@@ -2568,9 +2602,9 @@ pub(crate) fn bind_feature_path_selections(
                         );
                     }
                 }
-                FeatureDefinition::Sweep {
+                FeatureDefinition::Operation(FeatureOperation::Sweep {
                     path, guide_rail, ..
-                } => {
+                }) => {
                     if let Some(path) = path {
                         bind_entity_selection_path(
                             path,

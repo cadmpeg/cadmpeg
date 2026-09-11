@@ -64,7 +64,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{
-    features::FeatureDefinition,
+    features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
 use std::collections::{HashMap, HashSet};
@@ -145,18 +145,21 @@ pub(crate) fn bind_sketch_profiles(
             }
             let mut definition = feature.evaluation.definition().clone();
             match &mut definition {
-                cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    sketch: feature_sketch,
-                } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sketch {
+                        sketch: feature_sketch,
+                    },
+                ) => {
                     sketch.name = Some(native_feature.name.clone());
                     *feature_sketch =
                         cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone()));
                 }
-                cadmpeg_ir::features::FeatureDefinition::Sweep { shape, .. }
-                    if matches!(
-                        shape.section(),
-                        cadmpeg_ir::features::SweepSection::Unresolved(_)
-                    ) =>
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sweep { shape, .. },
+                ) if matches!(
+                    shape.section(),
+                    cadmpeg_ir::features::SweepSection::Unresolved(_)
+                ) =>
                 {
                     shape
                         .try_edit(|section, _, _| {
@@ -166,7 +169,9 @@ pub(crate) fn bind_sketch_profiles(
                         })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
-                cadmpeg_ir::features::FeatureDefinition::Extrude { profile, .. } => {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },
+                ) => {
                     if matches!(
                         &*profile,
                         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
@@ -347,11 +352,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 feature.native_ref.as_deref() == Some(native_feature.id.as_str())
                     && matches!(
                         feature.evaluation.definition(),
-                        cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
-                                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                            ..
-                        }
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::Sketch {
+                                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                                ..
+                            }
+                        )
                     )
             }) else {
                 continue;
@@ -476,9 +483,13 @@ pub(crate) fn project_compact_sketch_profiles(
             };
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].evaluation.set_definition(
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    },
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch_id,
+                            )),
+                        },
+                    ),
                 );
                 continue;
             }
@@ -571,9 +582,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 }
                 sketches.push(sketch);
                 features[feature_index].evaluation.set_definition(
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    },
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch_id,
+                            )),
+                        },
+                    ),
                 );
                 continue;
             }
@@ -713,9 +728,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 }
                 sketches.push(sketch);
                 features[feature_index].evaluation.set_definition(
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    },
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch_id,
+                            )),
+                        },
+                    ),
                 );
                 continue;
             }
@@ -778,9 +797,11 @@ pub(crate) fn project_compact_sketch_profiles(
             }
             sketches.push(sketch);
             features[feature_index].evaluation.set_definition(
-                cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                },
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                    },
+                ),
             );
         }
     }
@@ -881,12 +902,14 @@ pub(crate) fn project_marker_backed_sketches(
                         return None;
                     }
                     match feature.evaluation.definition() {
-                        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } => {
-                            Some((index, sketch.id().cloned(), false))
-                        }
-                        cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
-                            sketch,
-                        } => Some((index, sketch.clone(), true)),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
+                        ) => Some((index, sketch.id().cloned(), false)),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition {
+                                sketch,
+                            },
+                        ) => Some((index, sketch.clone(), true)),
                         _ => None,
                     }
                 })
@@ -998,11 +1021,13 @@ pub(crate) fn project_marker_backed_sketches(
                         sketches.push(sketch);
                     }
                     features[feature_index].evaluation.set_definition(
-                        cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                                sketch_id,
-                            )),
-                        },
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::Sketch {
+                                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                    sketch_id,
+                                )),
+                            },
+                        ),
                     );
                 }
                 continue;
@@ -1011,15 +1036,19 @@ pub(crate) fn project_marker_backed_sketches(
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
-                        cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
-                            sketch: Some(sketch_id),
-                        }
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition {
+                                sketch: Some(sketch_id),
+                            },
+                        )
                     } else {
-                        cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                                sketch_id,
-                            )),
-                        }
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::Sketch {
+                                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                    sketch_id,
+                                )),
+                            },
+                        )
                     });
                 continue;
             }
@@ -1842,13 +1871,19 @@ pub(crate) fn project_marker_backed_sketches(
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {
-                    cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
-                        sketch: Some(sketch_id),
-                    }
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition {
+                            sketch: Some(sketch_id),
+                        },
+                    )
                 } else {
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    }
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch_id,
+                            )),
+                        },
+                    )
                 });
         }
     }
@@ -1955,11 +1990,11 @@ pub(crate) fn project_sketch_block_profiles(
                 };
                 if !matches!(
                     features[profile_index].evaluation.definition(),
-                    FeatureDefinition::Sketch {
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                             | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                         ..
-                    }
+                    })
                 ) {
                     continue;
                 }
@@ -1984,9 +2019,9 @@ pub(crate) fn project_sketch_block_profiles(
                         definitions_complete = false;
                         break;
                     };
-                    let FeatureDefinition::SketchBlockDefinition {
+                    let FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition {
                         sketch: Some(sketch_id),
-                    } = features[definition_index].evaluation.definition()
+                    }) = features[definition_index].evaluation.definition()
                     else {
                         definitions_complete = false;
                         break;
@@ -2033,10 +2068,10 @@ pub(crate) fn project_sketch_block_profiles(
                         instances_complete = false;
                         break;
                     };
-                    let FeatureDefinition::SketchBlockInstance {
+                    let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
                         block: Some(block),
                         placement: Some(transform),
-                    } = features[instance_index].evaluation.definition()
+                    }) = features[instance_index].evaluation.definition()
                     else {
                         instances_complete = false;
                         break;
@@ -2085,7 +2120,9 @@ pub(crate) fn project_sketch_block_profiles(
                     sketches.push(assembled.sketch);
                 }
                 let mut definition = features[profile_index].evaluation.definition().clone();
-                if let FeatureDefinition::Sketch { sketch, .. } = &mut definition {
+                if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
+                    &mut definition
+                {
                     *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                 }
                 features[profile_index]
@@ -2481,11 +2518,11 @@ fn project_detached_legacy_config_sketches(
                 };
                 if !matches!(
                     &definition,
-                    FeatureDefinition::Sketch {
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                             | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                         ..
-                    }
+                    })
                 ) {
                     break 'feature_edit;
                 }
@@ -2564,9 +2601,9 @@ fn project_detached_legacy_config_sketches(
                 }
                 sketch_entities.append(&mut entities);
                 sketches.push(sketch.clone());
-                definition = FeatureDefinition::Sketch {
+                definition = FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id)),
-                };
+                });
             }
             feature.evaluation.set_definition(definition);
         }
@@ -3141,9 +3178,9 @@ mod detached_legacy_sketch_tests {
             cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
             30,
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         );
         neutral_feature.name = Some("empty".into());
         neutral_feature.native_ref = Some("feature".into());
@@ -3170,10 +3207,10 @@ mod detached_legacy_sketch_tests {
         assert!(sketch_entities.is_empty());
         assert!(matches!(
             features[0].evaluation.definition(),
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
-            } if sketch == &expected_sketch
+            }) if sketch == &expected_sketch
         ));
     }
 
@@ -3222,9 +3259,9 @@ mod detached_legacy_sketch_tests {
             cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
             30,
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         );
         neutral_feature.name = Some("empty".into());
         neutral_feature.native_ref = Some("feature".into());
@@ -3244,11 +3281,11 @@ mod detached_legacy_sketch_tests {
         assert!(sketches.is_empty());
         assert!(matches!(
             features[0].evaluation.definition(),
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                     | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 ..
-            }
+            })
         ));
     }
 

@@ -8,7 +8,8 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
-        FeatureDefinition, FeatureId, FeatureTreeNodeRole, ParameterId, ParameterValue,
+        FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, ParameterId,
+        ParameterValue,
     },
     scalar::Length,
 };
@@ -382,10 +383,10 @@ fn configuration_values_complete_parameters_without_baseline_values() {
 fn configuration_suppression_and_override_references_are_coherent() {
     let mut ir = CadIr::empty();
     let feature = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
-    let definition = FeatureDefinition::TreeNode {
+    let definition = FeatureDefinition::Operation(FeatureOperation::TreeNode {
         role: FeatureTreeNodeRole::History,
         children: cadmpeg_ir::features::TreeChildren::default(),
-    };
+    });
     ir.model.features.push(Feature {
         id: feature.clone(),
         ordinal: 0,

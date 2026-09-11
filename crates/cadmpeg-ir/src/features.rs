@@ -2223,11 +2223,12 @@ impl<'de> Deserialize<'de> for TreeChildren {
     }
 }
 
-/// Neutral construction semantics, with an explicit native escape hatch.
+/// A feature operation: neutral construction semantics with an explicit native
+/// escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
-pub enum FeatureDefinition {
+pub enum FeatureOperation {
     /// Non-modeling node retained in the ordered feature tree.
     TreeNode {
         /// Structural or presentation role of the node.
@@ -2591,36 +2592,6 @@ pub enum FeatureDefinition {
         /// Boolean combination with an existing `PartDesign` body.
         op: BooleanOp,
     },
-    /// Linear extrusion of a profile.
-    Extrude {
-        /// Profile swept along `direction`.
-        profile: ProfileRef,
-        /// Direction in which the profile is swept and its optional persisted source.
-        #[serde(default)]
-        direction: ExtrudeDirection,
-        /// Plane or face from which the extrusion begins.
-        #[serde(default)]
-        start: ExtrudeStart,
-        /// How far the extrusion travels on each of its sides.
-        extent: ExtrudeExtent,
-        /// Boolean combination with existing bodies.
-        op: BooleanOp,
-        /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        solid: Option<bool>,
-        /// Native face-building policy used to turn closed wires into faces.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        face_maker: Option<FaceMaker>,
-        /// Taper orientation used for inner wires, when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        inner_wire_taper: Option<InnerWireTaper>,
-        /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        length_along_profile_normal: Option<bool>,
-        /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        allow_multi_profile_faces: Option<bool>,
-    },
     /// Revolution of a profile around an axis.
     Revolve {
         /// Independently resolved construction inputs.
@@ -2682,33 +2653,6 @@ pub enum FeatureDefinition {
         sources: Vec<BinderSource>,
         /// Binding and derived-shape construction semantics.
         construction: BinderConstruction,
-    },
-    /// Loft through an ordered sequence of profile or point sections.
-    Loft {
-        /// Ordered cross-sections from the loft start to end.
-        sections: Vec<LoftSection>,
-        /// Mutually exclusive guide trajectories or centerline.
-        guidance: LoftGuidance,
-        /// Boolean combination with existing bodies.
-        op: BooleanOp,
-        /// Whether the loft closes from the last section to the first.
-        #[serde(default)]
-        closed: bool,
-        /// Whether the sections bound a solid instead of a sheet body.
-        #[serde(default = "default_true")]
-        solid: bool,
-        /// Whether adjacent sections are connected by straight ruled spans.
-        #[serde(default)]
-        ruled: bool,
-        /// Whether linear edges and planar faces are simplified after construction.
-        #[serde(default)]
-        linearize: bool,
-        /// Maximum polynomial degree used to interpolate the sections, when constrained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_degree: Option<std::num::NonZeroU32>,
-        /// Whether profiles containing multiple faces are accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        allow_multi_profile_faces: Option<bool>,
     },
     /// Thin rib grown from a profile.
     Rib {
@@ -3139,15 +3083,6 @@ pub enum FeatureDefinition {
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
     },
-    /// Operation followed by source-requested topology cleanup.
-    PostProcess {
-        /// Underlying construction whose result is post-processed.
-        operation: UnprocessedFeature,
-        /// Whether redundant splitter boundaries are removed.
-        refine: bool,
-        /// Boolean-operation tolerance selection carried by the feature family.
-        fuzzy_tolerance: FuzzyTolerance,
-    },
     /// Operation family established without its construction operands.
     Unresolved {
         /// Operation family of the unresolved feature.
@@ -3161,6 +3096,89 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         parameters: BTreeMap<String, String>,
     },
+    /// Linear extrusion of a profile.
+    Extrude {
+        /// Profile swept along `direction`.
+        profile: ProfileRef,
+        /// Direction in which the profile is swept and its optional persisted source.
+        #[serde(default)]
+        direction: ExtrudeDirection,
+        /// Plane or face from which the extrusion begins.
+        #[serde(default)]
+        start: ExtrudeStart,
+        /// How far the extrusion travels on each of its sides.
+        extent: ExtrudeExtent,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        solid: Option<bool>,
+        /// Native face-building policy used to turn closed wires into faces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        face_maker: Option<FaceMaker>,
+        /// Taper orientation used for inner wires, when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inner_wire_taper: Option<InnerWireTaper>,
+        /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        length_along_profile_normal: Option<bool>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
+    },
+    /// Loft through an ordered sequence of profile or point sections.
+    Loft {
+        /// Ordered cross-sections from the loft start to end.
+        sections: Vec<LoftSection>,
+        /// Mutually exclusive guide trajectories or centerline.
+        guidance: LoftGuidance,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Whether the loft closes from the last section to the first.
+        #[serde(default)]
+        closed: bool,
+        /// Whether the sections bound a solid instead of a sheet body.
+        #[serde(default = "default_true")]
+        solid: bool,
+        /// Whether adjacent sections are connected by straight ruled spans.
+        #[serde(default)]
+        ruled: bool,
+        /// Whether linear edges and planar faces are simplified after construction.
+        #[serde(default)]
+        linearize: bool,
+        /// Maximum polynomial degree used to interpolate the sections, when constrained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_degree: Option<std::num::NonZeroU32>,
+        /// Whether profiles containing multiple faces are accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
+    },
+}
+
+/// Neutral construction semantics: one operation, optionally under a single
+/// post-processing layer.
+///
+/// A post-processed operation carries a [`FeatureOperation`], which has no
+/// post-processing arm, so a post-process inside a post-process has no
+/// spelling. Every other operation reaches the wire through the untagged
+/// [`FeatureDefinition::Operation`] arm, so the wire stays a single flat
+/// `definition`-tagged object.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FeatureDefinition {
+    /// Operation followed by source-requested topology cleanup.
+    PostProcess {
+        /// Underlying construction whose result is post-processed.
+        operation: FeatureOperation,
+        /// Whether redundant splitter boundaries are removed.
+        refine: bool,
+        /// Boolean-operation tolerance selection carried by the feature family.
+        fuzzy_tolerance: FuzzyTolerance,
+    },
+    /// Any operation that a post-processing layer also admits.
+    #[serde(untagged)]
+    Operation(FeatureOperation),
 }
 
 /// Operation family of a feature whose construction operands are unresolved.
@@ -3228,8 +3246,8 @@ pub enum UnresolvedFamily {
     MoveObject,
 }
 
-impl FeatureDefinition {
-    /// Family name of a definition whose replay produces body geometry, and `None` for
+impl FeatureOperation {
+    /// Family name of an operation whose replay produces body geometry, and `None` for
     /// definitions that do not.
     ///
     /// A feature of one of these families carries current result bodies in its
@@ -3305,6 +3323,40 @@ impl FeatureDefinition {
         match self {
             Self::Unresolved { family } => Some(*family),
             _ => None,
+        }
+    }
+}
+
+impl FeatureDefinition {
+    /// The operation this definition performs, its post-processing layer aside.
+    #[must_use]
+    pub const fn operation(&self) -> &FeatureOperation {
+        match self {
+            Self::PostProcess { operation, .. } | Self::Operation(operation) => operation,
+        }
+    }
+
+    /// Family name of a definition whose replay produces body geometry, and
+    /// `None` for definitions that do not.
+    ///
+    /// A feature of one of these families carries current result bodies in its
+    /// [`Feature::outputs`] list or intermediate result identities in a
+    /// [`FeatureResultTopology`]. The returned name is the stable lowercase
+    /// label for the family, suitable for grouping such features in a report.
+    #[must_use]
+    pub fn body_output_family(&self) -> Option<&'static str> {
+        match self {
+            Self::PostProcess { operation, .. } => operation.body_output_family(),
+            Self::Operation(operation) => operation.body_output_family(),
+        }
+    }
+
+    /// Operation family of an unresolved definition, and `None` when it is resolved.
+    #[must_use]
+    pub fn unresolved_family(&self) -> Option<UnresolvedFamily> {
+        match self {
+            Self::PostProcess { operation, .. } => operation.unresolved_family(),
+            Self::Operation(operation) => operation.unresolved_family(),
         }
     }
 }
@@ -7377,75 +7429,6 @@ pub enum BinderOffsetJoin {
     Tangent,
     /// Sharp line-line intersections.
     Intersection,
-}
-
-/// A feature operation eligible for a single post-processing layer.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct UnprocessedFeature(Box<FeatureDefinition>);
-
-impl TryFrom<FeatureDefinition> for UnprocessedFeature {
-    type Error = &'static str;
-    fn try_from(operation: FeatureDefinition) -> Result<Self, Self::Error> {
-        let spatial = |profile: &ProfileRef| {
-            matches!(
-                profile,
-                ProfileRef::SpatialSketchProfiles { .. }
-                    | ProfileRef::SpatialSketchSelection { .. }
-            )
-        };
-        match &operation {
-            FeatureDefinition::PostProcess { .. } => {
-                return Err("operation must not be a PostProcess")
-            }
-            FeatureDefinition::Extrude { profile, .. } if spatial(profile) => {
-                return Err("operation in PostProcess must not use spatial-sketch profiles")
-            }
-            FeatureDefinition::Loft { sections, .. }
-                if sections.iter().any(
-                    |section| matches!(section, LoftSection::Profile(profile) if spatial(profile)),
-                ) =>
-            {
-                return Err("operation in PostProcess must not use spatial-sketch profiles")
-            }
-            _ => {}
-        }
-        Ok(Self(Box::new(operation)))
-    }
-}
-
-impl AsRef<FeatureDefinition> for UnprocessedFeature {
-    fn as_ref(&self) -> &FeatureDefinition {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for UnprocessedFeature {
-    type Target = FeatureDefinition;
-    fn deref(&self) -> &FeatureDefinition {
-        &self.0
-    }
-}
-
-impl UnprocessedFeature {
-    /// Admit an operation edit before replacing the underlying operation.
-    pub fn try_edit(
-        &mut self,
-        edit: impl FnOnce(&mut FeatureDefinition),
-    ) -> Result<(), &'static str> {
-        let mut operation = (*self.0).clone();
-        edit(&mut operation);
-        *self = Self::try_from(operation)?;
-        Ok(())
-    }
-}
-
-impl<'de> Deserialize<'de> for UnprocessedFeature {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(FeatureDefinition::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
-    }
 }
 
 /// Profile consumed by a profile-driven feature that admits no spatial-sketch
