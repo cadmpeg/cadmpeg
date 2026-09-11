@@ -443,10 +443,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -461,10 +466,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A2%3A1",
-          "parameter_range": [
-            1.5707963267948963,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                1.5707963267948963,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -479,10 +489,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A3%3A1",
-          "parameter_range": [
-            1.5707963267948963,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                1.5707963267948963,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -497,10 +512,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            8.12701665379223
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.12701665379223
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -515,10 +535,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            8.12701665379223
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.12701665379223
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -533,10 +558,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -556,10 +586,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -574,10 +609,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A1",
-          "parameter_range": [
-            5.777824796895384,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                5.777824796895384,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -592,10 +632,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A2",
-          "parameter_range": [
-            5.777824796895384,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                5.777824796895384,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

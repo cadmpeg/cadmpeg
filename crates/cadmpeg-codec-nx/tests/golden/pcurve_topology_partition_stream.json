@@ -93,7 +93,6 @@
         "parameters": [],
         "pcurves": [
           {
-            "fit_tolerance": 0.01,
             "geometry": {
               "control_points": [
                 {
@@ -115,7 +114,13 @@
               ],
               "periodic": false
             },
-            "id": "nx:s0:pcurve#0"
+            "id": "nx:s0:pcurve#0",
+            "metadata": {
+              "form": {
+                "fit_tolerance": 0.01
+              },
+              "source": "general"
+            }
           }
         ],
         "pmi": [],

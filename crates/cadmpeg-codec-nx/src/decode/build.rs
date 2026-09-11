@@ -921,12 +921,12 @@ pub(crate) fn try_decode_geometry(
                         let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
                             .map(cadmpeg_ir::units::PositiveScalar::get);
                         match &mut carrier.metadata {
-                            cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
+                            cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } => {
                                 metadata
                                     .set_fit_tolerance(fit_tolerance)
                                     .map_err(CodecError::malformed)?;
                             }
-                            cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => {
+                            cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } => {
                                 if let Some(fit_tolerance) = fit_tolerance {
                                     inline
                                         .set_fit_tolerance(fit_tolerance)

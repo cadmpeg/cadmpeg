@@ -435,10 +435,15 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -478,10 +483,15 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-1",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -521,10 +531,15 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.cap-1.profile-0",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -564,10 +579,15 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.cap-1.profile-1",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

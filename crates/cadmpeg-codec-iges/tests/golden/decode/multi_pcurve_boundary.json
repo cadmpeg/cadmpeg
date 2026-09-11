@@ -262,10 +262,15 @@
             "periodic": false
           },
           "id": "iges:model:pcurve#D11:0:0:0",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -290,10 +295,15 @@
             "periodic": false
           },
           "id": "iges:model:pcurve#D11:0:0:1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

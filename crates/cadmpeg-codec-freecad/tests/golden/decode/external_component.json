@@ -347,10 +347,15 @@
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -370,10 +375,15 @@
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -388,10 +398,15 @@
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -406,10 +421,15 @@
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -424,10 +444,15 @@
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -447,10 +472,15 @@
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

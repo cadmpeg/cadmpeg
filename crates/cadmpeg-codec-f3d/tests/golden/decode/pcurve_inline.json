@@ -257,18 +257,23 @@
             ],
             "periodic": false
           },
-          "wrapper_reversed": false,
-          "native_tail_flags": [
-            true,
-            false,
-            true,
-            false
-          ],
-          "parameter_range": [
-            -1.0,
-            2.0
-          ],
-          "fit_tolerance": 0.001
+          "metadata": {
+            "source": "asm_inline",
+            "form": {
+              "wrapper_reversed": false,
+              "native_tail_flags": [
+                true,
+                false,
+                true,
+                false
+              ],
+              "parameter_range": [
+                -1.0,
+                2.0
+              ],
+              "fit_tolerance": 0.001
+            }
+          }
         }
       ],
       "procedural_surfaces": [],

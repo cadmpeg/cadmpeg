@@ -295,7 +295,8 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(2.0, -1.0), Point2::new(0.5, 2.0))
             .unwrap(),
     );
-    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
+    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
+    else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
     inline.set_parameter_range([-2.0, 3.0]).unwrap();

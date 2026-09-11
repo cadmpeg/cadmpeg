@@ -1034,7 +1034,8 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
         true,
     )
     .unwrap();
-    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
+    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
+    else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
     inline.wrapper_reversed = true;
@@ -1067,7 +1068,8 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     nurbs
         .edit_control_points(|points| points[0].u = -0.75)
         .unwrap();
-    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
+    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
+    else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
     inline.set_fit_tolerance(0.0025).unwrap();
@@ -1132,7 +1134,8 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     nurbs
         .edit_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
         .unwrap();
-    let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+    let cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } = &mut pcurve.metadata
+    else {
         panic!("decoded fixture uses general pcurve metadata")
     };
     metadata.set_parameter_range(Some([-3.0, 5.0])).unwrap();
@@ -1176,15 +1179,15 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let Some(parameter_range) = inline.parameter_range() else {
         panic!("ref-form fixture carries a parameter range")
     };
-    inline.metadata = cadmpeg_ir::geometry::PcurveMetadata::AsmInline(
-        cadmpeg_ir::geometry::PcurveInlineForm::try_new(
+    inline.metadata = cadmpeg_ir::geometry::PcurveMetadata::AsmInline {
+        form: cadmpeg_ir::geometry::PcurveInlineForm::try_new(
             false,
             [true, false, true, false],
             parameter_range,
             0.002,
         )
         .unwrap(),
-    );
+    };
     mixed.model.coedges[1].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: inline.id.clone(),
         isoparametric: None,
