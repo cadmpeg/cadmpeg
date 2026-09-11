@@ -365,64 +365,6 @@
                 "separator": false,
                 "values": "100verts 1 2\n"
               },
-              "program_graph": {
-                "headers": [
-                  {
-                    "kind": "degree",
-                    "fields": [
-                      "3"
-                    ]
-                  },
-                  {
-                    "kind": "units",
-                    "fields": [
-                      "mm"
-                    ]
-                  }
-                ],
-                "records": [
-                  {
-                    "kind": "v",
-                    "fields": [
-                      "1",
-                      "0",
-                      "0",
-                      "0"
-                    ]
-                  },
-                  {
-                    "kind": "v",
-                    "fields": [
-                      "2",
-                      "1",
-                      "0",
-                      "0"
-                    ]
-                  },
-                  {
-                    "kind": "e",
-                    "fields": [
-                      "1",
-                      "1",
-                      "2"
-                    ]
-                  }
-                ],
-                "unparsed_lines": []
-              },
-              "values_graph": {
-                "headers": [],
-                "records": [
-                  {
-                    "kind": "100verts",
-                    "fields": [
-                      "1",
-                      "2"
-                    ]
-                  }
-                ],
-                "unparsed_lines": []
-              },
               "trailing_value": 9,
               "discontinuities": [
                 [
