@@ -1289,18 +1289,16 @@ pub(crate) fn project_relation_solved_line_geometry(
 enum PointPointDistanceFamily {
     /// Straight-line distance between the two points.
     Direct,
-    /// Distance along the profile's horizontal axis.
-    Horizontal,
-    /// Distance along the profile's vertical axis.
-    Vertical,
+    /// Distance along one of the profile's axes.
+    AxisAligned,
 }
 
 impl PointPointDistanceFamily {
     fn of(family: FeatureInputRelationFamily) -> Option<Self> {
         match family {
             FeatureInputRelationFamily::PointPointDistance => Some(Self::Direct),
-            FeatureInputRelationFamily::PointPointHorizontalDistance => Some(Self::Horizontal),
-            FeatureInputRelationFamily::PointPointVerticalDistance => Some(Self::Vertical),
+            FeatureInputRelationFamily::PointPointHorizontalDistance
+            | FeatureInputRelationFamily::PointPointVerticalDistance => Some(Self::AxisAligned),
             _ => None,
         }
     }
@@ -1564,8 +1562,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                         PointPointDistanceFamily::Direct => {
                             (point.u - known_point.u).hypot(point.v - known_point.v)
                         }
-                        PointPointDistanceFamily::Horizontal
-                        | PointPointDistanceFamily::Vertical => match profile_axis? {
+                        PointPointDistanceFamily::AxisAligned => match profile_axis? {
                             ProfileAxis::U => (point.u - known_point.u).abs(),
                             ProfileAxis::V => (point.v - known_point.v).abs(),
                         },
@@ -3605,11 +3602,11 @@ mod point_point_distance_family_tests {
         ));
         assert!(matches!(
             PointPointDistanceFamily::of(FeatureInputRelationFamily::PointPointHorizontalDistance),
-            Some(PointPointDistanceFamily::Horizontal)
+            Some(PointPointDistanceFamily::AxisAligned)
         ));
         assert!(matches!(
             PointPointDistanceFamily::of(FeatureInputRelationFamily::PointPointVerticalDistance),
-            Some(PointPointDistanceFamily::Vertical)
+            Some(PointPointDistanceFamily::AxisAligned)
         ));
         for family in [
             FeatureInputRelationFamily::CircleDiameter,
