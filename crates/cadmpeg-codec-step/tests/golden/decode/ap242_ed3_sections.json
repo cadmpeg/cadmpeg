@@ -182,23 +182,23 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 27,
-        "data": "IzI9RVhBTVBMRV9SRUNPUkQoPGFsaWFzPik7",
-        "id": "step:data:example_record#2",
+    "retained_records": {
+      "step:data:example_record#2": {
+        "bytes": {
+          "data": "IzI9RVhBTVBMRV9SRUNPUkQoPGFsaWFzPik7",
+          "retention": "inline"
+        },
         "offset": 397,
-        "sha256": "3673a8107824d13ad36eaf26876a30b27d254f4912fa1265d2f8741e0d7f3cf9",
         "stream": "source"
       },
-      {
-        "byte_len": 143,
-        "data": "U0lHTkFUVVJFOwpNRm9HQ1NxR1NJYjNEUUVIQXFCTk1Fc0NBUUV4RFRBTEJnbGdoa2dCWlFNRUFnRXdDd1lKS29aSWh2Y05BUWNCTVNvd0tBSUJBVEFGTUFBQ0FRRXdDd1lKWUlaSUFXVURCQUlCTUEwR0NTcUdTSWIzRFFFQkFRVUFCQUE9CkVORFNFQzs=",
-        "id": "step:file:signature#0",
+      "step:file:signature#0": {
+        "bytes": {
+          "data": "U0lHTkFUVVJFOwpNRm9HQ1NxR1NJYjNEUUVIQXFCTk1Fc0NBUUV4RFRBTEJnbGdoa2dCWlFNRUFnRXdDd1lKS29aSWh2Y05BUWNCTVNvd0tBSUJBVEFGTUFBQ0FRRXdDd1lKWUlaSUFXVURCQUlCTUEwR0NTcUdTSWIzRFFFQkFRVUFCQUE9CkVORFNFQzs=",
+          "retention": "inline"
+        },
         "offset": 451,
-        "sha256": "4658af8ce24b852b03d6801a706d9877e63da748cba1fe3cb94e6f96811fd3db",
         "stream": "source"
       }
-    ]
+    }
   }
 }

@@ -386,32 +386,32 @@
           "nx:container"
         ]
       },
-      "retained_records": [
-        {
-          "byte_len": 10,
-          "data": "4AAAAAHgAAAAAg==",
-          "id": "nx:om-section-0:block#0",
+      "retained_records": {
+        "nx:om-section-0:block#0": {
+          "bytes": {
+            "data": "4AAAAAHgAAAAAg==",
+            "retention": "inline"
+          },
           "offset": 122,
-          "sha256": "5312b038d29274ef7b1df3a55a638e376b87c81ab9eac49ae2a8e617a31bf330",
           "stream": "nx:container"
         },
-        {
-          "byte_len": 35,
-          "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
-          "id": "nx:om-section-0:block#1",
+        "nx:om-section-0:block#1": {
+          "bytes": {
+            "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
+            "retention": "inline"
+          },
           "offset": 132,
-          "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
           "stream": "nx:container"
         },
-        {
-          "byte_len": 35,
-          "data": "BAAqAguZBBwoTnVtYmVyIFttbV0pIGxlbmd0aDogMjU7IAA=",
-          "id": "nx:om-section-0:block#2",
+        "nx:om-section-0:block#2": {
+          "bytes": {
+            "data": "BAAqAguZBBwoTnVtYmVyIFttbV0pIGxlbmd0aDogMjU7IAA=",
+            "retention": "inline"
+          },
           "offset": 167,
-          "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
           "stream": "nx:container"
         }
-      ]
+      }
     }
   },
   "inspect": {

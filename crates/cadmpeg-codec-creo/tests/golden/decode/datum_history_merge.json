@@ -692,15 +692,15 @@
         "creo:MdlStatus"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 57,
-        "data": "I0FjdERhdHVtcwoEIgQBAAAPDw8PRgAAAAAAAAAPRggAAAAAAAAtAAAAAAAAAA8tCAAAAAAAACMK",
-        "id": "creo:ActDatums:section#76",
+    "retained_records": {
+      "creo:ActDatums:section#76": {
+        "bytes": {
+          "data": "I0FjdERhdHVtcwoEIgQBAAAPDw8PRgAAAAAAAAAPRggAAAAAAAAtAAAAAAAAAA8tCAAAAAAAACMK",
+          "retention": "inline"
+        },
         "offset": 76,
-        "sha256": "1b333cc1f4c5d66ca7e15db0abda213fa92895969b69db64fa3f4f796364f9a2",
         "stream": "creo:ActDatums"
       }
-    ]
+    }
   }
 }

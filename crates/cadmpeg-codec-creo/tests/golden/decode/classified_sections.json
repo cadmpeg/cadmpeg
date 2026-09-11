@@ -574,23 +574,23 @@
         "creo:THMB_IMG_MAIN"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 6,
-        "data": "/9j/4AAQ",
-        "id": "creo:THMB_IMG_MAIN:section#152",
+    "retained_records": {
+      "creo:THMB_IMG_MAIN:section#152": {
+        "bytes": {
+          "data": "/9j/4AAQ",
+          "retention": "inline"
+        },
         "offset": 152,
-        "sha256": "fc16d7dcee9cae83ef3923222a81ccd8fe96c9d25fdb7f504d66f1011e0cd870",
         "stream": "creo:THMB_IMG_MAIN"
       },
-      {
-        "byte_len": 42,
-        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AXgInAAY3J2X2FycmF5APP4DCMK",
-        "id": "creo:VisibGeom:section#79",
+      "creo:VisibGeom:section#79": {
+        "bytes": {
+          "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AXgInAAY3J2X2FycmF5APP4DCMK",
+          "retention": "inline"
+        },
         "offset": 79,
-        "sha256": "20b5723688159f5381f1cf6ba1e2ba7d3009ffe61b8408de7dfd81acc0c6373e",
         "stream": "creo:VisibGeom"
       }
-    ]
+    }
   }
 }

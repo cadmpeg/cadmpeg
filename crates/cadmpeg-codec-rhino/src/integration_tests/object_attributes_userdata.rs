@@ -144,9 +144,7 @@ fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: 
     assert!(presentation.field("layer_index").is_some());
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("object record is retained");
     assert_eq!(retained.data(), Some(record));
 }

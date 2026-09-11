@@ -799,7 +799,14 @@ fn decode_transfers_point_plane_cylinder_line() {
     let unknowns = result.ir().native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(
-        result.source_fidelity().retained_records[0].sha256().len(),
+        result
+            .source_fidelity()
+            .retained_records
+            .values()
+            .nth(0)
+            .expect("retained record")
+            .sha256()
+            .len(),
         64
     );
     assert_eq!(

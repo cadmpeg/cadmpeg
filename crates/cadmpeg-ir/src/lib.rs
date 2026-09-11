@@ -134,8 +134,8 @@ pub use sketches::{
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{
-    decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
-    SourceFidelity,
+    decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedBytes,
+    RetainedSourceRecord, SourceFidelity,
 };
 pub use spreadsheets::{
     CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,

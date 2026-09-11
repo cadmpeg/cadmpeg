@@ -4984,15 +4984,15 @@
         "creo:AllFeatur"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 305,
-        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AQBIgT2AAAPDw8PD0PwAEPwAA8vAAAvAADjD+QPDw/kDw8PDw8P4wIiBAEAAA8PDw9D8AAPQ/AA5A8vAADjDw/k5A8PDw8PDw8P4wMiBAEAAA8PDw9D8ABD8AAP5C8AAA/j5A8PD+QPDw8PDw8P4wQiBAEAAA8PDw8PDw8PDw/jSAAAQ/AALwAALwAASAAA5A8PD+QPD+NjcnZfYXJyYXkA8/gGdG9wb2xfcmVmX2RhdGEACggEAfYBAgwNAADj4fUF9uMLCAQB9gEDCg8AAOPh9QX24wwIBAH2AQQLDgAA4+H1BfbjDQgEAfYCAw4LAADj4fUF9uMOCAQB9gIECg8AAOPh9QX24w8IBAH2AwQNDAAA4+H1BfbjIwo=",
-        "id": "creo:VisibGeom:section#76",
+    "retained_records": {
+      "creo:VisibGeom:section#76": {
+        "bytes": {
+          "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AQBIgT2AAAPDw8PD0PwAEPwAA8vAAAvAADjD+QPDw/kDw8PDw8P4wIiBAEAAA8PDw9D8AAPQ/AA5A8vAADjDw/k5A8PDw8PDw8P4wMiBAEAAA8PDw9D8ABD8AAP5C8AAA/j5A8PD+QPDw8PDw8P4wQiBAEAAA8PDw8PDw8PDw/jSAAAQ/AALwAALwAASAAA5A8PD+QPD+NjcnZfYXJyYXkA8/gGdG9wb2xfcmVmX2RhdGEACggEAfYBAgwNAADj4fUF9uMLCAQB9gEDCg8AAOPh9QX24wwIBAH2AQQLDgAA4+H1BfbjDQgEAfYCAw4LAADj4fUF9uMOCAQB9gIECg8AAOPh9QX24w8IBAH2AwQNDAAA4+H1BfbjIwo=",
+          "retention": "inline"
+        },
         "offset": 76,
-        "sha256": "213fb003971aac96e78c5d1a5881cd023d7cbb3adc3af11cad8b98ee3d8e31b0",
         "stream": "creo:VisibGeom"
       }
-    ]
+    }
   }
 }

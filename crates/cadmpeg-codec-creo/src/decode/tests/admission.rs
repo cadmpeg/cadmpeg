@@ -100,9 +100,7 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     assert_eq!(unknowns.len(), 1);
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|record| record.id() == unknowns[0].id.as_str())
+        .retained_record(unknowns[0].id.as_str())
         .expect("retained thumbnail");
     assert_eq!(retained.data(), Some(jpeg_payload().as_slice()));
     assert_annotation(
@@ -159,9 +157,7 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(unknowns.len(), 1);
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|record| record.id() == unknowns[0].id.as_str())
+        .retained_record(unknowns[0].id.as_str())
         .expect("retained expanded thumbnail");
     assert_eq!(retained.data(), Some(jpeg.as_slice()));
     assert_annotation(
@@ -172,7 +168,6 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         "jpeg_thumbnail",
         Exactness::Derived,
     );
-    assert!(result.source_fidelity().validate().is_ok());
 }
 
 #[test]
@@ -335,9 +330,7 @@ fn decode_annotations_cover_every_emitted_entity() {
             .expect("unknown id contains its source section");
         let retained = result
             .source_fidelity()
-            .retained_records
-            .iter()
-            .find(|record| record.id() == unknown.id.as_str())
+            .retained_record(unknown.id.as_str())
             .expect("unknown source record");
         assert_annotation(
             &result.source_fidelity().annotations,

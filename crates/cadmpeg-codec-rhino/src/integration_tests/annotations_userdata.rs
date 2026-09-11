@@ -125,9 +125,7 @@ fn assert_text_and_retention<'a>(
     assert_eq!(annotation.field("kind"), Some(serde_json::json!("text")));
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("text object record is retained");
     assert_eq!(retained.data(), Some(record));
     annotation

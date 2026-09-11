@@ -552,15 +552,15 @@
         "creo:ActDatums"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 55,
-        "data": "I0FjdERhdHVtcwoEIgEBAAAPDw8PRgAAAAAAAAAPRggAAAAAAAAtAAAAAAAAAA8tCAAAAAAAAA==",
-        "id": "creo:ActDatums:section#76",
+    "retained_records": {
+      "creo:ActDatums:section#76": {
+        "bytes": {
+          "data": "I0FjdERhdHVtcwoEIgEBAAAPDw8PRgAAAAAAAAAPRggAAAAAAAAtAAAAAAAAAA8tCAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 76,
-        "sha256": "790e286d97efe136249674073861632db1fa2dd50e83821bda4f44311989b67e",
         "stream": "creo:ActDatums"
       }
-    ]
+    }
   }
 }

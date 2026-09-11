@@ -109,9 +109,7 @@ fn dimension_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
 fn assert_object_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("angular dimension object record is retained");
     assert_eq!(retained.data(), Some(record));
 }

@@ -13,8 +13,9 @@ use crate::report::DecodeReport;
 use crate::unknown::UnknownRecord;
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DecodeSidecar {
     /// SHA-256 of the exact CADIR bytes this sidecar describes.
     pub ir_sha256: String,
@@ -24,33 +25,7 @@ pub struct DecodeSidecar {
     pub fidelity: SourceFidelity,
 }
 
-/// Read shape of [`DecodeSidecar`], validated before it becomes one.
-#[derive(Deserialize)]
-struct DecodeSidecarWire {
-    ir_sha256: String,
-    report: DecodeReport,
-    fidelity: SourceFidelity,
-}
-
-impl<'de> Deserialize<'de> for DecodeSidecar {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DecodeSidecarWire::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
-    }
-}
-
 impl DecodeSidecar {
-    fn from_wire(wire: DecodeSidecarWire) -> Result<Self, DecodeSidecarParseError> {
-        wire.fidelity
-            .validate()
-            .map_err(DecodeSidecarParseError::Fidelity)?;
-        Ok(Self {
-            ir_sha256: wire.ir_sha256,
-            report: wire.report,
-            fidelity: wire.fidelity,
-        })
-    }
-
     /// Binds decode metadata to exact serialized CADIR bytes.
     pub fn bind(ir_bytes: &[u8], report: DecodeReport, fidelity: SourceFidelity) -> Self {
         Self::bind_sha256(crate::hash::sha256_hex(ir_bytes), report, fidelity)
@@ -60,9 +35,8 @@ impl DecodeSidecar {
     pub fn bind_sha256(
         ir_sha256: impl Into<String>,
         report: DecodeReport,
-        mut fidelity: SourceFidelity,
+        fidelity: SourceFidelity,
     ) -> Self {
-        fidelity.finalize();
         Self {
             ir_sha256: ir_sha256.into(),
             report,
@@ -75,17 +49,14 @@ impl DecodeSidecar {
         self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
     }
 
-    /// Finalizes this sidecar and serializes it as canonical compact JSON.
-    pub fn to_canonical_json(&mut self) -> Result<String, serde_json::Error> {
-        self.fidelity.finalize();
-        serde_json::to_string(&*self)
+    /// Serializes this sidecar as canonical compact JSON.
+    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 
-    /// Parses a decode sidecar and validates its retained records.
+    /// Parses a decode sidecar.
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        let wire: DecodeSidecarWire =
-            serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
-        Self::from_wire(wire)
+        serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)
     }
 }
 
@@ -105,89 +76,74 @@ pub enum DecodeSidecarParseError {
     /// Invalid JSON.
     #[error("invalid decode-sidecar JSON: {0}")]
     Json(serde_json::Error),
-    /// Invalid source fidelity.
-    #[error(transparent)]
-    Fidelity(FidelityError),
+}
+
+/// The retained image of a source record: its bytes, or the length and digest
+/// of bytes that are not retained.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "retention", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RetainedBytes {
+    /// The source bytes themselves. Their length and digest are functions of
+    /// them, so neither is stored.
+    Inline {
+        /// Retained source bytes.
+        #[serde(with = "crate::bytes")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        data: Vec<u8>,
+    },
+    /// Unavailable source bytes, described by their length and digest.
+    Digest {
+        /// Number of source bytes.
+        byte_len: u64,
+        /// Lowercase hexadecimal SHA-256 of the source bytes.
+        sha256: String,
+    },
 }
 
 /// Source bytes retained for native recovery or replay.
+///
+/// The record is addressed by its id in
+/// [`SourceFidelity::retained_records`], so it carries no id of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RetainedSourceRecord {
-    /// Stable record identifier.
-    id: String,
     /// Source stream containing the record.
     stream: String,
     /// First byte offset in the source stream.
     offset: u64,
-    /// Number of source bytes.
-    byte_len: u64,
-    /// Lowercase hexadecimal SHA-256 of the source bytes.
-    sha256: String,
-    /// Retained bytes, when available.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "crate::bytes::option"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    data: Option<Vec<u8>>,
+    /// Retained image of the source bytes.
+    bytes: RetainedBytes,
 }
 
 impl RetainedSourceRecord {
-    /// Retains source bytes and derives their length and SHA-256 digest.
+    /// Retains source bytes.
     #[must_use]
-    pub fn retained(
-        id: impl Into<String>,
-        stream: impl Into<String>,
-        offset: u64,
-        data: Vec<u8>,
-    ) -> Self {
+    pub fn retained(stream: impl Into<String>, offset: u64, data: Vec<u8>) -> Self {
         Self {
-            id: id.into(),
             stream: stream.into(),
             offset,
-            byte_len: data.len() as u64,
-            sha256: crate::hash::sha256_hex(&data),
-            data: Some(data),
+            bytes: RetainedBytes::Inline { data },
         }
     }
 
     /// Records unavailable source bytes by their stored length and digest.
     #[must_use]
     pub fn unavailable(
-        id: impl Into<String>,
         stream: impl Into<String>,
         offset: u64,
         byte_len: u64,
         sha256: impl Into<String>,
     ) -> Self {
         Self {
-            id: id.into(),
             stream: stream.into(),
             offset,
-            byte_len,
-            sha256: sha256.into(),
-            data: None,
+            bytes: RetainedBytes::Digest {
+                byte_len,
+                sha256: sha256.into(),
+            },
         }
-    }
-
-    fn from_unknown(stream: String, record: UnknownRecord) -> Self {
-        let (id, offset, byte_len, sha256, data, _) = record.into_parts();
-        Self {
-            id: id.into_string(),
-            stream,
-            offset,
-            byte_len,
-            sha256,
-            data,
-        }
-    }
-
-    /// Returns the stable record identifier.
-    #[must_use]
-    pub fn id(&self) -> &str {
-        &self.id
     }
 
     /// Returns the source stream containing the record.
@@ -204,60 +160,43 @@ impl RetainedSourceRecord {
 
     /// Returns the number of source bytes.
     #[must_use]
-    pub const fn byte_len(&self) -> u64 {
-        self.byte_len
+    pub fn byte_len(&self) -> u64 {
+        match &self.bytes {
+            RetainedBytes::Inline { data } => data.len() as u64,
+            RetainedBytes::Digest { byte_len, .. } => *byte_len,
+        }
     }
 
     /// Returns the lowercase hexadecimal SHA-256 of the source bytes.
     #[must_use]
-    pub fn sha256(&self) -> &str {
-        &self.sha256
+    pub fn sha256(&self) -> String {
+        match &self.bytes {
+            RetainedBytes::Inline { data } => crate::hash::sha256_hex(data),
+            RetainedBytes::Digest { sha256, .. } => sha256.clone(),
+        }
     }
 
     /// Returns the retained bytes when available.
     #[must_use]
     pub fn data(&self) -> Option<&[u8]> {
-        self.data.as_deref()
+        match &self.bytes {
+            RetainedBytes::Inline { data } => Some(data),
+            RetainedBytes::Digest { .. } => None,
+        }
     }
-}
-
-/// Validation failure in source metadata.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum FidelityError {
-    /// Two retained records share an identifier.
-    #[error("duplicate retained source record: {id}")]
-    DuplicateRecord {
-        /// The repeated identifier.
-        id: String,
-    },
-    /// Retained data has the wrong length.
-    #[error("retained source record {id} declares {declared} bytes but contains {actual}")]
-    Length {
-        /// The record identifier.
-        id: String,
-        /// Declared byte length.
-        declared: u64,
-        /// Actual retained byte length.
-        actual: u64,
-    },
-    /// Retained data has the wrong digest.
-    #[error("retained source record {id} does not match its SHA-256 digest")]
-    Digest {
-        /// The record identifier.
-        id: String,
-    },
 }
 
 /// Decode-time source annotations and retained native records.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     pub annotations: Annotations,
-    /// Native records retained for recovery or replay.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub retained_records: Vec<RetainedSourceRecord>,
+    /// Native records retained for recovery or replay, keyed by record id.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub retained_records: std::collections::BTreeMap<String, RetainedSourceRecord>,
 }
 
 impl SourceFidelity {
@@ -265,20 +204,13 @@ impl SourceFidelity {
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
             annotations,
-            retained_records: Vec::new(),
+            retained_records: std::collections::BTreeMap::new(),
         }
-    }
-
-    /// Sorts retained records into canonical source order.
-    pub fn finalize(&mut self) {
-        self.retained_records.sort_by(|left, right| {
-            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
-        });
     }
 
     /// Finds a retained source record by identifier.
     pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
-        self.retained_records.iter().find(|record| record.id == id)
+        self.retained_records.get(id)
     }
 
     /// Retains source records without adding them to the product model.
@@ -290,11 +222,13 @@ impl SourceFidelity {
         stream: &str,
         records: impl IntoIterator<Item = UnknownRecord>,
     ) {
-        self.retained_records.extend(
-            records
-                .into_iter()
-                .map(|record| RetainedSourceRecord::from_unknown(stream.into(), record)),
-        );
+        for record in records {
+            let (id, offset, byte_len, sha256, data, _) = record.into_parts();
+            self.retained_records.insert(
+                id.into_string(),
+                retained_source_record(stream.into(), offset, byte_len, sha256, data),
+            );
+        }
     }
 
     /// Stores source bytes in the sidecar and references in the product model.
@@ -326,55 +260,35 @@ impl SourceFidelity {
                     id: id.clone(),
                     links,
                 };
-                let retained = RetainedSourceRecord {
-                    id: id.into_string(),
-                    stream,
-                    offset,
-                    byte_len,
-                    sha256,
-                    data,
-                };
-                retained_records.push(retained);
+                retained_records.insert(
+                    id.into_string(),
+                    retained_source_record(stream, offset, byte_len, sha256, data),
+                );
                 product
             }),
         )
     }
+}
 
-    /// Validates retained record identity and payload integrity.
-    pub fn validate(&self) -> Result<(), FidelityError> {
-        let mut ids = std::collections::BTreeSet::new();
-        for record in &self.retained_records {
-            if !ids.insert(&record.id) {
-                return Err(FidelityError::DuplicateRecord {
-                    id: record.id.clone(),
-                });
-            }
-            if let Some(data) = &record.data {
-                let actual = data.len() as u64;
-                if actual != record.byte_len {
-                    return Err(FidelityError::Length {
-                        id: record.id.clone(),
-                        declared: record.byte_len,
-                        actual,
-                    });
-                }
-                if crate::hash::sha256_hex(data) != record.sha256 {
-                    return Err(FidelityError::Digest {
-                        id: record.id.clone(),
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
+fn retained_source_record(
+    stream: String,
+    offset: u64,
+    byte_len: u64,
+    sha256: String,
+    data: Option<Vec<u8>>,
+) -> RetainedSourceRecord {
+    data.map_or_else(
+        || RetainedSourceRecord::unavailable(stream.clone(), offset, byte_len, sha256.clone()),
+        |data| RetainedSourceRecord::retained(stream.clone(), offset, data),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn record(id: &str, data: &[u8]) -> RetainedSourceRecord {
-        RetainedSourceRecord::retained(id.to_owned(), "source", 0, data.to_vec())
+    fn record(data: &[u8]) -> RetainedSourceRecord {
+        RetainedSourceRecord::retained("source", 0, data.to_vec())
     }
 
     fn report() -> DecodeReport {
@@ -389,73 +303,90 @@ mod tests {
     }
 
     #[test]
-    fn finalize_orders_retained_records() {
-        let mut sidecar = SourceFidelity {
-            retained_records: vec![record("b", &[2]), record("a", &[1])],
-            ..SourceFidelity::default()
-        };
-        sidecar.finalize();
-        assert_eq!(sidecar.retained_records[0].id(), "a");
-    }
-
-    #[test]
-    fn validation_rejects_false_payload_metadata() {
-        let mut wire = serde_json::to_value(record("a", &[1, 2])).unwrap();
-        wire["sha256"] = crate::hash::sha256_hex(&[2, 1]).into();
-        let malformed = serde_json::from_value(wire).unwrap();
+    fn retained_records_are_keyed_by_their_id() {
         let mut sidecar = SourceFidelity::default();
-        sidecar.retained_records.push(malformed);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::Digest { .. })
-        ));
+        sidecar.retained_records.insert("b".into(), record(&[2]));
+        sidecar.retained_records.insert("a".into(), record(&[1]));
+        assert_eq!(
+            sidecar.retained_records.keys().collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert_eq!(sidecar.retained_record("a"), Some(&record(&[1])));
+
+        // A record id is a map key, so a document cannot carry two records
+        // under one id: serde_json keeps the last value for a repeated key.
+        let duplicated = serde_json::from_str::<SourceFidelity>(
+            r#"{"retained_records":{
+                 "a":{"stream":"source","offset":0,
+                      "bytes":{"retention":"inline","data":"AQ=="}},
+                 "a":{"stream":"source","offset":0,
+                      "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
+        )
+        .expect("a repeated key is not a parse error");
+        assert_eq!(duplicated.retained_records.len(), 1);
+        assert_eq!(
+            duplicated
+                .retained_record("a")
+                .and_then(RetainedSourceRecord::data),
+            Some([2].as_slice())
+        );
     }
 
     #[test]
-    fn unknown_conversion_preserves_contradictions_for_admission() {
+    fn a_retained_record_derives_its_length_and_digest_from_inline_bytes() {
+        let inline = record(&[1, 2, 3]);
+        assert_eq!(inline.byte_len(), 3);
+        assert_eq!(inline.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
+        assert_eq!(inline.data(), Some([1, 2, 3].as_slice()));
+
+        let wire = serde_json::to_value(&inline).expect("serializes");
+        assert_eq!(wire["bytes"]["retention"], "inline");
+        assert!(wire["bytes"].get("byte_len").is_none());
+        assert!(wire["bytes"].get("sha256").is_none());
+        assert_eq!(
+            serde_json::from_value::<RetainedSourceRecord>(wire.clone()).expect("round trip"),
+            inline
+        );
+
+        let mut restated = wire;
+        restated["bytes"]["byte_len"] = serde_json::json!(3);
+        let error = serde_json::from_value::<RetainedSourceRecord>(restated)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("byte_len"), "{error}");
+    }
+
+    #[test]
+    fn unknown_conversion_keeps_the_retained_bytes_as_the_record_image() {
         for attach in [false, true] {
-            for (byte_len, sha256) in [
-                (99, crate::hash::sha256_hex(&[1, 2, 3])),
-                (3, "wrong".into()),
-            ] {
-                let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
-                    "id": "synthetic:model:unknown#0",
-                    "offset": 7,
-                    "byte_len": byte_len,
-                    "sha256": sha256,
-                    "data": "AQID"
-                }))
-                .unwrap();
-                let mut fidelity = SourceFidelity::default();
-                if attach {
-                    fidelity
-                        .attach_native_unknown_records(&mut CadIr::empty(), "synthetic", [unknown])
-                        .unwrap();
-                } else {
-                    fidelity.retain_unknown_records("source", [unknown]);
-                }
-                let retained = &fidelity.retained_records[0];
-                assert_eq!(retained.byte_len(), byte_len);
-                assert_eq!(retained.sha256(), sha256);
-                assert_eq!(retained.data(), Some([1, 2, 3].as_slice()));
-                if byte_len == 99 {
-                    assert!(matches!(
-                        fidelity.validate(),
-                        Err(FidelityError::Length { .. })
-                    ));
-                } else {
-                    assert!(matches!(
-                        fidelity.validate(),
-                        Err(FidelityError::Digest { .. })
-                    ));
-                }
+            let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
+                "id": "synthetic:model:unknown#0",
+                "offset": 7,
+                "byte_len": 3,
+                "sha256": crate::hash::sha256_hex(&[1, 2, 3]),
+                "data": "AQID"
+            }))
+            .unwrap();
+            let mut fidelity = SourceFidelity::default();
+            if attach {
+                fidelity
+                    .attach_native_unknown_records(&mut CadIr::empty(), "synthetic", [unknown])
+                    .unwrap();
+            } else {
+                fidelity.retain_unknown_records("source", [unknown]);
             }
+            let retained = fidelity
+                .retained_record("synthetic:model:unknown#0")
+                .expect("record is keyed by its id");
+            assert_eq!(retained.byte_len(), 3);
+            assert_eq!(retained.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
+            assert_eq!(retained.data(), Some([1, 2, 3].as_slice()));
         }
     }
 
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes() {
-        let mut sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
 
@@ -472,7 +403,7 @@ mod tests {
 
     #[test]
     fn decode_sidecar_uses_decode_report_dialect_omission_policy() {
-        let mut sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(json.contains("\"dialects\":null"), "{json}");
         let truncated = json.replace(",\"dialects\":null", "");
@@ -503,28 +434,19 @@ mod tests {
     }
 
     #[test]
-    fn public_decode_sidecar_deserialization_validates_retained_payloads() {
+    fn a_sidecar_record_cannot_restate_the_length_of_its_inline_bytes() {
         let mut fidelity = SourceFidelity::default();
-        fidelity.retained_records.push(record("record", b"payload"));
+        fidelity
+            .retained_records
+            .insert("record".into(), record(b"payload"));
         let sidecar = DecodeSidecar::bind(b"cad-ir", report(), fidelity);
         let mut value = serde_json::to_value(sidecar).unwrap();
-        value["fidelity"]["retained_records"][0]["byte_len"] = 1.into();
+        value["fidelity"]["retained_records"]["record"]["bytes"]["byte_len"] = 1.into();
         let json = value.to_string();
 
-        let direct_error = serde_json::from_str::<DecodeSidecar>(&json)
-            .expect_err("public deserialization must validate fidelity");
-        assert!(
-            direct_error
-                .to_string()
-                .contains("retained source record record declares 1 bytes but contains 7"),
-            "{direct_error}"
-        );
-        assert!(matches!(
-            DecodeSidecar::from_json(&json),
-            Err(DecodeSidecarParseError::Fidelity(
-                FidelityError::Length { .. }
-            ))
-        ));
+        let error = serde_json::from_str::<DecodeSidecar>(&json)
+            .expect_err("an inline record has no length field");
+        assert!(error.to_string().contains("byte_len"), "{error}");
     }
 
     #[test]

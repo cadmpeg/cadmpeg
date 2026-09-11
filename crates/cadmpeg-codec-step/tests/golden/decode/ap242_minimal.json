@@ -155,23 +155,23 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 69,
-        "data": "IzE9RVhBTVBMRV9SRUNPUkQoJ2xpbmUKY29udGludWVzJywjMiwxLiwwLkUrMDAwLDFELTMsLlRSVUUuLCQsKiwoKSk7",
-        "id": "step:data:example_record#1",
+    "retained_records": {
+      "step:data:example_record#1": {
+        "bytes": {
+          "data": "IzE9RVhBTVBMRV9SRUNPUkQoJ2xpbmUKY29udGludWVzJywjMiwxLiwwLkUrMDAwLDFELTMsLlRSVUUuLCQsKiwoKSk7",
+          "retention": "inline"
+        },
         "offset": 267,
-        "sha256": "d62cba64f3300f57a6a2ebd4701b5d9253130d1aef42dfd2b021910c25aa0c59",
         "stream": "source"
       },
-      {
-        "byte_len": 27,
-        "data": "IzI9T1BBUVVFX1RBUkdFVCgndGFyZ2V0Jyk7",
-        "id": "step:data:opaque_target#2",
+      "step:data:opaque_target#2": {
+        "bytes": {
+          "data": "IzI9T1BBUVVFX1RBUkdFVCgndGFyZ2V0Jyk7",
+          "retention": "inline"
+        },
         "offset": 337,
-        "sha256": "75760ab0a42cf9aa82d38698bd9745835655906b302565e2425937f2c2085315",
         "stream": "source"
       }
-    ]
+    }
   }
 }

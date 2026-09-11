@@ -156,15 +156,15 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 95,
-        "data": "IzE9RVhBTVBMRV9TVFJJTkdTKCdpdCcncycsJ2FcXGInLCdcWFxFOScsJ1xYMlwwM0E5XFgwXCcsJ1xYNFwwMDAxRjY0MlxYMFwnLCdcU1xEJywnXFBBXFxTXEQnKTs=",
-        "id": "step:data:example_strings#1",
+    "retained_records": {
+      "step:data:example_strings#1": {
+        "bytes": {
+          "data": "IzE9RVhBTVBMRV9TVFJJTkdTKCdpdCcncycsJ2FcXGInLCdcWFxFOScsJ1xYMlwwM0E5XFgwXCcsJ1xYNFwwMDAxRjY0MlxYMFwnLCdcU1xEJywnXFBBXFxTXEQnKTs=",
+          "retention": "inline"
+        },
         "offset": 193,
-        "sha256": "c85b49d96ac3523d3e2308874f0b245001c0e1dcf3f0989cd32cc693a4255a87",
         "stream": "source"
       }
-    ]
+    }
   }
 }

@@ -578,32 +578,32 @@
           "nx:container"
         ]
       },
-      "retained_records": [
-        {
-          "byte_len": 35,
-          "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
-          "id": "nx:om-section-0:record#0",
-          "offset": 150,
-          "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
-          "stream": "nx:container"
-        },
-        {
-          "byte_len": 172,
-          "data": "BDZwOF9DaXJjdWxhclBhdHRlcm5fcGF0dGVybl9DaXJjdWxhcl9EaXJfb2Zmc2V0X2FuZ2xlAAQFMTIwAJkEUChOdW1iZXIgW2RlZ3JlZXNdKSBwOF9DaXJjdWxhclBhdHRlcm5fcGF0dGVybl9DaXJjdWxhcl9EaXJfb2Zmc2V0X2FuZ2xlOiAxMjA7IABmMgMMU0tFVENIXzAwMQDgEjRWeMq83vABApAAAA==",
-          "id": "nx:om-section-0:record#1",
-          "offset": 185,
-          "sha256": "3d06157eb8568c2ace87089241063f2f7465af1a0e79f1f492e3a9dacd224819",
-          "stream": "nx:container"
-        },
-        {
-          "byte_len": 383,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-          "id": "nx:container:parasolid#0",
+      "retained_records": {
+        "nx:container:parasolid#0": {
+          "bytes": {
+            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "retention": "inline"
+          },
           "offset": 357,
-          "sha256": "173ac020f2c71a2d189ac51864d2ec57d338dcbcd3ad5bc4941f16bbb6dd88e1",
+          "stream": "nx:container"
+        },
+        "nx:om-section-0:record#0": {
+          "bytes": {
+            "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
+            "retention": "inline"
+          },
+          "offset": 150,
+          "stream": "nx:container"
+        },
+        "nx:om-section-0:record#1": {
+          "bytes": {
+            "data": "BDZwOF9DaXJjdWxhclBhdHRlcm5fcGF0dGVybl9DaXJjdWxhcl9EaXJfb2Zmc2V0X2FuZ2xlAAQFMTIwAJkEUChOdW1iZXIgW2RlZ3JlZXNdKSBwOF9DaXJjdWxhclBhdHRlcm5fcGF0dGVybl9DaXJjdWxhcl9EaXJfb2Zmc2V0X2FuZ2xlOiAxMjA7IABmMgMMU0tFVENIXzAwMQDgEjRWeMq83vABApAAAA==",
+            "retention": "inline"
+          },
+          "offset": 185,
           "stream": "nx:container"
         }
-      ]
+      }
     }
   },
   "inspect": {

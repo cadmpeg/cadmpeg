@@ -197,7 +197,12 @@ fn container_only_stops_before_geometry() {
     // The reconstructed BREP stream is preserved as an unknown passthrough.
     let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
-    let retained = &result.source_fidelity().retained_records[0];
+    let retained = &result
+        .source_fidelity()
+        .retained_records
+        .values()
+        .nth(0)
+        .expect("retained record");
     assert_eq!(retained.sha256().len(), 64);
     assert!(retained.data().is_some());
 }

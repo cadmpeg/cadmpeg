@@ -1284,13 +1284,14 @@ const FIDELITY_SIDECAR: &str = r#"{
     "annotations": {"streams": ["Contents/Config-0"],
                     "provenance": {"a:b:c#1": {"stream": 0, "offset": 0}},
                     "exactness": {}},
-    "retained_records": [
-      {"id": "r1", "stream": "Contents/Config-0", "offset": 0, "byte_len": 4,
-       "sha256": "e12e115acf4552b2568b55e93cbd39394c4ef81c82447fafc997882a02d23677", "data": "QUJDRA=="},
-      {"id": "r2", "stream": "Contents/Config-0", "offset": 4, "byte_len": 2,
-       "sha256": "3a4db4ee1e59ce1a0a1b9f56bd6d5506d8c204e2f1d501b7a3a4021e6365e8db", "data": "RUY="},
-      {"id": "r3", "stream": "Other", "offset": 0, "byte_len": 3, "sha256": "z"}
-    ]
+    "retained_records": {
+      "r1": {"stream": "Contents/Config-0", "offset": 0,
+             "bytes": {"retention": "inline", "data": "QUJDRA=="}},
+      "r2": {"stream": "Contents/Config-0", "offset": 4,
+             "bytes": {"retention": "inline", "data": "RUY="}},
+      "r3": {"stream": "Other", "offset": 0,
+             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "z"}}
+    }
   }
 }"#;
 

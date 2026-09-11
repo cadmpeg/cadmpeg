@@ -150,7 +150,7 @@ pub struct SldprtCodec;
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
     id: UnknownId,
-    sha256: &'a str,
+    sha256: String,
     data: Option<&'a [u8]>,
 }
 
@@ -393,20 +393,17 @@ fn source_records<'a>(
     ir: &CadIr,
     source_fidelity: &'a SourceFidelity,
 ) -> Result<Vec<SourceRecord<'a>>, CodecError> {
-    let retained_by_id = source_fidelity
-        .retained_records
-        .iter()
-        .map(|record| (record.id(), record))
-        .collect::<std::collections::HashMap<_, _>>();
     let mut records = ir
         .native_unknowns_iter("sldprt")
         .map(|reference| {
             let reference = reference?;
-            let retained = retained_by_id.get(reference.id.as_str()).ok_or_else(|| {
-                cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
-                    reference.id.as_str().to_owned(),
-                )
-            })?;
+            let retained = source_fidelity
+                .retained_record(reference.id.as_str())
+                .ok_or_else(|| {
+                    cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
+                        reference.id.as_str().to_owned(),
+                    )
+                })?;
             Ok(SourceRecord {
                 id: reference.id,
                 sha256: retained.sha256(),
@@ -416,7 +413,10 @@ fn source_records<'a>(
         .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
-            id: source.id().to_owned().try_into().expect("valid identity"),
+            id: SOURCE_IMAGE_ID
+                .to_owned()
+                .try_into()
+                .expect("valid identity"),
             sha256: source.sha256(),
             data: source.data(),
         });
@@ -440,12 +440,10 @@ mod tests {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
         let fidelity = cadmpeg_ir::SourceFidelity {
-            retained_records: vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(
-                SOURCE_IMAGE_ID,
-                "source",
-                0,
-                payload,
-            )],
+            retained_records: std::collections::BTreeMap::from([(
+                SOURCE_IMAGE_ID.to_owned(),
+                cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained("source", 0, payload),
+            )]),
             ..cadmpeg_ir::SourceFidelity::default()
         };
 

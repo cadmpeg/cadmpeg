@@ -77,9 +77,7 @@ fn assert_point_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) 
     assert_eq!(result.ir().model.points.len(), 1);
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("unregistered userdata object record is retained");
     assert_eq!(retained.data(), Some(record));
     assert_valid(result);

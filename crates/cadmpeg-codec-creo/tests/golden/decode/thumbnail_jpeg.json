@@ -548,15 +548,15 @@
         "creo:THMB_IMG_MAIN"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 6,
-        "data": "/9j/4AAQ",
-        "id": "creo:THMB_IMG_MAIN:section#91",
+    "retained_records": {
+      "creo:THMB_IMG_MAIN:section#91": {
+        "bytes": {
+          "data": "/9j/4AAQ",
+          "retention": "inline"
+        },
         "offset": 91,
-        "sha256": "fc16d7dcee9cae83ef3923222a81ccd8fe96c9d25fdb7f504d66f1011e0cd870",
         "stream": "creo:THMB_IMG_MAIN"
       }
-    ]
+    }
   }
 }

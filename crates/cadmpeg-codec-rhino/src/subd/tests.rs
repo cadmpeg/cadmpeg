@@ -891,7 +891,8 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id().starts_with("rhino:object:record#"))
+        .find(|(id, _)| id.starts_with("rhino:object:record#"))
+        .map(|(_, record)| record)
         .expect("SubD source record is retained");
     assert!(retained
         .data()

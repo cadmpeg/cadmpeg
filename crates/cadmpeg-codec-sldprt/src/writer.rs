@@ -963,7 +963,7 @@ fn opaque_blocks(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            seen.insert((section.to_string(), record.sha256))
+            seen.insert((section.to_string(), record.sha256.clone()))
                 .then_some(Ok((section.to_string(), payload)))
         })
         .collect()
@@ -989,7 +989,7 @@ fn retained_swobjects_sections(
     sections
         .into_iter()
         .filter_map(|(section, record)| {
-            seen.insert((section, record.sha256))
+            seen.insert((section, record.sha256.clone()))
                 .then_some((section, record))
         })
         .map(|(section, record)| {

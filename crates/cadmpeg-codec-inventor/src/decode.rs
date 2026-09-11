@@ -1558,7 +1558,6 @@ fn decode_container<'a>(
                 ))
             })?;
     }
-    source_fidelity.finalize();
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let appearance_binding_count = ir.model.appearance_bindings.len();
     let transferred_occurrence_count = ir.model.occurrences.len();

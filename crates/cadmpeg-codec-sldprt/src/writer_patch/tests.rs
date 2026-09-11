@@ -448,7 +448,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
             cadmpeg_ir::features::ParameterValue::Integer(3),
         );
     {
-        let mut source_fidelity = decoded.source_fidelity_mut();
+        let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
             cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
         annotations.clear_exactness();
