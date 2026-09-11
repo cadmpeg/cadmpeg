@@ -19,108 +19,84 @@
         {
           "edge": "catia:standard:edge#1",
           "id": "catia:standard:coedge#0:0:0",
-          "next": "catia:standard:coedge#0:0:1",
           "owner_loop": "catia:standard:loop#0:0",
-          "previous": "catia:standard:coedge#0:0:2",
           "radial_next": "catia:standard:coedge#2:0:2",
           "sense": "forward"
         },
         {
           "edge": "catia:standard:edge#2",
           "id": "catia:standard:coedge#0:0:1",
-          "next": "catia:standard:coedge#0:0:2",
           "owner_loop": "catia:standard:loop#0:0",
-          "previous": "catia:standard:coedge#0:0:0",
           "radial_next": "catia:standard:coedge#3:0:2",
           "sense": "forward"
         },
         {
           "edge": "catia:standard:edge#0",
           "id": "catia:standard:coedge#0:0:2",
-          "next": "catia:standard:coedge#0:0:0",
           "owner_loop": "catia:standard:loop#0:0",
-          "previous": "catia:standard:coedge#0:0:1",
           "radial_next": "catia:standard:coedge#1:0:2",
           "sense": "forward"
         },
         {
           "edge": "catia:standard:edge#3",
           "id": "catia:standard:coedge#1:0:0",
-          "next": "catia:standard:coedge#1:0:1",
           "owner_loop": "catia:standard:loop#1:0",
-          "previous": "catia:standard:coedge#1:0:2",
           "radial_next": "catia:standard:coedge#3:0:1",
           "sense": "forward"
         },
         {
           "edge": "catia:standard:edge#4",
           "id": "catia:standard:coedge#1:0:1",
-          "next": "catia:standard:coedge#1:0:2",
           "owner_loop": "catia:standard:loop#1:0",
-          "previous": "catia:standard:coedge#1:0:0",
           "radial_next": "catia:standard:coedge#2:0:0",
           "sense": "reversed"
         },
         {
           "edge": "catia:standard:edge#0",
           "id": "catia:standard:coedge#1:0:2",
-          "next": "catia:standard:coedge#1:0:0",
           "owner_loop": "catia:standard:loop#1:0",
-          "previous": "catia:standard:coedge#1:0:1",
           "radial_next": "catia:standard:coedge#0:0:2",
           "sense": "reversed"
         },
         {
           "edge": "catia:standard:edge#4",
           "id": "catia:standard:coedge#2:0:0",
-          "next": "catia:standard:coedge#2:0:1",
           "owner_loop": "catia:standard:loop#2:0",
-          "previous": "catia:standard:coedge#2:0:2",
           "radial_next": "catia:standard:coedge#1:0:1",
           "sense": "forward"
         },
         {
           "edge": "catia:standard:edge#5",
           "id": "catia:standard:coedge#2:0:1",
-          "next": "catia:standard:coedge#2:0:2",
           "owner_loop": "catia:standard:loop#2:0",
-          "previous": "catia:standard:coedge#2:0:0",
           "radial_next": "catia:standard:coedge#3:0:0",
           "sense": "reversed"
         },
         {
           "edge": "catia:standard:edge#1",
           "id": "catia:standard:coedge#2:0:2",
-          "next": "catia:standard:coedge#2:0:0",
           "owner_loop": "catia:standard:loop#2:0",
-          "previous": "catia:standard:coedge#2:0:1",
           "radial_next": "catia:standard:coedge#0:0:0",
           "sense": "reversed"
         },
         {
           "edge": "catia:standard:edge#5",
           "id": "catia:standard:coedge#3:0:0",
-          "next": "catia:standard:coedge#3:0:1",
           "owner_loop": "catia:standard:loop#3:0",
-          "previous": "catia:standard:coedge#3:0:2",
           "radial_next": "catia:standard:coedge#2:0:1",
           "sense": "forward"
         },
         {
           "edge": "catia:standard:edge#3",
           "id": "catia:standard:coedge#3:0:1",
-          "next": "catia:standard:coedge#3:0:2",
           "owner_loop": "catia:standard:loop#3:0",
-          "previous": "catia:standard:coedge#3:0:0",
           "radial_next": "catia:standard:coedge#1:0:0",
           "sense": "reversed"
         },
         {
           "edge": "catia:standard:edge#2",
           "id": "catia:standard:coedge#3:0:2",
-          "next": "catia:standard:coedge#3:0:0",
           "owner_loop": "catia:standard:loop#3:0",
-          "previous": "catia:standard:coedge#3:0:1",
           "radial_next": "catia:standard:coedge#0:0:1",
           "sense": "reversed"
         }
@@ -1210,9 +1186,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1221,9 +1195,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1232,9 +1204,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1243,9 +1213,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1254,9 +1222,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1265,9 +1231,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1276,9 +1240,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1287,9 +1249,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1298,9 +1258,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1309,9 +1267,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1320,9 +1276,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }
@@ -1331,9 +1285,7 @@
           "entity": "byte_exact",
           "fields": {
             "edge": "derived",
-            "next": "derived",
             "owner_loop": "derived",
-            "previous": "derived",
             "radial_next": "derived",
             "sense": "derived"
           }

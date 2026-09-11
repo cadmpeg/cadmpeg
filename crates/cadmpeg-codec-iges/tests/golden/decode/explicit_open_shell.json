@@ -28,36 +28,28 @@
         {
           "edge": "iges:model:edge#D23:D17:1",
           "id": "iges:model:coedge#D23:D19:0",
-          "next": "iges:model:coedge#D23:D19:1",
           "owner_loop": "iges:model:loop#D23:D19",
-          "previous": "iges:model:coedge#D23:D19:3",
           "radial_next": "iges:model:coedge#D23:D19:0",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D23:D17:2",
           "id": "iges:model:coedge#D23:D19:1",
-          "next": "iges:model:coedge#D23:D19:2",
           "owner_loop": "iges:model:loop#D23:D19",
-          "previous": "iges:model:coedge#D23:D19:0",
           "radial_next": "iges:model:coedge#D23:D19:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D23:D17:3",
           "id": "iges:model:coedge#D23:D19:2",
-          "next": "iges:model:coedge#D23:D19:3",
           "owner_loop": "iges:model:loop#D23:D19",
-          "previous": "iges:model:coedge#D23:D19:1",
           "radial_next": "iges:model:coedge#D23:D19:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D23:D17:4",
           "id": "iges:model:coedge#D23:D19:3",
-          "next": "iges:model:coedge#D23:D19:0",
           "owner_loop": "iges:model:loop#D23:D19",
-          "previous": "iges:model:coedge#D23:D19:2",
           "radial_next": "iges:model:coedge#D23:D19:3",
           "sense": "forward"
         }

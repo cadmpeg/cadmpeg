@@ -19,49 +19,42 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
           "pcurves": [
             {
               "pcurve": "sldprt:brep:pcurve#sphere:30"
             }
           ],
-          "previous": "sldprt:brep:coedge#sphere-seam-face:0",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
           "pcurves": [
             {
               "pcurve": "sldprt:brep:pcurve#sphere:31"
             }
           ],
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#sphere-seam-face:0",
           "owner_loop": "sldprt:brep:loop#20",
           "pcurves": [
             {
               "pcurve": "sldprt:brep:pcurve#sphere:32"
             }
           ],
-          "previous": "sldprt:brep:coedge#31",
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#sphere-seam-face:0",
           "id": "sldprt:brep:coedge#sphere-seam-face:0",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
           "pcurves": [
             {
@@ -72,7 +65,6 @@
               "pcurve": "sldprt:brep:pcurve#sphere-seam-face:0"
             }
           ],
-          "previous": "sldprt:brep:coedge#32",
           "radial_next": "sldprt:brep:coedge#sphere-seam-face:0",
           "sense": "forward"
         }

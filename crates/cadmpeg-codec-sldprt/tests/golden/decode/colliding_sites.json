@@ -26,54 +26,42 @@
         {
           "edge": "sldprt:brep:edge#40@block@250",
           "id": "sldprt:brep:coedge#30@block@250",
-          "next": "sldprt:brep:coedge#31@block@250",
           "owner_loop": "sldprt:brep:loop#20@block@250",
-          "previous": "sldprt:brep:coedge#32@block@250",
           "radial_next": "sldprt:brep:coedge#30@block@250",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#40@block@8",
           "id": "sldprt:brep:coedge#30@block@8",
-          "next": "sldprt:brep:coedge#31@block@8",
           "owner_loop": "sldprt:brep:loop#20@block@8",
-          "previous": "sldprt:brep:coedge#32@block@8",
           "radial_next": "sldprt:brep:coedge#30@block@8",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41@block@250",
           "id": "sldprt:brep:coedge#31@block@250",
-          "next": "sldprt:brep:coedge#32@block@250",
           "owner_loop": "sldprt:brep:loop#20@block@250",
-          "previous": "sldprt:brep:coedge#30@block@250",
           "radial_next": "sldprt:brep:coedge#31@block@250",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41@block@8",
           "id": "sldprt:brep:coedge#31@block@8",
-          "next": "sldprt:brep:coedge#32@block@8",
           "owner_loop": "sldprt:brep:loop#20@block@8",
-          "previous": "sldprt:brep:coedge#30@block@8",
           "radial_next": "sldprt:brep:coedge#31@block@8",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42@block@250",
           "id": "sldprt:brep:coedge#32@block@250",
-          "next": "sldprt:brep:coedge#30@block@250",
           "owner_loop": "sldprt:brep:loop#20@block@250",
-          "previous": "sldprt:brep:coedge#31@block@250",
           "radial_next": "sldprt:brep:coedge#32@block@250",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42@block@8",
           "id": "sldprt:brep:coedge#32@block@8",
-          "next": "sldprt:brep:coedge#30@block@8",
           "owner_loop": "sldprt:brep:loop#20@block@8",
-          "previous": "sldprt:brep:coedge#31@block@8",
           "radial_next": "sldprt:brep:coedge#32@block@8",
           "sense": "forward"
         }

@@ -166,27 +166,21 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#32",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#31",
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }

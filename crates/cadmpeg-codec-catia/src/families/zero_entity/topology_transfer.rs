@@ -690,10 +690,6 @@ pub(crate) fn transfer_closed_face_topology(
                     .ok()?
                     .derived(&coedge_id, "edge")
                     .ok()?
-                    .derived(&coedge_id, "next")
-                    .ok()?
-                    .derived(&coedge_id, "previous")
-                    .ok()?
                     .derived(&coedge_id, "radial_next")
                     .ok()?
                     .derived(&coedge_id, "sense")

@@ -20,28 +20,24 @@
           {
             "edge": "nx:s0:edge#8",
             "id": "nx:s0:fin#13",
-            "next": "nx:s0:fin#7",
             "owner_loop": "nx:s0:loop#5",
             "pcurves": [
               {
                 "pcurve": "nx:s0:intersection-pcurve#13"
               }
             ],
-            "previous": "nx:s0:fin#7",
             "radial_next": "nx:s0:fin#13",
             "sense": "forward"
           },
           {
             "edge": "nx:s0:edge#8",
             "id": "nx:s0:fin#7",
-            "next": "nx:s0:fin#13",
             "owner_loop": "nx:s0:loop#5",
             "pcurves": [
               {
                 "pcurve": "nx:s0:intersection-pcurve#7"
               }
             ],
-            "previous": "nx:s0:fin#13",
             "radial_next": "nx:s0:fin#7",
             "sense": "forward"
           }

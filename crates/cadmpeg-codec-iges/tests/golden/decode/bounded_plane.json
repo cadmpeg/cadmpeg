@@ -28,36 +28,28 @@
         {
           "edge": "iges:model:edge#D13:0:0",
           "id": "iges:model:coedge#D13:0:0",
-          "next": "iges:model:coedge#D13:0:1",
           "owner_loop": "iges:model:loop#D13:0",
-          "previous": "iges:model:coedge#D13:0:3",
           "radial_next": "iges:model:coedge#D13:0:0",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D13:0:1",
           "id": "iges:model:coedge#D13:0:1",
-          "next": "iges:model:coedge#D13:0:2",
           "owner_loop": "iges:model:loop#D13:0",
-          "previous": "iges:model:coedge#D13:0:0",
           "radial_next": "iges:model:coedge#D13:0:1",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D13:0:2",
           "id": "iges:model:coedge#D13:0:2",
-          "next": "iges:model:coedge#D13:0:3",
           "owner_loop": "iges:model:loop#D13:0",
-          "previous": "iges:model:coedge#D13:0:1",
           "radial_next": "iges:model:coedge#D13:0:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D13:0:3",
           "id": "iges:model:coedge#D13:0:3",
-          "next": "iges:model:coedge#D13:0:0",
           "owner_loop": "iges:model:loop#D13:0",
-          "previous": "iges:model:coedge#D13:0:2",
           "radial_next": "iges:model:coedge#D13:0:3",
           "sense": "forward"
         }

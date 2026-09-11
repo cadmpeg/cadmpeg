@@ -20,14 +20,12 @@
         {
           "edge": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
           "id": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
-          "next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
           "sense": "forward"
         }

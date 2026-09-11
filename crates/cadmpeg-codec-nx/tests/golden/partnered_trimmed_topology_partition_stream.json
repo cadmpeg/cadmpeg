@@ -20,18 +20,14 @@
           {
             "edge": "nx:s0:edge#8",
             "id": "nx:s0:fin#22",
-            "next": "nx:s0:fin#22",
             "owner_loop": "nx:s0:loop#21",
-            "previous": "nx:s0:fin#22",
             "radial_next": "nx:s0:fin#7",
             "sense": "reversed"
           },
           {
             "edge": "nx:s0:edge#8",
             "id": "nx:s0:fin#7",
-            "next": "nx:s0:fin#7",
             "owner_loop": "nx:s0:loop#5",
-            "previous": "nx:s0:fin#7",
             "radial_next": "nx:s0:fin#22",
             "sense": "forward"
           }

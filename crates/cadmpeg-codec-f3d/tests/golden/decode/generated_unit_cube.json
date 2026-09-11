@@ -244,8 +244,6 @@
           "id": "f3d:brep:entity#34",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#62",
-          "next": "f3d:brep:entity#35",
-          "previous": "f3d:brep:entity#37",
           "radial_next": "f3d:brep:entity#40",
           "sense": "reversed"
         },
@@ -253,8 +251,6 @@
           "id": "f3d:brep:entity#35",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#60",
-          "next": "f3d:brep:entity#36",
-          "previous": "f3d:brep:entity#34",
           "radial_next": "f3d:brep:entity#53",
           "sense": "forward"
         },
@@ -262,8 +258,6 @@
           "id": "f3d:brep:entity#36",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#66",
-          "next": "f3d:brep:entity#37",
-          "previous": "f3d:brep:entity#35",
           "radial_next": "f3d:brep:entity#55",
           "sense": "forward"
         },
@@ -271,8 +265,6 @@
           "id": "f3d:brep:entity#37",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#61",
-          "next": "f3d:brep:entity#34",
-          "previous": "f3d:brep:entity#36",
           "radial_next": "f3d:brep:entity#47",
           "sense": "reversed"
         },
@@ -280,8 +272,6 @@
           "id": "f3d:brep:entity#38",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#58",
-          "next": "f3d:brep:entity#39",
-          "previous": "f3d:brep:entity#41",
           "radial_next": "f3d:brep:entity#42",
           "sense": "forward"
         },
@@ -289,8 +279,6 @@
           "id": "f3d:brep:entity#39",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#59",
-          "next": "f3d:brep:entity#40",
-          "previous": "f3d:brep:entity#38",
           "radial_next": "f3d:brep:entity#50",
           "sense": "forward"
         },
@@ -298,8 +286,6 @@
           "id": "f3d:brep:entity#40",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#62",
-          "next": "f3d:brep:entity#41",
-          "previous": "f3d:brep:entity#39",
           "radial_next": "f3d:brep:entity#34",
           "sense": "forward"
         },
@@ -307,8 +293,6 @@
           "id": "f3d:brep:entity#41",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#63",
-          "next": "f3d:brep:entity#38",
-          "previous": "f3d:brep:entity#40",
           "radial_next": "f3d:brep:entity#46",
           "sense": "forward"
         },
@@ -316,8 +300,6 @@
           "id": "f3d:brep:entity#42",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#58",
-          "next": "f3d:brep:entity#43",
-          "previous": "f3d:brep:entity#45",
           "radial_next": "f3d:brep:entity#38",
           "sense": "reversed"
         },
@@ -325,8 +307,6 @@
           "id": "f3d:brep:entity#43",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#68",
-          "next": "f3d:brep:entity#44",
-          "previous": "f3d:brep:entity#42",
           "radial_next": "f3d:brep:entity#49",
           "sense": "forward"
         },
@@ -334,8 +314,6 @@
           "id": "f3d:brep:entity#44",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#64",
-          "next": "f3d:brep:entity#45",
-          "previous": "f3d:brep:entity#43",
           "radial_next": "f3d:brep:entity#57",
           "sense": "forward"
         },
@@ -343,8 +321,6 @@
           "id": "f3d:brep:entity#45",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#69",
-          "next": "f3d:brep:entity#42",
-          "previous": "f3d:brep:entity#44",
           "radial_next": "f3d:brep:entity#51",
           "sense": "reversed"
         },
@@ -352,8 +328,6 @@
           "id": "f3d:brep:entity#46",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#63",
-          "next": "f3d:brep:entity#47",
-          "previous": "f3d:brep:entity#49",
           "radial_next": "f3d:brep:entity#41",
           "sense": "reversed"
         },
@@ -361,8 +335,6 @@
           "id": "f3d:brep:entity#47",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#61",
-          "next": "f3d:brep:entity#48",
-          "previous": "f3d:brep:entity#46",
           "radial_next": "f3d:brep:entity#37",
           "sense": "forward"
         },
@@ -370,8 +342,6 @@
           "id": "f3d:brep:entity#48",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#67",
-          "next": "f3d:brep:entity#49",
-          "previous": "f3d:brep:entity#47",
           "radial_next": "f3d:brep:entity#54",
           "sense": "forward"
         },
@@ -379,8 +349,6 @@
           "id": "f3d:brep:entity#49",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#68",
-          "next": "f3d:brep:entity#46",
-          "previous": "f3d:brep:entity#48",
           "radial_next": "f3d:brep:entity#43",
           "sense": "reversed"
         },
@@ -388,8 +356,6 @@
           "id": "f3d:brep:entity#50",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#59",
-          "next": "f3d:brep:entity#51",
-          "previous": "f3d:brep:entity#53",
           "radial_next": "f3d:brep:entity#39",
           "sense": "reversed"
         },
@@ -397,8 +363,6 @@
           "id": "f3d:brep:entity#51",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#69",
-          "next": "f3d:brep:entity#52",
-          "previous": "f3d:brep:entity#50",
           "radial_next": "f3d:brep:entity#45",
           "sense": "forward"
         },
@@ -406,8 +370,6 @@
           "id": "f3d:brep:entity#52",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#65",
-          "next": "f3d:brep:entity#53",
-          "previous": "f3d:brep:entity#51",
           "radial_next": "f3d:brep:entity#56",
           "sense": "forward"
         },
@@ -415,8 +377,6 @@
           "id": "f3d:brep:entity#53",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#60",
-          "next": "f3d:brep:entity#50",
-          "previous": "f3d:brep:entity#52",
           "radial_next": "f3d:brep:entity#35",
           "sense": "reversed"
         },
@@ -424,8 +384,6 @@
           "id": "f3d:brep:entity#54",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#67",
-          "next": "f3d:brep:entity#55",
-          "previous": "f3d:brep:entity#57",
           "radial_next": "f3d:brep:entity#48",
           "sense": "reversed"
         },
@@ -433,8 +391,6 @@
           "id": "f3d:brep:entity#55",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#66",
-          "next": "f3d:brep:entity#56",
-          "previous": "f3d:brep:entity#54",
           "radial_next": "f3d:brep:entity#36",
           "sense": "reversed"
         },
@@ -442,8 +398,6 @@
           "id": "f3d:brep:entity#56",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#65",
-          "next": "f3d:brep:entity#57",
-          "previous": "f3d:brep:entity#55",
           "radial_next": "f3d:brep:entity#52",
           "sense": "reversed"
         },
@@ -451,8 +405,6 @@
           "id": "f3d:brep:entity#57",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#64",
-          "next": "f3d:brep:entity#54",
-          "previous": "f3d:brep:entity#56",
           "radial_next": "f3d:brep:entity#44",
           "sense": "reversed"
         }
