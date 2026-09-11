@@ -500,13 +500,11 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         allow_multi_profile_faces: None,
     };
     let revolve = |op| FeatureDefinition::Revolve {
-        construction: RevolveConstruction::new(
-            Some(
-                (ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()))
-                    .try_into()
-                    .unwrap(),
-            ),
-            Some(RevolutionAxis {
+        construction: RevolveConstruction::Resolved {
+            profile: (ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()))
+                .try_into()
+                .unwrap(),
+            axis: RevolutionAxis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -514,15 +512,15 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
                 ))
                 .unwrap(),
                 reference: None,
-            }),
-            Some(RevolveExtent::OneSided {
+            },
+            extent: RevolveExtent::OneSided {
                 termination: AngularTermination::ThroughAll {},
-            }),
-            Some(true),
-            None,
-            None,
-            None,
-        ),
+            },
+            solid: Some(true),
+            face_maker: None,
+            fuse_order: None,
+            allow_multi_profile_faces: None,
+        },
         op,
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {

@@ -5,8 +5,9 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::{
     features::{
-        AngularTermination, BooleanOp, FeatureDefinition, PathRef, ProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
+        AngularTermination, BooleanOp, FeatureDefinition, PartialRevolveConstruction, PathRef,
+        ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft,
+        RibSide, SweepMode,
     },
     scalar::Angle,
 };
@@ -329,8 +330,49 @@ pub(crate) fn project_revolve(
             (feature.input_class.as_deref() == Some("moRevCut_c")).then_some(BooleanOp::Cut)
         })
         .unwrap_or(BooleanOp::Unresolved);
+    let solid = Some(true);
     FeatureDefinition::Revolve {
-        construction: RevolveConstruction::new(profile, axis, extent, Some(true), None, None, None),
+        construction: match (profile, axis, extent) {
+            (None, axis, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+                    axis,
+                    extent,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                })
+            }
+            (Some(profile), None, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                    profile,
+                    extent,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                })
+            }
+            (Some(profile), Some(axis), None) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                    profile,
+                    axis,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                })
+            }
+            (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+        },
         op,
     }
 }

@@ -51,7 +51,8 @@ use cadmpeg_ir::{
     features::{
         BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
         FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
-        LinearTermination, ProfileRef, RadiusSpec, RevolveConstruction, UnresolvedFamily,
+        LinearTermination, PartialRevolveConstruction, ProfileRef, RadiusSpec, RevolveConstruction,
+        UnresolvedFamily,
     },
     scalar::Length,
 };
@@ -534,19 +535,53 @@ pub(in super::super) fn schema_feature_definition(
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+        let profile = profile
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let solid = sweep_solid(output_kind);
         return Ok(IrFeatureDefinition::Revolve {
-            construction: RevolveConstruction::new(
-                profile
-                    .map(TryInto::try_into)
-                    .transpose()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                axis,
-                extent,
-                sweep_solid(output_kind),
-                None,
-                None,
-                None,
-            ),
+            construction: match (profile, axis, extent) {
+                (None, axis, extent) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+                        axis,
+                        extent,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), None, extent) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                        profile,
+                        extent,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), Some(axis), None) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                        profile,
+                        axis,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
+                    profile,
+                    axis,
+                    extent,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+            },
             op: section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
                 kind,

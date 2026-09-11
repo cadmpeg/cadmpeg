@@ -380,7 +380,16 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
         .definition()
         .clone(),
         FeatureDefinition::Revolve {
-            construction: RevolveConstruction::new(None, None, None, None, None, None, None),
+            construction: RevolveConstruction::Unresolved(
+                cadmpeg_ir::features::PartialRevolveConstruction::Profile {
+                    axis: None,
+                    extent: None,
+                    solid: None,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+            ),
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Rib {
