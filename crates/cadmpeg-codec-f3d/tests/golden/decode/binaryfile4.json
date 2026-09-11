@@ -484,103 +484,99 @@
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        "f3d:native"
-      ],
       "provenance": {
         "f3d:brep:entity#1": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 151,
           "tag": "body"
         },
         "f3d:brep:entity#10": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 647,
           "tag": "edge"
         },
         "f3d:brep:entity#11": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 717,
           "tag": "edge"
         },
         "f3d:brep:entity#12": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 787,
           "tag": "edge"
         },
         "f3d:brep:entity#13": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 857,
           "tag": "vertex"
         },
         "f3d:brep:entity#14": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 896,
           "tag": "vertex"
         },
         "f3d:brep:entity#15": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 935,
           "tag": "vertex"
         },
         "f3d:brep:entity#16": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 974,
           "tag": "point"
         },
         "f3d:brep:entity#17": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1022,
           "tag": "point"
         },
         "f3d:brep:entity#18": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1070,
           "tag": "point"
         },
         "f3d:brep:entity#19": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1118,
           "tag": "ellipse-curve"
         },
         "f3d:brep:entity#2": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 188,
           "tag": "lump"
         },
         "f3d:brep:entity#3": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 225,
           "tag": "shell"
         },
         "f3d:brep:entity#4": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 273,
           "tag": "face"
         },
         "f3d:brep:entity#5": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 322,
           "tag": "loop"
         },
         "f3d:brep:entity#6": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 359,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#7": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 467,
           "tag": "coedge"
         },
         "f3d:brep:entity#8": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 527,
           "tag": "coedge"
         },
         "f3d:brep:entity#9": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 587,
           "tag": "coedge"
         }

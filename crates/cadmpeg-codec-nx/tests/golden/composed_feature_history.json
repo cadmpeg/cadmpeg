@@ -6191,488 +6191,485 @@
         "provenance": {
           "nx:feature-history:feature#0000000000-0000000000": {
             "offset": 308,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000001": {
             "offset": 350,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000002": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000003": {
             "offset": 462,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000004": {
             "offset": 521,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000005": {
             "offset": 622,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000006": {
             "offset": 752,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000007": {
             "offset": 865,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000008": {
             "offset": 929,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000009": {
             "offset": 1034,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000010": {
             "offset": 1086,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000011": {
             "offset": 1136,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000012": {
             "offset": 1189,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000013": {
             "offset": 1277,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000014": {
             "offset": 1327,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:input-block#0000000000-0000000000-0000000000": {
             "offset": 304,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000001-0000000000": {
             "offset": 346,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000002-0000000000": {
             "offset": 388,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000003-0000000000": {
             "offset": 458,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000004-0000000000": {
             "offset": 517,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000005-0000000000": {
             "offset": 618,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000006-0000000000": {
             "offset": 748,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000007-0000000000": {
             "offset": 861,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000008-0000000000": {
             "offset": 925,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000009-0000000000": {
             "offset": 1030,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000010-0000000000": {
             "offset": 1082,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000011-0000000000": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000012-0000000000": {
             "offset": 1185,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000013-0000000000": {
             "offset": 1273,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block#0000000000-0000000014-0000000000": {
             "offset": 1323,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block-identity-group#0000000000": {
             "offset": 388,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK_IDENTITY_GROUP"
           },
           "nx:feature-history:operation-label#0000000000-0000000000": {
             "offset": 308,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000001": {
             "offset": 350,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000002": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000003": {
             "offset": 462,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000004": {
             "offset": 521,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000005": {
             "offset": 622,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000006": {
             "offset": 752,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000007": {
             "offset": 865,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000008": {
             "offset": 929,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000009": {
             "offset": 1034,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000010": {
             "offset": 1086,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000011": {
             "offset": 1136,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000012": {
             "offset": 1189,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000013": {
             "offset": 1277,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000014": {
             "offset": 1327,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-record#0000000000-0000000000": {
             "offset": 289,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000001": {
             "offset": 331,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000002": {
             "offset": 373,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000003": {
             "offset": 443,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000004": {
             "offset": 502,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000005": {
             "offset": 603,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000006": {
             "offset": 733,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000007": {
             "offset": 846,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000009": {
             "offset": 1015,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000010": {
             "offset": 1067,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000011": {
             "offset": 1117,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000012": {
             "offset": 1170,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000013": {
             "offset": 1258,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000014": {
             "offset": 1308,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-terminal-frame#0000000000-0000000002": {
             "offset": 439,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
           },
           "nx:feature-history:operation-terminal-frame#0000000000-0000000005": {
             "offset": 729,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
           },
           "nx:feature-history:operation-terminal-frame#0000000000-0000000012": {
             "offset": 1254,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
           },
           "nx:feature-history:operation-terminal-frame#0000000000-0000000013": {
             "offset": 1304,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
           },
           "nx:feature-history:payload-string#0000000000-0000000014-0000000000": {
             "offset": 1381,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_PAYLOAD_STRING"
           },
           "nx:feature-history:sketch#0000000000-0000000000": {
             "offset": 308,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH"
           },
           "nx:feature-history:sketch#0000000000-0000000001": {
             "offset": 350,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH"
           },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000": {
             "offset": 1853,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
           },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001": {
             "offset": 1921,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
           },
           "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001": {
             "offset": 1853,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_NATIVE_FIXED_POINT"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "offset": 321,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_POINT"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0": {
             "offset": 363,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_POINT"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
             "offset": 1853,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_SKETCH_FIXED_POINT"
           },
           "nx:feature-history:sketch-named-point-block-use#0000000000-0000000000-0-0-1-0": {
             "offset": 321,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
           },
           "nx:feature-history:sketch-named-point-block-use#0000000000-0000000000-1-0-1-1": {
             "offset": 325,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
           },
           "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-6-0": {
             "offset": 363,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
           },
           "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0": {
             "offset": 321,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_POINT_USE"
           },
           "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0": {
             "offset": 363,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SKETCH_POINT_USE"
           },
           "nx:feature-history:sketch-record#0000000000-0000000000": {
             "offset": 308,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_SKETCH_RECORD"
           },
           "nx:feature-history:sketch-record#0000000000-0000000001": {
             "offset": 350,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_SKETCH_RECORD"
           },
           "nx:offset-store:named-point#0-1": {
             "offset": 1517,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OFFSET_STORE_NAMED_POINT"
           },
           "nx:offset-store:named-point#0-3": {
             "offset": 1552,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OFFSET_STORE_NAMED_POINT"
           },
           "nx:offset-store:named-point#0-6": {
             "offset": 1807,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OFFSET_STORE_NAMED_POINT"
           },
           "nx:om-record-areas:area#0-185": {
             "offset": 261,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-section-0:block#0": {
             "offset": 1501,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
             "offset": 1517,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
             "offset": 1539,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#3": {
             "offset": 1552,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#4": {
             "offset": 1766,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#5": {
             "offset": 1767,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#6": {
             "offset": 1807,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
             "offset": 1501,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_STORE_VERSION"
           },
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-om-links:link#0": {
             "offset": 108,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:om-section-0:block#0": {

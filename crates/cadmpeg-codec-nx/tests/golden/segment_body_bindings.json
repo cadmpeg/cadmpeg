@@ -236,48 +236,45 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 148,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:segment-body-bindings:binding#0": {
             "offset": 108,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_BODY_BINDING"
           },
           "nx:segment-body-lineage:status#0": {
             "offset": 108,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "SEGMENT_BODY_LINEAGE_STATUS"
           },
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#2": {
             "offset": 100,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#3": {
             "offset": 112,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-stream-links:link#0": {
             "offset": 140,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_STREAM_LINK"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

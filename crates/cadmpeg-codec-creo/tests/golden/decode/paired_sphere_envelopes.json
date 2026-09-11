@@ -1214,53 +1214,50 @@
       "provenance": {
         "creo:VisibGeom:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "psb_geometry_section"
         },
         "creo:model:feature#4": {
           "offset": 106,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "geometry_generator_feature"
         },
         "creo:visibgeom:surface#7": {
           "offset": 106,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "paired_type26_sphere_envelope"
         },
         "creo:visibgeom:surface#8": {
           "offset": 146,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "paired_type26_sphere_envelope"
         },
         "creo:visibgeom:surface_parameter#7": {
           "offset": 112,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_parameter_frame"
         },
         "creo:visibgeom:surface_parameter#8": {
           "offset": 152,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_parameter_frame"
         },
         "creo:visibgeom:surface_prototype#186": {
           "offset": 186,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_prototype_record"
         },
         "creo:visibgeom:surface_row#7": {
           "offset": 106,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_namespace_row"
         },
         "creo:visibgeom:surface_row#8": {
           "offset": 146,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_namespace_row"
         }
-      },
-      "streams": [
-        "creo:VisibGeom"
-      ]
+      }
     },
     "retained_records": {
       "creo:VisibGeom:section#76": {

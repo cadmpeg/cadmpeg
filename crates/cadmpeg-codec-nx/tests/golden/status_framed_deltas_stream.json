@@ -212,29 +212,25 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "deltas"
           },
           "nx:s0:deltas-record#67-100": {
             "offset": 67,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_RECORD"
           },
           "nx:s0:deltas-residual#0": {
             "offset": 0,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_RESIDUAL"
           },
           "nx:s0:deltas-tombstone#117-48303": {
             "offset": 117,
-            "stream": 1,
+            "stream": "nx:s0",
             "tag": "DELTAS_TOMBSTONE"
           }
-        },
-        "streams": [
-          "nx:container",
-          "nx:s0"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

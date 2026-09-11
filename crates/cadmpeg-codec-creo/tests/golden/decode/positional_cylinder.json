@@ -981,33 +981,30 @@
       "provenance": {
         "creo:VisibGeom:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "psb_geometry_section"
         },
         "creo:model:feature#4": {
           "offset": 116,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "geometry_generator_feature"
         },
         "creo:visibgeom:surface#7": {
           "offset": 116,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "positional_cylinder_frame"
         },
         "creo:visibgeom:surface_parameter#7": {
           "offset": 122,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_parameter_frame"
         },
         "creo:visibgeom:surface_row#7": {
           "offset": 116,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_namespace_row"
         }
-      },
-      "streams": [
-        "creo:VisibGeom"
-      ]
+      }
     },
     "retained_records": {
       "creo:VisibGeom:section#76": {

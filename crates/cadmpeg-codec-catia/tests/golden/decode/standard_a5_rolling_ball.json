@@ -1028,95 +1028,90 @@
       "provenance": {
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:standard-nested"
         },
         "catia:rolling-ball:construction#0": {
           "offset": 16,
-          "stream": 1,
+          "stream": "catia:consolidated_a5_03_32",
           "tag": "header_token:00000005"
         },
         "catia:rolling-ball:limit#16:0": {
           "offset": 16,
-          "stream": 1,
+          "stream": "catia:consolidated_a5_03_32",
           "tag": "limit_1"
         },
         "catia:rolling-ball:limit#16:1": {
           "offset": 16,
-          "stream": 1,
+          "stream": "catia:consolidated_a5_03_32",
           "tag": "limit_2"
         },
         "catia:rolling-ball:surf#2": {
           "offset": 16,
-          "stream": 2,
+          "stream": "catia:consolidated_a5_03_32_cache",
           "tag": "header_token:00000005"
         },
         "catia:standard:body#unbound-points": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "unbound_point_owner"
         },
         "catia:standard:circle#0": {
           "offset": 297,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60_circle"
         },
         "catia:standard:pt#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:region#unbound-points": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "unbound_point_owner"
         },
         "catia:standard:shell#unbound-points": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "unbound_point_owner"
         },
         "catia:standard:surf#0": {
           "offset": 131,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_33"
         },
         "catia:standard:surf#1": {
           "offset": 204,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_32"
         },
         "catia:standard:v#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:consolidated_a5_03_32",
-        "catia:consolidated_a5_03_32_cache"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#brep-stream": {

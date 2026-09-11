@@ -645,118 +645,115 @@
         "provenance": {
           "nx:feature-history:body-reference#0000000000-0000000000": {
             "offset": 378,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000001-0000000000": {
             "offset": 648,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000": {
             "offset": 378,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000001-0000000000-0000000000": {
             "offset": 648,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:boolean#0000000001-0000000000": {
             "offset": 600,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000000": {
             "offset": 330,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000001-0000000000": {
             "offset": 600,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:operation-label#0000000000-0000000000": {
             "offset": 330,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000001-0000000000": {
             "offset": 600,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-record#0000000000-0000000000": {
             "offset": 308,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000001-0000000000": {
             "offset": 578,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:om-record-areas:area#0-459": {
             "offset": 535,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-record-areas:area#1-189": {
             "offset": 265,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-record-areas:area#2-189": {
             "offset": 265,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-record-areas:area#3-189": {
             "offset": 265,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#2": {
             "offset": 100,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-om-links:link#0": {
             "offset": 382,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           },
           "nx:segment-om-links:link#1": {
             "offset": 112,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           },
           "nx:segment-om-links:link#2": {
             "offset": 112,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           },
           "nx:segment-om-links:link#3": {
             "offset": 112,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       }
     }
   },

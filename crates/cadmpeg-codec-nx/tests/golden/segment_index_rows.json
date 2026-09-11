@@ -142,18 +142,15 @@
         "provenance": {
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       }
     }
   },

@@ -443,81 +443,75 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 76,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
             "offset": 360,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "deltas"
           },
           "nx:s0:body#2": {
             "offset": 70,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "BODY"
           },
           "nx:s0:crv#0": {
             "offset": 319,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:crv#1": {
             "offset": 569,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "CIRCLE"
           },
           "nx:s0:edge#8": {
             "offset": 196,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "EDGE"
           },
           "nx:s0:face#4": {
             "offset": 118,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:fin#7": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FIN"
           },
           "nx:s0:loop#5": {
             "offset": 157,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "LOOP"
           },
           "nx:s0:pt#0": {
             "offset": 430,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:region#12": {
             "offset": 414,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "REGION"
           },
           "nx:s0:shell#3": {
             "offset": 94,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
           "nx:s0:surf#0": {
             "offset": 228,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:vertex#10": {
             "offset": 386,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "VERTEX"
           }
-        },
-        "streams": [
-          "nx:parasolid#0:partition",
-          "nx:container",
-          "nx:parasolid#1:deltas",
-          "nx:s1"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

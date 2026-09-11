@@ -667,34 +667,30 @@
       "provenance": {
         "creo:ActDatums:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:ActDatums",
           "tag": "psb_geometry_section"
         },
         "creo:mdlstatus:feature_state#3:0": {
           "offset": 144,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#4:0": {
           "offset": 155,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:model:feature#3": {
           "offset": 144,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#4": {
           "offset": 155,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         }
-      },
-      "streams": [
-        "creo:ActDatums",
-        "creo:MdlStatus"
-      ]
+      }
     },
     "retained_records": {
       "creo:ActDatums:section#76": {

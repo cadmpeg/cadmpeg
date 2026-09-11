@@ -733,45 +733,40 @@
       "provenance": {
         "creo:VisibGeom:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "psb_geometry_section"
         },
         "creo:allfeatur:feature_row#135": {
           "offset": 135,
-          "stream": 2,
+          "stream": "creo:AllFeatur",
           "tag": "feature_row"
         },
         "creo:mdlstatus:feature_state#4:0": {
           "offset": 163,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:model:feature#4": {
           "offset": 163,
-          "stream": 1,
+          "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:visibgeom:surface#7": {
           "offset": 116,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "unresolved_visible_surface_carrier"
         },
         "creo:visibgeom:surface_parameter#7": {
           "offset": 122,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_parameter_frame"
         },
         "creo:visibgeom:surface_row#7": {
           "offset": 116,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "surface_namespace_row"
         }
-      },
-      "streams": [
-        "creo:VisibGeom",
-        "creo:MdlStatus",
-        "creo:AllFeatur"
-      ]
+      }
     },
     "retained_records": {
       "creo:VisibGeom:section#76": {

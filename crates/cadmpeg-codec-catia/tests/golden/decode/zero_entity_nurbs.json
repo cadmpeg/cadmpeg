@@ -821,19 +821,15 @@
       "provenance": {
         "catia:payload:unknown#zero-entity": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:CATPart",
           "tag": "catia:zero-entity"
         },
         "catia:zero-entity:surf#0": {
           "offset": 16,
-          "stream": 1,
+          "stream": "catia:zero_entity_a9_03",
           "tag": "analytic_surface"
         }
-      },
-      "streams": [
-        "catia:CATPart",
-        "catia:zero_entity_a9_03"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#zero-entity": {

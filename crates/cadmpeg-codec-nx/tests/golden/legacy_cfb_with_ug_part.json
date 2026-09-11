@@ -128,13 +128,10 @@
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 1033,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "partition"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:container:parasolid#0": {

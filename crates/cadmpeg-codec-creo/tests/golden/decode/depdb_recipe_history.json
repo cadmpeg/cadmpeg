@@ -730,33 +730,30 @@
       "provenance": {
         "creo:depdb:recipe_row#118": {
           "offset": 118,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "depdb_recipe_row"
         },
         "creo:mdlstatus:feature_state#8051:0": {
           "offset": 101,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#8053:0": {
           "offset": 118,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "feature_operation_state"
         },
         "creo:model:feature#8051": {
           "offset": 101,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#8053": {
           "offset": 118,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "feature_recipe"
         }
-      },
-      "streams": [
-        "creo:DEPDB_DATA"
-      ]
+      }
     }
   }
 }

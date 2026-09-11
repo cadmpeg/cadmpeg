@@ -1284,8 +1284,7 @@ const FIDELITY_SIDECAR: &str = r#"{
              "transfer": "full", "geometry_transferred": true,
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
-    "annotations": {"streams": ["Contents/Config-0"],
-                    "provenance": {"a:b:c#1": {"stream": 0, "offset": 0}},
+    "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
     "retained_records": {
       "r1": {"stream": "Contents/Config-0", "offset": 0,

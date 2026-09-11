@@ -1502,248 +1502,245 @@
       "provenance": {
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:standard-nested"
         },
         "catia:standard:body#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_body"
         },
         "catia:standard:coedge#0:0:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#0:0:1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#0:0:2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#1:0:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#1:0:1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#1:0:2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#2:0:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#2:0:1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#2:0:2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#3:0:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#3:0:1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:coedge#3:0:2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_run"
         },
         "catia:standard:curve#290": {
           "offset": 290,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60"
         },
         "catia:standard:curve#301": {
           "offset": 301,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60"
         },
         "catia:standard:curve#312": {
           "offset": 312,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60"
         },
         "catia:standard:curve#323": {
           "offset": 323,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60"
         },
         "catia:standard:curve#334": {
           "offset": 334,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60"
         },
         "catia:standard:curve#345": {
           "offset": 345,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60"
         },
         "catia:standard:edge#0": {
           "offset": 290,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_spine_edge_row"
         },
         "catia:standard:edge#1": {
           "offset": 301,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_spine_edge_row"
         },
         "catia:standard:edge#2": {
           "offset": 312,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_spine_edge_row"
         },
         "catia:standard:edge#3": {
           "offset": 323,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_spine_edge_row"
         },
         "catia:standard:edge#4": {
           "offset": 334,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_spine_edge_row"
         },
         "catia:standard:edge#5": {
           "offset": 345,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "standard_spine_edge_row"
         },
         "catia:standard:face#0": {
           "offset": 361,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_face_sense"
         },
         "catia:standard:face#1": {
           "offset": 426,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_face_sense"
         },
         "catia:standard:face#2": {
           "offset": 491,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_face_sense"
         },
         "catia:standard:face#3": {
           "offset": 556,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_face_sense"
         },
         "catia:standard:loop#0:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_cycle"
         },
         "catia:standard:loop#1:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_cycle"
         },
         "catia:standard:loop#2:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_cycle"
         },
         "catia:standard:loop#3:0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "trim_mesh_boundary_cycle"
         },
         "catia:standard:pt#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#3": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:region#0-0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "derived_region"
         },
         "catia:standard:shell#0-0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "derived_shell"
         },
         "catia:standard:surf#0": {
           "offset": 361,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_35"
         },
         "catia:standard:surf#1": {
           "offset": 426,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_35"
         },
         "catia:standard:surf#2": {
           "offset": 491,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_35"
         },
         "catia:standard:surf#3": {
           "offset": 556,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_35"
         },
         "catia:standard:v#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#3": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#brep-stream": {

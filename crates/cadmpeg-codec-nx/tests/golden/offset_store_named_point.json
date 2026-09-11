@@ -246,33 +246,30 @@
         "provenance": {
           "nx:offset-store:named-point#0-1": {
             "offset": 138,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OFFSET_STORE_NAMED_POINT"
           },
           "nx:om-section-0:block#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
             "offset": 138,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
             "offset": 176,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_STORE_VERSION"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:om-section-0:block#0": {

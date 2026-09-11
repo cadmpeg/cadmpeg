@@ -313,63 +313,60 @@
         "provenance": {
           "nx:om-data-block-control-class-references-0:class#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE"
           },
           "nx:om-data-block-control-forms:form#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_FORM"
           },
           "nx:om-data-block-control-values-0:value#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_VALUE"
           },
           "nx:om-data-block-control-values-0:value#1": {
             "offset": 126,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_VALUE"
           },
           "nx:om-data-block-references-0-2:reference#0": {
             "offset": 167,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
           },
           "nx:om-entry-0:feature#equations-70": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "hostglobalvariables"
           },
           "nx:om-entry-0:parameter#97": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "Number"
           },
           "nx:om-section-0:block#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
             "offset": 130,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
             "offset": 165,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
             "offset": 130,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_STORE_VERSION"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:om-section-0:block#0": {

@@ -548,13 +548,10 @@
       "provenance": {
         "creo:ActDatums:section#76": {
           "offset": 76,
-          "stream": 0,
+          "stream": "creo:ActDatums",
           "tag": "psb_geometry_section"
         }
-      },
-      "streams": [
-        "creo:ActDatums"
-      ]
+      }
     },
     "retained_records": {
       "creo:ActDatums:section#76": {

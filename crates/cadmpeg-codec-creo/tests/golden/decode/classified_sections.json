@@ -564,19 +564,15 @@
       "provenance": {
         "creo:THMB_IMG_MAIN:section#152": {
           "offset": 152,
-          "stream": 1,
+          "stream": "creo:THMB_IMG_MAIN",
           "tag": "jpeg_thumbnail"
         },
         "creo:VisibGeom:section#79": {
           "offset": 79,
-          "stream": 0,
+          "stream": "creo:VisibGeom",
           "tag": "psb_geometry_section"
         }
-      },
-      "streams": [
-        "creo:VisibGeom",
-        "creo:THMB_IMG_MAIN"
-      ]
+      }
     },
     "retained_records": {
       "creo:THMB_IMG_MAIN:section#152": {

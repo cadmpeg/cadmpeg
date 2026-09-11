@@ -797,43 +797,40 @@
       "provenance": {
         "creo:depdb:curve_expression#active-7-102": {
           "offset": 128,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_program"
         },
         "creo:depdb:curve_expression_feature#7-102": {
           "offset": 128,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_feature"
         },
         "creo:depdb:curve_expression_parameter#7-102-0": {
           "offset": 143,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         },
         "creo:depdb:curve_expression_parameter#7-102-1": {
           "offset": 156,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         },
         "creo:depdb:curve_expression_parameter#7-102-2": {
           "offset": 175,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         },
         "creo:depdb:curve_expression_parameter#7-102-3": {
           "offset": 192,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         },
         "creo:depdb:curve_expression_parameter#7-102-4": {
           "offset": 219,
-          "stream": 0,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         }
-      },
-      "streams": [
-        "creo:DEPDB_DATA"
-      ]
+      }
     }
   }
 }

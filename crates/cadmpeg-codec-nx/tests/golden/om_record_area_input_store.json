@@ -597,118 +597,115 @@
         "provenance": {
           "nx:feature-history:body-reference#0000000000-0000000000": {
             "offset": 374,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000": {
             "offset": 374,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:boolean#0000000000-0000000000": {
             "offset": 326,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000000": {
             "offset": 326,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:input-block#0000000000-0000000000-0000000000": {
             "offset": 319,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:operation-label#0000000000-0000000000": {
             "offset": 326,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-record#0000000000-0000000000": {
             "offset": 304,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:om-data-block-control-class-references-0:class#0": {
             "offset": 424,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE"
           },
           "nx:om-data-block-control-forms:form#0": {
             "offset": 424,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_FORM"
           },
           "nx:om-data-block-control-values-0:value#0": {
             "offset": 424,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_VALUE"
           },
           "nx:om-data-block-control-values-0:value#1": {
             "offset": 428,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_VALUE"
           },
           "nx:om-data-block-references-0-2:reference#0": {
             "offset": 469,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
           },
           "nx:om-entry-0:feature#equations-372": {
             "offset": 475,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "hostglobalvariables"
           },
           "nx:om-entry-0:parameter#399": {
             "offset": 475,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "Number"
           },
           "nx:om-record-areas:area#0-185": {
             "offset": 261,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-section-0:block#0": {
             "offset": 424,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
             "offset": 432,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
             "offset": 467,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
             "offset": 432,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_STORE_VERSION"
           },
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-om-links:link#0": {
             "offset": 108,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
       "retained_records": {
         "nx:om-section-0:block#0": {

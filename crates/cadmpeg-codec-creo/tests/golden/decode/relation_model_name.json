@@ -678,34 +678,30 @@
       "provenance": {
         "creo:depdb:curve_expression#active-7-125": {
           "offset": 151,
-          "stream": 1,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_program"
         },
         "creo:depdb:curve_expression_feature#7-125": {
           "offset": 151,
-          "stream": 1,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_feature"
         },
         "creo:depdb:curve_expression_parameter#7-125-0": {
           "offset": 166,
-          "stream": 1,
+          "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
         },
         "creo:model:occurrence#root": {
           "offset": 22,
-          "stream": 0,
+          "stream": "creo:archive_header",
           "tag": "part_product_occurrence"
         },
         "creo:model:product_definition#root": {
           "offset": 22,
-          "stream": 0,
+          "stream": "creo:archive_header",
           "tag": "part_product"
         }
-      },
-      "streams": [
-        "creo:archive_header",
-        "creo:DEPDB_DATA"
-      ]
+      }
     }
   }
 }

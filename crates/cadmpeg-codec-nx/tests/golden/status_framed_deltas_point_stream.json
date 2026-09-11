@@ -128,11 +128,7 @@
       "transfer": "full"
     },
     "source_fidelity": {
-      "annotations": {
-        "streams": [
-          "nx:container"
-        ]
-      }
+      "annotations": {}
     }
   },
   "inspect": {

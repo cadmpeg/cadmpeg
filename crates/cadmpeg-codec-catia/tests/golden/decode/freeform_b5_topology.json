@@ -516,13 +516,10 @@
       "provenance": {
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:float-packed-inner-no-fbb"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps"
-      ]
+      }
     },
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
