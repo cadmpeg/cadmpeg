@@ -163,7 +163,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                             .map(super::super::ids::CurveId::as_str),
                     );
                     for member in &entry.profile {
-                        curves.insert(member.curve.id.as_str());
+                        curves.insert(member.profile.id.as_str());
                         if let Some(surface) = member.form.surface() {
                             surfaces.insert(surface.as_str());
                         }
@@ -353,7 +353,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                             .map(super::super::ids::CurveId::as_str),
                     );
                     for member in &entry.profile {
-                        curves.insert(member.curve.id.as_str());
+                        curves.insert(member.profile.id.as_str());
                         if let Some(surface) = member.form.surface() {
                             surfaces.insert(surface.as_str());
                         }
@@ -412,7 +412,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .iter()
                     .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
                 {
-                    curves.insert(member.curve.id.as_str());
+                    curves.insert(member.profile.id.as_str());
                     if let Some(surface) = member.form.surface() {
                         surfaces.insert(surface.as_str());
                     }

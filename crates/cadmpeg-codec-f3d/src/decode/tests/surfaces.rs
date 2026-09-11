@@ -807,7 +807,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter()
             .flat_map(|section| &section.entries)
             .all(|entry| entry.path.auxiliaries.len() == 1));
-        let line_profile = sections[0].entries[0].profile[0].curve.id.clone();
+        let line_profile = sections[0].entries[0].profile[0].profile.id.clone();
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
@@ -872,7 +872,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
         assert!(sections[1].entries[0].profile[0].form.direction().is_none());
-        let profile = &sections[0].entries[0].profile[0].curve;
+        let profile = &sections[0].entries[0].profile[0].profile;
         assert!(matches!(
             round_trip
                 .ir()
