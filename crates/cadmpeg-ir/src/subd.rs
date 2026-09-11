@@ -318,10 +318,10 @@ impl SubdPlaneFrame {
 /// Kind-specific controls for a T-spline symmetry block.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdSymmetryKind {
     /// One-to-one correspondence across the symmetry plane.
-    Correspondence,
+    Correspondence {},
     /// Radial editor symmetry with native segment and sweep controls.
     Radial(SubdRadialSymmetry),
 }
@@ -339,6 +339,7 @@ pub struct SubdRadialSymmetry {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdRadialSymmetryWire {
     segments: std::num::NonZeroU32,
     sweep: f64,
@@ -436,7 +437,9 @@ pub struct SubdRadialSymmetryMap {
 }
 
 /// Typed editor symmetry state for one subdivision cage.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdSymmetryWire", into = "SubdSymmetryWire")]
 pub struct SubdSymmetry {
     /// Symmetry mode and its radial controls, when present.
     kind: SubdSymmetryKind,
@@ -450,18 +453,12 @@ pub struct SubdSymmetry {
     vertex_pairs: Vec<[u32; 2]>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum SubdSymmetryKindWire {
-    Correspondence,
-    Radial { segments: u32, sweep: f64 },
-}
-
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "SubdSymmetry"))]
+#[serde(deny_unknown_fields)]
 struct SubdSymmetryWire {
-    kind: SubdSymmetryKindWire,
+    kind: SubdSymmetryKind,
     plane: SubdPlaneFrame,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     face_pairs: Vec<[u32; 2]>,
@@ -469,8 +466,6 @@ struct SubdSymmetryWire {
     edge_pairs: Vec<[u32; 2]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_pairs: Vec<[u32; 2]>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
 impl SubdSymmetry {
@@ -526,78 +521,32 @@ impl SubdSymmetry {
     }
 }
 
-impl Serialize for SubdSymmetry {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (kind, radial_maps) = match &self.kind {
-            SubdSymmetryKind::Correspondence => (SubdSymmetryKindWire::Correspondence, Vec::new()),
-            SubdSymmetryKind::Radial(radial) => (
-                SubdSymmetryKindWire::Radial {
-                    segments: radial.segments().get(),
-                    sweep: radial.sweep(),
-                },
-                radial.radial_maps().to_vec(),
-            ),
-        };
-        SubdSymmetryWire {
-            kind,
-            plane: self.plane,
-            face_pairs: self.face_pairs.clone(),
-            edge_pairs: self.edge_pairs.clone(),
-            vertex_pairs: self.vertex_pairs.clone(),
-            radial_maps,
+impl From<SubdSymmetry> for SubdSymmetryWire {
+    fn from(symmetry: SubdSymmetry) -> Self {
+        Self {
+            kind: symmetry.kind,
+            plane: symmetry.plane,
+            face_pairs: symmetry.face_pairs,
+            edge_pairs: symmetry.edge_pairs,
+            vertex_pairs: symmetry.vertex_pairs,
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for SubdSymmetry {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = SubdSymmetryWire::deserialize(deserializer)?;
-        let kind = match wire.kind {
-            SubdSymmetryKindWire::Correspondence if wire.radial_maps.is_empty() => {
-                SubdSymmetryKind::Correspondence
-            }
-            SubdSymmetryKindWire::Correspondence => {
-                return Err(serde::de::Error::custom(
-                    "correspondence SubD symmetry cannot carry radial_maps",
-                ));
-            }
-            SubdSymmetryKindWire::Radial { segments, sweep } => SubdSymmetryKind::radial(
-                std::num::NonZeroU32::new(segments).ok_or_else(|| {
-                    serde::de::Error::custom("kind.radial.segments must be nonzero")
-                })?,
-                sweep,
-                wire.radial_maps,
-            )
-            .map_err(serde::de::Error::custom)?,
-        };
+impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdSymmetryWire) -> Result<Self, Self::Error> {
         Self::new(
-            kind,
+            wire.kind,
             wire.plane,
             wire.face_pairs,
             wire.edge_pairs,
             wire.vertex_pairs,
         )
-        .map_err(serde::de::Error::custom)
     }
 }
 
-#[cfg(feature = "schema")]
-impl JsonSchema for SubdSymmetry {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SubdSymmetry".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SubdSymmetryWire::json_schema(generator)
-    }
-}
 
 /// Subdivision scheme used by a control cage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

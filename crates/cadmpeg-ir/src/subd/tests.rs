@@ -151,13 +151,17 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
     assert_eq!(
         wire,
         serde_json::json!({
-            "kind": { "kind": "radial", "segments": 4, "sweep": 1.0 },
+            "kind": {
+                "kind": "radial",
+                "segments": 4,
+                "sweep": 1.0,
+                "radial_maps": [{ "selector": "ef", "pairs": [[1, 2]] }],
+            },
             "plane": {
                 "origin": { "x": 0.0, "y": 0.0, "z": 0.0 },
                 "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
                 "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
             },
-            "radial_maps": [{ "selector": "ef", "pairs": [[1, 2]] }],
         })
     );
     assert_eq!(
@@ -167,18 +171,40 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
 }
 
 #[test]
-fn correspondence_symmetry_rejects_radial_maps() {
+fn a_correspondence_symmetry_has_no_radial_maps_key() {
+    let plane = serde_json::json!({
+        "origin": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
+        "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
+    });
+    let maps = serde_json::json!([{ "selector": "ef", "pairs": [[1, 2]] }]);
+
     let error = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
         "kind": { "kind": "correspondence" },
-        "plane": {
-            "origin": { "x": 0.0, "y": 0.0, "z": 0.0 },
-            "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
-            "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
-        },
-        "radial_maps": [{ "selector": "ef", "pairs": [[1, 2]] }],
+        "plane": plane,
+        "radial_maps": maps,
     }))
-    .unwrap_err();
-    assert!(error.to_string().contains("cannot carry radial_maps"));
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("radial_maps"), "{error}");
+
+    let error = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
+        "kind": { "kind": "correspondence", "radial_maps": maps },
+        "plane": plane,
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("radial_maps"), "{error}");
+
+    let symmetry = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
+        "kind": { "kind": "radial", "segments": 4, "sweep": 1.0, "radial_maps": maps },
+        "plane": plane,
+    }))
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&symmetry).unwrap()["kind"]["radial_maps"],
+        maps
+    );
 }
 
 fn triangle_cage() -> crate::subd::SubdCage {

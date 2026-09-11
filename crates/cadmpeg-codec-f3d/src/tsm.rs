@@ -1319,7 +1319,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             let plane = symmetry_plane(name, block.plane)?;
             let (kind, face_pairs, edge_pairs, vertex_pairs) = match &block.kind {
                 SymmetryKind::Correspondence { face, edge, vertex } => (
-                    SubdSymmetryKind::Correspondence,
+                    SubdSymmetryKind::Correspondence {},
                     remap_symmetry_pairs(name, face, &face_ir, "face")?,
                     remap_symmetry_pairs(name, edge, &edge_ir, "edge")?,
                     remap_symmetry_pairs(name, vertex, &vertex_ir, "vertex")?,
@@ -1626,7 +1626,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let symmetry = &cage.surface.cage.symmetries()[0];
         assert_eq!(
             symmetry.kind(),
-            &cadmpeg_ir::SubdSymmetryKind::Correspondence
+            &cadmpeg_ir::SubdSymmetryKind::Correspondence {}
         );
         assert_eq!(
             symmetry.plane.origin(),
