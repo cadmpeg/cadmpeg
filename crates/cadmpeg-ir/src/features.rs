@@ -7200,12 +7200,16 @@ impl TryFrom<SketchProfileLoopsWire> for SketchProfileLoops {
 }
 
 /// One connected planar region bounded by solved sketch curves.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
+#[serde(tag = "region", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SketchProfileRegion {
     /// Exterior and holes are complete entries in the sketch profile table.
-    Loops(SketchProfileLoops),
+    Loops {
+        /// Whole-loop exterior and hole indices.
+        #[serde(flatten)]
+        loops: SketchProfileLoops,
+    },
     /// Boundary rings switch source curves at arrangement intersections.
     Trimmed {
         /// Directed exterior boundary ring.
@@ -7216,22 +7220,10 @@ pub enum SketchProfileRegion {
     },
 }
 
-#[derive(Deserialize)]
-struct SketchProfileRegionReadWire {
-    #[serde(default)]
-    outer: Option<u32>,
-    #[serde(default)]
-    holes: Vec<u32>,
-    #[serde(default)]
-    outer_boundary: Option<Vec<SketchProfileBoundaryUse>>,
-    #[serde(default)]
-    hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
-}
-
 impl SketchProfileRegion {
     /// Admits a whole-loop region with distinct holes that exclude the exterior loop.
     pub fn loops(outer: u32, holes: Vec<u32>) -> Result<Self, &'static str> {
-        SketchProfileLoops::new(outer, holes).map(Self::Loops)
+        SketchProfileLoops::new(outer, holes).map(|loops| Self::Loops { loops })
     }
 
     /// Admits a trimmed region whose exterior and hole rings are nonempty.
@@ -7251,21 +7243,6 @@ impl SketchProfileRegion {
                 })
                 .collect::<Result<_, _>>()?,
         })
-    }
-}
-
-impl<'de> Deserialize<'de> for SketchProfileRegion {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SketchProfileRegionReadWire::deserialize(deserializer)?;
-        if let Some(outer) = wire.outer {
-            Self::loops(outer, wire.holes).map_err(serde::de::Error::custom)
-        } else if let Some(outer_boundary) = wire.outer_boundary {
-            Self::trimmed(outer_boundary, wire.hole_boundaries).map_err(serde::de::Error::custom)
-        } else {
-            Err(serde::de::Error::custom(
-                "region requires outer or outer_boundary",
-            ))
-        }
     }
 }
 

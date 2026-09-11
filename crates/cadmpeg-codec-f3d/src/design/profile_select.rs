@@ -1435,7 +1435,7 @@ pub(crate) fn transition_inserted_profile_selection(
     }
     let mut regions = selections.iter().filter_map(|selection| match selection {
         ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
-            [SketchProfileRegion::Loops(loops)] if !loops.holes().is_empty() => {
+            [SketchProfileRegion::Loops { loops }] if !loops.holes().is_empty() => {
                 Some((loops.outer(), loops.holes()))
             }
             _ => None,
@@ -1452,7 +1452,7 @@ pub(crate) fn transition_inserted_profile_selection(
             ResolvedProfileSelection::Regions(regions)
                 if matches!(
                     regions.as_slice(),
-                    [SketchProfileRegion::Loops(loops)] if loops.outer() == outer && loops.holes() == holes
+                    [SketchProfileRegion::Loops { loops }] if loops.outer() == outer && loops.holes() == holes
                 ) => {}
             ResolvedProfileSelection::Loops(loops)
                 if !loops.is_empty()
@@ -1671,7 +1671,7 @@ fn region_with_boundary_selection_members(
     let [region] = regions.first()? else {
         return None;
     };
-    let SketchProfileRegion::Loops(loops) = region else {
+    let SketchProfileRegion::Loops { loops } = region else {
         return None;
     };
     if regions
