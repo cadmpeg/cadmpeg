@@ -92,10 +92,10 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             joint
                 .connectors()
                 .all(|connector| match &connector.operand.container {
-                    OperandContainer::Occurrence(occurrence) => {
+                    OperandContainer::Occurrence { occurrence } => {
                         occurrences.contains_key(occurrence.as_str())
                     }
-                    OperandContainer::Root | OperandContainer::External(_) => true,
+                    OperandContainer::Root {} | OperandContainer::External { .. } => true,
                 });
         if !operands_valid {
             invalid(

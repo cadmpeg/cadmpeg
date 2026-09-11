@@ -719,7 +719,7 @@ pub(crate) mod tests {
         assert_eq!(connectors.len(), 2);
         assert!(connectors.iter().all(|connector| matches!(
             connector.operand.container,
-            cadmpeg_ir::OperandContainer::Occurrence(_)
+            cadmpeg_ir::OperandContainer::Occurrence { .. }
         )));
         assert_eq!(connectors[1].frame.rows()[0][3], 2.0);
         let offset_frames = joint.offset_frames().collect::<Vec<_>>();
@@ -774,7 +774,7 @@ pub(crate) mod tests {
         assert_eq!(connectors.len(), 1);
         assert!(matches!(
             connectors[0].operand.container,
-            cadmpeg_ir::OperandContainer::Occurrence(_)
+            cadmpeg_ir::OperandContainer::Occurrence { .. }
         ));
         assert_eq!(connectors[0].frame.rows()[0][3], 7.0);
         assert_eq!(connectors[0].frame.rows()[1][3], 8.0);
