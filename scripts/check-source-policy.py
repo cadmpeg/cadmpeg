@@ -450,8 +450,6 @@ AUTHORING_PATH_TEXT_SUFFIXES = frozenset(
     {".rs", ".json", ".md", ".toml", ".txt", ".py", ".sh"}
 )
 AUTHORING_PATH_ROOTS = ("crates", "docs")
-# The CI runner home is the runner's own path, not an authoring machine's.
-AUTHORING_PATH_ALLOWED = ("/home/runner/", "/home/linuxbrew/")
 
 
 def scan_authoring_paths() -> list[Finding]:
@@ -464,8 +462,6 @@ def scan_authoring_paths() -> list[Finding]:
             text = path.read_text(encoding="utf-8", errors="replace")
             for number, line in enumerate(text.splitlines(), start=1):
                 for match in AUTHORING_PATH.finditer(line):
-                    if line[match.start():].startswith(AUTHORING_PATH_ALLOWED):
-                        continue
                     findings.append(Finding(
                         "authoring_path",
                         str(path.relative_to(ROOT)),
