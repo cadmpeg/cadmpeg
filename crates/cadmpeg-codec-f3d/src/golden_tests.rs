@@ -852,3 +852,81 @@ fn golden_fixtures_match_builders() {
         failures.join("\n")
     );
 }
+
+/// Every key the wire-shape cut deleted is now refused where it used to sit.
+///
+/// The skin construction is exercised on the document route through the
+/// checked-in `skin_surface` decode golden; the other three sites are refused
+/// by the type that owns them.
+#[test]
+fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::geometry::VectorOffsetRoles;
+
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/decode/skin_surface.json");
+    let whole: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&golden).expect("the skin golden")).expect("json");
+    let document = whole["ir"].clone();
+    serde_json::from_value::<CadIr>(document.clone()).expect("the skin golden is a document");
+
+    let mut with_inner_count = document;
+    let mut touched = 0usize;
+    for surface in with_inner_count["model"]["procedural_surfaces"]
+        .as_array_mut()
+        .expect("procedural surfaces")
+    {
+        let construction = &mut surface["definition"]["construction"];
+        if construction.get("layout").is_some() {
+            assert!(construction.get("inner_count").is_none());
+            construction["inner_count"] = serde_json::json!(0);
+            touched += 1;
+        }
+    }
+    assert!(touched > 0, "the skin golden carries a layout");
+    let error = serde_json::from_value::<CadIr>(with_inner_count)
+        .expect_err("inner_count lives only on the compact layout that owns it")
+        .to_string();
+    assert!(error.contains("inner_count"), "{error}");
+
+    let face_maker_object = serde_json::json!({
+        "definition": "extrude",
+        "direction": {"kind": "explicit", "source": {"kind": "custom"},
+                      "vector": {"x": 0.0, "y": 0.0, "z": 1.0}},
+        "extent": {"kind": "symmetric",
+                   "side": {"termination": {"kind": "blind", "length": 12.0}}},
+        "face_maker": {"class": "Part::FaceMakerBullseye", "mode": "bullseye"},
+        "inner_wire_taper": "inverted",
+        "op": "new_body",
+        "profile": {"kind": "native", "value": "fcstd:native:property#X:Base"},
+        "solid": true,
+        "start": {"kind": "profile_plane"},
+    });
+    let error = serde_json::from_value::<FeatureDefinition>(face_maker_object)
+        .expect_err("the face maker is its class")
+        .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
+
+    let solver_scalar_object = serde_json::json!({
+        "kind": "angle_difference",
+        "first": {"variable_type": 4, "key": 1},
+        "second": 2,
+    });
+    let error =
+        serde_json::from_value::<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>(
+            solver_scalar_object,
+        )
+        .expect_err("a solver scalar slot is its key")
+        .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
+
+    let labelled = serde_json::json!({
+        "source": 7,
+        "offset": 9,
+        "labels": ["source", "offset"],
+    });
+    let error = serde_json::from_value::<VectorOffsetRoles>(labelled)
+        .expect_err("the two roles are the two named keys")
+        .to_string();
+    assert!(error.contains("labels"), "{error}");
+}

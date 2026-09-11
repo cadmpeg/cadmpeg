@@ -5476,6 +5476,7 @@ impl SkinSurfaceLayout {
 /// Complete native `skin_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SkinSurfaceConstruction {
     /// Native `SURF_BOOL` enum.
     pub surface_boolean: i64,
