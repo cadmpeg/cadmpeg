@@ -4054,7 +4054,6 @@ enum VariableBlendPayloadWire<F, T, N, P> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct VariableBlendValueWire {
-    name: String,
     modern_flag: bool,
     discriminator: i64,
     calibrated: i64,
@@ -4130,8 +4129,7 @@ impl Serialize for VariableBlendValue {
                 points: points.as_slice(),
             },
         };
-        let mut wire = serializer.serialize_struct("VariableBlendValue", 5)?;
-        wire.serialize_field("name", self.payload.native_name())?;
+        let mut wire = serializer.serialize_struct("VariableBlendValue", 4)?;
         wire.serialize_field("modern_flag", &self.modern_flag)?;
         wire.serialize_field("discriminator", &self.payload.discriminator())?;
         wire.serialize_field("calibrated", &self.calibrated)?;
@@ -4211,11 +4209,6 @@ impl<'de> Deserialize<'de> for VariableBlendValue {
                 points,
             },
         };
-        if wire.name != payload.native_name() {
-            return Err(serde::de::Error::custom(
-                "variable-blend name must match payload",
-            ));
-        }
         Ok(Self {
             modern_flag: wire.modern_flag,
             calibrated: wire.calibrated,
