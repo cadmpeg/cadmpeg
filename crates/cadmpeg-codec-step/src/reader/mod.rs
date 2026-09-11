@@ -133,7 +133,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
         } else {
             cadmpeg_ir::report::DecodeTransfer::full(false)
         });

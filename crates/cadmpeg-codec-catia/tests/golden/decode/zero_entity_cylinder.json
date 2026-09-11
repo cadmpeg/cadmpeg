@@ -156,7 +156,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -525,7 +524,8 @@
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "record-family census: 1 a9 03, 0 e5 0d 03",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {

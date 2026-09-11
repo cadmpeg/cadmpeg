@@ -265,7 +265,7 @@ struct DecodeReportProbe {
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
-    container_only: Option<bool>,
+    transfer: Option<String>,
     #[serde(default)]
     geometry_transferred: Option<bool>,
     #[serde(default)]
@@ -624,8 +624,8 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     if let Some(format) = &decode.format {
                         rows.push(("decode_format".to_owned(), cell(format)));
                     }
-                    if let Some(container_only) = decode.container_only {
-                        rows.push(("container_only".to_owned(), container_only.to_string()));
+                    if let Some(transfer) = &decode.transfer {
+                        rows.push(("decode_transfer".to_owned(), cell(transfer)));
                     }
                     if let Some(geometry) = decode.geometry_transferred {
                         rows.push(("geometry_transferred".to_owned(), geometry.to_string()));

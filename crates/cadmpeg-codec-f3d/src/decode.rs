@@ -2991,7 +2991,7 @@ fn decode_scanned_document<'a>(
         let source_image = preserve_source_image(scan);
         let mut report = crate::report::build_decode_report(
             scan,
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly,
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
             container_losses(scan),
         );
         if let Ok(Some(table)) = crate::xref::decode(scan) {

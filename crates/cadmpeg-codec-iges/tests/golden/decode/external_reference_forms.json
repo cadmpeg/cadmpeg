@@ -3084,7 +3084,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -3112,6 +3111,7 @@
       "parameter_tokens=13",
       "external_references=5"
     ],
+    "transfer": "full",
     "transfer_ledger": {
       "entries": [
         {

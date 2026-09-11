@@ -4027,7 +4027,6 @@
       }
     },
     "report": {
-      "container_only": false,
       "dialects": {
         "extra": [
           {
@@ -4103,7 +4102,8 @@
       "notes": [
         "SPLMSSTR container: file tag 0, footer offset 3416, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
-      ]
+      ],
+      "transfer": "full"
     },
     "source_fidelity": {
       "annotations": {

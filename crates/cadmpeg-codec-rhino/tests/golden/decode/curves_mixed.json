@@ -500,7 +500,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -635,7 +634,8 @@
     ],
     "notes": [
       "decoded 6/6 Rhino object records; retained metadata/digests for 6 records and complete bytes for 6; document cap 268435456 bytes, per-record cap 16777216 bytes"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {

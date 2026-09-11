@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use super::{LossNote, Severity};
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(into = "DecodeReportWire")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(into = "DecodeReportWire", try_from = "DecodeReportWire")]
 pub struct DecodeReport {
     classification: FormatIdentity<DialectLayers>,
     transfer: DecodeTransfer,
@@ -27,12 +27,14 @@ pub struct DecodeReport {
 }
 
 /// Mutually exclusive source-transfer states for a decode report.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "transfer", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum DecodeTransfer {
     /// The request stopped after container inspection and transferred no
     /// semantic geometry.
-    ContainerOnly,
+    ContainerOnly {},
     /// The request ran the full decoder, with the recorded B-rep geometry
     /// outcome.
     Full {
@@ -54,7 +56,7 @@ impl DecodeTransfer {
     /// and the backend's geometry outcome.
     pub(crate) const fn stamp_request_scope(container_only: bool, transfer: Self) -> Self {
         if container_only {
-            Self::ContainerOnly
+            Self::ContainerOnly {}
         } else {
             Self::full(transfer.geometry_transferred())
         }
@@ -63,7 +65,7 @@ impl DecodeTransfer {
     /// Returns whether the request stopped at the container layer.
     #[must_use]
     pub const fn container_only(self) -> bool {
-        matches!(self, Self::ContainerOnly)
+        matches!(self, Self::ContainerOnly {})
     }
 
     /// Returns whether B-rep geometry was transferred into the IR.
@@ -82,8 +84,8 @@ impl DecodeTransfer {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DecodeReportWire {
     format: String,
-    container_only: bool,
-    geometry_transferred: bool,
+    #[serde(flatten)]
+    transfer: DecodeTransfer,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     coverage: BTreeMap<String, usize>,
     losses: Vec<LossNote>,
@@ -178,8 +180,7 @@ impl From<DecodeReport> for DecodeReportWire {
         let (format, dialects) = classification.into_wire_parts();
         Self {
             format,
-            container_only: transfer.container_only(),
-            geometry_transferred: transfer.geometry_transferred(),
+            transfer,
             coverage: coverage.into_wire(),
             losses,
             notes,
@@ -189,23 +190,13 @@ impl From<DecodeReport> for DecodeReportWire {
     }
 }
 
-impl<'de> Deserialize<'de> for DecodeReport {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DecodeReportWire::deserialize(deserializer)?;
-        let classification = FormatIdentity::from_wire(wire.format, wire.dialects)
-            .map_err(serde::de::Error::custom)?;
-        let transfer = match (wire.container_only, wire.geometry_transferred) {
-            (true, true) => {
-                return Err(serde::de::Error::custom(
-                    "container-only decode report cannot claim geometry transfer",
-                ));
-            }
-            (true, false) => DecodeTransfer::ContainerOnly,
-            (false, geometry_transferred) => DecodeTransfer::full(geometry_transferred),
-        };
+impl TryFrom<DecodeReportWire> for DecodeReport {
+    type Error = cadmpeg_core::dialect::FormatIdentityError;
+
+    fn try_from(wire: DecodeReportWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            classification,
-            transfer,
+            classification: FormatIdentity::from_wire(wire.format, wire.dialects)?,
+            transfer: wire.transfer,
             coverage: Coverage::from_wire(wire.coverage),
             losses: wire.losses,
             notes: wire.notes,

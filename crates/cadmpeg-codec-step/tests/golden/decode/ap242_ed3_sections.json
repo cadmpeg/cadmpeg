@@ -101,7 +101,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -170,7 +169,8 @@
     "notes": [
       "external reference #100 -> https://example.invalid/external-part",
       "byte accounting: 538 structural, 30 typed, 27 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {},

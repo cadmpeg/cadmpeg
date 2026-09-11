@@ -115,7 +115,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -494,7 +493,8 @@
       "outer CATIA_V5 CB0001 directory with 1 stream(s)",
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {}

@@ -442,7 +442,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -483,7 +482,8 @@
       "geometric validation volume open sheet volume: expected 0, tessellation approximation 0",
       "geometric validation surface area intentional mismatch: expected 51, tessellation approximation 50",
       "byte accounting: 329 structural, 3013 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {}

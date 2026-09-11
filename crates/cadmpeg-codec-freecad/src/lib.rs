@@ -1106,7 +1106,7 @@ impl CodecBackend for FcstdCodec {
             ir,
             body: DecodeBody {
                 transfer: if ctx.container_only() {
-                    cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+                    cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
                 } else {
                     cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
                 },
