@@ -521,6 +521,19 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     assert!(error.contains("null_law"), "{error}");
 }
 
+#[test]
+fn a_law_formula_name_refuses_the_empty_string() {
+    assert!(crate::geometry::LawFormulaName::new("").is_none());
+    let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+        "kind": "named",
+        "name": "",
+        "variables": []
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("empty"), "{error}");
+}
+
 fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
     crate::geometry::ProceduralCurveDefinition::Spring(
         crate::geometry::curve_payloads::SpringCurvePayload::try_new(

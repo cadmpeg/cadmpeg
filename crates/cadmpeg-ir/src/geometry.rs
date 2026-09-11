@@ -5013,18 +5013,18 @@ pub struct ScaledCompoundLoftConstruction {
     pub tail_curve: CurveId,
 }
 
-/// A native law formula name that cannot be the `null_law` sentinel.
+/// A native law formula name that is neither empty nor the `null_law` sentinel.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct LawFormulaName(String);
 
 impl LawFormulaName {
-    /// Construct a non-sentinel law formula name.
+    /// Construct a named, non-sentinel law formula name.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Option<Self> {
         let name = name.into();
-        (name != "null_law").then_some(Self(name))
+        (!name.is_empty() && name != "null_law").then_some(Self(name))
     }
 
     /// Borrow the native formula name.
@@ -5041,7 +5041,7 @@ impl<'de> Deserialize<'de> for LawFormulaName {
     {
         let name = String::deserialize(deserializer)?;
         Self::new(name)
-            .ok_or_else(|| serde::de::Error::custom("law formula name cannot be null_law"))
+            .ok_or_else(|| serde::de::Error::custom("law formula name cannot be empty or null_law"))
     }
 }
 
