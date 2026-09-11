@@ -252,23 +252,16 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         Vec::new(),
     );
     let rendered = serde_json::to_string(&export).unwrap();
-    assert!(rendered.contains("\"target\":null"), "{rendered}");
+    assert!(rendered.contains("\"payload\":\"cadir\""), "{rendered}");
+    assert!(!rendered.contains("\"target\""), "{rendered}");
     assert_eq!(
         serde_json::from_str::<ExportReport>(&rendered).unwrap(),
-        export
-    );
-
-    // An export report persisted before the field existed omits the key.
-    let legacy = rendered.replace(",\"target\":null", "");
-    assert!(!legacy.contains("\"target\":"), "{legacy}");
-    assert_eq!(
-        serde_json::from_str::<ExportReport>(&legacy).unwrap(),
         export
     );
 }
 
 #[test]
-fn native_export_report_derives_its_format_from_the_target() {
+fn a_native_export_report_states_its_payload_and_names_its_target() {
     let report = ExportReport::native(
         DialectId::pinned("step:ap242-e3"),
         EntityCensus {
@@ -289,14 +282,19 @@ fn native_export_report_derives_its_format_from_the_target() {
         Some("step:ap242-e3")
     );
     let rendered = serde_json::to_value(&report).unwrap();
-    assert_eq!(rendered["format"], "step");
+    assert_eq!(rendered["payload"], "native");
     assert_eq!(rendered["target"], "step:ap242-e3");
+    assert!(rendered.get("format").is_none());
+    assert_eq!(
+        serde_json::from_value::<ExportReport>(rendered).unwrap(),
+        report
+    );
 }
 
 #[test]
-fn export_report_wire_rejects_a_foreign_target_namespace() {
-    let malformed = serde_json::json!({
-        "format": "rhino",
+fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
+    let native = serde_json::json!({
+        "payload": "native",
         "census": { "basis": "target_records", "counts": {} },
         "fidelity": { "status": "not_provided" },
         "write_path": "synthesized",
@@ -304,58 +302,23 @@ fn export_report_wire_rejects_a_foreign_target_namespace() {
         "notes": [],
         "target": "step:ap242-e3",
     });
+    serde_json::from_value::<ExportReport>(native.clone()).expect("a native export report");
 
-    let error = serde_json::from_value::<ExportReport>(malformed)
-        .expect_err("a native target must belong to the report format");
-    assert!(
-        error
-            .to_string()
-            .contains("format \"rhino\" does not match classified payload format \"step\""),
-        "{error}"
-    );
-}
-
-#[test]
-fn native_export_without_a_target_is_rejected() {
-    let legacy = serde_json::json!({
-        "format": "rhino",
-        "census": { "basis": "target_records", "counts": {} },
-        "fidelity": { "status": "not_provided" },
-        "write_path": "synthesized",
-        "losses": [],
-        "notes": [],
-    });
-
-    let error = serde_json::from_value::<ExportReport>(legacy)
+    let mut without_target = native.clone();
+    without_target
+        .as_object_mut()
+        .expect("map")
+        .remove("target");
+    let error = serde_json::from_value::<ExportReport>(without_target)
         .expect_err("a native export report requires a target");
-    assert!(
-        error
-            .to_string()
-            .contains("native export report for format \"rhino\" requires a target"),
-        "{error}"
-    );
-}
+    assert!(error.to_string().contains("target"), "{error}");
 
-#[test]
-fn cadir_export_wire_rejects_a_native_target() {
-    let malformed = serde_json::json!({
-        "format": "cadir",
-        "census": { "basis": "ir_arenas", "counts": {} },
-        "fidelity": { "status": "not_provided" },
-        "write_path": "synthesized",
-        "losses": [],
-        "notes": [],
-        "target": "step:ap242-e3",
-    });
-
-    let error = serde_json::from_value::<ExportReport>(malformed)
+    let mut cadir_with_target = native;
+    cadir_with_target["payload"] = serde_json::json!("cadir");
+    cadir_with_target["census"]["basis"] = serde_json::json!("ir_arenas");
+    let error = serde_json::from_value::<ExportReport>(cadir_with_target)
         .expect_err("CADIR has no native dialect target");
-    assert!(
-        error
-            .to_string()
-            .contains("CADIR export report cannot name native dialect \"step:ap242-e3\""),
-        "{error}"
-    );
+    assert!(error.to_string().contains("target"), "{error}");
 }
 
 #[test]

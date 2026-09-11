@@ -253,7 +253,7 @@ struct ContainerSummaryProbe {
 #[derive(Deserialize)]
 struct ExportReportProbe {
     #[serde(default)]
-    format: Option<String>,
+    payload: Option<String>,
     #[serde(default)]
     target: Option<String>,
 }
@@ -662,8 +662,8 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 None => rows.push(("check_report".to_owned(), "null".to_owned())),
             }
             if let Some(export) = &report.export {
-                if let Some(format) = &export.format {
-                    rows.push(("export_format".to_owned(), cell(format)));
+                if let Some(payload) = &export.payload {
+                    rows.push(("export_payload".to_owned(), cell(payload)));
                 }
                 rows.push((
                     "export_target".to_owned(),

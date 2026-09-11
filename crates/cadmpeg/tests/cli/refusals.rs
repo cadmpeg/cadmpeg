@@ -513,7 +513,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
-    assert_eq!(report["export"]["format"], "step");
+    assert_eq!(report["export"]["payload"], "native");
     assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 1);
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &unit_cube());
