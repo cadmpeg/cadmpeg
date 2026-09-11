@@ -1172,6 +1172,141 @@ fn a_law_surface_full_tail_is_an_empty_struct_variant() {
     );
 }
 
+/// One-pcurve document built on the unit cube, used to drive the pcurve
+/// carriers over the same route a checked-in document takes.
+fn document_with_pcurve(geometry: serde_json::Value) -> serde_json::Value {
+    let mut document = serde_json::to_value(unit_cube()).unwrap();
+    document["model"]["pcurves"] = serde_json::json!([{
+        "id": "synthetic:cube:pcurve#0",
+        "geometry": geometry,
+    }]);
+    document
+}
+
+#[test]
+fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
+    let line = serde_json::json!({
+        "kind": "line",
+        "origin": {"u": 0.0, "v": 0.0},
+        "direction": {"u": 1.0, "v": 0.0},
+    });
+    let cases: [(&str, serde_json::Value); 11] = [
+        ("line", line.clone()),
+        (
+            "polar_harmonic",
+            serde_json::json!({
+                "kind": "polar_harmonic",
+                "radial_center": {"u": 0.0, "v": 0.0},
+                "radial_cos": {"u": 1.0, "v": 0.0},
+                "radial_sin": {"u": 0.0, "v": 1.0},
+                "axial_origin": 0.0,
+                "axial_cos": 1.0,
+                "axial_sin": 0.0,
+            }),
+        ),
+        (
+            "spherical_great_circle",
+            serde_json::json!({
+                "kind": "spherical_great_circle",
+                "azimuth_origin": 0.0,
+                "azimuth_rate": 1.0,
+                "plane_phase": 0.0,
+                "plane_slope": 1.0,
+            }),
+        ),
+        (
+            "circle",
+            serde_json::json!({
+                "kind": "circle",
+                "center": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "radius": 1.0,
+            }),
+        ),
+        (
+            "ellipse",
+            serde_json::json!({
+                "kind": "ellipse",
+                "center": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "major_radius": 2.0,
+                "minor_radius": 1.0,
+            }),
+        ),
+        (
+            "harmonic",
+            serde_json::json!({
+                "kind": "harmonic",
+                "center": {"u": 0.0, "v": 0.0},
+                "cosine": {"u": 1.0, "v": 0.0},
+                "sine": {"u": 0.0, "v": 1.0},
+            }),
+        ),
+        (
+            "parabola",
+            serde_json::json!({
+                "kind": "parabola",
+                "vertex": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "focal_distance": 1.0,
+            }),
+        ),
+        (
+            "hyperbola",
+            serde_json::json!({
+                "kind": "hyperbola",
+                "center": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "major_radius": 2.0,
+                "minor_radius": 1.0,
+            }),
+        ),
+        (
+            "hyperbolic",
+            serde_json::json!({
+                "kind": "hyperbolic",
+                "center": {"u": 0.0, "v": 0.0},
+                "cosine": {"u": 1.0, "v": 0.0},
+                "sine": {"u": 0.0, "v": 1.0},
+            }),
+        ),
+        (
+            "trimmed",
+            serde_json::json!({
+                "kind": "trimmed",
+                "parameter_range": [0.0, 1.0],
+                "same_sense": true,
+                "basis": line.clone(),
+            }),
+        ),
+        (
+            "offset",
+            serde_json::json!({
+                "kind": "offset",
+                "distance": 1.0,
+                "basis": line,
+            }),
+        ),
+    ];
+    for (kind, geometry) in cases {
+        let document = document_with_pcurve(geometry.clone());
+        serde_json::from_value::<crate::CadIr>(document)
+            .unwrap_or_else(|error| panic!("{kind} is a legal carrier: {error}"));
+
+        let mut stray = geometry.as_object().unwrap().clone();
+        stray.insert("zz_bogus".into(), serde_json::json!(1));
+        let document = document_with_pcurve(serde_json::Value::Object(stray));
+        let error = serde_json::from_value::<crate::CadIr>(document)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+}
+
 #[test]
 fn every_payload_free_law_surface_tail_refuses_an_unknown_key() {
     for kind in ["full", "historical", "optimal"] {

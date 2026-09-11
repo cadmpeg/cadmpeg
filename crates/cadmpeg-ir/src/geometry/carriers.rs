@@ -1916,6 +1916,7 @@ pub struct LinePcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LinePcurveWire {
     origin: Point2,
     direction: Point2,
@@ -1971,6 +1972,7 @@ pub struct PolarHarmonicPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct PolarHarmonicPcurveWire {
     radial_center: Point2,
     radial_cos: Point2,
@@ -2079,6 +2081,7 @@ pub struct SphericalGreatCirclePcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SphericalGreatCirclePcurveWire {
     azimuth_origin: f64,
     azimuth_rate: f64,
@@ -2163,6 +2166,7 @@ pub struct CirclePcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct CirclePcurveWire {
     center: Point2,
     x_axis: Point2,
@@ -2243,6 +2247,7 @@ pub struct EllipsePcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct EllipsePcurveWire {
     center: Point2,
     x_axis: Point2,
@@ -2338,6 +2343,7 @@ pub struct HarmonicPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HarmonicPcurveWire {
     center: Point2,
     cosine: Point2,
@@ -2399,6 +2405,7 @@ pub struct ParabolaPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ParabolaPcurveWire {
     vertex: Point2,
     x_axis: Point2,
@@ -2479,6 +2486,7 @@ pub struct HyperbolaPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HyperbolaPcurveWire {
     center: Point2,
     x_axis: Point2,
@@ -2574,6 +2582,7 @@ pub struct HyperbolicPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HyperbolicPcurveWire {
     center: Point2,
     cosine: Point2,
@@ -2635,6 +2644,7 @@ pub struct TrimmedPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TrimmedPcurveWire {
     parameter_range: [f64; 2],
     #[serde(default = "default_true")]
@@ -2698,6 +2708,7 @@ pub struct OffsetPcurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct OffsetPcurveWire {
     distance: f64,
     basis: Box<PcurveGeometry>,
