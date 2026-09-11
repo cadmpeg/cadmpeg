@@ -989,7 +989,10 @@ impl ProceduralSurfaceDefinition {
         }
     }
 
-    fn owns_revision_cache(&self) -> bool {
+    /// Whether the construction owns a revision-gated cache form, which then
+    /// states its solved-cache fit tolerance.
+    #[must_use]
+    pub fn owns_revision_cache(&self) -> bool {
         self.revision_cache().is_some() || matches!(self, Self::VariableBlend(..))
     }
 
@@ -1067,16 +1070,11 @@ pub enum CacheFitToleranceError {
     /// A solved revision cache cannot lose its required tolerance.
     #[error("cache_fit_tolerance is required for a solved revision cache")]
     MissingSolved,
-    /// The compatibility field disagrees with the tolerance in the solved form.
+    /// A construction that owns a cache form states its tolerance there.
     #[error(
-        "cache_fit_tolerance {supplied} does not match the solved revision cache tolerance {stored}"
+        "cache_fit_tolerance must be absent when the construction owns a revision-gated cache form"
     )]
-    Conflicting {
-        /// Value supplied at the outer compatibility boundary.
-        supplied: f64,
-        /// Value owned by the solved cache form.
-        stored: f64,
-    },
+    BesideCacheForm,
 }
 
 /// A rejected procedural definition or cache contract.
@@ -1109,7 +1107,7 @@ impl ProceduralSurface {
         record_bounds: Option<[Option<f64>; 4]>,
     ) -> Result<Self, ProceduralGeometryError> {
         let legacy_cache_fit_tolerance =
-            reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
+            admit_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
         Ok(Self {
             id,
             definition,
@@ -1145,7 +1143,7 @@ impl ProceduralSurface {
         cache_fit_tolerance: Option<f64>,
     ) -> Result<(), ProceduralGeometryError> {
         let legacy_cache_fit_tolerance =
-            reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
+            admit_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
         self.definition = definition;
         self.legacy_cache_fit_tolerance = legacy_cache_fit_tolerance;
         Ok(())
@@ -1205,34 +1203,30 @@ impl ProceduralSurface {
     }
 }
 
-fn reconcile_surface_cache_fit_tolerance(
+/// Admits the record-level fit tolerance of a construction that owns no
+/// revision-gated cache form.
+///
+/// A construction that owns one states the tolerance inside it, so the record
+/// slot and the cache form are never both populated and the tolerance is on
+/// the wire once.
+fn admit_legacy_cache_fit_tolerance(
+    owns_cache_form: bool,
+    supplied: Option<f64>,
+) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
+    let checked = supplied.map(FitTolerance::try_new).transpose()?;
+    if owns_cache_form && checked.is_some() {
+        return Err(CacheFitToleranceError::BesideCacheForm);
+    }
+    Ok(checked)
+}
+
+fn admit_surface_cache_fit_tolerance(
     definition: &ProceduralSurfaceDefinition,
     supplied: Option<f64>,
 ) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
     let checked = supplied.map(FitTolerance::try_new).transpose()?;
     validate_law_cache_fit_tolerance(definition, checked)?;
-    let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
-        return reconcile_cache_fit_tolerance(definition.revision_cache(), supplied);
-    };
-    let construction = definition_payload.construction();
-
-    match (&construction.cache, supplied) {
-        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (VariableBlendCache::Stale {}, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
-        (
-            VariableBlendCache::Current {
-                fit_tolerance: stored,
-                ..
-            },
-            Some(supplied),
-        ) if supplied != stored.get() => Err(CacheFitToleranceError::Conflicting {
-            supplied,
-            stored: stored.get(),
-        }),
-        _ => Ok(None),
-    }
+    admit_legacy_cache_fit_tolerance(definition.owns_revision_cache(), supplied)
 }
 
 fn set_variable_blend_cache_fit_tolerance(
@@ -1251,29 +1245,6 @@ fn set_variable_blend_cache_fit_tolerance(
         (VariableBlendCache::Current { .. }, None) => Err(CacheFitToleranceError::MissingSolved),
         (VariableBlendCache::Stale {}, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
         (VariableBlendCache::Stale {}, None) => Ok(()),
-    }
-}
-
-fn reconcile_cache_fit_tolerance<P>(
-    cache: Option<&RevisionCacheForm<P>>,
-    supplied: Option<f64>,
-) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
-    supplied.map(FitTolerance::try_new).transpose()?;
-    match (cache, supplied) {
-        (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (
-            Some(RevisionCacheForm::SolvedCache {
-                fit_tolerance: stored,
-            }),
-            Some(supplied),
-        ) if supplied != stored.get() => Err(CacheFitToleranceError::Conflicting {
-            supplied,
-            stored: stored.get(),
-        }),
-        (Some(_), _) => Ok(None),
-        (None, supplied) => supplied.map(FitTolerance::try_new).transpose(),
     }
 }
 
@@ -6663,6 +6634,15 @@ impl ProceduralCurveDefinition {
     }
 }
 
+impl ProceduralCurveDefinition {
+    /// Whether the construction owns a revision-gated cache form, which then
+    /// states its solved-cache fit tolerance.
+    #[must_use]
+    pub fn owns_revision_cache(&self) -> bool {
+        self.revision_cache().is_some()
+    }
+}
+
 impl ProceduralCurve {
     /// Build a procedural curve without a legacy top-level cache.
     pub fn new(
@@ -6679,8 +6659,10 @@ impl ProceduralCurve {
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let legacy_cache_fit_tolerance =
-            reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
+        let legacy_cache_fit_tolerance = admit_legacy_cache_fit_tolerance(
+            definition.owns_revision_cache(),
+            cache_fit_tolerance,
+        )?;
         Ok(Self {
             id,
             definition,
@@ -6714,8 +6696,10 @@ impl ProceduralCurve {
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
     ) -> Result<(), ProceduralGeometryError> {
-        let legacy_cache_fit_tolerance =
-            reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
+        let legacy_cache_fit_tolerance = admit_legacy_cache_fit_tolerance(
+            definition.owns_revision_cache(),
+            cache_fit_tolerance,
+        )?;
         self.definition = definition;
         self.legacy_cache_fit_tolerance = legacy_cache_fit_tolerance;
         Ok(())

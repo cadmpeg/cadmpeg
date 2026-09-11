@@ -2811,11 +2811,19 @@ fn emit_carrier_curve(
                 })
             })();
             definition.and_then(|definition| {
+                // A construction that owns a revision-gated cache form states
+                // the tolerance inside it; the native legacy value is that same
+                // tolerance and is not written a second time.
+                let legacy = if definition.owns_revision_cache() {
+                    None
+                } else {
+                    cache_fit_tolerance
+                };
                 ProceduralCurve::try_new(
                     ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                         .expect("valid owning format and numeric record index"),
                     definition,
-                    cache_fit_tolerance,
+                    legacy,
                 )
                 .map_err(admission_cause)
             })
