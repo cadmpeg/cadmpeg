@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn user_parameters_project_in_source_order_with_units_and_dependencies() {
@@ -270,10 +271,10 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     assert_eq!(features[0].suppressed, Some(true));
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Native {
+        FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Extrude,
             parameters,
-        } if parameters.get("d12").map(String::as_str) == Some("60 mm")
+        }) if parameters.get("d12").map(String::as_str) == Some("60 mm")
     ));
     assert_eq!(
         features[0]

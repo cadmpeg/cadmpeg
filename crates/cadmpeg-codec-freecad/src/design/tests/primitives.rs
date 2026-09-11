@@ -5,7 +5,9 @@ const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent};
+use cadmpeg_ir::features::{
+    AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
+};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -80,19 +82,19 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     };
     assert!(matches!(
         definition("Revolution"),
-        cadmpeg_ir::features::FeatureDefinition::Revolve {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Join
-        } if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)))
+        }) if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle }
                 }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
     assert!(matches!(
         definition("Fillet"),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        }
+        })
         if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::All,
             radius: cadmpeg_ir::features::RadiusSpec::Constant { radius: actual_radius },
@@ -101,16 +103,16 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     ));
     assert!(matches!(
         definition("Chamfer"),
-        cadmpeg_ir::features::FeatureDefinition::Chamfer {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Chamfer {
             groups,
             flip_direction: true,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: actual_distance, angle }, ..
         }] if ((angle.get() - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12) && actual_distance.get() == 1.5)
     ));
     assert!(matches!(
         definition("LegacyChamfer"),
-        cadmpeg_ir::features::FeatureDefinition::Chamfer { groups, .. }
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
                 spec: cadmpeg_ir::features::ChamferSpec::Distance {
                     distance: actual_distance
@@ -120,10 +122,10 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     ));
     assert!(matches!(
         definition("Profileless"),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             ..
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
     ));
 }
 
@@ -186,7 +188,7 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
     fn assert_fillet(definition: &FeatureDefinition, all_edges: bool) {
         assert!(matches!(
             definition,
-            FeatureDefinition::Fillet { groups }
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                 if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup { edges, .. }]
                     if matches!((all_edges, edges),
                         (true, cadmpeg_ir::features::EdgeSelection::All)
@@ -197,10 +199,10 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
     fn assert_chamfer(definition: &FeatureDefinition, all_edges: bool, flip_direction: bool) {
         assert!(matches!(
             definition,
-            FeatureDefinition::Chamfer {
+            FeatureDefinition::Operation(FeatureOperation::Chamfer {
                 groups,
                 flip_direction: actual_flip,
-            } if *actual_flip == flip_direction
+            }) if *actual_flip == flip_direction
                 && matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup { edges, .. }]
                     if matches!((all_edges, edges),
                         (true, cadmpeg_ir::features::EdgeSelection::All)
@@ -258,18 +260,18 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
             if target == "UseAllEdges" {
                 assert!(matches!(
                     definition(&result, "Fillet"),
-                    FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Fillet"
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Fillet"
                 ));
                 assert!(matches!(
                     definition(&result, "Chamfer"),
-                    FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Chamfer"
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Chamfer"
                 ));
                 assert_eq!(result.report().losses.len(), 2);
             } else {
                 assert_fillet(definition(&result, "Fillet"), true);
                 assert!(matches!(
                     definition(&result, "Chamfer"),
-                    FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Chamfer"
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Chamfer"
                 ));
                 assert_eq!(result.report().losses.len(), 1);
             }
@@ -311,7 +313,9 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
             .evaluation
             .definition();
         match definition {
-            FeatureDefinition::Chamfer { flip_direction, .. } => *flip_direction,
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { flip_direction, .. }) => {
+                *flip_direction
+            }
             definition => panic!("unexpected chamfer definition: {definition:?}"),
         }
     }
@@ -391,7 +395,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
             definition(result),
-            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Extrusion"
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Extrusion"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -404,12 +408,12 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     for target in ["Solid", "Reversed", "Symmetric"] {
         let result = decode(&document(target, None));
         assert!(result.report().losses.is_empty(), "{target}");
-        let FeatureDefinition::Extrude {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction,
             extent,
             solid,
             ..
-        } = definition(&result)
+        }) = definition(&result)
         else {
             panic!("{target} absent carrier");
         };
@@ -445,12 +449,12 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     for (target, replacement) in valid {
         let result = decode(&document(target, Some(replacement)));
         assert!(result.report().losses.is_empty(), "{target}");
-        let FeatureDefinition::Extrude {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction,
             extent,
             solid,
             ..
-        } = definition(&result)
+        }) = definition(&result)
         else {
             panic!("{target} valid carrier");
         };
@@ -581,7 +585,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
     };
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str| {
         assert!(
-            matches!(definition(result, name), FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind)
+            matches!(definition(result, name), FeatureDefinition::Operation(FeatureOperation::Native { kind: value, .. }) if value.as_str() == kind)
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -603,38 +607,38 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         match (name, target) {
             ("PartDesignRevolution", "Midplane") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if matches!(construction.extent(), Some(RevolveExtent::OneSided { .. }))
+                }) if matches!(construction.extent(), Some(RevolveExtent::OneSided { .. }))
             )),
             ("PartDesignRevolution", "Reversed") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if construction.axis().is_some_and(|axis| axis.direction.y == 1.0)
+                }) if construction.axis().is_some_and(|axis| axis.direction.y == 1.0)
             )),
             ("PartDesignRevolution", "AllowMultiFace") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if construction.allow_multi_profile_faces() == Some(false)
+                }) if construction.allow_multi_profile_faces() == Some(false)
             )),
             ("StandaloneRevolution", "Symmetric") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if matches!(construction.extent(), Some(RevolveExtent::OneSided { .. }))
+                }) if matches!(construction.extent(), Some(RevolveExtent::OneSided { .. }))
             )),
             ("StandaloneRevolution", "Solid") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if construction.solid() == Some(false)
+                }) if construction.solid() == Some(false)
             )),
             _ => unreachable!(),
         }
@@ -673,38 +677,38 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         match (name, target) {
             ("PartDesignRevolution", "Midplane") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if matches!(construction.extent(), Some(RevolveExtent::Symmetric { .. }))
+                }) if matches!(construction.extent(), Some(RevolveExtent::Symmetric { .. }))
             )),
             ("PartDesignRevolution", "Reversed") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if construction.axis().is_some_and(|axis| axis.direction.y == -1.0)
+                }) if construction.axis().is_some_and(|axis| axis.direction.y == -1.0)
             )),
             ("PartDesignRevolution", "AllowMultiFace") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if construction.allow_multi_profile_faces() == Some(false)
+                }) if construction.allow_multi_profile_faces() == Some(false)
             )),
             ("StandaloneRevolution", "Symmetric") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if matches!(construction.extent(), Some(RevolveExtent::Symmetric { .. }))
+                }) if matches!(construction.extent(), Some(RevolveExtent::Symmetric { .. }))
             )),
             ("StandaloneRevolution", "Solid") => assert!(matches!(
                 definition(&result, name),
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if construction.solid() == Some(true)
+                }) if construction.solid() == Some(true)
             )),
             _ => unreachable!(),
         }
@@ -832,10 +836,10 @@ fn transfers_non_default_revolution_branches() {
     };
     assert!(matches!(
         definition("ToFirst"),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             ..
-        } if construction.axis().is_some_and(|axis| axis.direction.y == 1.0
+        }) if construction.axis().is_some_and(|axis| axis.direction.y == 1.0
             && axis.origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::ToFirst {}
@@ -843,23 +847,23 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("ToFace"),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             ..
-        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+        }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
             termination: AngularTermination::ToFace { .. }
         }))
     ));
     assert!(matches!(
         definition("TwoAngles"),
-        FeatureDefinition::Revolve { construction, .. }
+        FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. })
             if matches!(construction.extent(), Some(RevolveExtent::TwoSided { first: AngularTermination::Angle { angle: first }, second: AngularTermination::Angle { angle: second } })
                 if (first.get() - 120_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES
                     && (second.get() - 30_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES)
     ));
     assert!(matches!(
         definition("Midplane"),
-        FeatureDefinition::Revolve { construction, .. }
+        FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. })
             if construction.axis().is_some_and(|axis| axis.direction.y == -1.0
                 && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":ReferenceAxis")))
                 && matches!(construction.extent(), Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }))
@@ -869,16 +873,16 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("ThroughAll"),
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             op: BooleanOp::Cut
-        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+        }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
             termination: AngularTermination::ThroughAll {}
         }))
     ));
     assert!(matches!(
         definition("Standalone"),
-        FeatureDefinition::Revolve { construction, op: BooleanOp::NewBody }
+        FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op: BooleanOp::NewBody })
             if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)))
                 && construction.axis().is_some_and(|axis| axis.direction.z == 1.0
                     && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":AxisLink")))
@@ -937,8 +941,8 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     };
     assert!(matches!(
         feature("Box"),
-        cadmpeg_ir::features::FeatureDefinition::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::NewBody } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
+            solid, op: cadmpeg_ir::features::BooleanOp::NewBody }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
                 length: actual_length,
                 width: actual_width,
                 height: actual_height,
@@ -946,16 +950,16 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     ));
     assert!(matches!(
         feature("AddCylinder"),
-        cadmpeg_ir::features::FeatureDefinition::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
+            solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
                 angle,
                 ..
             } if (angle.get() - std::f64::consts::PI).abs() < 1.0e-12)
     ));
     assert!(matches!(
         feature("CutCone"),
-        cadmpeg_ir::features::FeatureDefinition::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::Cut } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
+            solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
     assert!(result.report().losses.is_empty());
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
@@ -1042,7 +1046,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
     };
     assert!(matches!(
         definition("Helix"),
-        cadmpeg_ir::features::FeatureDefinition::Helix {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Helix {
             radius: actual_radius,
             shape: cadmpeg_ir::features::HelixShape::Conical {
                 pitch,
@@ -1053,12 +1057,12 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             segment_turns: Some(segment_turns),
             construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Corrected),
             ..
-        } if segment_turns.get() == 0.5 && revolutions.get() == 5.0 && ((pitch.get() - 4.0).abs() < EPS_SCALAR_ROUND_TRIP
+        }) if segment_turns.get() == 0.5 && revolutions.get() == 5.0 && ((pitch.get() - 4.0).abs() < EPS_SCALAR_ROUND_TRIP
             && (angle.get() - 12_f64.to_radians()).abs() < 1.0e-12) && actual_radius.get() == 3.0
     ));
     assert!(matches!(
         definition("Spiral"),
-        cadmpeg_ir::features::FeatureDefinition::Helix {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Helix {
             radius: actual_radius,
             shape: cadmpeg_ir::features::HelixShape::Spiral {
                 radial_growth: actual_radial_growth,
@@ -1067,7 +1071,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             segment_turns: Some(segment_turns),
             construction_style: None,
             ..
-        } if segment_turns.get() == 0.25 && revolutions.get() == 3.5 && actual_radius.get() == 5.0 && actual_radial_growth.get() == 2.0
+        }) if segment_turns.get() == 0.25 && revolutions.get() == 3.5 && actual_radius.get() == 5.0 && actual_radial_growth.get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1130,20 +1134,20 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
             .definition()
     };
     assert!(
-        matches!(definition("Spring"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
+        matches!(definition("Spring"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::HelicalSweep {
         construction,
         op: cadmpeg_ir::features::BooleanOp::Join,
-    } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
+    }) if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
         && construction.turns.get() == 2.5 && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.25)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
-        matches!(definition("OutsideCut"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
+        matches!(definition("OutsideCut"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::HelicalSweep {
         construction,
         op: cadmpeg_ir::features::BooleanOp::Intersect,
-    } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
+    }) if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
         && construction.pitch.get() == 0.0 && construction.travel.radial_growth().get() == 2.0
         && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
@@ -1403,7 +1407,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str| {
         let actual = definition(result, name);
         assert!(
-            matches!(actual, FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind),
+            matches!(actual, FeatureDefinition::Operation(FeatureOperation::Native { kind: value, .. }) if value.as_str() == kind),
             "{name} expected native {kind}, got {actual:?}"
         );
         assert_eq!(result.report().losses.len(), 1);
@@ -1432,72 +1436,72 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
         match (object, name) {
             ("PartHelix", "LocalCoord") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::Helix {
+                FeatureDefinition::Operation(FeatureOperation::Helix {
                     clockwise: false,
                     ..
-                }
+                })
             )),
             ("PartHelix", "Style") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::Helix {
+                FeatureDefinition::Operation(FeatureOperation::Helix {
                     construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Legacy),
                     ..
-                }
+                })
             )),
             ("PartHelix", "SegmentLength") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::Helix {
+                FeatureDefinition::Operation(FeatureOperation::Helix {
                     segment_turns: None,
                     ..
-                }
+                })
             )),
             ("Spiral", "SegmentLength") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::Helix {
+                FeatureDefinition::Operation(FeatureOperation::Helix {
                     segment_turns: Some(value),
                     ..
-                } if value.get() == 1.0
+                }) if value.get() == 1.0
             )),
             ("AdditiveHelix", "Mode") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep {
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep {
                     construction,
                     ..
-                } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchHeightAngle
+                }) if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchHeightAngle
             )),
             ("AdditiveHelix", "LeftHanded") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep { construction, .. }
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep { construction, .. })
                     if !construction.left_handed
             )),
             ("AdditiveHelix", "Reversed") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep { construction, .. }
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep { construction, .. })
                     if !construction.reversed
             )),
             ("AdditiveHelix", "Outside") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep {
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep {
                     op: cadmpeg_ir::features::BooleanOp::Join,
                     ..
-                }
+                })
             )),
             ("AdditiveHelix", "Tolerance") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep { construction, .. }
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep { construction, .. })
                     if construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
             )),
             ("AdditiveHelix", "AllowMultiFace") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep { construction, .. }
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep { construction, .. })
                     if construction.allow_multi_profile_faces == Some(false)
             )),
             ("SubtractiveHelix", "Outside") => assert!(matches!(
                 definition(&result, object),
-                FeatureDefinition::HelicalSweep {
+                FeatureDefinition::Operation(FeatureOperation::HelicalSweep {
                     op: cadmpeg_ir::features::BooleanOp::Cut,
                     ..
-                }
+                })
             )),
             _ => unreachable!(),
         }
@@ -1660,13 +1664,13 @@ fn transfers_remaining_partdesign_analytic_primitives() {
             .definition()
     };
     assert!(
-        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
+        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
     );
     assert!(
-        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Cut } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides: 7, circumradius, height } if circumradius.get() == 4.0 && height.get() == 9.0))
+        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides: 7, circumradius, height } if circumradius.get() == 4.0 && height.get() == 9.0))
     );
     assert!(
-        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join } if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if xmin.get() == -2.0 && ymax.get() == 6.0))
+        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if xmin.get() == -2.0 && ymax.get() == 6.0))
     );
     assert!(result.report().losses.is_empty());
 }
@@ -1705,7 +1709,7 @@ fn rejects_nested_and_duplicate_design_scalar_and_vector_roots() {
             .expect("feature");
         assert!(matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
     }
 }
@@ -1766,15 +1770,15 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
         if expected_native {
             assert!(matches!(
                 definition,
-                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Revolution"
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Revolution"
             ));
         } else {
             assert!(matches!(
                 definition,
-                FeatureDefinition::Revolve {
+                FeatureDefinition::Operation(FeatureOperation::Revolve {
                     construction,
                     ..
-                } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { .. }
                 }))
             ));

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
+use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, FeatureOperation};
 
 #[test]
 fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
@@ -18,7 +18,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
         operand_data_block: Some("nx:om-data-blocks-2:block#113".to_string()),
         segment_body_bindings: Vec::new(),
     };
-    let expected_target = Some(FeatureDefinition::TrimBodies {
+    let expected_target = Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
         operands: cadmpeg_ir::features::TrimBodyOperands::new(
             BodySelection::local(vec![body.1.clone()], "nx:om-object-index#114".to_string())
                 .unwrap(),
@@ -27,7 +27,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
         .unwrap(),
 
         keep: BodyTrimSide::Unresolved,
-    });
+    }));
 
     let mut mixed_store_operand = operand.clone();
     mixed_store_operand.operand_data_block = Some("nx:om-data-blocks-3:block#113".to_string());
@@ -58,7 +58,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
             std::slice::from_ref(&body),
             &[&target_alias_operand],
         ),
-        Some(FeatureDefinition::TrimBodies {
+        Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string()).unwrap(),
                 BodySelection::Unresolved
@@ -66,6 +66,6 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
-        })
+        }))
     );
 }

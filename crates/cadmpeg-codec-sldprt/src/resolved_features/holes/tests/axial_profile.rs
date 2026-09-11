@@ -3,7 +3,9 @@
 use super::{lane_with_position_reference, model_hole, native_history, profile_line};
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleBottom, HoleKind, LinearTermination};
+use cadmpeg_ir::features::{
+    FeatureDefinition, FeatureId, FeatureOperation, HoleBottom, HoleKind, LinearTermination,
+};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -671,9 +673,9 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            },
+            }),
         ),
         native_ref: Some("native-profile".into()),
     };
@@ -689,11 +691,11 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                     SketchId::mint("synthetic:test:id#position").unwrap(),
                 )),
-            },
+            }),
         ),
         native_ref: Some("native-position".into()),
     };
@@ -702,10 +704,10 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     let model_sketches = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sketch {
+            let FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
-            } = feature.evaluation.definition()
+            }) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -757,12 +759,12 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     project_profiled_hole_constructions(&mut features, &entities, &[history], &[lane]).unwrap();
 
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::ThroughAll {}),
 
             ..
-        } if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter_2,
                     depth: actual_depth,
@@ -823,11 +825,11 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                     SketchId::mint(sketch).unwrap(),
                 )),
-            },
+            }),
         ),
         native_ref: Some(id.into()),
     };
@@ -881,19 +883,19 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     project_profiled_hole_constructions(&mut features, &entities, &[history], &[]).unwrap();
 
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length
             }),
             ..
-        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 4.2 && actual_length.get() == 6.8)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 4.2 && actual_length.get() == 6.8)));
     assert!(matches!(
-        features[1].evaluation.definition(), FeatureDefinition::Hole {
+        features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length
             }),
             ..
-        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.0 && actual_length.get() == 14.0)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.0 && actual_length.get() == 14.0)));
 }

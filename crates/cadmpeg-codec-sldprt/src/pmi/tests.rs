@@ -10,8 +10,8 @@ use crate::SldprtCodec;
 
 use cadmpeg_ir::{
     features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue,
-        PmiDimensionSubtype,
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+        ParameterValue, PmiDimensionSubtype,
     },
     scalar::Length,
 };
@@ -54,7 +54,7 @@ fn named_feature(id: &str, name: &str) -> Feature {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::StoredGeometry {},
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: None,
     }
@@ -79,7 +79,9 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::{
-        features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternTransform},
+        features::{
+            Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternTransform,
+        },
         scalar::Length,
     };
 
@@ -95,7 +97,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::Linear {
                     direction: None,
@@ -104,7 +106,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
                     second: None,
                 })
                 .unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     };
@@ -913,8 +915,8 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -939,7 +941,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -951,7 +953,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
             },
             op: BooleanOp::Unresolved,
             ..
-        } if actual_length.get() == 25.0
+        }) if actual_length.get() == 25.0
     ));
     let parameter = decoded
         .ir()

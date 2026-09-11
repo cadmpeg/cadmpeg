@@ -16,7 +16,7 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
     SketchInputKind, SketchRelationKind,
 };
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 use std::collections::BTreeMap;
@@ -364,7 +364,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch { sketch: None },
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
         native_ref: Some(native_ref.into()),
     }];
@@ -383,7 +383,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     ));
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(sketch) })
             if sketch.as_str() == "sldprt:model:spatial-sketch#spatial"
     ));
 }
@@ -469,7 +469,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch { sketch: None },
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
         native_ref: Some(native_ref.into()),
     }];
@@ -488,7 +488,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     ));
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(sketch) })
             if sketch.as_str() == "sldprt:model:spatial-sketch#spatial-indexed-profile"
     ));
 }

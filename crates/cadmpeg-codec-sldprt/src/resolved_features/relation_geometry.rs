@@ -263,9 +263,11 @@ pub(crate) fn project_spatial_relation_bindings(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::SpatialSketch {
-                sketch: Some(sketch),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::SpatialSketch {
+                    sketch: Some(sketch),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -384,9 +386,11 @@ pub(crate) fn project_relation_point_geometry(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -813,9 +817,11 @@ pub(crate) fn project_relation_solved_line_geometry(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1388,9 +1394,11 @@ pub(crate) fn project_relation_solved_point_geometry(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -2331,9 +2339,11 @@ pub(crate) fn project_relation_bindings(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -2856,7 +2866,10 @@ mod relation_geometry_tests {
     fn solver_point_relation_projects_graph_resolved_operands() {
         use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
         use cadmpeg_ir::{
-            features::{Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue},
+            features::{
+                Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+                ParameterValue,
+            },
             scalar::Length,
         };
         use std::collections::BTreeMap;
@@ -2874,11 +2887,11 @@ mod relation_geometry_tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                         sketch.clone(),
                     )),
-                },
+                }),
             ),
             native_ref: Some("feature-native".into()),
         };
@@ -3042,7 +3055,10 @@ mod relation_geometry_tests {
         use cadmpeg_ir::math::{Point3, Vector3};
         use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
         use cadmpeg_ir::{
-            features::{Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue},
+            features::{
+                Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+                ParameterValue,
+            },
             scalar::Length,
         };
         use std::collections::BTreeMap;
@@ -3062,11 +3078,11 @@ mod relation_geometry_tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                         sketch_id.clone(),
                     )),
-                },
+                }),
             ),
             native_ref: Some(FEATURE.into()),
         };
@@ -3380,7 +3396,10 @@ mod relation_geometry_tests {
             SpatialSketchId,
         };
         use cadmpeg_ir::{
-            features::{Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue},
+            features::{
+                Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+                ParameterValue,
+            },
             scalar::Length,
         };
         use std::collections::BTreeMap;
@@ -3520,9 +3539,9 @@ mod relation_geometry_tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::SpatialSketch {
+                FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                     sketch: Some(sketch.id.clone()),
-                },
+                }),
             ),
             native_ref: Some(FEATURE.into()),
         };

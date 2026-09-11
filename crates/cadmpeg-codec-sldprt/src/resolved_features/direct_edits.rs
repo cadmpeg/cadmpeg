@@ -357,7 +357,7 @@ mod tests {
         FeatureInputScalarRole,
     };
     use cadmpeg_ir::{
-        features::{FaceMotion, FaceSelection, FeatureDefinition},
+        features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation},
         scalar::Length,
     };
     use std::collections::BTreeMap;
@@ -481,10 +481,10 @@ mod tests {
         let projected = crate::history::project_features(&histories).unwrap();
         assert!(matches!(
             projected[0].evaluation.definition(),
-            FeatureDefinition::MoveFace {
+            FeatureDefinition::Operation(FeatureOperation::MoveFace {
                 faces: FaceSelection::Unresolved,
                 motion: FaceMotion::Translate { direction, distance },
-            } if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == Length::new(5.0).unwrap()
+            }) if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == Length::new(5.0).unwrap()
         ));
 
         for lane in [
@@ -500,7 +500,7 @@ mod tests {
                 crate::history::project_features(&histories).unwrap()[0]
                     .evaluation
                     .definition(),
-                FeatureDefinition::Native { .. }
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
             ));
         }
 
@@ -516,7 +516,7 @@ mod tests {
             crate::history::project_features(&histories).unwrap()[0]
                 .evaluation
                 .definition(),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
     }
 

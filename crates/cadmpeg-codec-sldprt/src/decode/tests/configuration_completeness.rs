@@ -10,8 +10,8 @@ use cadmpeg_ir::{
     features::{
         BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, LinearTermination, ParameterId,
-        ParameterValue, PatternKind, PatternSeed, PatternTransform,
+        FeatureOperation, FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement,
+        LinearTermination, ParameterId, ParameterValue, PatternKind, PatternSeed, PatternTransform,
     },
     scalar::Length,
 };
@@ -41,7 +41,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Draft {
+            FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: faces.clone(),
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
                     tool: faces,
@@ -55,7 +55,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 },
                 angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                 outward: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -69,7 +69,8 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         .all(|loss| !loss.message.contains("typed feature(s) retain native")));
 
     ir.model.features[0].evaluation.edit(|definition, _| {
-        let FeatureDefinition::Draft { anchor, .. } = definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Draft { anchor, .. }) = definition
+        else {
             unreachable!();
         };
         *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -117,24 +118,24 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::TreeNode {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            },
+            }),
         ),
         native_ref: None,
     });
     for (ordinal, definition) in [
         (
             0,
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Unprojected".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         (
             1,
-            FeatureDefinition::Combine {
+            FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Native("target".into()),
                     BodySelection::Native("tools".into()),
@@ -143,14 +144,14 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
-            },
+            }),
         ),
         (
             2,
-            FeatureDefinition::DeleteBody {
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native("bodies".into()),
                 mode: BodyRetentionMode::Unresolved,
-            },
+            }),
         ),
     ] {
         ir.model.configurations.push(DesignConfiguration {
@@ -227,10 +228,10 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Localized tree item".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -262,14 +263,14 @@ fn active_configuration_inherits_late_feature_resolutions() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![seed.clone()],
                 pattern: PatternKind::new(PatternTransform::Mirror {
                     plane_origin: Point3::new(1.0, 2.0, 3.0),
                     plane_normal: Vector3::new(0.0, 0.0, 1.0),
                 })
                 .unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -286,7 +287,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Hole {
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
@@ -310,7 +311,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 bottom: Some(HoleBottom::Flat),
                 taper_angle: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -335,10 +336,10 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::Pattern {
+                    definition: FeatureDefinition::Operation(FeatureOperation::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::UNRESOLVED,
-                    },
+                    }),
                 },
             ),
             (
@@ -348,7 +349,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::Hole {
+                    definition: FeatureDefinition::Operation(FeatureOperation::Hole {
                         profile: None,
                         profile_filter: None,
                         face: None,
@@ -365,7 +366,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         bottom: None,
                         taper_angle: None,
                         allow_multi_profile_faces: None,
-                    },
+                    }),
                 },
             ),
         ]),
@@ -376,14 +377,14 @@ fn active_configuration_inherits_late_feature_resolutions() {
 
     assert!(
         matches!(&(ir.model.configurations[0].feature_states[&feature_id].definition),
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 pattern: admitted_pattern,
                 ..
-            } if matches!(admitted_pattern.definition(), PatternTransform::Mirror { .. })
+            }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror { .. })
         )
     );
     assert!(matches!(
-        &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Hole {
+        &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             placements,
             shape,
             extent: Some(LinearTermination::Blind {
@@ -391,15 +392,15 @@ fn active_configuration_inherits_late_feature_resolutions() {
             }),
             bottom: Some(HoleBottom::Flat),
             ..
-        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 4.0 && actual_length.get() == 12.0)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 4.0 && actual_length.get() == 12.0)));
 
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
         extent,
         bottom,
         ..
-    } = &mut ir.model.configurations[0]
+    }) = &mut ir.model.configurations[0]
         .feature_states
         .get_mut(&hole_id)
         .expect("hole state")
@@ -422,13 +423,13 @@ fn active_configuration_inherits_late_feature_resolutions() {
     .unwrap();
     sync_active_configuration_resolutions(&mut ir).unwrap();
     assert!(matches!(
-        &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Hole {
+        &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             placements,
             shape,
             extent: Some(LinearTermination::ThroughAll {}),
             bottom: None,
             ..
-        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 8.0)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 8.0)));
 }
 
 #[test]
@@ -447,10 +448,10 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::TreeNode {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -539,10 +540,10 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::TreeNode {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            },
+            }),
             vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         ),
         native_ref: None,
@@ -596,10 +597,10 @@ fn active_configuration_snapshots_final_neutral_design_state() {
             ])
             .try_into()
             .unwrap(),
-            definition: FeatureDefinition::TreeNode {
+            definition: FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            },
+            }),
         }
     );
     assert!(ir.model.configurations[1].parameter_values.is_empty());

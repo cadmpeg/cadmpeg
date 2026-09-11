@@ -48,8 +48,8 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use cadmpeg_ir::{
     features::{
-        AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, RevolutionAxis,
-        RevolveExtent,
+        AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition,
+        FeatureOperation as IrFeatureOperation, RevolutionAxis, RevolveExtent,
     },
     scalar::Length,
 };
@@ -706,10 +706,12 @@ fn named_revolve_transfers_profile_axis() {
         visible: None,
     });
 
-    let Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
-        construction,
-        op: BooleanOp::NewBody,
-    }) = named_feature_definition(&scan, &ir, 822, "Revolve")
+    let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Revolve {
+            construction,
+            op: BooleanOp::NewBody,
+        },
+    )) = named_feature_definition(&scan, &ir, 822, "Revolve")
     else {
         panic!("named revolve axis");
     };
@@ -733,8 +735,9 @@ fn named_extrude_with_evaluated_body_is_new_body() {
         visible: None,
     });
 
-    let Some(cadmpeg_ir::features::FeatureDefinition::Extrude { op, solid, .. }) =
-        named_feature_definition(&scan, &ir, 822, "Extrude")
+    let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
+    )) = named_feature_definition(&scan, &ir, 822, "Extrude")
     else {
         panic!("named extrude definition");
     };
@@ -756,7 +759,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
         visible: None,
     });
 
-    let IrFeatureDefinition::Extrude { op, solid, .. } =
+    let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
         schema_feature_definition(&scan, &ir, 822, None, "Extrude 822")
             .expect("valid test fixture")
     else {

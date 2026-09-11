@@ -100,23 +100,29 @@ fn current_json_without_configurations_defaults_to_empty() {
 /// ordered children, and a tree child states no regeneration parent.
 #[test]
 fn feature_parent_wire_is_derived_from_its_single_owner() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
+    };
 
     let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
     let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let parent = Feature::new(
         parent_id.clone(),
         0,
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: crate::features::TreeChildren::new(
                 vec![child_id.clone()],
                 Some(child_id.clone()),
             )
             .unwrap(),
-        },
+        }),
     );
-    let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry {});
+    let child = Feature::new(
+        child_id.clone(),
+        1,
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    );
     let model = Model {
         features: vec![parent, child],
         ..Model::default()
@@ -134,8 +140,16 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 
     let mut regeneration = Model {
         features: vec![
-            Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry {}),
-            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry {}),
+            Feature::new(
+                parent_id.clone(),
+                0,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
+            Feature::new(
+                child_id.clone(),
+                1,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
         ],
         ..Model::default()
     };
@@ -184,7 +198,9 @@ fn feature_wire_refuses_the_deleted_parent_key() {
 /// A tree child cannot also state a regeneration predecessor.
 #[test]
 fn feature_parent_wire_rejects_disagreement_with_tree_children() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
+    };
 
     let first_id = FeatureId::mint("test:model:feature#first").expect("identity grammar");
     let second_id = FeatureId::mint("test:model:feature#second").expect("identity grammar");
@@ -194,14 +210,22 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
             Feature::new(
                 first_id,
                 0,
-                FeatureDefinition::TreeNode {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::History,
                     children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
                         .unwrap(),
-                },
+                }),
             ),
-            Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry {}),
-            Feature::new(child_id, 2, FeatureDefinition::StoredGeometry {}),
+            Feature::new(
+                second_id.clone(),
+                1,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
+            Feature::new(
+                child_id,
+                2,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
         ],
         ..Model::default()
     };
@@ -474,7 +498,9 @@ fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
 
 #[test]
 fn parent_only_wire_preserves_regeneration_without_tree_membership() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
+    };
 
     let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
     let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
@@ -483,12 +509,16 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
             Feature::new(
                 parent_id.clone(),
                 0,
-                FeatureDefinition::TreeNode {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::SolidBodies,
                     children: crate::features::TreeChildren::default(),
-                },
+                }),
             ),
-            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry {}),
+            Feature::new(
+                child_id.clone(),
+                1,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
         ],
         ..Model::default()
     };

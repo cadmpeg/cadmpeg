@@ -11,6 +11,7 @@ use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
@@ -592,7 +593,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         axis_features.as_slice(), [Feature {
             evaluation,
             ..
-        }] if matches!((evaluation.definition(),), (FeatureDefinition::DatumAxis { origin, direction },) if *origin == Point3::new(10.0, 20.0, 30.0)
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }),) if *origin == Point3::new(10.0, 20.0, 30.0)
             && *direction == Vector3::new(0.0, -0.6, 0.8))));
 
     let compact_at = bytes.len();

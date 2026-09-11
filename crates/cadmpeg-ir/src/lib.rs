@@ -93,8 +93,8 @@ pub use features::{
     CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies,
     ConfigurationEvaluation, ConfigurationId, ConfigurationName, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
-    FeatureDefinition, FeatureId, LoftGuidance, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance, ParameterId, ParameterPmi,
+    ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
 pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};

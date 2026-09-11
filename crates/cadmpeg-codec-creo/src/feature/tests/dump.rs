@@ -56,9 +56,9 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         .expect("round feature");
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) }, ..
         }])
     ));
@@ -76,9 +76,9 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         .expect("decode");
     assert!(matches!(
         mixed.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None }, ..
         }])
     ));
@@ -204,10 +204,10 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
 
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Revolve {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_none()
             && construction.extent().is_none()
     ));
@@ -230,20 +230,22 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
 
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-            ),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+                ..
+            }
+        )
     ));
 }
 
@@ -265,20 +267,22 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
     assert_eq!(feature.name.as_deref(), Some("Extrude 1 id 40"));
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-            ),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+                ..
+            }
+        )
     ));
 }
 
@@ -473,7 +477,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .expect("model feature");
     assert!(matches!(
         model_feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -483,7 +487,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
-        } if profile == "creo:featdefs:sketch#917"
+        }) if profile == "creo:featdefs:sketch#917"
     ));
     assert_eq!(
         model_feature.source_properties["native_parameter.dimension_count"],
@@ -1080,7 +1084,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         .all(|state| state.fields()["recipe_conflict"] == true));
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })
             if kind.as_str() == "Native Feature"
     ));
     assert_eq!(

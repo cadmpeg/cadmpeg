@@ -503,8 +503,9 @@ fn decode_transfers_closed_plane_intersection_brep() {
         *feature.evaluation.outputs(),
         vec![model.bodies[0].id.clone()]
     );
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
-        feature.evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+    ) = feature.evaluation.definition()
     else {
         panic!("round definition: {:#?}", feature.evaluation.definition());
     };

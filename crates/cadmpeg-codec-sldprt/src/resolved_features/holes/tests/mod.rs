@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, HoleKind};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -62,7 +62,7 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Hole {
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
@@ -79,7 +79,7 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
                 bottom: None,
                 taper_angle: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: Some("native-hole".into()),
     }

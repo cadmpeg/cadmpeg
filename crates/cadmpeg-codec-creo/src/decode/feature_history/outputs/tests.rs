@@ -5,7 +5,9 @@ use super::{
     feature_output_bodies,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition, GeneratedFaceRef};
+use cadmpeg_ir::features::{
+    FaceSelection, Feature, FeatureDefinition, FeatureOperation, GeneratedFaceRef,
+};
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop as IrLoop, Region, Sense, Shell};
 use std::collections::BTreeMap;
@@ -84,7 +86,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     ir.model.features.push(Feature::new(
         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10").expect("identity grammar"),
         0,
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::generated(
                 vec![GeneratedFaceRef::new(
                     cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
@@ -97,7 +99,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
             .expect("valid test fixture"),
             thickness: None,
             side: None,
-        },
+        }),
     ));
 
     assert_eq!(
@@ -172,7 +174,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     ir.model.features.push(Feature::new(
         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10").expect("identity grammar"),
         0,
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::generated(
                 vec![GeneratedFaceRef::new(
                     cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
@@ -185,7 +187,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
             .expect("valid test fixture"),
             thickness: None,
             side: None,
-        },
+        }),
     ));
 
     assert_eq!(

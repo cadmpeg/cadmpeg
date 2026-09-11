@@ -4,7 +4,10 @@
 use crate::classification::NativeClassKind;
 use crate::records::Feature;
 use cadmpeg_ir::{
-    features::{FeatureDefinition, FeatureId, PathRef, PatternKind, PatternSeed, PatternTransform},
+    features::{
+        FeatureDefinition, FeatureId, FeatureOperation, PathRef, PatternKind, PatternSeed,
+        PatternTransform,
+    },
     scalar::{Angle, Length},
 };
 use std::collections::HashMap;
@@ -160,7 +163,7 @@ pub(crate) fn project_pattern(
             Some(NativePatternClass::CurveDriven) => PatternKind::UNRESOLVED_CURVE_DRIVEN,
             Some(NativePatternClass::Mirror) => PatternKind::UNRESOLVED_MIRROR,
         });
-    FeatureDefinition::Pattern { seeds, pattern }
+    FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
 }
 
 pub(crate) fn parse_count(value: &str) -> Option<u32> {

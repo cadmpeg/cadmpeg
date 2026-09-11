@@ -4,8 +4,8 @@
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, HoleKind, PlanarProfileRef, ProfileRef, RadiusSpec,
-    RevolveExtent, UnresolvedFamily,
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation, HoleKind,
+    PlanarProfileRef, ProfileRef, RadiusSpec, RevolveExtent, UnresolvedFamily,
 };
 
 use crate::container::ContainerScan;
@@ -38,7 +38,7 @@ pub(in super::super) fn collect_feature_coverage(
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                IrFeatureDefinition::Native { .. }
+                IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
             )
         })
         .count();
@@ -119,28 +119,28 @@ pub(in super::super) fn collect_feature_coverage(
     let mut native_axis_helix_feature_count = 0;
     for feature in &ir.model.features {
         match feature.evaluation.definition() {
-            IrFeatureDefinition::Unresolved {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            } => {
+            }) => {
                 unresolved_datum_plane_feature_count += 1;
             }
-            IrFeatureDefinition::Unresolved {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumCoordinateSystem,
-            } => {
+            }) => {
                 unresolved_datum_coordinate_system_feature_count += 1;
             }
-            IrFeatureDefinition::Unresolved {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::BoundarySurface,
-            } => {
+            }) => {
                 unresolved_boundary_surface_feature_count += 1;
             }
-            IrFeatureDefinition::Extrude {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
                 profile,
                 start,
                 extent,
                 op,
                 ..
-            } => {
+            }) => {
                 extrude_feature_count += 1;
                 let unresolved_profile =
                     matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_)));
@@ -174,7 +174,7 @@ pub(in super::super) fn collect_feature_coverage(
                         || unresolved_op,
                 );
             }
-            IrFeatureDefinition::Revolve { construction, op } => {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Revolve { construction, op }) => {
                 revolve_feature_count += 1;
                 let unresolved_profile = construction
                     .profile()
@@ -206,7 +206,7 @@ pub(in super::super) fn collect_feature_coverage(
                         || unresolved_op,
                 );
             }
-            IrFeatureDefinition::Hole {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
                 profile,
                 face,
                 placements,
@@ -214,7 +214,7 @@ pub(in super::super) fn collect_feature_coverage(
 
                 extent,
                 ..
-            } => {
+            }) => {
                 let construction = shape.construction();
                 let exit_kind = shape.exit_kind();
                 let diameter = shape.diameter();
@@ -265,7 +265,7 @@ pub(in super::super) fn collect_feature_coverage(
                         || incomplete_termination,
                 );
             }
-            IrFeatureDefinition::Fillet { groups } => {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { groups }) => {
                 fillet_feature_count += 1;
                 let unresolved_edges = groups.is_empty()
                     || groups.iter().any(|group| {
@@ -309,7 +309,7 @@ pub(in super::super) fn collect_feature_coverage(
                 incomplete_fillet_feature_count +=
                     usize::from(unresolved_edges || native_edges || unresolved_radius);
             }
-            IrFeatureDefinition::Chamfer { groups, .. } => {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer { groups, .. }) => {
                 chamfer_feature_count += 1;
                 let unresolved_edges = groups.is_empty()
                     || groups.iter().any(|group| {
@@ -329,13 +329,13 @@ pub(in super::super) fn collect_feature_coverage(
                 incomplete_chamfer_feature_count +=
                     usize::from(unresolved_edges || native_edges || unresolved_spec);
             }
-            IrFeatureDefinition::Draft {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Draft {
                 faces,
                 anchor,
                 angle,
                 outward,
                 ..
-            } => {
+            }) => {
                 draft_feature_count += 1;
                 let unresolved_faces = matches!(
                     faces,
@@ -377,20 +377,20 @@ pub(in super::super) fn collect_feature_coverage(
                         || unresolved_outward,
                 );
             }
-            IrFeatureDefinition::Unresolved {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::Draft,
-            } => {
+            }) => {
                 draft_feature_count += 1;
                 incomplete_draft_feature_count += 1;
                 explicitly_unresolved_draft_feature_count += 1;
             }
-            IrFeatureDefinition::FilledSurface {
+            IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
                 boundary,
                 support_faces,
                 continuity,
                 merge_result,
                 ..
-            } => {
+            }) => {
                 filled_surface_feature_count += 1;
                 let unresolved_boundary = surface_boundary_has_unresolved_operands(boundary);
                 let unresolved_support = face_selection_has_unresolved_operands(support_faces);
@@ -409,12 +409,12 @@ pub(in super::super) fn collect_feature_coverage(
                         || unresolved_merge,
                 );
             }
-            IrFeatureDefinition::KnitSurface {
+            IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
                 faces,
                 merge_entities,
                 create_solid,
                 ..
-            } => {
+            }) => {
                 knit_surface_feature_count += 1;
                 let unresolved_faces = matches!(
                     faces,
@@ -431,11 +431,11 @@ pub(in super::super) fn collect_feature_coverage(
                     unresolved_faces || native_faces || unresolved_merge || unresolved_solid,
                 );
             }
-            IrFeatureDefinition::Thicken {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
                 faces,
                 thickness,
                 side,
-            } => {
+            }) => {
                 thicken_feature_count += 1;
                 let unresolved_faces = face_selection_has_unresolved_operands(faces);
                 let unresolved_thickness = thickness.is_none();
@@ -446,7 +446,9 @@ pub(in super::super) fn collect_feature_coverage(
                 incomplete_thicken_feature_count +=
                     usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
             }
-            IrFeatureDefinition::SectionShape { operands, .. } => {
+            IrFeatureDefinition::Operation(IrFeatureOperation::SectionShape {
+                operands, ..
+            }) => {
                 let first = operands.first();
                 let second = operands.second();
                 section_shape_feature_count += 1;
@@ -455,7 +457,7 @@ pub(in super::super) fn collect_feature_coverage(
                         || body_selection_has_unresolved_operands(second),
                 );
             }
-            IrFeatureDefinition::Pattern { seeds, pattern } => {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Pattern { seeds, pattern }) => {
                 pattern_feature_count += 1;
                 let unresolved_seeds = seeds.is_empty()
                     || seeds.iter().any(|seed| match seed {
@@ -480,7 +482,7 @@ pub(in super::super) fn collect_feature_coverage(
                 incomplete_pattern_feature_count +=
                     usize::from(unresolved_seeds || unresolved_transform);
             }
-            IrFeatureDefinition::HelixNativeAxis { .. } => {
+            IrFeatureDefinition::Operation(IrFeatureOperation::HelixNativeAxis { .. }) => {
                 native_axis_helix_feature_count += 1;
             }
             _ => {}

@@ -1,6 +1,6 @@
 use crate::features::{
-    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureSourceContent, FinitePoint3,
-    ParameterId,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
+    FinitePoint3, ParameterId,
 };
 use crate::math::Point3;
 
@@ -44,10 +44,10 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     let mut feature = Feature::new(
         FeatureId::mint("test:test:feature#owner").unwrap(),
         1,
-        FeatureDefinition::DatumPoint {
+        FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,
-        },
+        }),
     );
     let dependency = FeatureId::mint("test:test:feature#dependency").unwrap();
     feature.dependencies.insert(dependency.clone());

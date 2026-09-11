@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, PatternSeed,
-    UnresolvedFamily,
+    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, FeatureOperation,
+    PatternSeed, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::BodyId;
 
@@ -284,24 +284,24 @@ fn rederived_body_census(
             Some(false) => {}
         }
         match feature.evaluation.definition() {
-            FeatureDefinition::TreeNode { .. }
-            | FeatureDefinition::DatumPrincipalPlane { .. }
-            | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
+            | FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
+            | FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
+            | FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family:
                     UnresolvedFamily::DatumPlane
                     | UnresolvedFamily::DatumAxis
                     | UnresolvedFamily::DatumPoint
                     | UnresolvedFamily::DatumCoordinateSystem
                     | UnresolvedFamily::BridgeCurve,
-            }
-            | FeatureDefinition::DatumOffsetPlane { .. }
-            | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumPoint { .. }
-            | FeatureDefinition::DatumCoordinateSystem { .. }
-            | FeatureDefinition::Sketch { .. }
-            | FeatureDefinition::ProjectedCurve { .. }
-            | FeatureDefinition::SectionShape { .. } => {
+            })
+            | FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+            | FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. })
+            | FeatureDefinition::Operation(FeatureOperation::DatumPoint { .. })
+            | FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
+            | FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+            | FeatureDefinition::Operation(FeatureOperation::ProjectedCurve { .. })
+            | FeatureDefinition::Operation(FeatureOperation::SectionShape { .. }) => {
                 if !feature.evaluation.outputs().is_empty() {
                     return Err((
                         feature_boundary(feature),
@@ -309,18 +309,18 @@ fn rederived_body_census(
                     ));
                 }
             }
-            FeatureDefinition::Native { kind, .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
                 if kind.as_str() == "DELETE"
                     && !feature
                         .source_properties
                         .contains_key("primary_body_object_index") => {}
-            FeatureDefinition::Native { kind, .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
                 if kind.as_str() == "FSET" && feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Block {
+            FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some(_),
                 placement: Some(_),
                 op: BooleanOp::NewBody,
-            } => {
+            }) => {
                 let [output] = feature.evaluation.outputs().as_slice() else {
                     return Err((
                         feature_boundary(feature),
@@ -334,28 +334,28 @@ fn rederived_body_census(
                     ));
                 }
             }
-            FeatureDefinition::Block {
+            FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some(_),
                 placement: Some(_),
                 op: BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
-            } => {
+            }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Block {
+            FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some(_),
                 placement: Some(_),
                 op: BooleanOp::Unresolved,
-            } if matches!(feature.evaluation.outputs().as_slice(), [output] if bodies.contains(output)) =>
+            }) if matches!(feature.evaluation.outputs().as_slice(), [output] if bodies.contains(output)) =>
             {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Block { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Block { .. }) => {
                 return Err((
                     feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::Sphere { op, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Sphere { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
@@ -363,59 +363,59 @@ fn rederived_body_census(
                     feature_completeness::sphere_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface,
-            } if feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Unresolved {
+            }) if feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Brep,
-            } if feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Unresolved {
+            }) if feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Brep,
-            } => {
+            }) => {
                 return Err((
                     feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DeleteFace,
-            } if feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Unresolved {
+            }) if feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DeleteFace,
-            } => {
+            }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::MirrorFace,
-            } if feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Unresolved {
+            }) if feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::MirrorFace,
-            } => {
+            }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::SubdivisionBody,
-            } if feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Unresolved {
+            }) if feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::SubdivisionBody,
-            } => {
+            }) => {
                 return Err((
                     feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::TopologyOptimization,
-            } if feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::Unresolved {
+            }) if feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::TopologyOptimization,
-            } => {
+            }) => {
                 return Err((
                     feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::Loft { op, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Loft { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
@@ -423,15 +423,16 @@ fn rederived_body_census(
                     feature_completeness::loft_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 op: BooleanOp::Unresolved | BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
                 ..
-            } if matches!(feature.evaluation.outputs().as_slice(), [output] if bodies.contains(output)) =>
+            }) if matches!(feature.evaluation.outputs().as_slice(), [output] if bodies.contains(output)) =>
             {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Extrude { .. } if output_free_local_body_construction(feature) => {}
-            FeatureDefinition::Extrude { op, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
@@ -439,8 +440,9 @@ fn rederived_body_census(
                     feature_completeness::extrude_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::Revolve { .. } if output_free_local_body_construction(feature) => {}
-            FeatureDefinition::Revolve { op, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
+                if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
@@ -448,8 +450,9 @@ fn rederived_body_census(
                     feature_completeness::revolve_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::Rib { .. } if output_free_local_body_construction(feature) => {}
-            FeatureDefinition::Rib { op, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Rib { .. })
+                if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Operation(FeatureOperation::Rib { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
@@ -457,8 +460,9 @@ fn rederived_body_census(
                     feature_completeness::rib_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::Sweep { .. } if output_free_local_body_construction(feature) => {}
-            FeatureDefinition::Sweep { shape, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+                if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                 let mode = shape.mode();
                 let op = match mode {
                     cadmpeg_ir::features::SweepMode::Solid { op } => op.into(),
@@ -472,11 +476,12 @@ fn rederived_body_census(
                     feature_completeness::sweep_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::BaseFeature { .. } if output_free_native_snapshot(feature) => {}
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
+                if output_free_native_snapshot(feature) => {}
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, .. },
-            } if bodies.is_empty() && feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::BaseFeature { bodies: selection } => {
+            }) if bodies.is_empty() && feature.evaluation.outputs().is_empty() => {}
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies: selection }) => {
                 let Some(selected) = explicit_body_selection(selection) else {
                     return Err((
                         feature_boundary(feature),
@@ -493,7 +498,7 @@ fn rederived_body_census(
                 }
                 bodies.extend(selected.iter().cloned());
             }
-            FeatureDefinition::InsertBodies { bodies: selection } => {
+            FeatureDefinition::Operation(FeatureOperation::InsertBodies { bodies: selection }) => {
                 let selected = feature.evaluation.outputs();
                 if !selection.is_resolved()
                     || selected.is_empty()
@@ -512,7 +517,7 @@ fn rederived_body_census(
                 }
                 bodies.extend(selected.iter().cloned());
             }
-            FeatureDefinition::ExtractBody { source } => {
+            FeatureDefinition::Operation(FeatureOperation::ExtractBody { source }) => {
                 if feature.evaluation.outputs().is_empty() && complete_local_body_selection(source)
                 {
                     continue;
@@ -545,56 +550,56 @@ fn rederived_body_census(
                 }
                 bodies.extend(feature.evaluation.outputs().iter().cloned());
             }
-            FeatureDefinition::TrimSurface { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. }) => {
                 preserve_in_place_outputs(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::ExtendSurface { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. }) => {
                 preserve_in_place_outputs(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Hole { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Chamfer { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Fillet { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::FaceBlend { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::OffsetSurface { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Thicken { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Draft { .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Draft { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Draft,
-            } if output_free_local_body_construction(feature) => {}
-            FeatureDefinition::ReplaceFace { .. } => {
+            }) if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::Combine { operands, .. }
+            FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
                 if feature.evaluation.outputs().is_empty()
                     && complete_local_or_native_body_selection(operands.target())
                     && complete_local_or_native_body_selection(operands.tools()) => {}
-            FeatureDefinition::Combine { operands, .. }
+            FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
                 if local_tool_combine_is_census_invariant(
                     feature,
                     operands.target(),
                     operands.tools(),
                     &bodies,
                 ) => {}
-            FeatureDefinition::Combine {
+            FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands,
 
                 keep_tools,
                 ..
-            } => {
+            }) => {
                 let target = operands.target();
                 let tools = operands.tools();
                 apply_complete_body_combine(
@@ -610,9 +615,9 @@ fn rederived_body_census(
                     feature_completeness::combine_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::SewBodies {
+            FeatureDefinition::Operation(FeatureOperation::SewBodies {
                 bodies: selection, ..
-            } => {
+            }) => {
                 if local_body_replacement_is_census_invariant(feature, selection, &bodies) {
                     continue;
                 }
@@ -623,7 +628,7 @@ fn rederived_body_census(
                     feature_completeness::sew_bodies_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::TrimBodies { operands, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
                 let targets = operands.targets();
                 let tools = operands.tools();
                 if feature.evaluation.outputs().is_empty() {
@@ -637,10 +642,10 @@ fn rederived_body_census(
                     feature_completeness::trim_bodies_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::DeleteBody {
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: selection,
                 mode,
-            } => {
+            }) => {
                 apply_complete_body_retention(
                     feature,
                     &mut bodies,
@@ -650,7 +655,7 @@ fn rederived_body_census(
                     feature_completeness::operands::body_selection_is_incomplete(selection),
                 )?;
             }
-            FeatureDefinition::Pattern { seeds, pattern } => {
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
                 if feature.evaluation.outputs().is_empty() {
                     continue;
                 }
@@ -681,26 +686,26 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
     feature.evaluation.outputs().is_empty()
         && (matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::TreeNode { .. }
-                | FeatureDefinition::DatumPrincipalPlane { .. }
-                | FeatureDefinition::DatumPlane { .. }
-                | FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
+                | FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
+                | FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumPlane
                         | UnresolvedFamily::DatumAxis
                         | UnresolvedFamily::DatumPoint
                         | UnresolvedFamily::DatumCoordinateSystem
                         | UnresolvedFamily::BridgeCurve,
-                }
-                | FeatureDefinition::DatumOffsetPlane { .. }
-                | FeatureDefinition::DatumAxis { .. }
-                | FeatureDefinition::DatumPoint { .. }
-                | FeatureDefinition::DatumCoordinateSystem { .. }
-                | FeatureDefinition::Sketch { .. }
-                | FeatureDefinition::ProjectedCurve { .. }
-                | FeatureDefinition::SectionShape { .. }
+                })
+                | FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+                | FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. })
+                | FeatureDefinition::Operation(FeatureOperation::DatumPoint { .. })
+                | FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+                | FeatureDefinition::Operation(FeatureOperation::ProjectedCurve { .. })
+                | FeatureDefinition::Operation(FeatureOperation::SectionShape { .. })
         ) || matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Native { kind, .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
                 if (kind.as_str() == "DELETE"
                     && !feature.source_properties.contains_key("primary_body_object_index"))
                     || kind.as_str() == "FSET"
@@ -713,10 +718,10 @@ fn suppression_is_body_census_invariant(
 ) -> bool {
     let deletes_only_local_bodies = matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::DeleteBody {
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Local { bodies, native },
             mode: BodyRetentionMode::DeleteSelected,
-        } if !native.trim().is_empty()
+        }) if !native.trim().is_empty()
             && !bodies.is_empty()
             && bodies.iter().all(|body| !body.trim().is_empty())
             && bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len()
@@ -724,62 +729,62 @@ fn suppression_is_body_census_invariant(
     let extracts_only_local_bodies = feature.evaluation.outputs().is_empty()
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::ExtractBody { source }
+            FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
                 if complete_local_body_selection(source)
         );
     let sews_only_local_bodies = matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::SewBodies { bodies: selection, .. }
+        FeatureDefinition::Operation(FeatureOperation::SewBodies { bodies: selection, .. })
             if local_body_replacement_is_census_invariant(feature, selection, bodies)
     );
     let output_free_trim = feature.evaluation.outputs().is_empty()
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::TrimBodies { .. }
+            FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
         );
     let output_free_pattern =
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Pattern { .. }
+            FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
         ) && (feature_completeness::output_free_pattern_construction(feature)
             || feature_completeness::output_free_local_body_construction(feature));
     let output_free_combine = feature.evaluation.outputs().is_empty()
         && matches!(
-            feature.evaluation.definition(), FeatureDefinition::Combine { operands,  .. } if matches!((operands.target(), operands.tools(),), (target, tools,) if complete_local_or_native_body_selection(target)
+            feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!((operands.target(), operands.tools(),), (target, tools,) if complete_local_or_native_body_selection(target)
                     && complete_local_or_native_body_selection(tools)));
     let local_tool_combine = matches!(
-        feature.evaluation.definition(), FeatureDefinition::Combine { operands,  .. } if matches!((operands.target(), operands.tools(),), (target, tools,) if local_tool_combine_is_census_invariant(feature, target, tools, bodies)));
+        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!((operands.target(), operands.tools(),), (target, tools,) if local_tool_combine_is_census_invariant(feature, target, tools, bodies)));
     let output_free_boolean_construction = output_free_local_body_construction(feature)
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Extrude { .. }
-                | FeatureDefinition::Revolve { .. }
-                | FeatureDefinition::Rib { .. }
-                | FeatureDefinition::Sweep { .. }
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Rib { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
         );
     let in_place_unresolved_extrude = feature.evaluation.outputs().len() == 1
         && bodies.contains(&feature.evaluation.outputs()[0])
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 op: BooleanOp::Unresolved | BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
                 ..
-            }
+            })
         );
     let output_free_local_in_place = output_free_local_body_construction(feature)
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Draft
-            }
+            })
         );
     let output_free_snapshot = output_free_native_snapshot(feature);
     let output_free_brep = feature.evaluation.outputs().is_empty()
         && matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Brep
-            }
+            })
         );
     deletes_only_local_bodies
         || extracts_only_local_bodies
@@ -798,24 +803,24 @@ fn suppression_is_body_census_invariant(
                 && bodies.contains(&feature.evaluation.outputs()[0])))
             && matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::TrimSurface { .. }
-                    | FeatureDefinition::Unresolved {
+                FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Loft
                             | UnresolvedFamily::FreeformSurface
                             | UnresolvedFamily::DeleteFace
                             | UnresolvedFamily::MirrorFace
                             | UnresolvedFamily::SubdivisionBody
                             | UnresolvedFamily::TopologyOptimization,
-                    }
-                    | FeatureDefinition::ExtendSurface { .. }
-                    | FeatureDefinition::Hole { .. }
-                    | FeatureDefinition::Chamfer { .. }
-                    | FeatureDefinition::Fillet { .. }
-                    | FeatureDefinition::FaceBlend { .. }
-                    | FeatureDefinition::OffsetSurface { .. }
-                    | FeatureDefinition::Thicken { .. }
-                    | FeatureDefinition::Draft { .. }
-                    | FeatureDefinition::ReplaceFace { .. }
+                    })
+                    | FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::Hole { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::OffsetSurface { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::Draft { .. })
+                    | FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. })
             ))
 }
 

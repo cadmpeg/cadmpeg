@@ -3,7 +3,9 @@
 
 use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, FeatureDefinition, FeatureId, FeatureSourceContent};
+use cadmpeg_ir::features::{
+    DesignParameter, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
+};
 use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -287,9 +289,9 @@ pub(crate) fn sync_neutral_features(
     let sketch_sources = features
         .iter()
         .filter_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } => parent_sources
+            }) => parent_sources
                 .get(&feature.id)
                 .map(|source| (sketch.clone(), source.clone())),
             _ => None,

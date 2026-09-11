@@ -598,7 +598,8 @@ mod tests {
     };
     use crate::records::{DesignConfiguration, DesignConfigurationKind};
     use cadmpeg_ir::features::{
-        DesignParameter as NeutralParameter, Feature, FeatureDefinition, FeatureId, ParameterId,
+        DesignParameter as NeutralParameter, Feature, FeatureDefinition, FeatureId,
+        FeatureOperation, ParameterId,
     };
     use std::collections::BTreeMap;
 
@@ -835,10 +836,10 @@ mod tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "Fillet".into(),
                     parameters: BTreeMap::new(),
-                },
+                }),
             ),
             native_ref: None,
         };

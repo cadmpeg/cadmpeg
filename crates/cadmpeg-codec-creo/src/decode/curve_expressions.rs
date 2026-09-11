@@ -13,7 +13,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
         DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
-        FeatureId as IrFeatureId, FeatureSourceContent, ParameterId, ParameterValue,
+        FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, FeatureSourceContent,
+        ParameterId, ParameterValue,
     },
     scalar::Length,
 };
@@ -137,7 +138,7 @@ fn curve_expression_helix_feature_definition(
 
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
     let pitch = cadmpeg_ir::scalar::NonZeroLength::new(axial_pitch)?;
-    Some(IrFeatureDefinition::Helix {
+    Some(IrFeatureDefinition::Operation(IrFeatureOperation::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(*center)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
         radius: helix.radius,
@@ -147,7 +148,7 @@ fn curve_expression_helix_feature_definition(
         clockwise: helix.clockwise,
         segment_turns: None,
         construction_style: None,
-    })
+    }))
 }
 
 pub(crate) fn expression_dependency_reaches(
@@ -553,26 +554,30 @@ pub(crate) fn transfer_curve_expression_features(
         let definition = neutral_helix
             .or_else(|| {
                 let helix = helix?;
-                Some(IrFeatureDefinition::HelixNativeAxis {
-                    axis_native_ref: cadmpeg_ir::NonEmptyString::new(curve_expression_record_id(
-                        record,
-                    ))?,
-                    axial_rise: Length::new(helix.height)?,
-                    pitch: Length::new(helix.height / helix.revolutions.get())?,
-                    revolutions: helix.revolutions,
-                    start_angle: helix.start_angle,
-                    clockwise: helix.clockwise,
-                })
+                Some(IrFeatureDefinition::Operation(
+                    IrFeatureOperation::HelixNativeAxis {
+                        axis_native_ref: cadmpeg_ir::NonEmptyString::new(
+                            curve_expression_record_id(record),
+                        )?,
+                        axial_rise: Length::new(helix.height)?,
+                        pitch: Length::new(helix.height / helix.revolutions.get())?,
+                        revolutions: helix.revolutions,
+                        start_angle: helix.start_angle,
+                        clockwise: helix.clockwise,
+                    },
+                ))
             })
-            .unwrap_or_else(|| IrFeatureDefinition::Native {
-                kind: "CurveFromEquation".into(),
-                parameters: BTreeMap::from([
-                    ("entity_id".to_string(), record.entity_id.to_string()),
-                    (
-                        "assignment_count".to_string(),
-                        record.assignments.len().to_string(),
-                    ),
-                ]),
+            .unwrap_or_else(|| {
+                IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                    kind: "CurveFromEquation".into(),
+                    parameters: BTreeMap::from([
+                        ("entity_id".to_string(), record.entity_id.to_string()),
+                        (
+                            "assignment_count".to_string(),
+                            record.assignments.len().to_string(),
+                        ),
+                    ]),
+                })
             });
         ir.model.features.push(Feature {
             id: feature_id,

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, WrapMode};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -358,7 +358,24 @@ fn scale_feature_definition(
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match definition {
-        FeatureDefinition::CosmeticThread {
+        FeatureDefinition::PostProcess {
+            operation,
+            fuzzy_tolerance,
+            ..
+        } => {
+            scale_feature_operation(operation, scale)?;
+            scale_fuzzy_tolerance(fuzzy_tolerance, scale)
+        }
+        FeatureDefinition::Operation(operation) => scale_feature_operation(operation, scale),
+    }
+}
+
+fn scale_feature_operation(
+    definition: &mut FeatureOperation,
+    scale: f64,
+) -> Result<(), cadmpeg_core::CodecError> {
+    match definition {
+        FeatureOperation::CosmeticThread {
             diameter, extent, ..
         } => {
             scale_optional_positive_length(diameter, scale)?;
@@ -366,7 +383,7 @@ fn scale_feature_definition(
                 scale_positive_length(length, scale)?;
             }
         }
-        FeatureDefinition::ReferenceImage { frame, bounds, .. } => {
+        FeatureOperation::ReferenceImage { frame, bounds, .. } => {
             scale_unit_plane_frame(frame, scale)?;
             let mut corners = bounds.corners();
             for point in &mut corners {
@@ -378,7 +395,7 @@ fn scale_feature_definition(
                 )
             })?;
         }
-        FeatureDefinition::DatumCoordinateSystem { frame } => {
+        FeatureOperation::DatumCoordinateSystem { frame } => {
             let mut origin = frame.origin();
             scale_point3(&mut origin, scale);
             *frame = cadmpeg_ir::features::FeatureCoordinateFrame::new(
@@ -393,8 +410,8 @@ fn scale_feature_definition(
                 )
             })?;
         }
-        FeatureDefinition::DatumPlane { frame }
-        | FeatureDefinition::DatumThreePointPlane { frame, .. } => {
+        FeatureOperation::DatumPlane { frame }
+        | FeatureOperation::DatumThreePointPlane { frame, .. } => {
             let mut origin = frame.origin();
             scale_point3(&mut origin, scale);
             *frame = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -406,14 +423,14 @@ fn scale_feature_definition(
                 CodecError::Malformed("Creo scaled datum plane must have a finite origin".into())
             })?;
         }
-        FeatureDefinition::DatumAxis { origin, .. }
-        | FeatureDefinition::MirrorShape {
+        FeatureOperation::DatumAxis { origin, .. }
+        | FeatureOperation::MirrorShape {
             plane_origin: origin,
             ..
         } => {
             scale_finite_point3(origin, scale)?;
         }
-        FeatureDefinition::DatumPoint {
+        FeatureOperation::DatumPoint {
             position,
             construction,
         } => {
@@ -422,7 +439,7 @@ fn scale_feature_definition(
                 scale_datum_point_construction(construction, scale)?;
             }
         }
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureOperation::DatumOffsetPlane {
             reference,
             distance,
         } => {
@@ -431,10 +448,10 @@ fn scale_feature_definition(
             }
             scale_length(distance, scale)?;
         }
-        FeatureDefinition::PointGeometry { position } => {
+        FeatureOperation::PointGeometry { position } => {
             scale_finite_point3(position, scale)?;
         }
-        FeatureDefinition::LineSegment { segment } => {
+        FeatureOperation::LineSegment { segment } => {
             let mut start = segment.start();
             let mut end = segment.end();
             scale_point3(&mut start, scale);
@@ -446,7 +463,7 @@ fn scale_feature_definition(
                     )
                 })?;
         }
-        FeatureDefinition::CircularArc { arc } => {
+        FeatureOperation::CircularArc { arc } => {
             let mut center = arc.center();
             let mut radius = arc.radius();
             scale_point3(&mut center, scale);
@@ -461,7 +478,7 @@ fn scale_feature_definition(
                 CodecError::Malformed("Creo scaled circular arc must have finite geometry".into())
             })?;
         }
-        FeatureDefinition::EllipticArc { arc } => {
+        FeatureOperation::EllipticArc { arc } => {
             let mut center = arc.center();
             let mut radii = arc.radii();
             scale_point3(&mut center, scale);
@@ -481,7 +498,7 @@ fn scale_feature_definition(
                 )
             })?;
         }
-        FeatureDefinition::Polyline { chain } => {
+        FeatureOperation::Polyline { chain } => {
             let points = chain
                 .points()
                 .iter()
@@ -498,14 +515,14 @@ fn scale_feature_definition(
                     )
                 })?;
         }
-        FeatureDefinition::RegularPolygonCurve { circumradius, .. } => {
+        FeatureOperation::RegularPolygonCurve { circumradius, .. } => {
             scale_positive_length(circumradius, scale)?;
         }
-        FeatureDefinition::PlanarPatch { length, width } => {
+        FeatureOperation::PlanarPatch { length, width } => {
             scale_positive_length(length, scale)?;
             scale_positive_length(width, scale)?;
         }
-        FeatureDefinition::Block {
+        FeatureOperation::Block {
             dimensions,
             placement,
             ..
@@ -529,11 +546,11 @@ fn scale_feature_definition(
                     })?;
             }
         }
-        FeatureDefinition::ProjectOnSurface { height, offset, .. } => {
+        FeatureOperation::ProjectOnSurface { height, offset, .. } => {
             scale_nonnegative_length(height, scale)?;
             scale_length(offset, scale)?;
         }
-        FeatureDefinition::Helix {
+        FeatureOperation::Helix {
             axis_origin,
             radius,
             shape,
@@ -551,17 +568,17 @@ fn scale_feature_definition(
                 }
             }
         }
-        FeatureDefinition::HelixNativeAxis {
+        FeatureOperation::HelixNativeAxis {
             axial_rise, pitch, ..
         } => {
             scale_length(axial_rise, scale)?;
             scale_length(pitch, scale)?;
         }
-        FeatureDefinition::Sphere { center, radius, .. } => {
+        FeatureOperation::Sphere { center, radius, .. } => {
             scale_finite_point3(center, scale)?;
             scale_positive_length(radius, scale)?;
         }
-        FeatureDefinition::Torus {
+        FeatureOperation::Torus {
             center,
             major_radius,
             minor_radius,
@@ -571,23 +588,23 @@ fn scale_feature_definition(
             scale_positive_length(major_radius, scale)?;
             scale_positive_length(minor_radius, scale)?;
         }
-        FeatureDefinition::Wrap {
+        FeatureOperation::Wrap {
             mode: WrapMode::Emboss { depth } | WrapMode::Deboss { depth },
             ..
         } => scale_length(depth, scale)?,
-        FeatureDefinition::Wrap {
+        FeatureOperation::Wrap {
             mode: WrapMode::Scribe,
             ..
         } => {}
-        FeatureDefinition::SketchBlockInstance {
+        FeatureOperation::SketchBlockInstance {
             placement: Some(placement),
             ..
         } => scale_transform_translation(placement, scale),
-        FeatureDefinition::SketchBlockInstance {
+        FeatureOperation::SketchBlockInstance {
             placement: None, ..
         } => {}
-        FeatureDefinition::Primitive { solid, .. } => scale_primitive_solid(solid, scale)?,
-        FeatureDefinition::Sweep { shape, .. } => {
+        FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(solid, scale)?,
+        FeatureOperation::Sweep { shape, .. } => {
             let mut section = shape.section().clone();
             let mut sections = shape.sections().to_vec();
             scale_sweep_section(&mut section, scale)?;
@@ -597,7 +614,7 @@ fn scale_feature_definition(
             *shape = cadmpeg_ir::features::SweepShape::new(section, sections, shape.mode())
                 .map_err(CodecError::malformed)?;
         }
-        FeatureDefinition::HelicalSweep { construction, .. } => {
+        FeatureOperation::HelicalSweep { construction, .. } => {
             scale_finite_point3(&mut construction.axis_origin, scale)?;
             scale_nonnegative_length(&mut construction.pitch, scale)?;
             let mut height = construction.travel.height();
@@ -612,10 +629,10 @@ fn scale_feature_definition(
                 CodecError::Malformed("Creo scaled helical sweep must retain nonzero travel".into())
             })?;
         }
-        FeatureDefinition::Coil { construction, .. } => {
+        FeatureOperation::Coil { construction, .. } => {
             scale_coil_construction(construction, scale)?;
         }
-        FeatureDefinition::Binder {
+        FeatureOperation::Binder {
             construction:
                 cadmpeg_ir::features::BinderConstruction::SubShape {
                     offset: Some(offset),
@@ -623,8 +640,8 @@ fn scale_feature_definition(
                 },
             ..
         } => scale_nonzero_length(&mut offset.distance, scale)?,
-        FeatureDefinition::Binder { .. } => {}
-        FeatureDefinition::Loft { sections, .. } => {
+        FeatureOperation::Binder { .. } => {}
+        FeatureOperation::Loft { sections, .. } => {
             for section in sections {
                 if let cadmpeg_ir::features::LoftSection::Point(
                     cadmpeg_ir::features::LoftPointSection::Point(point),
@@ -634,11 +651,11 @@ fn scale_feature_definition(
                 }
             }
         }
-        FeatureDefinition::Extrude { start, extent, .. } => {
+        FeatureOperation::Extrude { start, extent, .. } => {
             scale_extrude_start(start, scale)?;
             scale_extrude_extent(extent, scale)?;
         }
-        FeatureDefinition::Revolve { construction, .. } => {
+        FeatureOperation::Revolve { construction, .. } => {
             if let Some(axis) = construction.axis_mut() {
                 scale_finite_point3(&mut axis.origin, scale)?;
             }
@@ -646,13 +663,13 @@ fn scale_feature_definition(
                 scale_revolve_extent(extent, scale)?;
             }
         }
-        FeatureDefinition::Rib { construction, .. } => {
+        FeatureOperation::Rib { construction, .. } => {
             scale_optional_positive_length(&mut construction.thickness, scale)?;
         }
-        FeatureDefinition::SheetMetalBaseFlange { thickness, .. } => {
+        FeatureOperation::SheetMetalBaseFlange { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
         }
-        FeatureDefinition::SheetMetalEdgeFlange {
+        FeatureOperation::SheetMetalEdgeFlange {
             height,
             width,
             bend_radius,
@@ -662,49 +679,49 @@ fn scale_feature_definition(
             scale_sheet_metal_flange_width(width, scale)?;
             scale_positive_length(bend_radius, scale)?;
         }
-        FeatureDefinition::SheetMetalHem {
+        FeatureOperation::SheetMetalHem {
             form, bend_radius, ..
         } => {
             scale_sheet_metal_hem_form(form, scale)?;
             scale_positive_length(bend_radius, scale)?;
         }
-        FeatureDefinition::Fillet { groups } => {
+        FeatureOperation::Fillet { groups } => {
             for group in groups {
                 scale_radius_spec(&mut group.radius, scale)?;
             }
         }
-        FeatureDefinition::FaceBlend { radius, .. } => scale_radius_spec(radius, scale)?,
-        FeatureDefinition::Chamfer { groups, .. } => {
+        FeatureOperation::FaceBlend { radius, .. } => scale_radius_spec(radius, scale)?,
+        FeatureOperation::Chamfer { groups, .. } => {
             for group in groups {
                 scale_chamfer_spec(&mut group.spec, scale)?;
             }
         }
-        FeatureDefinition::Shell { thickness, .. } => {
+        FeatureOperation::Shell { thickness, .. } => {
             scale_optional_positive_length(thickness, scale)?;
         }
-        FeatureDefinition::OffsetShape { distance, .. } => scale_nonzero_length(distance, scale)?,
-        FeatureDefinition::Thicken { thickness, .. } => {
+        FeatureOperation::OffsetShape { distance, .. } => scale_nonzero_length(distance, scale)?,
+        FeatureOperation::Thicken { thickness, .. } => {
             scale_optional_positive_length(thickness, scale)?;
         }
-        FeatureDefinition::OffsetSurface { distance, .. } => {
+        FeatureOperation::OffsetSurface { distance, .. } => {
             scale_optional_length(distance, scale)?;
         }
-        FeatureDefinition::KnitSurface {
+        FeatureOperation::KnitSurface {
             gap_tolerance: Some(gap),
             ..
         } => {
             scale_nonnegative_length(gap, scale)?;
         }
-        FeatureDefinition::SewBodies { gap_tolerance, .. } => {
+        FeatureOperation::SewBodies { gap_tolerance, .. } => {
             scale_optional_positive_length(gap_tolerance, scale)?;
         }
-        FeatureDefinition::ExtendSurface { distance, .. } => {
+        FeatureOperation::ExtendSurface { distance, .. } => {
             scale_optional_positive_length(distance, scale)?;
         }
-        FeatureDefinition::RuledSurface { mode, .. } => scale_ruled_surface_mode(mode, scale)?,
-        FeatureDefinition::Draft { .. } => {}
-        FeatureDefinition::MoveFace { motion, .. } => scale_face_motion(motion, scale)?,
-        FeatureDefinition::MoveBody {
+        FeatureOperation::RuledSurface { mode, .. } => scale_ruled_surface_mode(mode, scale)?,
+        FeatureOperation::Draft { .. } => {}
+        FeatureOperation::MoveFace { motion, .. } => scale_face_motion(motion, scale)?,
+        FeatureOperation::MoveBody {
             translation,
             rotation,
             ..
@@ -717,14 +734,14 @@ fn scale_feature_definition(
                 scale_finite_point3(&mut rotation.origin, scale)?;
             }
         }
-        FeatureDefinition::Dome { height, .. } => scale_optional_positive_length(height, scale)?,
-        FeatureDefinition::Flex { mode, .. } => scale_flex_mode(mode, scale)?,
-        FeatureDefinition::Scale {
+        FeatureOperation::Dome { height, .. } => scale_optional_positive_length(height, scale)?,
+        FeatureOperation::Flex { mode, .. } => scale_flex_mode(mode, scale)?,
+        FeatureOperation::Scale {
             center: Some(cadmpeg_ir::features::ScaleCenter::Point(point)),
             ..
         } => scale_finite_point3(point, scale)?,
-        FeatureDefinition::Scale { .. } => {}
-        FeatureDefinition::Hole {
+        FeatureOperation::Scale { .. } => {}
+        FeatureOperation::Hole {
             placements,
             shape,
             extent,
@@ -747,19 +764,7 @@ fn scale_feature_definition(
                 scale_linear_termination(extent, scale)?;
             }
         }
-        FeatureDefinition::Pattern { pattern, .. } => scale_pattern_kind(pattern, scale)?,
-        FeatureDefinition::PostProcess {
-            operation,
-            fuzzy_tolerance,
-            ..
-        } => {
-            let mut definition = operation.as_ref().clone();
-            scale_feature_definition(&mut definition, scale)?;
-            *operation = definition
-                .try_into()
-                .map_err(|message: &str| CodecError::Malformed(message.into()))?;
-            scale_fuzzy_tolerance(fuzzy_tolerance, scale)?;
-        }
+        FeatureOperation::Pattern { pattern, .. } => scale_pattern_kind(pattern, scale)?,
         _ => {}
     }
     Ok(())
@@ -1945,8 +1950,8 @@ mod tests {
 
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
-        FeatureDefinition, FuzzyTolerance, LinearTermination, PatternKind, PatternScaleCenter,
-        PatternTransform, PlanarProfileRef, ProfileRef,
+        FeatureDefinition, FeatureOperation, FuzzyTolerance, LinearTermination, PatternKind,
+        PatternScaleCenter, PatternTransform, PlanarProfileRef, ProfileRef,
     };
 
     #[test]
@@ -1956,7 +1961,7 @@ mod tests {
             cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                 .expect("identity grammar"),
             0,
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved("profile".into())),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: ExtrudeStart::OffsetProfilePlane {
@@ -1984,7 +1989,7 @@ mod tests {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ));
         ir.model
             .parameters
@@ -2006,7 +2011,7 @@ mod tests {
             });
         normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
 
-        let FeatureDefinition::Extrude { start, extent, .. } =
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
             ir.model.features[0].evaluation.definition()
         else {
             panic!("test feature changed family");
@@ -2134,12 +2139,10 @@ mod tests {
     #[test]
     fn scales_explicit_fuzzy_tolerance() {
         let mut definition = FeatureDefinition::PostProcess {
-            operation: FeatureDefinition::Native {
+            operation: FeatureOperation::Native {
                 kind: "Boolean".into(),
                 parameters: BTreeMap::new(),
-            }
-            .try_into()
-            .expect("valid test fixture"),
+            },
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(
                 cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive length fixture"),

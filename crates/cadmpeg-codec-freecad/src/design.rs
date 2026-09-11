@@ -22,15 +22,16 @@ use cadmpeg_ir::{
         BinderOffsetJoin, BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp,
         ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent, ExtrudeSide,
         ExtrusionDirectionSource, FaceMaker, Feature, FeatureContent, FeatureDefinition, FeatureId,
-        FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat, HelicalSweepConstruction,
-        HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleConstruction, HoleKind,
-        HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, LinearTermination,
-        ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed,
-        PatternStage, PatternStageCombination, PatternTransform, PlanarProfileRef, PrimitiveSolid,
-        PrimitiveSolidKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionFuseOrder,
-        RevolveConstruction, RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors,
-        ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation,
-        SweepTransformation, SweepTransition, ThreadHand, TreeChildren,
+        FeatureOperation, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
+        HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom,
+        HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth,
+        InnerWireTaper, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
+        PatternScaleCenter, PatternSeed, PatternStage, PatternStageCombination, PatternTransform,
+        PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RadiusSpec,
+        RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent,
+        RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
+        SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
+        ThreadHand, TreeChildren,
     },
     scalar::Length,
 };
@@ -125,21 +126,23 @@ pub(crate) fn transfer(
                 object,
                 &owned,
             )?);
-            FeatureDefinition::TreeNode {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
                 children: TreeChildren::default(),
-            }
+            })
         } else if is_body(&object.type_name) {
-            body_definition(&owned, &feature_ids).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            body_definition(&owned, &feature_ids).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(object, &owned)?;
@@ -150,37 +153,39 @@ pub(crate) fn transfer(
             ir.model.sketch_entities.extend(decoded.entities);
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            }
+            })
         } else if is_stored_geometry_feature(&object.type_name) {
-            FeatureDefinition::StoredGeometry {}
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
             feature_base_definition(&owned, &feature_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                }
-            })
-        } else if is_imported_geometry(&object.type_name) {
-            imported_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                }
-            })
-        } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(&object.type_name, &owned, entries)
-                .unwrap_or_else(|| FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
                 })
-        } else if is_primitive(&object.type_name) {
-            primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            })
+        } else if is_imported_geometry(&object.type_name) {
+            imported_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
+            })
+        } else if is_part_construction_geometry(&object.type_name) {
+            part_construction_geometry_definition(&object.type_name, &owned, entries)
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: object.type_name.clone().into(),
+                        parameters: native_parameters(&owned),
+                    })
+                })
+        } else if is_primitive(&object.type_name) {
+            primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if is_boolean(&object.type_name) {
             boolean_definition(&object.type_name, &owned)
@@ -189,23 +194,27 @@ pub(crate) fn transfer(
                         .then(|| cached_shape_definition(&owned))
                         .flatten()
                 })
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: object.type_name.clone().into(),
+                        parameters: native_parameters(&owned),
+                    })
                 })
         } else if is_loft(&object.type_name) {
             loft_definition(&object.type_name, &owned, &sketch_ids)
                 .or_else(|| cached_shape_definition(&owned))
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: object.type_name.clone().into(),
+                        parameters: native_parameters(&owned),
+                    })
                 })
         } else if is_sweep(&object.type_name) {
             sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
@@ -216,23 +225,25 @@ pub(crate) fn transfer(
                 objects,
                 &properties_by_owner,
             )
-            .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            .unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
             parametric_helix_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if is_binder(&object.type_name) {
             binder_definition(&object.type_name, &owned, &feature_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if is_pattern(&object.type_name) {
             pattern_definition(
@@ -244,14 +255,18 @@ pub(crate) fn transfer(
                 &properties_by_owner,
                 entries,
             )
-            .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            .unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if object.type_name == "Part::Scale" {
-            scale_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            scale_definition(&owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if is_hole(&object.type_name) {
             hole_definition(
@@ -262,9 +277,11 @@ pub(crate) fn transfer(
                 &properties_by_owner,
                 program_version,
             )
-            .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            .unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if is_extrusion(&object.type_name) {
             let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
@@ -298,98 +315,114 @@ pub(crate) fn transfer(
                 profile_normal,
                 &ir.model.sketches,
             )
-            .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            .unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if is_revolution(&object.type_name) {
             revolution_definition(&object.type_name, &object.id, &owned, &sketch_ids)
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: object.type_name.clone().into(),
+                        parameters: native_parameters(&owned),
+                    })
                 })
         } else if matches!(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
         ) {
             thickness_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
             offset_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if matches!(
             object.type_name.as_str(),
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         ) {
             derived_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if object.type_name == "Part::RuledSurface" {
-            ruled_surface_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            ruled_surface_definition(&owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if object.type_name == "Part::Section" {
-            section_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            section_shape_definition(&owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if object.type_name == "Part::Mirroring" {
-            mirror_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            mirror_shape_definition(&owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if object.type_name == "Part::ProjectOnSurface" {
-            project_on_surface_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
+            project_on_surface_definition(&owned).unwrap_or_else(|| {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: object.type_name.clone().into(),
+                    parameters: native_parameters(&owned),
+                })
             })
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                }
+                })
             })
         } else if is_fillet(&object.type_name) {
             fillet_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: object.type_name.clone().into(),
+                        parameters: native_parameters(&owned),
+                    })
                 })
         } else if is_chamfer(&object.type_name) {
             chamfer_definition(&object.type_name, &owned, entries, program_version)
                 .or_else(|| cached_shape_definition(&owned))
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: object.type_name.clone().into(),
+                        parameters: native_parameters(&owned),
+                    })
                 })
         } else {
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-            }
+            })
         };
         if cycle_affected.contains(object.id.as_str()) {
-            definition = FeatureDefinition::Native {
+            definition = FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-            };
+            });
         }
         let semantic_dependencies = match &definition {
-            FeatureDefinition::Pattern { seeds, .. } => seeds
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => seeds
                 .iter()
                 .filter_map(|seed| match seed {
                     PatternSeed::Feature(feature) => Some(feature.clone()),
@@ -499,7 +532,7 @@ pub(crate) fn transfer(
         {
             feature
                 .evaluation
-                .set_definition(FeatureDefinition::Native {
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
                     parameters: native_parameters(
                         properties_by_owner
@@ -507,7 +540,7 @@ pub(crate) fn transfer(
                             .map(Vec::as_slice)
                             .unwrap_or_default(),
                     ),
-                });
+                }));
             feature.dependencies.clear();
         }
     }
@@ -550,10 +583,10 @@ fn body_definition(
         BodyTipResolution::Valid(active_child) => active_child,
         BodyTipResolution::Invalid => return None,
     };
-    Some(FeatureDefinition::TreeNode {
+    Some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
         role: FeatureTreeNodeRole::SolidBodies,
         children: cadmpeg_ir::features::TreeChildren::new(children, active_child).ok()?,
-    })
+    }))
 }
 
 enum BodyTipResolution {
@@ -729,21 +762,25 @@ fn post_processed_definition(
         PostProcessControlState::Valid {
             refine,
             fuzzy_tolerance,
-        } => match definition.try_into() {
-            Ok(operation) => FeatureDefinition::PostProcess {
+        } => match definition {
+            FeatureDefinition::Operation(operation) => FeatureDefinition::PostProcess {
                 operation,
                 refine,
                 fuzzy_tolerance,
             },
-            Err(_) => FeatureDefinition::Native {
+            FeatureDefinition::PostProcess { .. } => {
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: kind.to_owned().into(),
+                    parameters: native_parameters(properties),
+                })
+            }
+        },
+        PostProcessControlState::Malformed => {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: kind.to_owned().into(),
                 parameters: native_parameters(properties),
-            },
-        },
-        PostProcessControlState::Malformed => FeatureDefinition::Native {
-            kind: kind.to_owned().into(),
-            parameters: native_parameters(properties),
-        },
+            })
+        }
     }
 }
 
@@ -3444,7 +3481,7 @@ fn revolution_definition(
     } else {
         None
     };
-    Some(FeatureDefinition::Revolve {
+    Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match profile {
             Some(profile) => RevolveConstruction::Resolved {
                 profile,
@@ -3473,7 +3510,7 @@ fn revolution_definition(
         } else {
             BooleanOp::Join
         },
-    })
+    }))
 }
 
 fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3> {
@@ -3554,87 +3591,103 @@ fn part_construction_geometry_definition(
             .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.to_radians()))
     };
     match kind {
-        "Part::Vertex" => Some(FeatureDefinition::PointGeometry {
-            position: cadmpeg_ir::features::FinitePoint3::new(point("X", "Y", "Z")?)?,
-        }),
-        "Part::Line" => Some(FeatureDefinition::LineSegment {
-            segment: cadmpeg_ir::features::FeatureLineSegment::new(
-                point("X1", "Y1", "Z1")?,
-                point("X2", "Y2", "Z2")?,
-            )?,
-        }),
+        "Part::Vertex" => Some(FeatureDefinition::Operation(
+            FeatureOperation::PointGeometry {
+                position: cadmpeg_ir::features::FinitePoint3::new(point("X", "Y", "Z")?)?,
+            },
+        )),
+        "Part::Line" => Some(FeatureDefinition::Operation(
+            FeatureOperation::LineSegment {
+                segment: cadmpeg_ir::features::FeatureLineSegment::new(
+                    point("X1", "Y1", "Z1")?,
+                    point("X2", "Y2", "Z2")?,
+                )?,
+            },
+        )),
         "Part::Circle" => {
             let legacy_angles = property(properties, "Angle0").is_some();
-            Some(FeatureDefinition::CircularArc {
-                arc: cadmpeg_ir::features::FeatureCircularArc::new(
+            Some(FeatureDefinition::Operation(
+                FeatureOperation::CircularArc {
+                    arc: cadmpeg_ir::features::FeatureCircularArc::new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
+                            properties, "Radius",
+                        )?)?,
+                        cadmpeg_ir::geometry::DirectedParameterRange::new([
+                            angle(if legacy_angles { "Angle0" } else { "Angle1" })?.get(),
+                            angle(if legacy_angles { "Angle1" } else { "Angle2" })?.get(),
+                        ])
+                        .ok()?,
+                    )?,
+                },
+            ))
+        }
+        "Part::Ellipse" => Some(FeatureDefinition::Operation(
+            FeatureOperation::EllipticArc {
+                arc: cadmpeg_ir::features::FeatureEllipticArc::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
-                    cadmpeg_ir::scalar::PositiveLength::new(scalar_named(properties, "Radius")?)?,
+                    Vector3::new(1.0, 0.0, 0.0),
+                    [
+                        cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
+                            properties,
+                            "MajorRadius",
+                        )?)?,
+                        cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
+                            properties,
+                            "MinorRadius",
+                        )?)?,
+                    ],
                     cadmpeg_ir::geometry::DirectedParameterRange::new([
-                        angle(if legacy_angles { "Angle0" } else { "Angle1" })?.get(),
-                        angle(if legacy_angles { "Angle1" } else { "Angle2" })?.get(),
+                        angle("Angle1")?.get(),
+                        angle("Angle2")?.get(),
                     ])
                     .ok()?,
                 )?,
-            })
-        }
-        "Part::Ellipse" => Some(FeatureDefinition::EllipticArc {
-            arc: cadmpeg_ir::features::FeatureEllipticArc::new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                [
-                    cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
-                        properties,
-                        "MajorRadius",
-                    )?)?,
-                    cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
-                        properties,
-                        "MinorRadius",
-                    )?)?,
-                ],
-                cadmpeg_ir::geometry::DirectedParameterRange::new([
-                    angle("Angle1")?.get(),
-                    angle("Angle2")?.get(),
-                ])
-                .ok()?,
-            )?,
-        }),
+            },
+        )),
         "Part::Polygon" => {
             let points = vector_list_property(properties, "Nodes", entries)?;
             let closed = bool_property(properties, "Close").unwrap_or(false);
-            Some(FeatureDefinition::Polyline {
+            Some(FeatureDefinition::Operation(FeatureOperation::Polyline {
                 chain: cadmpeg_ir::features::FeaturePolyline::new(points, closed)?,
-            })
+            }))
         }
-        "Part::RegularPolygon" => Some(FeatureDefinition::RegularPolygonCurve {
-            sides: cadmpeg_ir::features::PolygonSideCount::new(
-                u32::try_from(integer_property(properties, "Polygon")?).ok()?,
-            )?,
-            circumradius: cadmpeg_ir::scalar::PositiveLength::new(
-                scalar_named(properties, "Circumradius").filter(|value| *value > 0.0)?,
-            )?,
-        }),
-        "Part::Plane" => Some(FeatureDefinition::PlanarPatch {
-            length: cadmpeg_ir::scalar::PositiveLength::new(
-                scalar_named(properties, "Length").filter(|value| *value > 0.0)?,
-            )?,
-            width: cadmpeg_ir::scalar::PositiveLength::new(
-                scalar_named(properties, "Width").filter(|value| *value > 0.0)?,
-            )?,
-        }),
+        "Part::RegularPolygon" => Some(FeatureDefinition::Operation(
+            FeatureOperation::RegularPolygonCurve {
+                sides: cadmpeg_ir::features::PolygonSideCount::new(
+                    u32::try_from(integer_property(properties, "Polygon")?).ok()?,
+                )?,
+                circumradius: cadmpeg_ir::scalar::PositiveLength::new(
+                    scalar_named(properties, "Circumradius").filter(|value| *value > 0.0)?,
+                )?,
+            },
+        )),
+        "Part::Plane" => Some(FeatureDefinition::Operation(
+            FeatureOperation::PlanarPatch {
+                length: cadmpeg_ir::scalar::PositiveLength::new(
+                    scalar_named(properties, "Length").filter(|value| *value > 0.0)?,
+                )?,
+                width: cadmpeg_ir::scalar::PositiveLength::new(
+                    scalar_named(properties, "Width").filter(|value| *value > 0.0)?,
+                )?,
+            },
+        )),
         "Part::Face" => {
             let sources = property(properties, "Sources")?;
             if sources.links().is_empty() {
                 return None;
             }
-            Some(FeatureDefinition::FaceFromShapes {
-                sources: BodySelection::Native(sources.id.clone()),
-                face_maker: FaceMaker::new(string_property_value(property(
-                    properties,
-                    "FaceMakerClass",
-                )?)?)?,
-            })
+            Some(FeatureDefinition::Operation(
+                FeatureOperation::FaceFromShapes {
+                    sources: BodySelection::Native(sources.id.clone()),
+                    face_maker: FaceMaker::new(string_property_value(property(
+                        properties,
+                        "FaceMakerClass",
+                    )?)?)?,
+                },
+            ))
         }
         _ => None,
     }
@@ -3698,7 +3751,7 @@ fn parametric_helix_definition(
             None,
         )
     };
-    Some(FeatureDefinition::Helix {
+    Some(FeatureDefinition::Operation(FeatureOperation::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))?,
         radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
@@ -3708,7 +3761,7 @@ fn parametric_helix_definition(
         clockwise,
         segment_turns,
         construction_style,
-    })
+    }))
 }
 
 fn extrusion_definition(
@@ -3877,7 +3930,7 @@ fn extrusion_definition(
         } else {
             None
         };
-        return Some(FeatureDefinition::Extrude {
+        return Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
@@ -3891,7 +3944,7 @@ fn extrusion_definition(
             inner_wire_taper,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        });
+        }));
     }
     let legacy_two_lengths = property(properties, "SideType").is_none()
         && enumeration_selector(properties, "Type", 0) == Some(4);
@@ -4048,7 +4101,7 @@ fn extrusion_definition(
     }
     let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
     let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);
-    Some(FeatureDefinition::Extrude {
+    Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -4063,7 +4116,7 @@ fn extrusion_definition(
         inner_wire_taper: None,
         length_along_profile_normal,
         allow_multi_profile_faces,
-    })
+    }))
 }
 
 fn dress_up_edge_selection(kind: &str, properties: &[&PropertyRecord]) -> Option<EdgeSelection> {
@@ -4090,11 +4143,11 @@ fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition>
     } else {
         ScaleFactors::PerAxis([factor("XScale")?, factor("YScale")?, factor("ZScale")?])
     };
-    Some(FeatureDefinition::Scale {
+    Some(FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies: BodySelection::Native(base.id.clone()),
         center: Some(ScaleCenter::ModelOrigin),
         factors,
-    })
+    }))
 }
 
 fn fillet_definition(
@@ -4118,7 +4171,7 @@ fn fillet_definition(
     } else {
         scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
     };
-    Some(FeatureDefinition::Fillet {
+    Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges,
             radius: RadiusSpec::Constant {
@@ -4126,7 +4179,7 @@ fn fillet_definition(
             },
             tangency_weight: None,
         }),
-    })
+    }))
 }
 
 fn chamfer_definition(
@@ -4173,7 +4226,7 @@ fn chamfer_definition(
         && property(properties, "ChamferType")
             .and_then(scalar_value)
             .is_some_and(|value| value == 1.0 || value == 2.0);
-    Some(FeatureDefinition::Chamfer {
+    Some(FeatureDefinition::Operation(FeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges,
             spec,
@@ -4183,7 +4236,7 @@ fn chamfer_definition(
         } else {
             flip_direction
         },
-    })
+    }))
 }
 
 fn part_fillet_edge_values(
@@ -4238,7 +4291,7 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     if selection.links().is_empty() {
         return None;
     }
-    Some(FeatureDefinition::Shell {
+    Some(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
         removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
         thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(thickness.abs())?),
@@ -4253,7 +4306,7 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         allow_self_intersections: Some(
             bool_property(properties, "SelfIntersection").unwrap_or(false),
         ),
-    })
+    }))
 }
 
 fn offset_shape_definition(
@@ -4267,16 +4320,19 @@ fn offset_shape_definition(
     if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
         return None;
     }
-    Some(FeatureDefinition::OffsetShape {
-        source: BodySelection::Native(source.id.clone()),
-        distance: cadmpeg_ir::scalar::NonZeroLength::new(distance)?,
-        mode,
-        join: shell_join(kind, properties)?,
-        resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
-        allow_self_intersections: bool_property(properties, "SelfIntersection").unwrap_or(false),
-        fill: bool_property(properties, "Fill").unwrap_or(false),
-        planar: kind == "Part::Offset2D",
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::OffsetShape {
+            source: BodySelection::Native(source.id.clone()),
+            distance: cadmpeg_ir::scalar::NonZeroLength::new(distance)?,
+            mode,
+            join: shell_join(kind, properties)?,
+            resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
+            allow_self_intersections: bool_property(properties, "SelfIntersection")
+                .unwrap_or(false),
+            fill: bool_property(properties, "Fill").unwrap_or(false),
+            planar: kind == "Part::Offset2D",
+        },
+    ))
 }
 
 fn derived_shape_definition(
@@ -4286,14 +4342,15 @@ fn derived_shape_definition(
     match kind {
         "Part::Compound" | "Part::Compound2" => {
             let Some(links) = property(properties, "Links") else {
-                return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry {});
+                return property(properties, "Shape")
+                    .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}));
             };
             if links.links().is_empty() {
                 return None;
             }
-            Some(FeatureDefinition::Compound {
+            Some(FeatureDefinition::Operation(FeatureOperation::Compound {
                 members: BodySelection::Native(links.id.clone()),
-            })
+            }))
         }
         "Part::Refine" | "Part::Reverse" => {
             let source = property(properties, "Source")?;
@@ -4302,9 +4359,9 @@ fn derived_shape_definition(
             }
             let source = BodySelection::Native(source.id.clone());
             Some(if kind == "Part::Refine" {
-                FeatureDefinition::RefineShape { source }
+                FeatureDefinition::Operation(FeatureOperation::RefineShape { source })
             } else {
-                FeatureDefinition::ReverseShape { source }
+                FeatureDefinition::Operation(FeatureOperation::ReverseShape { source })
             })
         }
         _ => None,
@@ -4314,7 +4371,7 @@ fn derived_shape_definition(
 fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     property(properties, "Shape")
         .filter(|shape| !shape.side_entries().is_empty())
-        .map(|_| FeatureDefinition::StoredGeometry {})
+        .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}))
 }
 
 fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
@@ -4328,11 +4385,13 @@ fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
         2 => RuledCurveOrientation::Reversed,
         _ => return None,
     };
-    Some(FeatureDefinition::RuledBetweenCurves {
-        first: curve("Curve1")?,
-        second: curve("Curve2")?,
-        orientation,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::RuledBetweenCurves {
+            first: curve("Curve1")?,
+            second: curve("Curve2")?,
+            orientation,
+        },
+    ))
 }
 
 fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
@@ -4340,12 +4399,17 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
         let property = property(properties, name)?;
         (property.links().len() == 1).then(|| BodySelection::Native(property.id.clone()))
     };
-    Some(FeatureDefinition::SectionShape {
-        operands: cadmpeg_ir::features::SectionOperands::new(operand("Base")?, operand("Tool")?)
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::SectionShape {
+            operands: cadmpeg_ir::features::SectionOperands::new(
+                operand("Base")?,
+                operand("Tool")?,
+            )
             .ok()?,
 
-        approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
-    })
+            approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
+        },
+    ))
 }
 
 fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
@@ -4362,16 +4426,18 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
                 .any(|link| nonempty_link(link.as_ref()))
         })
         .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
-    Some(FeatureDefinition::MirrorShape {
-        source: BodySelection::Native(source.id.clone()),
-        plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-            origin.x, origin.y, origin.z,
-        ))?,
-        plane_normal: cadmpeg_ir::features::FeatureDirection3::new(
-            vector_property(properties, "Normal")?.unit()?,
-        )?,
-        plane_reference,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::MirrorShape {
+            source: BodySelection::Native(source.id.clone()),
+            plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                origin.x, origin.y, origin.z,
+            ))?,
+            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(
+                vector_property(properties, "Normal")?.unit()?,
+            )?,
+            plane_reference,
+        },
+    ))
 }
 
 fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
@@ -4399,16 +4465,18 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
     } else {
         0.0
     };
-    Some(FeatureDefinition::ProjectOnSurface {
-        sources: PathRef::Native(sources.id.clone()),
-        support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
-        direction: cadmpeg_ir::features::FeatureDirection3::new(
-            vector_property(properties, "Direction")?.unit()?,
-        )?,
-        mode,
-        height: cadmpeg_ir::scalar::NonNegativeLength::new(height)?,
-        offset: Length::new(offset)?,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::ProjectOnSurface {
+            sources: PathRef::Native(sources.id.clone()),
+            support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(
+                vector_property(properties, "Direction")?.unit()?,
+            )?,
+            mode,
+            height: cadmpeg_ir::scalar::NonNegativeLength::new(height)?,
+            offset: Length::new(offset)?,
+        },
+    ))
 }
 
 fn draft_definition(
@@ -4436,7 +4504,7 @@ fn draft_definition(
     if !angle.is_finite() {
         return None;
     }
-    Some(FeatureDefinition::Draft {
+    Some(FeatureDefinition::Operation(FeatureOperation::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
             plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
@@ -4452,7 +4520,7 @@ fn draft_definition(
             if reversed { -angle } else { angle }.to_radians(),
         )?),
         outward: Some(reversed),
-    })
+    }))
 }
 
 fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
@@ -4766,31 +4834,33 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     } else {
         BooleanOp::NewBody
     };
-    Some(FeatureDefinition::Primitive {
+    Some(FeatureDefinition::Operation(FeatureOperation::Primitive {
         solid: PrimitiveSolid::new(solid).ok()?,
         op,
-    })
+    }))
 }
 
 fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let (origin, z_axis, x_axis, y_axis) = placement_frame(properties)?;
     Some(match kind {
-        "PartDesign::Plane" => FeatureDefinition::DatumPlane {
+        "PartDesign::Plane" => FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
-        },
-        "PartDesign::Line" => FeatureDefinition::DatumAxis {
+        }),
+        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::DatumAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             direction: cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
-        },
-        "PartDesign::Point" => FeatureDefinition::DatumPoint {
+        }),
+        "PartDesign::Point" => FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             construction: None,
-        },
-        "PartDesign::CoordinateSystem" => FeatureDefinition::DatumCoordinateSystem {
-            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                origin, x_axis, y_axis, z_axis,
-            )?,
-        },
+        }),
+        "PartDesign::CoordinateSystem" => {
+            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
+                frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                    origin, x_axis, y_axis, z_axis,
+                )?,
+            })
+        }
         _ => return None,
     })
 }
@@ -4852,12 +4922,12 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
             BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links().len())),
         )
     };
-    Some(FeatureDefinition::Combine {
+    Some(FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(target, tools).ok()?,
 
         op,
         keep_tools: false,
-    })
+    }))
 }
 
 fn loft_definition(
@@ -4887,7 +4957,7 @@ fn loft_definition(
         None
     };
     let part_design = kind.starts_with("PartDesign::");
-    Some(FeatureDefinition::Loft {
+    Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections: profiles
             .into_iter()
             .map(cadmpeg_ir::features::LoftSection::Profile)
@@ -4912,7 +4982,7 @@ fn loft_definition(
         } else {
             None
         },
-    })
+    }))
 }
 
 fn sweep_definition(
@@ -5010,7 +5080,7 @@ fn sweep_definition(
             _ => return None,
         }
     };
-    Some(FeatureDefinition::Sweep {
+    Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: cadmpeg_ir::features::SweepShape::new(
             cadmpeg_ir::features::SweepSection::Profile(profile.planar().cloned()?),
             profiles
@@ -5053,7 +5123,7 @@ fn sweep_definition(
         } else {
             None
         },
-    })
+    }))
 }
 
 fn hole_definition(
@@ -5210,7 +5280,7 @@ fn hole_definition(
     };
     let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
         .map(|(_, direction)| direction);
-    Some(FeatureDefinition::Hole {
+    Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: Some(profile.planar().cloned()?),
         profile_filter: Some(profile_filter),
         face: None,
@@ -5230,7 +5300,7 @@ fn hole_definition(
         bottom: Some(bottom),
         taper_angle,
         allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
-    })
+    }))
 }
 
 fn freecad_program_version(value: &str) -> Option<(u64, u64)> {
@@ -5317,7 +5387,9 @@ fn helical_sweep_definition(
     } else {
         BooleanOp::Join
     };
-    Some(FeatureDefinition::HelicalSweep { construction, op })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::HelicalSweep { construction, op },
+    ))
 }
 
 fn binder_definition(
@@ -5415,10 +5487,10 @@ fn binder_definition(
             context,
         }
     };
-    Some(FeatureDefinition::Binder {
+    Some(FeatureDefinition::Operation(FeatureOperation::Binder {
         sources,
         construction,
-    })
+    }))
 }
 
 fn binder_target(
@@ -5597,10 +5669,10 @@ fn pattern_definition(
     } else {
         pattern_kind(kind, properties, objects, properties_by_owner, entries)?
     };
-    Some(FeatureDefinition::Pattern {
+    Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
         pattern,
-    })
+    }))
 }
 
 fn multi_transform_stage_seeds(
@@ -6139,9 +6211,11 @@ fn feature_base_definition(
         return None;
     }
     let source = property.links()[0].as_ref()?.object()?;
-    Some(FeatureDefinition::DerivedGeometry {
-        source: feature_ids.get(source)?.clone(),
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::DerivedGeometry {
+            source: feature_ids.get(source)?.clone(),
+        },
+    ))
 }
 
 fn imported_geometry_definition(
@@ -6158,10 +6232,12 @@ fn imported_geometry_definition(
         "Part::ImportBrep" | "Part::CurveNet" => GeometryImportFormat::Brep,
         _ => return None,
     };
-    Some(FeatureDefinition::ImportedGeometry {
-        path: path.try_into().ok()?,
-        format,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::ImportedGeometry {
+            path: path.try_into().ok()?,
+            format,
+        },
+    ))
 }
 
 fn is_sketch(kind: &str) -> bool {
@@ -6382,8 +6458,8 @@ pub(crate) fn census(
                 ))
             })?;
             let (definition, post_processed) = match feature.evaluation.definition() {
-                FeatureDefinition::PostProcess { operation, .. } => (operation.as_ref(), true),
-                definition => (definition, false),
+                FeatureDefinition::PostProcess { operation, .. } => (operation, true),
+                FeatureDefinition::Operation(operation) => (operation, false),
             };
             let value = serde_json::to_value(definition).map_err(|error| {
                 CodecError::malformed(format_args!(

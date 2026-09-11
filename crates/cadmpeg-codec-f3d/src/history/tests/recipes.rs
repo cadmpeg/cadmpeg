@@ -317,7 +317,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
 #[test]
 fn feature_input_topology_projects_historical_vertices() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:design:scope#work-point",
@@ -343,9 +343,9 @@ fn feature_input_topology_projects_historical_vertices() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPoint,
-            },
+            }),
         ),
         native_ref: Some(scope.id.clone()),
     };
@@ -834,7 +834,8 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
 #[test]
 fn direct_body_recipe_selection_resolves_compact_coil_target() {
     use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, ScaleCenter, ScaleFactors,
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ScaleCenter,
+        ScaleFactors,
     };
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
@@ -1063,21 +1064,21 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let mut feature = Feature::new(
         FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
         0,
-        FeatureDefinition::Scale {
+        FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Native(group_id.into()),
             center: Some(ScaleCenter::ModelOrigin),
             factors: ScaleFactors::Uniform(cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()),
-        },
+        }),
     );
     feature.native_ref = Some(scale_scope.id.clone());
     super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs)
         .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Scale {
+        FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        } if bodies == &[body.id.clone()] && native == group_id
+        }) if bodies == &[body.id.clone()] && native == group_id
     ));
 
     let mut move_scope = scope;
@@ -1112,7 +1113,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let mut move_feature = Feature::new(
         FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         0,
-        FeatureDefinition::MoveBody {
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
             translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
                 1.0, 2.0, 3.0,
@@ -1120,7 +1121,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             .unwrap(),
             rotation: None,
             copies: 0,
-        },
+        }),
     );
     move_feature.native_ref = Some(move_scope.id.clone());
     super::super::bind_feature_body_selections(
@@ -1130,16 +1131,18 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     .unwrap();
     assert!(matches!(
         move_feature.evaluation.definition(),
-        FeatureDefinition::MoveBody {
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        } if bodies == &[body.id.clone()] && native == group_id
+        }) if bodies == &[body.id.clone()] && native == group_id
     ));
 }
 
 #[test]
 fn base_feature_body_selection_uses_active_transition_outputs() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
@@ -1154,9 +1157,9 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
-            },
+            }),
             vec![
                 BodyId::mint("test:model:body#2").expect("identity grammar"),
                 BodyId::mint("test:model:body#1").expect("identity grammar"),
@@ -1167,9 +1170,9 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
     super::super::bind_base_feature_output_selection(&mut feature);
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::BaseFeature {
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
-        } if bodies == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
+        }) if bodies == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
             && native == "native:scope"
     ));
 }

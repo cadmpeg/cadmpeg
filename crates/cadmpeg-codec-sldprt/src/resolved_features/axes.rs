@@ -19,7 +19,10 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
-use cadmpeg_ir::{features::FeatureDefinition, scalar::Length};
+use cadmpeg_ir::{
+    features::{FeatureDefinition, FeatureOperation},
+    scalar::Length,
+};
 use std::collections::{HashMap, HashSet};
 
 const TEMPORARY_AXIS_UNIT_DIRECTION_EPS: f64 = 1.0e-9;
@@ -1046,7 +1049,8 @@ pub(crate) fn bind_profile_revolution_axes(
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
     for (feature_index, feature) in model_features.iter().enumerate() {
-        let FeatureDefinition::Revolve { construction, .. } = feature.evaluation.definition()
+        let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+            feature.evaluation.definition()
         else {
             continue;
         };
@@ -1062,9 +1066,9 @@ pub(crate) fn bind_profile_revolution_axes(
                     continue;
                 };
                 let profile_feature = &model_features[profile_index];
-                let FeatureDefinition::Sketch {
+                let FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                } = profile_feature.evaluation.definition()
+                }) = profile_feature.evaluation.definition()
                 else {
                     continue;
                 };
@@ -1077,9 +1081,9 @@ pub(crate) fn bind_profile_revolution_axes(
                 let mut owners = model_features.iter().filter(|candidate| {
                     matches!(
                     candidate.evaluation.definition(),
-                    FeatureDefinition::Sketch {
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
-                    } if candidate == sketch_id
+                    }) if candidate == sketch_id
                         )
                 });
                 let Some(owner) = owners.next() else {
@@ -1151,7 +1155,9 @@ pub(crate) fn bind_profile_revolution_axes(
 
     for (index, axis) in assignments {
         let mut definition = model_features[index].evaluation.definition().clone();
-        if let FeatureDefinition::Revolve { construction, .. } = &mut definition {
+        if let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+            &mut definition
+        {
             if construction.axis().is_none() {
                 construction.set_axis(Some(axis));
             }

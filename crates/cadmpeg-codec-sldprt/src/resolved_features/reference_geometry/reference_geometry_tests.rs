@@ -12,7 +12,7 @@ use crate::records::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
-    features::{FeatureDefinition, FeatureId, PrincipalPlane},
+    features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane},
     scalar::Length,
 };
 use std::collections::BTreeMap;
@@ -221,10 +221,10 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
         );
         assert!(matches!(
            crate::history::project_features(&histories).unwrap()[0].evaluation.definition(),
-           FeatureDefinition::DatumPoint {
+           FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                position: geometry_1,
                ..
-           }
+           })
         if matches!(geometry_1.get(), Point3 {
                    x: 125.0,
                    y: -250.0,
@@ -307,7 +307,7 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
     );
     assert!(matches!(
         crate::history::project_features(&histories).unwrap()[0].evaluation.definition(),
-        FeatureDefinition::DatumCoordinateSystem { frame } if matches!(frame.origin(), Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin(), Point3 {
                 x: 125.0,
                 y: -250.0,
                 z: 500.0

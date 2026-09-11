@@ -363,9 +363,9 @@ fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
         .expect("EXTRACT_BODY feature");
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::ExtractBody {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::ExtractBody {
             source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
-        } if bodies.len() == 1
+        }) if bodies.len() == 1
             && bodies[0].ends_with(":block#1")
             && native == "nx:om-object-index#1"
     ));

@@ -71,7 +71,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
 
 #[test]
 fn mesh_feature_binds_tessellations_in_design_body_order() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
     let mut scope = DesignParameterScope::empty(
@@ -101,10 +101,10 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
                 parameters: std::collections::BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: Some(scope_id.into()),
     }];
@@ -120,11 +120,11 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
 
     assert_eq!(
         *features[0].evaluation.definition(),
-        FeatureDefinition::MeshImport {
+        FeatureDefinition::Operation(FeatureOperation::MeshImport {
             tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),]
                 .try_into()
                 .unwrap(),
-        }
+        })
     );
     assert!(!feature_definition_is_incomplete(
         features[0].evaluation.definition()
@@ -206,9 +206,13 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
 
 #[test]
 fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
-    let native = |kind: &str| cadmpeg_ir::features::FeatureDefinition::Native {
-        kind: kind.into(),
-        parameters: std::collections::BTreeMap::new(),
+    let native = |kind: &str| {
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: kind.into(),
+                parameters: std::collections::BTreeMap::new(),
+            },
+        )
     };
 
     assert!(!feature_definition_is_incomplete(&native("Canvas")));
@@ -219,7 +223,8 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
 #[test]
 fn full_round_fillet_with_automatic_sides_is_complete() {
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundSideSelection,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        FullRoundSideSelection,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -235,7 +240,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::FullRoundFillet {
+            FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
                 groups: vec![cadmpeg_ir::features::FullRoundFilletGroup::new(
                     FaceSelection::Resolved {
                         faces: vec!["test:model:face#center".try_into().expect("valid identity")],
@@ -247,7 +252,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
                 .unwrap()]
                 .try_into()
                 .unwrap(),
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -331,7 +336,9 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
     assert!(!feature_definition_is_incomplete(&complete));
 
     let mut missing_placement = complete.clone();
-    let cadmpeg_ir::features::FeatureDefinition::Hole { placements, .. } = &mut missing_placement
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Hole { placements, .. },
+    ) = &mut missing_placement
     else {
         panic!("Hole definition");
     };
@@ -339,7 +346,10 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
     assert!(feature_definition_is_incomplete(&missing_placement));
 
     let mut native_support = complete.clone();
-    let cadmpeg_ir::features::FeatureDefinition::Hole { face, .. } = &mut native_support else {
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Hole { face, .. },
+    ) = &mut native_support
+    else {
         panic!("Hole definition");
     };
     *face = Some(cadmpeg_ir::features::FaceSelection::Native(
@@ -348,7 +358,10 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
     assert!(feature_definition_is_incomplete(&native_support));
 
     let mut missing_extent = complete;
-    let cadmpeg_ir::features::FeatureDefinition::Hole { extent, .. } = &mut missing_extent else {
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Hole { extent, .. },
+    ) = &mut missing_extent
+    else {
         panic!("Hole definition");
     };
     *extent = None;
@@ -386,17 +399,21 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
 #[test]
 fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() {
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary, SurfaceContinuity,
+        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, SurfaceBoundary,
+        SurfaceContinuity,
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
-    let surface = |support_faces, continuity, merge_result| FeatureDefinition::FilledSurface {
-        boundary: SurfaceBoundary::Path(PathRef::Edges(vec![
-            EdgeId::mint("test:model:edge#1").expect("identity grammar")
-        ])),
-        support_faces,
-        continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(continuity),
-        merge_result,
+    let surface = |support_faces, continuity, merge_result| {
+        FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+            boundary: SurfaceBoundary::Path(PathRef::Edges(vec![EdgeId::mint(
+                "test:model:edge#1",
+            )
+            .expect("identity grammar")])),
+            support_faces,
+            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(continuity),
+            merge_result,
+        })
     };
 
     assert!(!feature_definition_is_incomplete(&surface(
@@ -802,7 +819,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     use cadmpeg_ir::{
         features::{
             BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
-            CoilSectionPlacement, FeatureDefinition,
+            CoilSectionPlacement, FeatureDefinition, FeatureOperation,
         },
         scalar::{Angle, Length},
     };
@@ -828,9 +845,11 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         clockwise: false,
         taper: Angle::new(0.0).unwrap(),
     };
-    let definition = |construction, result| FeatureDefinition::Coil {
-        construction,
-        result,
+    let definition = |construction, result| {
+        FeatureDefinition::Operation(FeatureOperation::Coil {
+            construction,
+            result,
+        })
     };
 
     assert!(!feature_definition_is_incomplete(&definition(
@@ -907,7 +926,10 @@ fn draft_completeness_requires_material_side() {
     assert!(!feature_definition_is_incomplete(&complete));
 
     let mut incomplete = complete;
-    let cadmpeg_ir::features::FeatureDefinition::Draft { outward, .. } = &mut incomplete else {
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Draft { outward, .. },
+    ) = &mut incomplete
+    else {
         panic!("Draft definition");
     };
     *outward = None;
@@ -978,7 +1000,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 
 #[test]
 fn incomplete_feature_families_are_counted_by_source_operation() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
@@ -993,10 +1015,10 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: kind.into(),
                 parameters: std::collections::BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     };
@@ -1027,7 +1049,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 
 #[test]
 fn body_copy_features_require_resolved_body_selection() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     let resolved = BodySelection::Resolved {
@@ -1035,27 +1057,27 @@ fn body_copy_features_require_resolved_body_selection() {
         native: "native:body-selection".into(),
     };
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::BaseFeature {
+        &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: resolved.clone(),
-        }
+        })
     ));
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::InsertBodies {
+        &FeatureDefinition::Operation(FeatureOperation::InsertBodies {
             bodies: cadmpeg_ir::features::InsertedBodies::Resolved {
                 native: "native:body-selection".into(),
             },
-        }
+        })
     ));
 
     let unresolved = BodySelection::Native("native:body-selection".into());
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::BaseFeature { bodies: unresolved }
+        &FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies: unresolved })
     ));
 }
 
 #[test]
 fn split_body_requires_resolved_target_and_tool_selections() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let resolved_target = BodySelection::Resolved {
@@ -1067,24 +1089,24 @@ fn split_body_requires_resolved_target_and_tool_selections() {
         native: "native:tool".into(),
     };
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::SplitBody {
+        &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
             tools: resolved_tool,
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::SplitBody {
+        &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
             tools: FaceSelection::Native("native:tool".into()),
-        }
+        })
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::SplitBody {
+        &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: BodySelection::Native("native:target".into()),
             tools: FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
                 native: "native:tool".into(),
             },
-        }
+        })
     ));
 }

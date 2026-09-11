@@ -122,8 +122,8 @@ pub(crate) use cadmpeg_ir::sketches::{
 };
 pub(crate) use cadmpeg_ir::{
     features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue,
-        ProfileRef,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+        ParameterValue, ProfileRef,
     },
     scalar::{Angle, Length},
 };

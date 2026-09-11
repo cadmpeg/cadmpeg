@@ -902,7 +902,8 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "solid": true,
         "start": {"kind": "profile_plane"},
     });
-    let error = serde_json::from_value::<FeatureDefinition>(face_maker_object)
+    assert!(serde_json::from_value::<FeatureDefinition>(face_maker_object.clone()).is_err());
+    let error = serde_json::from_value::<cadmpeg_ir::features::FeatureOperation>(face_maker_object)
         .expect_err("the face maker is its class")
         .to_string();
     assert!(error.contains("invalid type: map"), "{error}");

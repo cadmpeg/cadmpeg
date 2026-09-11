@@ -34,7 +34,8 @@ use crate::parasolid::StreamKind;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, UnresolvedFamily,
+    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, FeatureOperation,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::report::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
@@ -307,7 +308,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         active.values().any(|&index| {
             !matches!(
                 ir.model.features[index].evaluation.definition(),
-                FeatureDefinition::BaseFeature { .. }
+                FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
             )
         })
     });
@@ -390,7 +391,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         if !feature_in_active_scope(feature) {
             continue;
         }
-        if let FeatureDefinition::Native { kind, .. } = feature.evaluation.definition() {
+        if let FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) =
+            feature.evaluation.definition()
+        {
             *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
         }
     }
@@ -412,7 +415,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             continue;
         }
         let family = match feature.evaluation.definition() {
-            FeatureDefinition::Unresolved { family } => match family {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved { family }) => match family {
                 UnresolvedFamily::Brep => "brep",
                 UnresolvedFamily::DatumPlane => "datum plane",
                 UnresolvedFamily::DatumAxis => "datum axis",
@@ -476,9 +479,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         }
         let is_exact_empty_base = matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::BaseFeature {
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
-            } if bodies.is_empty() && !native.trim().is_empty() && feature.evaluation.outputs().is_empty()
+            }) if bodies.is_empty() && !native.trim().is_empty() && feature.evaluation.outputs().is_empty()
         );
         if feature.suppressed != Some(true)
             && !is_exact_empty_base
@@ -516,43 +519,46 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
         }
         let family = match feature.evaluation.definition() {
-            FeatureDefinition::BaseFeature { bodies }
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies })
                 if !is_exact_empty_base
                     && !output_free_native_snapshot(feature)
                     && body_selection_is_incomplete(bodies) =>
             {
                 "base feature"
             }
-            FeatureDefinition::Block {
+            FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions,
                 placement,
                 op,
-            } if dimensions.is_none()
+            }) if dimensions.is_none()
                 || placement.is_none()
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
             }
-            FeatureDefinition::Sphere { .. } if sphere_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Sphere { .. })
+                if sphere_definition_is_incomplete(feature) =>
+            {
                 "sphere"
             }
-            FeatureDefinition::DatumOffsetPlane { reference, .. }
-                if reference.as_ref().is_none_or(|reference| match reference {
-                    DatumPlaneReference::Feature { feature: reference } => {
-                        ir.model
-                            .features
-                            .iter()
-                            .find(|candidate| candidate.id == *reference)
-                            .is_none_or(|source| source.ordinal >= feature.ordinal)
-                            || !feature.dependencies.contains(reference)
-                    }
-                    DatumPlaneReference::Face { face } => face_selection_is_incomplete(face),
-                    DatumPlaneReference::ResolvedPlane { .. } => false,
-                }) =>
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference, ..
+            }) if reference.as_ref().is_none_or(|reference| match reference {
+                DatumPlaneReference::Feature { feature: reference } => {
+                    ir.model
+                        .features
+                        .iter()
+                        .find(|candidate| candidate.id == *reference)
+                        .is_none_or(|source| source.ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(reference)
+                }
+                DatumPlaneReference::Face { face } => face_selection_is_incomplete(face),
+                DatumPlaneReference::ResolvedPlane { .. } => false,
+            }) =>
             {
                 "datum plane"
             }
-            FeatureDefinition::DatumCoordinateSystem { frame }
+            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame })
                 if datum_coordinate_system_is_incomplete(
                     frame.origin(),
                     frame.x_axis(),
@@ -562,10 +568,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "datum coordinate system"
             }
-            FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
+            FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
+                if body_selection_is_incomplete(source) =>
+            {
                 "extract body"
             }
-            FeatureDefinition::Sketch { sketch }
+            FeatureDefinition::Operation(FeatureOperation::Sketch { sketch })
                 if sketch.id().is_none_or(|sketch| {
                     ir.model
                         .sketches
@@ -581,99 +589,135 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "sketch"
             }
-            FeatureDefinition::Loft { .. } if loft_definition_is_incomplete(feature) => "loft",
-            FeatureDefinition::ProjectedCurve {
+            FeatureDefinition::Operation(FeatureOperation::Loft { .. })
+                if loft_definition_is_incomplete(feature) =>
+            {
+                "loft"
+            }
+            FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
                 source,
                 target_faces,
                 direction,
                 bidirectional,
-            } if path_ref_is_incomplete(source)
+            }) if path_ref_is_incomplete(source)
                 || face_selection_is_incomplete(target_faces)
                 || projected_curve_direction_is_incomplete(*direction)
                 || bidirectional.is_none() =>
             {
                 "projected curve"
             }
-            FeatureDefinition::TrimSurface { .. }
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
                 if trim_surface_definition_is_incomplete(feature) =>
             {
                 "trim surface"
             }
-            FeatureDefinition::ExtendSurface { .. }
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. })
                 if extend_surface_definition_is_incomplete(feature) =>
             {
                 "extend surface"
             }
-            FeatureDefinition::CosmeticThread {
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face,
                 diameter,
                 extent,
-            } if face_selection_is_incomplete(face) || diameter.is_none() || extent.is_none() => {
+            }) if face_selection_is_incomplete(face) || diameter.is_none() || extent.is_none() => {
                 "cosmetic thread"
             }
-            FeatureDefinition::Hole { .. } if hole_definition_is_incomplete(feature) => "hole",
-            FeatureDefinition::Rib { .. } if rib_definition_is_incomplete(feature) => "rib",
-            FeatureDefinition::Chamfer { .. } if chamfer_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Hole { .. })
+                if hole_definition_is_incomplete(feature) =>
+            {
+                "hole"
+            }
+            FeatureDefinition::Operation(FeatureOperation::Rib { .. })
+                if rib_definition_is_incomplete(feature) =>
+            {
+                "rib"
+            }
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+                if chamfer_definition_is_incomplete(feature) =>
+            {
                 "chamfer"
             }
-            FeatureDefinition::Fillet { .. } if fillet_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+                if fillet_definition_is_incomplete(feature) =>
+            {
                 "fillet"
             }
-            FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. })
+                if face_blend_definition_is_incomplete(feature) =>
+            {
                 "face blend"
             }
-            FeatureDefinition::Shell { .. }
+            FeatureDefinition::Operation(FeatureOperation::Shell { .. })
                 if shell_definition_is_incomplete(feature.evaluation.definition()) =>
             {
                 "shell"
             }
-            FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
+                if sew_bodies_definition_is_incomplete(feature) =>
+            {
                 "sew bodies"
             }
-            FeatureDefinition::TrimBodies { .. }
+            FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
                 if trim_bodies_definition_is_incomplete(feature) =>
             {
                 "trim bodies"
             }
-            FeatureDefinition::Extrude { .. } if extrude_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                if extrude_definition_is_incomplete(feature) =>
+            {
                 "extrude"
             }
-            FeatureDefinition::Revolve { .. } if revolve_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
+                if revolve_definition_is_incomplete(feature) =>
+            {
                 "revolve"
             }
-            FeatureDefinition::Sweep { .. } if sweep_definition_is_incomplete(feature) => "sweep",
-            FeatureDefinition::OffsetSurface { .. }
+            FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+                if sweep_definition_is_incomplete(feature) =>
+            {
+                "sweep"
+            }
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface { .. })
                 if offset_surface_definition_is_incomplete(feature) =>
             {
                 "offset surface"
             }
-            FeatureDefinition::Thicken { .. } if thicken_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+                if thicken_definition_is_incomplete(feature) =>
+            {
                 "thicken"
             }
-            FeatureDefinition::Draft { .. } if draft_definition_is_incomplete(feature) => "draft",
-            FeatureDefinition::Pattern { seeds, pattern }
+            FeatureDefinition::Operation(FeatureOperation::Draft { .. })
+                if draft_definition_is_incomplete(feature) =>
+            {
+                "draft"
+            }
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
                 if pattern_feature_is_incomplete(seeds, pattern, &feature.dependencies) =>
             {
                 "pattern"
             }
-            FeatureDefinition::SectionShape {
+            FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands,
                 approximate,
-            } if body_selection_is_incomplete(operands.first())
+            }) if body_selection_is_incomplete(operands.first())
                 || body_selection_is_incomplete(operands.second())
                 || approximate.is_none() =>
             {
                 "section"
             }
-            FeatureDefinition::Combine { .. } if combine_definition_is_incomplete(feature) => {
+            FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+                if combine_definition_is_incomplete(feature) =>
+            {
                 "body combine"
             }
-            FeatureDefinition::DeleteBody { .. }
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody { .. })
                 if delete_body_definition_is_incomplete(feature) =>
             {
                 "delete body"
             }
-            FeatureDefinition::ReplaceFace { .. }
+            FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. })
                 if replace_face_definition_is_incomplete(feature) =>
             {
                 "replace face"
@@ -715,7 +759,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch { .. }
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
             )
         })
         .count();
@@ -727,11 +771,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                         | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                     ..
-                }
+                })
             )
         })
         .count();
@@ -749,10 +793,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .iter()
         .filter(|feature| feature_in_active_scope(feature))
         .filter_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
-            } => Some(sketch.clone()),
+            }) => Some(sketch.clone()),
             _ => None,
         })
         .collect::<BTreeSet<_>>();

@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
-    LinearTermination, ProfileRef,
+    FeatureOperation as IrFeatureOperation, LinearTermination, ProfileRef,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -384,7 +384,7 @@ pub fn circular_sweep_feature_definition(
     op: BooleanOp,
     solid: Option<bool>,
 ) -> IrFeatureDefinition {
-    IrFeatureDefinition::Extrude {
+    IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         profile,
         direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
             sweep.direction[0],
@@ -406,7 +406,7 @@ pub fn circular_sweep_feature_definition(
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    }
+    })
 }
 
 pub fn circular_sweep_geometry<'a>(

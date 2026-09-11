@@ -45,16 +45,18 @@ fn neutral_parameter_is_count(
     name: &str,
     value: Option<&cadmpeg_ir::features::ParameterValue>,
 ) -> bool {
-    use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, PatternTransform};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, ParameterValue, PatternTransform,
+    };
 
     matches!(value, Some(ParameterValue::Integer(_)))
         || (matches!(name, "D1" | "D2")
             && matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Pattern {
+                FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                } if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. })
+                }) if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. })
             ))
 }
 

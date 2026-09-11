@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_bridge_curve_retains_unresolved_curve_family() {
@@ -8,9 +8,9 @@ fn nx_bridge_curve_retains_unresolved_curve_family() {
 
     assert_eq!(
         definition,
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::BridgeCurve
-        }
+        })
     );
     assert_eq!(definition.body_output_family(), None);
 }

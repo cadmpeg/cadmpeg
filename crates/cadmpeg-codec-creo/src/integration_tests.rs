@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
@@ -151,7 +151,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         .expect("datum feature");
     assert!(matches!(
         datum_feature.evaluation.definition(),
-        FeatureDefinition::DatumPlane { .. }
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
     ));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(

@@ -3,7 +3,8 @@
 
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, PathRef, PlanarProfileRef, ProfileRef, SplitFaceTool,
+    FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
+    SplitFaceTool,
 };
 use cadmpeg_ir::topology::Face;
 use std::collections::HashMap;
@@ -26,7 +27,7 @@ pub(crate) fn bind_unique_sketch_feature(
         .filter(|(_, feature)| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Sketch { .. }
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
             )
         })
         .map(|(index, _)| index)
@@ -77,18 +78,18 @@ pub(crate) fn bind_unique_sketch_feature(
     for (index, _, _, sketch, _) in &bindings {
         features[*index]
             .evaluation
-            .set_definition(FeatureDefinition::Sketch {
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-            });
+            }));
     }
     let mut aliases = Vec::new();
     for index in &feature_indices {
-        let FeatureDefinition::Sketch {
+        let FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch:
                 cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        } = features[*index].evaluation.definition()
+        }) = features[*index].evaluation.definition()
         else {
             continue;
         };
@@ -191,8 +192,9 @@ pub(crate) fn order_features_for_regeneration(
     let tree_parent_by_child = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } =
-                feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::TreeNode { children, .. },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -474,16 +476,20 @@ pub(crate) fn bind_definition_sketch(
         }
     };
     Ok(match definition {
-        FeatureDefinition::Extrude { profile, .. } => bind_profile(profile),
-        FeatureDefinition::Wrap { profile, .. } => bind_planar_profile(profile),
-        FeatureDefinition::Rib { construction, .. } => construction
+        FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
+            bind_profile(profile)
+        }
+        FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
+            bind_planar_profile(profile)
+        }
+        FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => construction
             .profile
             .as_mut()
             .is_some_and(bind_planar_profile),
-        FeatureDefinition::Revolve { construction, .. } => {
+        FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
             construction.profile_mut().is_some_and(bind_planar_profile)
         }
-        FeatureDefinition::Sweep { shape, path, .. } => {
+        FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) => {
             let mut profile_bound = false;
             shape
                 .try_edit(|section, _, _| {
@@ -494,16 +500,20 @@ pub(crate) fn bind_definition_sketch(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             profile_bound | path.as_mut().is_some_and(bind_path)
         }
-        FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
-        FeatureDefinition::SplitFace {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface { tool, .. }) => bind_path(tool),
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
             tool: SplitFaceTool::Path(path),
             ..
-        } => bind_path(path),
-        FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
-        FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
-        FeatureDefinition::Loft {
+        }) => bind_path(path),
+        FeatureDefinition::Operation(FeatureOperation::ProjectedCurve { source, .. }) => {
+            bind_path(source)
+        }
+        FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, .. }) => {
+            segments.iter_mut().any(bind_path)
+        }
+        FeatureDefinition::Operation(FeatureOperation::Loft {
             sections, guidance, ..
-        } => {
+        }) => {
             let mut profile_bound = false;
             for section in sections {
                 if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {

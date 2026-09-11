@@ -1243,7 +1243,7 @@ pub(crate) fn project(
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,
 ) -> (usize, usize, usize, usize) {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     #[derive(serde::Serialize)]
     struct NativeHistoryRecord {
@@ -1372,10 +1372,10 @@ pub(crate) fn project(
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: record.command_id.to_string().into(),
                     parameters,
-                },
+                }),
             ),
             native_ref: Some(native_ids[index].clone()),
         });

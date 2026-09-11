@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
+};
 
 use super::super::{link_feature_sketch_history, section_entity_is_generated_profile};
 
@@ -56,10 +58,10 @@ fn feature(id: &str) -> Feature {
     Feature::new(
         cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         0,
-        IrFeatureDefinition::Native {
+        IrFeatureDefinition::Operation(IrFeatureOperation::Native {
             kind: "test".into(),
             parameters: BTreeMap::new(),
-        },
+        }),
     )
 }
 

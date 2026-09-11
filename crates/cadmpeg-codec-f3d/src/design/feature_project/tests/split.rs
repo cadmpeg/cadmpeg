@@ -9,6 +9,7 @@ use super::prelude::*;
 use super::project_split_face;
 use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
+use cadmpeg_ir::features::FeatureOperation;
 
 fn group(
     scope_record_index: u32,
@@ -101,12 +102,12 @@ fn class_277_258_compact_split_face_frame_projects() {
         .expect("class-277 SplitFace frame");
     assert!(matches!(
         definition,
-        FeatureDefinition::SplitFace {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
             targets: FaceSelection::Native(targets),
             tool: cadmpeg_ir::features::SplitFaceTool::Path(
                 cadmpeg_ir::features::PathRef::Native(tool)
             ),
-        } if targets.ends_with("group#102") && tool.ends_with("group#100")
+        }) if targets.ends_with("group#102") && tool.ends_with("group#100")
     ));
 
     scope.class_tag = crate::records::DesignClassTag::try_from("418".to_owned()).unwrap();
@@ -192,7 +193,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
 
     let definition = project_split_face(&scope, &[scope.clone()], &groups, &selections, &[], &[])
         .expect("class-277 direct edge path");
-    let FeatureDefinition::SplitFace {
+    let FeatureDefinition::Operation(FeatureOperation::SplitFace {
         tool:
             cadmpeg_ir::features::SplitFaceTool::Path(cadmpeg_ir::features::PathRef::HistoricalEdges {
                 state,
@@ -200,7 +201,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
                 native,
             }),
         ..
-    } = definition
+    }) = definition
     else {
         panic!("expected historical edge path");
     };

@@ -14,8 +14,8 @@ use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureResultTopology, GeneratedFaceRef, PathRef, SurfaceBoundary,
-    SurfaceContinuity, ThickenSide,
+    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, FeatureResultTopology,
+    GeneratedFaceRef, PathRef, SurfaceBoundary, SurfaceContinuity, ThickenSide,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,14 +44,14 @@ pub(in super::super) fn filled_surface_feature_definition(
         SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         |sketch| SurfaceBoundary::Path(PathRef::Sketch(sketch)),
     );
-    IrFeatureDefinition::FilledSurface {
+    IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
         boundary,
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
             SurfaceContinuity::Contact,
         ),
         merge_result: Some(false),
-    }
+    })
 }
 
 pub(in super::super) fn class_100_operand_producers(
@@ -236,12 +236,12 @@ pub(in super::super) fn knit_surface_feature_definition(
             }
         },
     );
-    IrFeatureDefinition::KnitSurface {
+    IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
         faces,
         merge_entities: Some(true),
         create_solid: Some(false),
         gap_tolerance: None,
-    }
+    })
 }
 
 /// Select the neutral plane carried by a Draft feature's class-209 entity.

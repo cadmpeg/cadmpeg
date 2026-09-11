@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
 
 /// Source property on the retained-history input that admits the native
@@ -188,13 +188,13 @@ pub(crate) fn active_feature_closure(
     let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
         !matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::BaseFeature { .. }
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
         )
     });
     let has_native_body_witness = active_features.values().any(|(_, feature)| {
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::BaseFeature { .. }
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
         ) && feature.evaluation.outputs().len() == active_bodies.len()
             && feature.evaluation.outputs().iter().collect::<BTreeSet<_>>() == active_bodies
             && feature
@@ -204,7 +204,7 @@ pub(crate) fn active_feature_closure(
     let has_retained_history_input = active_features.values().any(|(_, feature)| {
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::BaseFeature { .. }
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
         ) && feature
             .source_properties
             .keys()
@@ -297,10 +297,10 @@ mod tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::TreeNode {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
-                },
+                }),
                 outputs,
             ),
             native_ref: native.then(|| format!("native:{id}")),
@@ -564,12 +564,12 @@ mod tests {
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                    FeatureDefinition::BaseFeature {
+                    FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
                             bodies: vec![body.clone()],
                             native: "test".into(),
                         },
-                    },
+                    }),
                     vec![body.clone()],
                 ),
                 native_ref: None,
@@ -651,12 +651,12 @@ mod tests {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::BaseFeature {
+                FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
                         bodies: vec![body.clone()],
                         native: "test".into(),
                     },
-                },
+                }),
                 vec![body.clone()],
             ),
             native_ref: None,

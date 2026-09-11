@@ -6,7 +6,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
         ConfigurationBodies, ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
-        FaceSelection, FeatureDefinition, FeatureId, LinearTermination, ParameterValue,
+        FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
+        ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -273,7 +274,7 @@ pub(crate) fn project_configuration_design_states(
                 if let Some(base_definition) = base_definitions.get(&feature.id) {
                     if matches!(
                         feature.evaluation.definition(),
-                        FeatureDefinition::Hole { .. }
+                        FeatureDefinition::Operation(FeatureOperation::Hole { .. })
                     ) {
                         // A scoped lane may author positions without repeating
                         // shared hole construction. Copy missing construction
@@ -438,19 +439,21 @@ pub(crate) fn restore_configuration_tree_node_definitions(
     for feature in features {
         if !matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Native { .. }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
             continue;
         }
-        let Some(FeatureDefinition::TreeNode { role, .. }) = base.get(&feature.id).copied() else {
+        let Some(FeatureDefinition::Operation(FeatureOperation::TreeNode { role, .. })) =
+            base.get(&feature.id).copied()
+        else {
             continue;
         };
         feature
             .evaluation
-            .set_definition(FeatureDefinition::TreeNode {
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: *role,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            });
+            }));
     }
 
     Ok(())
@@ -504,7 +507,9 @@ pub(crate) fn project_configuration_sketch_states(
             .map(|feature| (feature.id.clone(), feature.evaluation.definition().clone()))
             .collect::<HashMap<_, _>>();
         for feature in &mut features {
-            if let FeatureDefinition::SpatialSketch { sketch } = feature.evaluation.definition() {
+            if let FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) =
+                feature.evaluation.definition()
+            {
                 let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(
                     feature
                         .id
@@ -516,27 +521,33 @@ pub(crate) fn project_configuration_sketch_states(
                 if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
                     feature
                         .evaluation
-                        .set_definition(FeatureDefinition::SpatialSketch {
-                            sketch: Some(expected),
-                        });
+                        .set_definition(FeatureDefinition::Operation(
+                            FeatureOperation::SpatialSketch {
+                                sketch: Some(expected),
+                            },
+                        ));
                 }
                 continue;
             }
-            let FeatureDefinition::Sketch { sketch } = feature.evaluation.definition() else {
+            let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) =
+                feature.evaluation.definition()
+            else {
                 continue;
             };
-            let Some(FeatureDefinition::SpatialSketch {
+            let Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(base_sketch),
-            }) = base_definitions.get(&feature.id)
+            })) = base_definitions.get(&feature.id)
             else {
                 continue;
             };
             if sketch.id().is_none() && reusable_spatial_sketches.contains(base_sketch) {
                 feature
                     .evaluation
-                    .set_definition(FeatureDefinition::SpatialSketch {
-                        sketch: Some(base_sketch.clone()),
-                    });
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::SpatialSketch {
+                            sketch: Some(base_sketch.clone()),
+                        },
+                    ));
             }
         }
         let mut parameters = ir.model.parameters.clone();
@@ -745,10 +756,10 @@ pub(crate) fn project_configuration_sketch_states(
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(feature_id) {
                 inherit_configuration_shared_semantics(&mut state.definition, base_definition)?;
-                if let FeatureDefinition::DatumOffsetPlane {
+                if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: Some(DatumPlaneReference::Feature { feature: reference }),
                     ..
-                } = &state.definition
+                }) = &state.definition
                 {
                     state.dependencies.insert(reference.clone());
                 }
@@ -764,11 +775,11 @@ pub(crate) fn inherit_configuration_shared_semantics(
     base_definition: &FeatureDefinition,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let (
-        FeatureDefinition::DatumOffsetPlane { reference, .. },
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: base_reference,
             ..
-        },
+        }),
     ) = (&mut *definition, base_definition)
     {
         if reference.is_none() {
@@ -803,7 +814,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
     base_definition: &FeatureDefinition,
     inherit_placements: bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile,
         profile_filter,
         face,
@@ -815,14 +826,14 @@ pub(crate) fn inherit_configuration_hole_semantics(
         bottom,
         taper_angle,
         allow_multi_profile_faces,
-    } = definition
+    }) = definition
     else {
         return Ok(());
     };
     let mut construction = shape.construction().clone();
     let mut exit_kind = *shape.exit_kind();
     let mut diameter = shape.diameter();
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: base_profile,
         profile_filter: base_profile_filter,
         face: base_face,
@@ -834,7 +845,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
         bottom: base_bottom,
         taper_angle: base_taper_angle,
         allow_multi_profile_faces: base_allow_multi_profile_faces,
-    } = base_definition
+    }) = base_definition
     else {
         return Ok(());
     };
@@ -987,18 +998,18 @@ fn configuration_feature_plane_frame(
         return None;
     };
     let frame = match feature.evaluation.definition() {
-        FeatureDefinition::DatumPrincipalPlane { plane } => {
+        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
             Some(configuration_principal_plane_frame(*plane))
         }
-        FeatureDefinition::DatumPlane { frame } => valid_plane_frame(
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => valid_plane_frame(
             frame.normal(),
             frame.u_axis(),
         )
         .then_some((frame.origin(), frame.normal(), frame.u_axis())),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(reference),
             distance,
-        } => configuration_reference_plane_frame(reference, features, visiting).and_then(
+        }) => configuration_reference_plane_frame(reference, features, visiting).and_then(
             |(origin, normal, u_axis)| {
                 let normal_length = normal.norm();
                 (normal_length.is_finite() && normal_length > f64::EPSILON).then_some((
@@ -1051,23 +1062,24 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
             continue;
         };
         let Some(base_reference) = (match base_feature.evaluation.definition() {
-            FeatureDefinition::DatumOffsetPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(reference),
                 ..
-            } => Some(reference),
+            }) => Some(reference),
             _ => None,
         }) else {
             continue;
         };
         let replacement = (|| {
             let state_frame = match feature.evaluation.definition() {
-                FeatureDefinition::DatumOffsetPlane {
-                    reference: None, ..
-                } => None,
-                FeatureDefinition::DatumOffsetPlane {
+                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference: None,
+                    ..
+                }) => None,
+                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
                     ..
-                } if valid_plane_frame(frame.normal(), frame.u_axis()) => {
+                }) if valid_plane_frame(frame.normal(), frame.u_axis()) => {
                     Some((frame.origin(), frame.normal(), frame.u_axis()))
                 }
                 _ => return None,
@@ -1101,7 +1113,9 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
             DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. } => None,
         };
         let mut definition = feature.evaluation.definition().clone();
-        let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut definition else {
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) =
+            &mut definition
+        else {
             continue;
         };
         *reference = Some(replacement);

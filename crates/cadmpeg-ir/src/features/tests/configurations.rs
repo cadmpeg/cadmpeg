@@ -12,7 +12,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         features::{
             ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
             DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
-            ParameterId, ParameterValue,
+            FeatureOperation, ParameterId, ParameterValue,
         },
         scalar::{Angle, Length},
     };
@@ -94,10 +94,10 @@ fn configuration_body_membership_round_trips_and_validates() {
                 .expect("identity grammar")])
             .try_into()
             .unwrap(),
-            definition: FeatureDefinition::DatumPoint {
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         },
     )]);
     let report = validate_neutral(&ir, Vec::new());
@@ -149,11 +149,11 @@ fn configuration_body_membership_round_trips_and_validates() {
             source_content: FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::DatumPoint {
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                     position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .unwrap(),
                     construction: None,
-                },
+                }),
             ),
             native_ref: None,
         });
@@ -165,10 +165,10 @@ fn configuration_body_membership_round_trips_and_validates() {
                 outputs: (vec![body.clone()]).try_into().unwrap(),
             },
             dependencies: (vec![later_feature.clone()]).try_into().unwrap(),
-            definition: FeatureDefinition::DatumPoint {
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         },
     )]);
     let report = validate_neutral(&ir, Vec::new());
@@ -183,10 +183,10 @@ fn configuration_body_membership_round_trips_and_validates() {
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Suppressed,
             dependencies: DistinctMembers::default(),
-            definition: FeatureDefinition::DatumPoint {
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         },
     )]);
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
@@ -210,10 +210,10 @@ fn configuration_body_membership_round_trips_and_validates() {
                 outputs: (vec![body.clone()]).try_into().unwrap(),
             },
             dependencies: (vec![first_feature.clone()]).try_into().unwrap(),
-            definition: FeatureDefinition::DatumPoint {
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         },
     )]);
     // A dependency with no state in this configuration inherits its model-level
@@ -224,10 +224,10 @@ fn configuration_body_membership_round_trips_and_validates() {
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Suppressed,
             dependencies: DistinctMembers::default(),
-            definition: FeatureDefinition::DatumPoint {
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
-            },
+            }),
         },
     );
     let report = validate_neutral(&ir, Vec::new());
@@ -315,7 +315,7 @@ fn configuration_name_preserves_resolution_state() {
 fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted_key() {
     use crate::features::{
         ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        Feature, FeatureDefinition, FeatureId,
+        Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     use std::collections::BTreeMap;
 
@@ -323,10 +323,10 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
     let feature = Feature::new(
         FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
         0,
-        FeatureDefinition::DatumPoint {
+        FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,
-        },
+        }),
     );
     ir.model.features.push(feature.clone());
     ir.model.configurations.push(DesignConfiguration {

@@ -9,8 +9,8 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
-        ParameterValue,
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        ParameterId, ParameterValue,
     },
     scalar::Length,
 };
@@ -96,9 +96,9 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            }),
         ),
         native_ref: Some("feature".into()),
     };

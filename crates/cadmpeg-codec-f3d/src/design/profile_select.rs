@@ -140,7 +140,7 @@ pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
     let SketchCurveSelectionResolution {
         scopes,
         groups,
@@ -168,12 +168,12 @@ pub(crate) fn bind_sweep_sketch_selections(
             let Some(stream) = native_stream(&scope.id) else {
                 break 'feature_edit;
             };
-            let FeatureDefinition::Sweep {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
                 path,
                 guide_rail,
                 ..
-            } = &mut definition
+            }) = &mut definition
             else {
                 break 'feature_edit;
             };
@@ -321,13 +321,15 @@ pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef, SplitFaceTool};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SplitFaceTool};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::SplitFace { tool, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::SplitFace { tool, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             let SplitFaceTool::Path(PathRef::Native(group_id)) = tool else {
@@ -359,13 +361,15 @@ pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::TrimSurface { tool, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::TrimSurface { tool, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             let PathRef::Native(group_id) = tool else {
@@ -401,7 +405,7 @@ pub(crate) fn bind_extrude_profile_selections(
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
@@ -425,7 +429,9 @@ pub(crate) fn bind_extrude_profile_selections(
                 })
                 .collect::<Vec<_>>();
             matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
-            let FeatureDefinition::Extrude { profile, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
@@ -2307,7 +2313,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
+        FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
     };
 
     let headers = headers
@@ -2485,9 +2491,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     for feature in features.iter_mut() {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Loft {
+            let FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections, guidance, ..
-            } = &mut definition
+            }) = &mut definition
             else {
                 break 'feature_edit;
             };
@@ -2526,7 +2532,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     for feature in features.iter_mut() {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
-            let FeatureDefinition::Revolve { construction, .. } = &mut definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+                &mut definition
+            else {
                 break 'feature_edit;
             };
             let Some(PlanarProfileRef::Native(native)) = construction.profile() else {

@@ -6,6 +6,7 @@ use crate::native::{
     CatiaEntityEvaluationEncoding, CatiaEntitySchemaValue, CatiaEntitySuffixPayload,
     CatiaEntitySuffixSchemaValue,
 };
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn transfers_exact_definition_values_as_typed_feature_properties() {
@@ -84,9 +85,9 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Extrude
-        }
+        })
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -229,9 +230,9 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Extrude
-        }
+        })
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -376,9 +377,9 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Extrude
-        }
+        })
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,

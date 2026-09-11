@@ -688,8 +688,8 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
     use cadmpeg_ir::{
         features::{
-            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
-            ParameterValue,
+            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+            LinearTermination, ParameterValue,
         },
         scalar::Length,
     };
@@ -712,7 +712,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     assert!(
         matches!(
             first_definition,
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -723,13 +723,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 },
                 op: BooleanOp::Unresolved,
                 ..
-            } if actual_length.get() == 200.0
+            }) if actual_length.get() == 200.0
         ),
         "{first_definition:?}"
     );
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -740,11 +740,11 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        } if actual_length.get() == 3.0
+        }) if actual_length.get() == 3.0
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -755,7 +755,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        } if actual_length.get() == 4.0
+        }) if actual_length.get() == 4.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -773,7 +773,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Extrude {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
                         side:
@@ -783,14 +783,14 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                             },
                     },
                 ..
-            } = definition
+            }) = definition
             else {
                 panic!("typed positional boss extrusion");
             };
             *length = cadmpeg_ir::scalar::NonZeroLength::new(250.0).unwrap();
         });
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Extrude {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
                         side:
@@ -800,7 +800,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                             },
                     },
                 ..
-            } = definition
+            }) = definition
             else {
                 panic!("typed positional cut extrusion");
             };
@@ -830,7 +830,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     }
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -841,11 +841,11 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        } if actual_length.get() == 250.0
+        }) if actual_length.get() == 250.0
     ));
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -856,11 +856,11 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        } if actual_length.get() == 4.5
+        }) if actual_length.get() == 4.5
     ));
     assert!(matches!(
         regenerated.ir().model.features[2].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -871,7 +871,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        } if actual_length.get() == 4.0
+        }) if actual_length.get() == 4.0
     ));
 
     regenerated.ir_mut().model.parameters[0].expression = "225".into();
@@ -975,8 +975,8 @@ fn semantic_writer_round_trips_feature_output_scope() {
 #[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
     use cadmpeg_ir::math::Vector3;
 
@@ -993,7 +993,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     let profile_feature = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -1006,11 +1006,11 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::Join,
             ..
-        } if (profile == &profile_feature) && actual_length.get() == 2.0
+        }) if (profile == &profile_feature) && actual_length.get() == 2.0
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: geometry_1,
                 source: None,
@@ -1024,11 +1024,11 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::NewBody,
             ..
-        } if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+        }) if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1045,11 +1045,11 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::Cut,
             ..
-        } if actual_length.get() == 3.0 && actual_length_2.get() == 7.0
+        }) if actual_length.get() == 3.0 && actual_length_2.get() == 7.0
     ));
     assert!(matches!(
        decoded.ir().model.features[4].evaluation.definition(),
-       FeatureDefinition::Extrude {
+       FeatureDefinition::Operation(FeatureOperation::Extrude {
            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                vector: geometry_1,
                source: None,
@@ -1061,7 +1061,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                }
            },
            ..
-       }
+       })
     if matches!(geometry_1.get(), Vector3 {
                    x: 0.0,
                    y: 1.0,
@@ -1071,12 +1071,12 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Extrude {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 direction,
                 extent,
                 op,
                 ..
-            } = definition
+            }) = definition
             else {
                 panic!("typed extrusion");
             };
@@ -1102,9 +1102,9 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             *op = BooleanOp::Intersect;
         });
         ir_edit.model.features[3].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Extrude {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 direction, extent, ..
-            } = definition
+            }) = definition
             else {
                 panic!("typed extrusion");
             };
@@ -1144,7 +1144,8 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 #[test]
 fn semantic_writer_round_trips_extrusion_to_face() {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, LinearTermination,
+        ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
+        LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1161,7 +1162,9 @@ fn semantic_writer_round_trips_extrusion_to_face() {
         let mut ir_edit = decoded.ir_mut();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[1].evaluation;
         let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
-        let FeatureDefinition::Extrude { extent, .. } = &mut updated_ir_edit_definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+            &mut updated_ir_edit_definition
+        else {
             panic!("typed extrusion");
         };
         assert_eq!(
@@ -1203,7 +1206,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     assert_eq!(native.properties["Face"], "face:13");
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
@@ -1214,13 +1217,13 @@ fn semantic_writer_round_trips_extrusion_to_face() {
                 }
             },
             ..
-        } if face == "face:13"
+        }) if face == "face:13"
     ));
 }
 
 #[test]
 fn semantic_writer_retains_unresolved_native_edge_treatments() {
-    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, RadiusSpec};
+    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, FeatureOperation, RadiusSpec};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1243,19 +1246,19 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
             ..
         }])
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::Distance) },
             ..
         }])
@@ -1313,9 +1316,9 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: actual_radius,
@@ -1327,7 +1330,10 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+            ) = definition
+            else {
                 panic!("typed fillet feature");
             };
             groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
@@ -1357,9 +1363,9 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     );
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: actual_radius,
             },
@@ -1371,7 +1377,10 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 #[test]
 fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
     use cadmpeg_ir::{
-        features::{ChamferSpec, EdgeSelection, FeatureDefinition, ParameterValue, RadiusSpec},
+        features::{
+            ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue,
+            RadiusSpec,
+        },
         scalar::Length,
     };
 
@@ -1399,9 +1408,9 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Constant {
                 radius: actual_radius
@@ -1410,10 +1419,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::DistanceAngle {
                 distance: actual_distance,
@@ -1429,7 +1438,8 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Fillet { groups, .. } = definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups, .. }) = definition
+            else {
                 panic!("typed positional fillet");
             };
             groups[0].radius = RadiusSpec::Constant {
@@ -1437,7 +1447,8 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             };
         });
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Chamfer { groups, .. } = definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
+            else {
                 panic!("typed positional chamfer");
             };
             groups[0].spec = ChamferSpec::DistanceAngle {
@@ -1467,9 +1478,9 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     assert!(!native[1].parameters.contains_key("Angle"));
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: actual_radius
             },
@@ -1478,10 +1489,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     ));
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::DistanceAngle {
                 distance: actual_distance,
                 angle,
@@ -1494,7 +1505,9 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 #[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
     use cadmpeg_ir::{
-        features::{EdgeSelection, FeatureDefinition, RadiusSpec, VariableRadius},
+        features::{
+            EdgeSelection, FeatureDefinition, FeatureOperation, RadiusSpec, VariableRadius,
+        },
         scalar::Length,
     };
 
@@ -1510,9 +1523,9 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
         }] if points.as_slice() == [
@@ -1525,7 +1538,9 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         let mut ir_edit = decoded.ir_mut();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
         let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
-        let FeatureDefinition::Fillet { groups } = &mut updated_ir_edit_definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+            &mut updated_ir_edit_definition
+        else {
             panic!("variable fillet");
         };
         let RadiusSpec::Variable { points } = &mut groups[0].radius else {
@@ -1562,7 +1577,8 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     {
         let mut ir_edit = regenerated.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Fillet { groups, .. } = definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups, .. }) = definition
+            else {
                 panic!("variable fillet after regeneration");
             };
             groups[0].radius = RadiusSpec::Constant {
@@ -1588,7 +1604,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
 
 #[test]
 fn semantic_writer_round_trips_all_typed_chamfer_forms() {
-    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1606,10 +1622,10 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: EdgeSelection::Native(edges),
             spec: ChamferSpec::Distance {
                 distance: actual_distance,
@@ -1619,10 +1635,10 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::TwoDistances {
                 first: actual_first,
                 second: actual_second,
@@ -1632,10 +1648,10 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
-        FeatureDefinition::Chamfer {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::DistanceAngle {
                 distance: actual_distance,
                 angle,
@@ -1666,7 +1682,8 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .enumerate()
     {
         feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Chamfer { groups, .. } = definition else {
+            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
+            else {
                 panic!("typed chamfer feature");
             };
             groups[0].spec = replacement;
@@ -1699,7 +1716,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 
 #[test]
 fn semantic_writer_retains_partial_native_wall_operations() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1714,20 +1731,20 @@ fn semantic_writer_retains_partial_native_wall_operations() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Shell {
+        FeatureDefinition::Operation(FeatureOperation::Shell {
             removed_faces: FaceSelection::Native(faces),
             thickness: None,
             outward: None,
             ..
-        } if faces == "face:1"
+        }) if faces == "face:1"
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Native(faces),
             thickness: None,
             side: None,
-        } if faces == "face:2"
+        }) if faces == "face:2"
     ));
 
     let mut detached = decoded.ir().clone();

@@ -70,7 +70,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
 
 #[test]
 fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -87,21 +87,23 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::SpatialSketch { sketch: None }
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        }
+        })
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed spatial path".into());
     decoded.ir_mut().model.features[1]
         .evaluation
-        .set_definition(FeatureDefinition::SpatialSketch { sketch: None });
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::SpatialSketch { sketch: None },
+        ));
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -124,7 +126,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .iter()
         .all(|feature| matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::SpatialSketch { sketch: None }
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
         )));
 }
 

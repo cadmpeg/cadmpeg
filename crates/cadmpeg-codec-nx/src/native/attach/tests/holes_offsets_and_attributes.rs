@@ -46,7 +46,9 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FeatureDefinition, HoleKind, HolePlacement, LinearTermination},
+        features::{
+            FeatureDefinition, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
+        },
         scalar::Length,
     };
 
@@ -272,13 +274,13 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     )
     .unwrap();
     assert!(matches!(
-        definition, FeatureDefinition::Hole {
+        definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
             extent: Some(LinearTermination::Blind { length: actual_length }),
             placements,
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (placements.as_deref() == Some(&[HolePlacement::Directed {
@@ -354,7 +356,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FeatureDefinition, HoleKind, HolePlacement},
+        features::{FeatureDefinition, FeatureOperation, HoleKind, HolePlacement},
         scalar::Length,
     };
 
@@ -634,13 +636,13 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     )
     .unwrap();
     assert!(matches!(
-        definition, FeatureDefinition::Hole {
+        definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             placements,
             ..
-        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -676,7 +678,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
 
 #[test]
 fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -718,10 +720,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     assert_eq!(supports.len(), 2);
     assert!(matches!(
         definition,
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Native(_),
             distance: None,
-        }
+        })
     ));
 
     let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
@@ -737,10 +739,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
             .expect("uniquely faced supports");
     assert!(matches!(
         definition,
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Resolved { faces, .. },
             distance: Some(actual_distance),
-        } if (faces.len() == 2) && actual_distance.get() == 30.0
+        }) if (faces.len() == 2) && actual_distance.get() == 30.0
     ));
 
     for face in ir.model.faces.iter_mut().filter(|face| {
@@ -754,10 +756,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
             .expect("uniformly reversed support faces");
     assert!(matches!(
         definition,
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             distance: Some(actual_distance),
             ..
-        } if actual_distance.get() == -30.0
+        }) if actual_distance.get() == -30.0
     ));
 
     ir.model
@@ -773,10 +775,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
             .expect("mixed support-face orientations retain offset family");
     assert!(matches!(
         definition,
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Resolved { .. },
             distance: None,
-        }
+        })
     ));
 
     let mut ambiguous = ir.clone();
@@ -790,10 +792,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
             .expect("offset semantics survive ambiguous face identity");
     assert!(matches!(
         definition,
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Native(_),
             distance: None,
-        }
+        })
     ));
 
     let (unowned, procedural) = make_offset(99, -40.0);
@@ -809,7 +811,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, ThickenSide};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -851,11 +853,11 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     assert_eq!(supports.len(), 2);
     assert!(matches!(
         definition,
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Native(_),
             thickness: Some(actual_thickness),
             side: None,
-        } if actual_thickness.get() == 12.5
+        }) if actual_thickness.get() == 12.5
     ));
 
     let mut sheet_output = ir.clone();
@@ -882,11 +884,11 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         .expect("uniquely faced supports");
     assert!(matches!(
         definition,
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Resolved { faces, .. },
             side: Some(ThickenSide::Reverse),
             ..
-        } if faces.len() == 2
+        }) if faces.len() == 2
     ));
 
     ir.model
@@ -901,11 +903,11 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         .expect("mixed support senses preserve thicken semantics");
     assert!(matches!(
         definition,
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Resolved { .. },
             side: None,
             ..
-        }
+        })
     ));
 
     let (unowned, procedural) = make_offset(99, 40.0);
@@ -926,7 +928,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 
 #[test]
 fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, ThickenSide};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -970,11 +972,11 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     assert_eq!(supports, std::slice::from_ref(&support));
     assert!(matches!(
         definition,
-        FeatureDefinition::Thicken {
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Resolved { faces, .. },
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Both),
-        } if (faces.len() == 1) && actual_thickness.get() == 12.5
+        }) if (faces.len() == 1) && actual_thickness.get() == 12.5
     ));
 
     let mut mismatched_support = ir.clone();
@@ -1012,7 +1014,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
 #[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RadiusSpec};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, RadiusSpec};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, BlendSupport, ProceduralSurface,
         ProceduralSurfaceDefinition,
@@ -1091,9 +1093,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     assert_eq!(surfaces.len(), 2);
     assert!(matches!(
         definition,
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant { radius: actual_radius },
             ..
         }] if actual_radius.get() == 5.0)
@@ -1105,11 +1107,11 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     )
     .expect("face blend retains unresolved supports");
     assert!(matches!(
-        definition, FeatureDefinition::FaceBlend {
+        definition, FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands,
 
             radius: RadiusSpec::Constant { .. },
-        } if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Unresolved, FaceSelection::Unresolved,))));
+        }) if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Unresolved, FaceSelection::Unresolved,))));
 
     let mut face_blend_ir = ir.clone();
     let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
@@ -1155,7 +1157,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     .expect("complete edge-blend supports");
     assert!(matches!(
         definition,
-        FeatureDefinition::Fillet { groups }
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant { .. },
@@ -1169,11 +1171,11 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     )
     .expect("complete face-blend supports");
     assert!(matches!(
-        definition, FeatureDefinition::FaceBlend {
+        definition, FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands,
 
             radius: RadiusSpec::Constant { .. },
-        } if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Resolved { ref faces, .. }, FaceSelection::Resolved {
+        }) if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Resolved { ref faces, .. }, FaceSelection::Resolved {
                 faces: ref second,
                 ..
             },) if faces.len() == 1 && second.len() == 1 && faces != second)));
@@ -1193,9 +1195,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     .expect("required invariant");
     assert!(matches!(
         definition,
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant { radius: actual_radius },
             ..
         }] if actual_radius.get() == 5.0)
@@ -1210,9 +1212,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             .expect("required invariant");
     assert!(matches!(
         definition,
-        FeatureDefinition::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
         radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
             ..
         }])

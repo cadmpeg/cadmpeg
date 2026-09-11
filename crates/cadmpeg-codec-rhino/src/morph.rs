@@ -557,7 +557,7 @@ pub(crate) fn project(
     native_ref: String,
     mut resolve_captive: impl FnMut(Uuid) -> Option<String>,
 ) -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use std::collections::BTreeMap;
 
     let (variant, mut properties) = match &morph.control {
@@ -610,7 +610,7 @@ pub(crate) fn project(
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "morph_control".into(),
                 parameters: {
                     let mut parameters = BTreeMap::from([
@@ -639,7 +639,7 @@ pub(crate) fn project(
                     ));
                     parameters
                 },
-            },
+            }),
         ),
         native_ref: Some(native_ref),
     }
@@ -739,8 +739,9 @@ mod tests {
         assert_eq!(morph.captive_ids.len(), 1);
         let feature = project(&morph, "test", None, "native".to_string(), |_| None);
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
-        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-            feature.evaluation.definition()
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+        ) = feature.evaluation.definition()
         else {
             panic!("expected a native morph definition");
         };
@@ -748,8 +749,9 @@ mod tests {
         let resolved = project(&morph, "test", None, "native".to_string(), |_| {
             Some("rhino:object:record#000007".to_string())
         });
-        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-            resolved.evaluation.definition()
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+        ) = resolved.evaluation.definition()
         else {
             panic!("expected a native morph definition");
         };

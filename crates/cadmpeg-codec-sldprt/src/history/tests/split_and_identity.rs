@@ -4,6 +4,7 @@
 
 use super::super::*;
 use super::*;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {
@@ -41,10 +42,10 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         .expect("split feature");
     assert_eq!(
         *split_feature.evaluation.definition(),
-        FeatureDefinition::SplitFace {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
             targets: FaceSelection::Unresolved,
             tool: SplitFaceTool::Path(PathRef::Native(sketch.id.clone())),
-        }
+        })
     );
     assert_eq!(
         split_feature.dependencies.as_slice(),
@@ -54,10 +55,10 @@ fn split_face_path_uses_the_prebound_source_sketch() {
 
 #[test]
 fn split_face_path_binds_to_projected_sketch_geometry() {
-    let mut definition = FeatureDefinition::SplitFace {
+    let mut definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
         targets: FaceSelection::Unresolved,
         tool: SplitFaceTool::Path(PathRef::Native("sketch-native".into())),
-    };
+    });
     let feature_id = FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar");
     let sketch_id =
         cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch-geometry").unwrap();
@@ -72,10 +73,10 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
     .unwrap());
     assert!(matches!(
         definition,
-        FeatureDefinition::SplitFace {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
             tool: SplitFaceTool::Path(PathRef::Sketch(ref bound)),
             ..
-        } if bound == &sketch_id
+        }) if bound == &sketch_id
     ));
 }
 
@@ -131,10 +132,10 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        } if (reference == &projected[0].id) && actual_distance.get() == 6.0
+        }) if (reference == &projected[0].id) && actual_distance.get() == 6.0
     ));
     assert_eq!(
         projected[1].dependencies.as_slice(),
@@ -288,90 +289,90 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
 
     assert!(matches!(
         projected[0].evaluation.definition(),
-        FeatureDefinition::Dome {
+        FeatureDefinition::Operation(FeatureOperation::Dome {
             height: Some(actual_height),
             ..
-        } if actual_height.get() == 2.0
+        }) if actual_height.get() == 2.0
     ));
     assert!(matches!(
         projected[1].evaluation.definition(),
-        FeatureDefinition::Rib {
+        FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: RibConstruction {
                 thickness: Some(actual_thickness),
                 ..
             },
             ..
-        } if actual_thickness.get() == 1.0
+        }) if actual_thickness.get() == 1.0
     ));
     assert!(matches!(
         projected[2].evaluation.definition(),
-        FeatureDefinition::Loft {
+        FeatureDefinition::Operation(FeatureOperation::Loft {
             solid: false,
             op: BooleanOp::Unresolved,
             ..
-        }
+        })
     ));
     assert!(matches!(
         projected[3].evaluation.definition(),
-        FeatureDefinition::Loft {
+        FeatureDefinition::Operation(FeatureOperation::Loft {
             solid: true,
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
     assert!(matches!(
         projected[4].evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             solid: Some(false),
             ..
-        }
+        })
     ));
     assert!(matches!(
         projected[5].evaluation.definition(),
-        FeatureDefinition::OffsetSurface {
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
-        }
+        })
     ));
     assert!(matches!(
         projected[6].evaluation.definition(),
-        FeatureDefinition::KnitSurface {
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces: FaceSelection::Unresolved,
             merge_entities: None,
             create_solid: None,
             gap_tolerance: None,
-        }
+        })
     ));
     assert!(matches!(
         projected[7].evaluation.definition(),
-        FeatureDefinition::FilledSurface {
+        FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
             ref continuity,
             merge_result: None,
             ..
-        } if continuity.is_unresolved()
+        }) if continuity.is_unresolved()
     ));
     assert!(matches!(
         projected[8].evaluation.definition(),
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved(_),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
             ..
-        }
+        })
     ));
     assert!(matches!(
         projected[9].evaluation.definition(),
-        FeatureDefinition::ExtendSurface {
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
-        }
+        })
     ));
     assert!(matches!(
         projected[10].evaluation.definition(),
-        FeatureDefinition::Draft {
+        FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: FaceSelection::Unresolved,
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Unresolved,
@@ -380,7 +381,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             angle: Some(value),
             outward: None,
             ..
-        } if (value.get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
+        }) if (value.get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
     ));
 }
 
@@ -392,7 +393,7 @@ fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
     feature.parameters.insert("D1".into(), "R1".into());
     assert!(matches!(
         project_fillet(&feature),
-        FeatureDefinition::Fillet { groups }
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
 }
@@ -411,7 +412,7 @@ fn variable_fillet_d_dimensions_require_native_vertex_associations() {
 
     assert!(matches!(
         project_fillet(&feature),
-        FeatureDefinition::Fillet { groups }
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
 }

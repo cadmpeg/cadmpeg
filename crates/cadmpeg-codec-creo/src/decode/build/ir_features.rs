@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, UnresolvedFamily,
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureOperation as IrFeatureOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -112,9 +113,9 @@ pub(super) fn emit_model_features(
                 if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id).is_some() {
                     datum_plane_feature_definition(&datum.plane)
                 } else {
-                    IrFeatureDefinition::Unresolved {
+                    IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
                         family: UnresolvedFamily::DatumPlane,
-                    }
+                    })
                 },
             ),
             native_ref: None,
@@ -163,7 +164,7 @@ pub(super) fn emit_model_features(
                         "Fillet",
                     )?
                 } else {
-                    IrFeatureDefinition::StoredGeometry {}
+                    IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 },
                 feature_output_bodies(scan, ir, feature_id),
             ),
@@ -218,12 +219,12 @@ pub(super) fn emit_model_features(
                         unbounded_feature_plane_definition(scan, ir, operation.feature_id).map(Ok)
                     })
                     .unwrap_or_else(|| {
-                        Ok(IrFeatureDefinition::Native {
+                        Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                             kind: current_operation
                                 .map_or("Native Feature", |operation| operation.kind.as_str())
                                 .into(),
                             parameters: parameters.clone(),
-                        })
+                        }))
                     })
             },
             |schema_class| {
@@ -290,10 +291,13 @@ pub(super) fn emit_model_features(
                 .legacy_rounds
                 .iter()
                 .any(|round| round.feature_id == operation.feature_id)
-                && matches!(&definition, IrFeatureDefinition::Fillet { .. })
+                && matches!(
+                    &definition,
+                    IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { .. })
+                )
                 && matches!(
                     existing.evaluation.definition(),
-                    IrFeatureDefinition::StoredGeometry {}
+                    IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 );
             if upgrade_legacy_round {
                 existing.evaluation.set_definition(definition);
@@ -392,9 +396,11 @@ pub(super) fn emit_model_features(
             || {
                 Ok(named_feature_definition(scan, ir, feature_id, kind)
                     .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
-                    .unwrap_or_else(|| IrFeatureDefinition::Native {
-                        kind: kind.into(),
-                        parameters: parameters.clone(),
+                    .unwrap_or_else(|| {
+                        IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                            kind: kind.into(),
+                            parameters: parameters.clone(),
+                        })
                     }))
             },
             |schema_class| {

@@ -233,7 +233,7 @@ fn configuration_lane_follows_stored_id_or_ordinal_changes() {
 fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
-        FeatureDefinition,
+        FeatureDefinition, FeatureOperation,
     };
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
@@ -251,9 +251,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     };
     let feature_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#sketch")
         .expect("identity grammar");
-    let unresolved = FeatureDefinition::Sketch {
+    let unresolved = FeatureDefinition::Operation(FeatureOperation::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-    };
+    });
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
@@ -284,9 +284,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(spatial_sketch_id.clone()),
-            },
+            }),
             Vec::new(),
         ),
         native_ref: Some("spatial-native".into()),
@@ -356,7 +356,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::SpatialSketch { sketch: None },
+                    definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                        sketch: None,
+                    }),
                 },
             ),
         ]),
@@ -414,15 +416,15 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-        } if sketch == &sketch_id
+        }) if sketch == &sketch_id
     ));
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&spatial_feature_id].definition,
-        FeatureDefinition::SpatialSketch {
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
             sketch: Some(sketch),
-        } if sketch == &spatial_sketch_id
+        }) if sketch == &spatial_sketch_id
     ));
     assert!(ir.model.sketch_constraints.iter().any(|constraint| {
         constraint.native_ref.as_deref() == Some("relation-marker")
@@ -436,7 +438,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
 
 #[test]
 fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
-    use cadmpeg_ir::features::{Feature as NeutralFeature, FeatureDefinition};
+    use cadmpeg_ir::features::{Feature as NeutralFeature, FeatureDefinition, FeatureOperation};
 
     let mut owner = feature("owner-native", Some("63"), 0);
     owner.xml_tag = "Sketch".into();
@@ -474,9 +476,9 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
             Vec::new(),
         ),
         native_ref: Some(native_ref.into()),
@@ -488,11 +490,11 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
     bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        }
+        })
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
@@ -507,10 +509,10 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
             ..
-        }
+        })
     ));
 }
 
@@ -518,7 +520,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
 fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
-        FeatureDefinition, FeatureId,
+        FeatureDefinition, FeatureId, FeatureOperation,
     };
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
@@ -541,9 +543,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
-            },
+            }),
             Vec::new(),
         ),
         native_ref: Some("spatial-native".into()),
@@ -560,9 +562,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(planar_sketch_id.clone()),
-            },
+            }),
             Vec::new(),
         ),
         native_ref: Some("planar-state-native".into()),
@@ -606,7 +608,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                             outputs: cadmpeg_ir::features::DistinctMembers::default(),
                         },
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        definition: FeatureDefinition::SpatialSketch { sketch: None },
+                        definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                            sketch: None,
+                        }),
                     },
                 ),
                 (
@@ -616,9 +620,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                             outputs: cadmpeg_ir::features::DistinctMembers::default(),
                         },
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        definition: FeatureDefinition::Sketch {
+                        definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                        },
+                        }),
                     },
                 ),
             ]),
@@ -635,15 +639,15 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
 
     assert!(ir.model.configurations.iter().all(|configuration| matches!(
         &configuration.feature_states[&feature_id].definition,
-        FeatureDefinition::SpatialSketch {
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
             sketch: Some(projected),
-        } if projected == &sketch_id
+        }) if projected == &sketch_id
     )));
     assert!(ir.model.configurations.iter().all(|configuration| matches!(
         &configuration.feature_states[&planar_state_id].definition,
-        FeatureDefinition::SpatialSketch {
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
             sketch: Some(projected),
-        } if projected == &planar_sketch_id
+        }) if projected == &planar_sketch_id
     )));
 }
 
@@ -651,6 +655,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
 fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
+        FeatureOperation,
     };
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
@@ -670,9 +675,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
-            },
+            }),
             Vec::new(),
         ),
         native_ref: Some("scoped-spatial-native".into()),
@@ -694,7 +699,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
                 outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            definition: FeatureDefinition::SpatialSketch { sketch: None },
+            definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                sketch: None,
+            }),
         },
     );
     ir.model.configurations.push(configuration);
@@ -705,9 +712,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
-        FeatureDefinition::SpatialSketch {
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
             sketch: Some(projected),
-        } if projected == &sketch_id
+        }) if projected == &sketch_id
     ));
 }
 
@@ -715,12 +722,12 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 fn supplemental_edge_paths_project_into_matching_configuration_state() {
     use cadmpeg_ir::features::{
         ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration, EdgeSelection,
-        Feature as NeutralFeature, FeatureDefinition, FeatureId,
+        Feature as NeutralFeature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let producer_id = FeatureId::mint("synthetic:test:id#producer").expect("identity grammar");
     let consumer_id = FeatureId::mint("synthetic:test:id#consumer").expect("identity grammar");
-    let unresolved = FeatureDefinition::Chamfer {
+    let unresolved = FeatureDefinition::Operation(FeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Distance {
@@ -728,7 +735,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             },
         }),
         flip_direction: false,
-    };
+    });
     let neutral_feature = |id: FeatureId, ordinal, native_ref: &str, definition| NeutralFeature {
         id,
         ordinal,
@@ -749,7 +756,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             producer_id.clone(),
             0,
             "producer-native",
-            FeatureDefinition::StoredGeometry {},
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         neutral_feature(
             consumer_id.clone(),
@@ -778,7 +785,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::StoredGeometry {},
+                    definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 },
             ),
             (
@@ -816,7 +823,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
     assert_eq!(state.dependencies.as_slice(), vec![producer_id.clone()]);
     assert!(matches!(
         &state.definition,
-        FeatureDefinition::Chamfer { groups, .. }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(
                 &groups[0].edges,
                 EdgeSelection::Generated { edges, .. }
@@ -830,7 +837,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
 #[test]
 fn configuration_hole_inherits_shared_construction_and_placement() {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureId, HoleKind, HolePlacement, LinearTermination,
+        FeatureDefinition, FeatureId, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
     };
 
     let id = FeatureId::mint("test:model:feature#hole").expect("identity grammar");
@@ -846,7 +853,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Hole {
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
@@ -877,14 +884,14 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                 bottom: None,
                 taper_angle: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     };
     let mut configured = base.clone();
     configured
         .evaluation
-        .set_definition(FeatureDefinition::Hole {
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Hole {
             profile: None,
             profile_filter: None,
             face: None,
@@ -901,7 +908,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
             bottom: None,
             taper_angle: None,
             allow_multi_profile_faces: None,
-        });
+        }));
 
     configured.evaluation.edit(|definition, _| {
         inherit_configuration_shared_semantics(definition, base.evaluation.definition()).unwrap();
@@ -915,7 +922,9 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 
 #[test]
 fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, LinearTermination};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
+    };
 
     let placement = HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
@@ -927,7 +936,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         ))
         .unwrap(),
     };
-    let base = FeatureDefinition::Hole {
+    let base = FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: None,
@@ -958,8 +967,8 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
-    };
-    let mut local = FeatureDefinition::Hole {
+    });
+    let mut local = FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: None,
@@ -976,17 +985,17 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
-    };
+    });
 
     inherit_configuration_hole_semantics(&mut local, &base, false).unwrap();
 
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
 
         extent,
         ..
-    } = local
+    }) = local
     else {
         panic!("hole definition changed variant");
     };
@@ -1019,11 +1028,11 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
-        HoleKind, LinearTermination,
+        FeatureOperation, HoleKind, LinearTermination,
     };
 
     let id = FeatureId::mint("test:model:feature#hole-lane").expect("identity grammar");
-    let base_definition = FeatureDefinition::Hole {
+    let base_definition = FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: None,
@@ -1054,8 +1063,8 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
-    };
-    let local_definition = FeatureDefinition::Hole {
+    });
+    let local_definition = FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: None,
@@ -1072,7 +1081,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
-    };
+    });
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: id.clone(),
@@ -1112,13 +1121,13 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     .unwrap();
 
     assert!(matches!(
-    &ir.model.configurations[0].feature_states[&id].definition, FeatureDefinition::Hole {
+    &ir.model.configurations[0].feature_states[&id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
 
         extent: None,
         ..
-    } if matches!((shape.construction(), &shape.diameter(),), (construction, None,) if placements.is_none()
+    }) if matches!((shape.construction(), &shape.diameter(),), (construction, None,) if placements.is_none()
         && matches!(construction, cadmpeg_ir::features::HoleConstruction::Form {
             kind: HoleKind::Simple,
             ..
@@ -1128,29 +1137,29 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
 #[test]
 fn configuration_offset_plane_inherits_shared_reference() {
     use cadmpeg_ir::{
-        features::{DatumPlaneReference, FaceSelection, FeatureDefinition},
+        features::{DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureOperation},
         scalar::Length,
     };
 
-    let base = FeatureDefinition::DatumOffsetPlane {
+    let base = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face {
             face: FaceSelection::Faces(vec!["test:model:face#1"
                 .try_into()
                 .expect("valid identity")]),
         }),
         distance: Length::new(5.0).unwrap(),
-    };
-    let mut configured = FeatureDefinition::DatumOffsetPlane {
+    });
+    let mut configured = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: None,
         distance: Length::new(8.0).unwrap(),
-    };
+    });
 
     inherit_configuration_shared_semantics(&mut configured, &base).unwrap();
 
-    let FeatureDefinition::DatumOffsetPlane {
+    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference,
         distance,
-    } = configured
+    }) = configured
     else {
         panic!("offset-plane definition retained its variant");
     };
@@ -1161,20 +1170,20 @@ fn configuration_offset_plane_inherits_shared_reference() {
 #[test]
 fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     use cadmpeg_ir::{
-        features::{DatumPlaneReference, FaceSelection, FeatureDefinition},
+        features::{DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureOperation},
         scalar::Length,
     };
 
-    let base = FeatureDefinition::DatumOffsetPlane {
+    let base = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face {
             face: FaceSelection::Faces(vec!["test:model:face#1"
                 .try_into()
                 .expect("valid identity")]),
         }),
         distance: Length::new(5.0).unwrap(),
-    };
+    });
     let configured_origin = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
-    let mut configured = FeatureDefinition::DatumOffsetPlane {
+    let mut configured = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::ResolvedPlane {
             frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
                 configured_origin,
@@ -1184,14 +1193,14 @@ fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
             .unwrap(),
         }),
         distance: Length::new(8.0).unwrap(),
-    };
+    });
 
     inherit_configuration_shared_semantics(&mut configured, &base).unwrap();
 
-    let FeatureDefinition::DatumOffsetPlane {
+    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
         distance,
-    } = configured
+    }) = configured
     else {
         panic!("offset-plane definition retained its face reference");
     };
@@ -1203,7 +1212,10 @@ fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
 fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{DatumPlaneReference, Feature as NeutralFeature, FeatureDefinition, FeatureId},
+        features::{
+            DatumPlaneReference, Feature as NeutralFeature, FeatureDefinition, FeatureId,
+            FeatureOperation,
+        },
         scalar::Length,
     };
 
@@ -1226,24 +1238,24 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     let base_plane = neutral_feature(
         plane_id.clone(),
         0,
-        FeatureDefinition::DatumPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, -1.0),
             )
             .unwrap(),
-        },
+        }),
     );
     let base_offset = neutral_feature(
         offset_id.clone(),
         1,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature {
                 feature: plane_id.clone(),
             }),
             distance: Length::new(12.0).unwrap(),
-        },
+        }),
     );
     let unresolved_reference = || DatumPlaneReference::ResolvedPlane {
         frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
@@ -1256,10 +1268,10 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     let mut configured = neutral_feature(
         offset_id.clone(),
         1,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(unresolved_reference()),
             distance: Length::new(12.0).unwrap(),
-        },
+        }),
     );
 
     inherit_configuration_reference_plane_semantics(
@@ -1271,16 +1283,16 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     assert_eq!(configured.dependencies.as_slice(), vec![plane_id.clone()]);
     assert!(matches!(
         configured.evaluation.definition().clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             ..
-        } if reference == plane_id
+        }) if reference == plane_id
     ));
 
     let mut mismatched = neutral_feature(
         offset_id,
         1,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane {
                 frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
@@ -1290,7 +1302,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
                 .unwrap(),
             }),
             distance: Length::new(12.0).unwrap(),
-        },
+        }),
     );
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut mismatched),
@@ -1299,10 +1311,10 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     .unwrap();
     assert!(matches!(
         mismatched.evaluation.definition().clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             ..
-        }
+        })
     ));
 }
 
@@ -1310,7 +1322,10 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
 fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{DatumPlaneReference, Feature as NeutralFeature, FeatureDefinition, FeatureId},
+        features::{
+            DatumPlaneReference, Feature as NeutralFeature, FeatureDefinition, FeatureId,
+            FeatureOperation,
+        },
         scalar::Length,
     };
 
@@ -1332,30 +1347,30 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     };
     let base_plane = neutral_feature(
         plane_id.clone(),
-        FeatureDefinition::DatumPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        },
+        }),
     );
     let base_offset = neutral_feature(
         offset_id.clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature {
                 feature: plane_id.clone(),
             }),
             distance: Length::new(6.0).unwrap(),
-        },
+        }),
     );
     let mut configured = neutral_feature(
         offset_id.clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: Length::new(6.0).unwrap(),
-        },
+        }),
     );
 
     inherit_configuration_reference_plane_semantics(
@@ -1367,15 +1382,15 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     assert_eq!(configured.dependencies.as_slice(), vec![plane_id]);
     assert!(matches!(
         configured.evaluation.definition().clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        } if (reference == FeatureId::mint("test:model:feature#plane").expect("identity grammar")) && actual_distance.get() == 6.0
+        }) if (reference == FeatureId::mint("test:model:feature#plane").expect("identity grammar")) && actual_distance.get() == 6.0
     ));
 
     let unresolved_base = neutral_feature(
         offset_id.clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane {
                 frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
@@ -1385,14 +1400,14 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
                 .unwrap(),
             }),
             distance: Length::new(6.0).unwrap(),
-        },
+        }),
     );
     let mut remains_unresolved = neutral_feature(
         offset_id,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: Length::new(6.0).unwrap(),
-        },
+        }),
     );
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut remains_unresolved),
@@ -1411,7 +1426,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     use cadmpeg_ir::{
         features::{
             DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
-            FeatureId,
+            FeatureId, FeatureOperation,
         },
         scalar::Length,
     };
@@ -1439,18 +1454,22 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         )
         .unwrap(),
     };
-    let base = neutral_feature(FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Faces(vec!["test:model:entity#face%231"
-                .try_into()
-                .expect("valid identity")]),
-        }),
-        distance: Length::new(7.0).unwrap(),
-    });
-    let mut configured = neutral_feature(FeatureDefinition::DatumOffsetPlane {
-        reference: Some(resolved_plane()),
-        distance: Length::new(7.0).unwrap(),
-    });
+    let base = neutral_feature(FeatureDefinition::Operation(
+        FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Faces(vec!["test:model:entity#face%231"
+                    .try_into()
+                    .expect("valid identity")]),
+            }),
+            distance: Length::new(7.0).unwrap(),
+        },
+    ));
+    let mut configured = neutral_feature(FeatureDefinition::Operation(
+        FeatureOperation::DatumOffsetPlane {
+            reference: Some(resolved_plane()),
+            distance: Length::new(7.0).unwrap(),
+        },
+    ));
 
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut configured),
@@ -1460,10 +1479,10 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
 
     assert!(matches!(
         configured.evaluation.definition().clone(),
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             ..
-        }
+        })
     ));
 }
 
@@ -1571,7 +1590,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     use cadmpeg_ir::{
         features::{
             DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
-            FeatureId,
+            FeatureId, FeatureOperation,
         },
         scalar::Length,
     };
@@ -1600,11 +1619,13 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         terminal_feature_ref: None,
         components: components.clone(),
     };
-    let definition = || FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Native(native.clone()),
-        }),
-        distance: Length::new(4.0).unwrap(),
+    let definition = || {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Native(native.clone()),
+            }),
+            distance: Length::new(4.0).unwrap(),
+        })
     };
     let feature = NeutralFeature {
         id: feature_id.clone(),
@@ -1666,13 +1687,13 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face { face: FaceSelection::Resolved {
                 faces,
                 native: resolved_native,
             } }),
             ..
-        } if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")] && resolved_native == &native
+        }) if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")] && resolved_native == &native
     ));
 }
 
@@ -1684,22 +1705,24 @@ fn configuration_frame_alias_binds_without_body_membership() {
     use cadmpeg_ir::{
         features::{
             ConfigurationBodies, DatumPlaneReference, FaceSelection, Feature as NeutralFeature,
-            FeatureDefinition, FeatureId,
+            FeatureDefinition, FeatureId, FeatureOperation,
         },
         scalar::Length,
     };
 
     let feature_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
-    let definition = || FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::ResolvedPlane {
-            frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
-                Point3::new(0.0, 0.0, 5.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        }),
-        distance: Length::new(4.0).unwrap(),
+    let definition = || {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::ResolvedPlane {
+                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            }),
+            distance: Length::new(4.0).unwrap(),
+        })
     };
     let feature = NeutralFeature {
         id: feature_id.clone(),
@@ -1759,9 +1782,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
-        FeatureDefinition::DatumOffsetPlane {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face { face: FaceSelection::Faces(faces) }),
             ..
-        } if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")]
+        }) if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")]
     ));
 }

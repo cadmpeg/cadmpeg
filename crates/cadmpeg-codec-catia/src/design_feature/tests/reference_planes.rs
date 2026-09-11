@@ -2,6 +2,7 @@
 //! Reference-plane owner transfer tests.
 
 use super::*;
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
@@ -54,9 +55,9 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class_name));
         assert!(matches!(
             ir.model.features[0].evaluation.definition(),
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPlane
-            }
+            })
         ));
         assert_eq!(
             ir.model.features[0].native_ref.as_deref(),

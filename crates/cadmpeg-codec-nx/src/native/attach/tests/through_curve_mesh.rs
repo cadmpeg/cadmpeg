@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_through_curve_mesh_retains_surface_family_without_roles() {
@@ -9,9 +9,9 @@ fn nx_through_curve_mesh_retains_surface_family_without_roles() {
 
     assert_eq!(
         definition,
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::ThroughCurveMesh
-        }
+        })
     );
     assert_eq!(definition.body_output_family(), Some("through curve mesh"));
 }

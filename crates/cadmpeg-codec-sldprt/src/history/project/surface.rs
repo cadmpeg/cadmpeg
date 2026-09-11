@@ -4,8 +4,8 @@
 use crate::records::Feature;
 use cadmpeg_ir::{
     features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, PathRef, RuledSurfaceMode,
-        SurfaceExtension, TrimRegion,
+        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
+        RuledSurfaceMode, SurfaceExtension, TrimRegion,
     },
     scalar::Length,
 };
@@ -16,7 +16,7 @@ use crate::history::literals::{
 };
 
 pub(crate) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::OffsetSurface {
+    FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
         faces: feature
             .properties
             .get("Faces")
@@ -28,7 +28,7 @@ pub(crate) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_length_mm(value))
             .and_then(Length::new),
-    }
+    })
 }
 
 pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
@@ -36,7 +36,7 @@ pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
         Some(value) => parse_length_mm(value).and_then(cadmpeg_ir::scalar::NonNegativeLength::new),
         None => None,
     };
-    FeatureDefinition::KnitSurface {
+    FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces: feature
             .properties
             .get("Faces")
@@ -51,7 +51,7 @@ pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
             .get("CreateSolid")
             .and_then(|value| parse_bool(value)),
         gap_tolerance,
-    }
+    })
 }
 
 pub(crate) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
@@ -59,7 +59,7 @@ pub(crate) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Continuity")
         .and_then(|value| crate::feature_schema::parse_surface_continuity(value));
-    FeatureDefinition::FilledSurface {
+    FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(
             feature
                 .properties
@@ -80,7 +80,7 @@ pub(crate) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("MergeResult")
             .and_then(|value| parse_bool(value)),
-    }
+    })
 }
 
 pub(crate) fn project_trim_surface(
@@ -97,7 +97,7 @@ pub(crate) fn project_trim_surface(
             )
         },
     );
-    FeatureDefinition::TrimSurface {
+    FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces: feature
             .properties
             .get("Faces")
@@ -109,11 +109,11 @@ pub(crate) fn project_trim_surface(
             .get("Keep")
             .and_then(|value| crate::feature_schema::parse_trim_region(value))
             .unwrap_or(TrimRegion::Unresolved),
-    }
+    })
 }
 
 pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::ExtendSurface {
+    FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: feature
             .properties
             .get("Faces")
@@ -130,7 +130,7 @@ pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .get("Method")
             .and_then(|value| crate::feature_schema::parse_surface_extension(value))
             .unwrap_or(SurfaceExtension::Unresolved),
-    }
+    })
 }
 
 pub(crate) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
@@ -156,12 +156,14 @@ pub(crate) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefiniti
         },
         _ => return None,
     };
-    Some(FeatureDefinition::RuledSurface {
-        edges: EdgeSelection::Native(feature.properties.get("Edges")?.clone()),
-        support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
-        mode,
-        angle: None,
-        alternate_face: None,
-        corner: None,
-    })
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::RuledSurface {
+            edges: EdgeSelection::Native(feature.properties.get("Edges")?.clone()),
+            support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
+            mode,
+            angle: None,
+            alternate_face: None,
+            corner: None,
+        },
+    ))
 }

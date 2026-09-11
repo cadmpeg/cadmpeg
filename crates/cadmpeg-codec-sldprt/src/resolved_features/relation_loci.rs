@@ -3570,9 +3570,11 @@ pub(super) fn profile_loci_by_marker(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -4031,9 +4033,11 @@ pub(super) fn marker_transform_candidates_by_feature(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };

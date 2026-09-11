@@ -103,15 +103,15 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
         .expect("sketch history feature");
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Sketch {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
-        } if id == &sketch.id
+        }) if id == &sketch.id
     ));
 }
 
 #[test]
 fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
-    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -134,15 +134,15 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("sweep history feature");
     assert!(matches!(
-        feature.evaluation.definition(), FeatureDefinition::Sweep {
+        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Sketch(id),) if id == &sketch.id))));
+        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Sketch(id),) if id == &sketch.id))));
 }
 
 #[test]
 fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_sketch_profiles(&triangle_body(), 2);
     source.extend(make_block(
@@ -162,15 +162,15 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("sweep history feature");
     assert!(matches!(
-        feature.evaluation.definition(), FeatureDefinition::Sweep {
+        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Unresolved(_),))));
+        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Unresolved(_),))));
 }
 
 #[test]
 fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -194,16 +194,16 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
         .expect("extrusion history feature");
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(id)),
             ..
-        } if id == &sketch.id
+        }) if id == &sketch.id
     ));
 }
 
 #[test]
 fn decode_binds_configuration_sketch_state_after_geometry_projection() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -224,16 +224,16 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
         .expect("projected sketch feature");
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature.id].definition,
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(configuration_sketch)),
             ..
-        } if decoded.ir().model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
+        }) if decoded.ir().model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
     ));
 }
 
 #[test]
 fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_nested_sketch_profiles(&triangle_body(), 2);
     source.extend(make_block(
@@ -254,16 +254,16 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
         .expect("extrusion history feature");
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn decode_binds_unique_sketch_history_to_profile_consumers() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -277,18 +277,18 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     let sketch_id = decoded.ir().model.sketches[0].id.clone();
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(value)),
-        } if value == &sketch_id
+        }) if value == &sketch_id
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        feature.evaluation.definition(), FeatureDefinition::Rib {
+        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile,
                 ..
             },
             ..
-        } if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(value)),) if value == &sketch_id))));
+        }) if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(value)),) if value == &sketch_id))));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
@@ -308,9 +308,9 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .iter()
         .any(|feature| matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
-            }
+            })
         )));
 }
 
@@ -319,8 +319,8 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, FeatureOperation,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
@@ -369,31 +369,31 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "synthetic:test:id#base",
             "Profile",
             "native-base",
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         neutral(
             "synthetic:test:id#alias",
             "Profile<3>",
             "native-alias",
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         neutral(
             "synthetic:test:id#different",
             "Profile<4>",
             "native-different",
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         neutral(
             "synthetic:test:id#consumer",
             "Boss",
             "native-consumer",
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Native("native-alias".into())),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -409,7 +409,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
     ];
     let native = |id: &str, name: &str, depth: &str| crate::records::Feature {
@@ -446,11 +446,11 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
 
     assert!(matches!(
         features[1].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        }
+        })
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
@@ -458,15 +458,15 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     );
     assert!(matches!(
         features[2].evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        }
+        })
     ));
     assert!(matches!(
         features[3].evaluation.definition(),
-        FeatureDefinition::Extrude { profile: ProfileRef::Planar(PlanarProfileRef::Sketch(id)), .. } if id == &sketch_id
+        FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(PlanarProfileRef::Sketch(id)), .. }) if id == &sketch_id
     ));
     assert_eq!(
         features[3].dependencies.as_slice(),
@@ -476,7 +476,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
 
 #[test]
 fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
 
     let mut source = sldprt_with_nested_nurbs_sketches(&triangle_body());
     source.extend(make_block(
@@ -493,9 +493,9 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .features
         .iter()
         .filter_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } => Some(sketch.clone()),
+            }) => Some(sketch.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -506,11 +506,11 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .features
         .iter()
         .find_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Sweep {
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
                 path: Some(PathRef::Sketch(path)),
                 ..
-            } => match (shape.section(),) {
+            }) => match (shape.section(),) {
                 (cadmpeg_ir::features::SweepSection::Profile(profile),) => match (profile,) {
                     (PlanarProfileRef::Sketch(profile),) => Some((profile, path)),
                     _ => None,
@@ -528,7 +528,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
 
 #[test]
 fn decode_does_not_bind_duplicate_sketch_names_by_order() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     let mut payload = resolved_features_payload(&[1, 1]);
@@ -555,11 +555,11 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
     assert_eq!(decoded.ir().model.sketches.len(), 2);
     assert!(decoded.ir().model.features.iter().all(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Sketch {
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             ..
-        }
+        })
     )));
 }
 

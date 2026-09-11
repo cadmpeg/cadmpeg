@@ -1,6 +1,6 @@
 use crate::features::{
     ConfigurationEvaluation, ConfigurationFeatureState, DistinctMembers, FeatureDefinition,
-    FeatureId, FinitePoint3,
+    FeatureId, FeatureOperation, FinitePoint3,
 };
 use crate::ids::BodyId;
 use crate::math::Point3;
@@ -46,10 +46,10 @@ fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
             outputs: DistinctMembers::default(),
         },
         dependencies: vec![earlier.clone()].try_into().unwrap(),
-        definition: FeatureDefinition::DatumPoint {
+        definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,
-        },
+        }),
     };
     let mut wire = serde_json::to_value(&state).unwrap();
     assert_eq!(

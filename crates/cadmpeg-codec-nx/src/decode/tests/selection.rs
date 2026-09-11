@@ -1083,7 +1083,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
         BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId, UnresolvedFamily,
+        FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
     };
 
     let mut ir = CadIr::empty();
@@ -1100,10 +1100,10 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: kind.into(),
                     parameters: Default::default(),
-                },
+                }),
             ),
             native_ref: None,
         });
@@ -1120,9 +1120,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1138,29 +1138,29 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DeleteBody {
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
                 mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-            },
+            }),
         ),
         native_ref: None,
     });
     for (ordinal, definition) in [
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Loft,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FreeformSurface,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Loft,
-        },
+        }),
     ]
     .into_iter()
     .enumerate()
@@ -1193,11 +1193,11 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Block {
+            FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: None,
                 placement: None,
                 op: BooleanOp::Unresolved,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1213,7 +1213,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sweep {
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape: cadmpeg_ir::features::SweepShape::new(
                     cadmpeg_ir::features::SweepSection::Unresolved(None),
                     Vec::new(),
@@ -1234,7 +1234,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
                 twist: None,
                 scale: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1313,9 +1313,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     });
     ir.model.features[2]
         .evaluation
-        .set_definition(FeatureDefinition::Sketch {
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-        });
+        }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
 
@@ -1326,7 +1326,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
 #[test]
 fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, UnresolvedFamily};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
+    };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let body = ir.model.bodies[0].id.clone();
@@ -1343,13 +1345,13 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::DatumPoint {
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                     position: cadmpeg_ir::features::FinitePoint3::new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     )
                     .unwrap(),
                     construction: None,
-                },
+                }),
                 vec![body],
             ),
             native_ref: None,
@@ -1366,13 +1368,13 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::DatumPoint {
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                     position: cadmpeg_ir::features::FinitePoint3::new(
                         cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                     )
                     .unwrap(),
                     construction: None,
-                },
+                }),
             ),
             native_ref: None,
         },
@@ -1388,10 +1390,10 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DELETE".into(),
                     parameters: Default::default(),
-                },
+                }),
             ),
             native_ref: None,
         },
@@ -1407,9 +1409,9 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Unresolved {
+                FeatureDefinition::Operation(FeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumCoordinateSystem,
-                },
+                }),
             ),
             native_ref: None,
         },
@@ -1425,9 +1427,9 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-                },
+                }),
             ),
             native_ref: None,
         },
@@ -1440,7 +1442,9 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
 
 #[test]
 fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let body = ir.model.bodies[0].id.clone();
@@ -1457,12 +1461,12 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                FeatureDefinition::BaseFeature {
+                FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
                         bodies: vec![body.clone()],
                         native: "nx:segment-body-bindings".into(),
                     },
-                },
+                }),
                 vec![body.clone()],
             ),
             native_ref: None,
@@ -1479,10 +1483,10 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             source_content: Default::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Native {
+                FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DELETE".into(),
                     parameters: Default::default(),
-                },
+                }),
             ),
             native_ref: None,
         },
@@ -1504,7 +1508,9 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
 #[test]
 fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind,
+    };
 
     let mut ir = CadIr::empty();
     let mut source_properties = std::collections::BTreeMap::new();
@@ -1524,10 +1530,10 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1544,7 +1550,9 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
 
 #[test]
 fn design_intent_losses_accept_pattern_construction_without_body_reference() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind,
+    };
 
     let feature = Feature {
         id: FeatureId::mint("test:test:feature#pattern-construction").expect("identity grammar"),
@@ -1558,10 +1566,10 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            },
+            }),
         ),
         native_ref: None,
     };
@@ -1591,7 +1599,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
 #[test]
 fn design_intent_losses_accept_unbound_trim_surface_construction() {
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, PathRef, TrimRegion,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PathRef, TrimRegion,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1607,7 +1615,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::TrimSurface {
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
                 faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
                     "test:model:entity#face",
                 )
@@ -1617,7 +1625,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
                 )
                 .expect("identity grammar")]),
                 keep: TrimRegion::Inside,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -1638,7 +1646,9 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
 
 #[test]
 fn output_free_local_body_construction_requires_unbound_primary_body() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind,
+    };
 
     let mut source_properties = std::collections::BTreeMap::new();
     source_properties.insert(
@@ -1657,10 +1667,10 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            },
+            }),
         ),
         native_ref: None,
     };

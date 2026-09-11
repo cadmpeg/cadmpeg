@@ -74,7 +74,9 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .expect("feature 4");
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude { .. }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+        )
     ));
     assert_eq!(
         feature.source_properties["native_parameter.generated_entity.7.source_section_entity_id"],
@@ -386,9 +388,9 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
     let feature = &result.ir().model.features[0];
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
@@ -634,9 +636,9 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         .expect("decode");
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(&group.edges, cadmpeg_ir::features::EdgeSelection::Native(selection)
                 if selection == "creo:allfeatur:replay_edgs_affected#4:9")
                 && group.radius.is_unresolved())
@@ -680,8 +682,9 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature");
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-        feature.evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+    ) = feature.evaluation.definition()
     else {
         panic!("native feature");
     };

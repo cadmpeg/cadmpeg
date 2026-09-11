@@ -221,10 +221,12 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
         .expect("metadata extrusion feature");
     assert!(matches!(
         feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            op: cadmpeg_ir::features::BooleanOp::Join,
-            ..
-        }
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                op: cadmpeg_ir::features::BooleanOp::Join,
+                ..
+            }
+        )
     ));
 }
 

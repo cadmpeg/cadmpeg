@@ -3,7 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition, ParameterId};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
+    ParameterId,
+};
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::{planned_feature_dimension_parameter_ids, transfer_feature_dimensions};
@@ -70,10 +73,10 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
             cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
                 .expect("identity grammar"),
             ordinal,
-            IrFeatureDefinition::Native {
+            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                 kind: "test".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ));
     }
 

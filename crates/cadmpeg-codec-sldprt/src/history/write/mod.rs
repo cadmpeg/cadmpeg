@@ -4,7 +4,8 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, FeatureId, LinearTermination, PlanarProfileRef, VertexSelection,
+    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, PlanarProfileRef,
+    VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -187,7 +188,7 @@ pub(crate) fn validate_embedded_helix_edits(
         .filter_map(|feature| {
             matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::HelixNativeAxis { .. }
+                FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { .. })
             )
             .then_some(feature.id)
         })
@@ -198,7 +199,7 @@ pub(crate) fn validate_embedded_helix_edits(
             (embedded.contains(&feature.id)
                 && matches!(
                     feature.evaluation.definition(),
-                    FeatureDefinition::Helix { .. }
+                    FeatureDefinition::Operation(FeatureOperation::Helix { .. })
                 ))
             .then_some((feature.id, feature.evaluation.definition().clone()))
         })
@@ -227,7 +228,9 @@ pub(crate) fn validate_surface_sweep_profile_edits(
     let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sweep { shape, .. } = feature.evaluation.definition() else {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+                feature.evaluation.definition()
+            else {
                 return None;
             };
             let section = shape.section();
@@ -245,7 +248,9 @@ pub(crate) fn validate_surface_sweep_profile_edits(
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep { shape, .. } = feature.evaluation.definition() else {
+        let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+            feature.evaluation.definition()
+        else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
@@ -337,7 +342,9 @@ pub(crate) fn validate_compact_body_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, mode } = feature.evaluation.definition() else {
+        let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) =
+            feature.evaluation.definition()
+        else {
             continue;
         };
         let expected = BodySelection::local(
@@ -404,10 +411,10 @@ pub(crate) fn validate_compact_edge_selection_edits(
             continue;
         };
         let groups = match feature.evaluation.definition() {
-            FeatureDefinition::Fillet { groups } => {
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
                 groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
             }
-            FeatureDefinition::Chamfer { groups, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
                 groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
             }
             _ => continue,
@@ -483,12 +490,16 @@ pub(crate) fn validate_compact_surface_selection_edits(
         };
         let first_component = matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::CosmeticThread { .. }
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
         );
         let slot = match feature.evaluation.definition() {
-            FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
-            FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }) => {
+                SelectionSlot::Face(faces)
+            }
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) => {
+                SelectionSlot::Face(face)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
                         side:
@@ -500,8 +511,8 @@ pub(crate) fn validate_compact_surface_selection_edits(
                             },
                     },
                 ..
-            } => SelectionSlot::Face(face),
-            FeatureDefinition::Extrude {
+            }) => SelectionSlot::Face(face),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
                         side:
@@ -511,7 +522,7 @@ pub(crate) fn validate_compact_surface_selection_edits(
                             },
                     },
                 ..
-            } => SelectionSlot::Vertex(vertex),
+            }) => SelectionSlot::Vertex(vertex),
             _ => continue,
         };
         let native = crate::resolved_features::terminations::compact_surface_selection_value(

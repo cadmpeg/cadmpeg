@@ -6,7 +6,7 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{
     features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
-        InnerWireTaper, LinearTermination, PathRef,
+        FeatureOperation, InnerWireTaper, LinearTermination, PathRef,
     },
     scalar::Length,
 };
@@ -67,16 +67,18 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Hole"))
         .expect("hole feature");
-    let cadmpeg_ir::features::FeatureDefinition::Hole {
-        profile,
-        profile_filter,
-        shape,
-        extent,
-        bottom,
-        taper_angle,
-        allow_multi_profile_faces,
-        ..
-    } = hole.evaluation.definition()
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Hole {
+            profile,
+            profile_filter,
+            shape,
+            extent,
+            bottom,
+            taper_angle,
+            allow_multi_profile_faces,
+            ..
+        },
+    ) = hole.evaluation.definition()
     else {
         panic!("typed hole");
     };
@@ -199,7 +201,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 
     let absent = decode(&hole_document("", "", ""));
     assert!(matches!(
-        definition(&absent, "Hole"), FeatureDefinition::Hole {
+        definition(&absent, "Hole"), FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::CirclesAndArcs),
             shape,
             extent: Some(LinearTermination::Blind {
@@ -207,7 +209,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
             }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Simple,
                 specification: None,
             },) if actual_length.get() == 25.0)));
@@ -240,7 +242,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
             let result = decode(&hole_document(target, type_name, value));
             assert!(matches!(
                 definition(&result, "Hole"),
-                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Hole"
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Hole"
             ));
             assert_eq!(result.report().losses.len(), 1);
             assert!(result.report().losses.iter().all(|loss| {
@@ -366,7 +368,9 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
 
     for (case, type_name, value, expected) in cases {
         let result = decode(type_name, value);
-        let FeatureDefinition::Hole { shape, .. } = hole_definition(&result) else {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
+            hole_definition(&result)
+        else {
             panic!("{case}: expected typed hole");
         };
         let cadmpeg_ir::features::HoleConstruction::Form {
@@ -477,7 +481,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
             definition(result),
-            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Hole"
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Hole"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -500,14 +504,14 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     for target in targets {
         let result = decode(&hole_document(target, None));
         assert!(result.report().losses.is_empty(), "{target}");
-        let FeatureDefinition::Hole {
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter,
             bottom,
             taper_angle,
             shape,
             allow_multi_profile_faces,
             ..
-        } = definition(&result)
+        }) = definition(&result)
         else {
             panic!("{target} absent carrier");
         };
@@ -597,14 +601,14 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     for (target, replacement) in valid {
         let result = decode(&hole_document(target, Some(replacement)));
         assert!(result.report().losses.is_empty(), "{target}");
-        let FeatureDefinition::Hole {
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter,
             bottom,
             taper_angle,
             shape,
             allow_multi_profile_faces,
             ..
-        } = definition(&result)
+        }) = definition(&result)
         else {
             panic!("{target} valid carrier");
         };
@@ -728,10 +732,10 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     assert!(high_bits.report().losses.is_empty());
     assert!(matches!(
         definition(&high_bits),
-        FeatureDefinition::Hole {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::PointsAndCircles),
             ..
-        }
+        })
     ));
 }
 
@@ -766,10 +770,10 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
         .find(|feature| feature.name.as_deref() == Some("Hole"))
         .expect("hole feature");
     assert!(matches!(
-        hole.evaluation.definition(), FeatureDefinition::Hole {
+        hole.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             ..
-        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -867,7 +871,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
     };
     assert!(matches!(
         definition("ToLast"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToLast {},
@@ -875,11 +879,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("ToFirst"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFirst {},
@@ -887,11 +891,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("ToFace"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
@@ -902,11 +906,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        } if actual_offset.get() == 2.5
+        }) if actual_offset.get() == 2.5
     ));
     assert!(matches!(
         definition("ToShape"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToShape { .. },
@@ -914,11 +918,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("ThroughAll"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll {},
@@ -927,11 +931,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             },
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("Symmetric"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 ..
@@ -944,11 +948,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        } if direction.z == -1.0 && length.get() == 12.0 && (draft.get() - 5_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.z == -1.0 && length.get() == 12.0 && (draft.get() - 5_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("PartExtrusion"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: _,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -973,7 +977,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
             ..
-        } if direction.y == 1.0 && first.get() == 7.0 && second.get() == 3.0
+        }) if direction.y == 1.0 && first.get() == 7.0 && second.get() == 3.0
             && (draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
             && (reverse_draft.get() - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
@@ -981,7 +985,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
     ));
     assert!(matches!(
         definition("NegativeProfileNormal"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 source: Some(ExtrusionDirectionSource::ProfileNormal {}),
@@ -993,7 +997,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        } if direction.z == -1.0 && length.get() == 5.0
+        }) if direction.z == -1.0 && length.get() == 5.0
     ));
 }
 
@@ -1020,7 +1024,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
         .expect("pocket feature");
     assert!(matches!(
         pocket.evaluation.definition(),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_)),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -1028,7 +1032,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        } if (direction.x - 1.0).abs() < 1.0e-12
+        }) if (direction.x - 1.0).abs() < 1.0e-12
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
@@ -1091,7 +1095,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
         .definition();
     assert!(matches!(
         definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind { length },
@@ -1101,7 +1105,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             },
             solid: Some(false),
             ..
-        } if length.get() == 12.0 && (draft.get() - 3_f64.to_radians()).abs() < 1.0e-12
+        }) if length.get() == 12.0 && (draft.get() - 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1142,7 +1146,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
         .expect("absent direction mode");
     assert!(matches!(
         extrusion_definition(&result),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 source: Some(ExtrusionDirectionSource::Custom {}),
@@ -1156,7 +1160,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
                 }
             },
             ..
-        } if (direction.z == 1.0) && actual_length.get() == 5.0
+        }) if (direction.z == 1.0) && actual_length.get() == 5.0
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1183,7 +1187,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             .expect("malformed direction mode");
         assert!(matches!(
             extrusion_definition(&result),
-            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Extrusion"
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Extrusion"
         ));
         assert_valid_document(result.ir());
     }
@@ -1208,12 +1212,12 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
     let definition = result.ir().model.features[0].evaluation.definition();
     assert!(matches!(
         definition,
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided { .. },
             ..
-        } if profile.ends_with(":Sketch")
+        }) if profile.ends_with(":Sketch")
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1257,10 +1261,10 @@ fn rejects_ambiguous_profile_carriers_without_selecting_a_sketch() {
             .expect("pad feature");
         assert!(matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
                 ..
-            } if profile.ends_with(":Profile")
+            }) if profile.ends_with(":Profile")
         ));
     }
     assert!(result.report().losses.is_empty());
@@ -1330,7 +1334,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
     };
     assert!(matches!(
         definition("Mixed"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -1350,14 +1354,14 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             length_along_profile_normal: Some(false),
             allow_multi_profile_faces: Some(true),
             ..
-        } if (direction.y == 1.0
+        }) if (direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
             && (first_draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
             && (second_draft.get() + 3_f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == -5.0
     ));
     assert!(matches!(
         definition("Symmetric"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll {},
@@ -1365,11 +1369,11 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("LegacyTwoLengths"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1385,7 +1389,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
                 },
             },
             ..
-        } if actual_length.get() == 6.0 && actual_length_2.get() == 2.0
+        }) if actual_length.get() == 6.0 && actual_length_2.get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1446,7 +1450,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
         if target == "SideType" {
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Extrude {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
@@ -1456,15 +1460,15 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                         }
                     },
                     ..
-                } if actual_length.get() == 6.0
+                }) if actual_length.get() == 6.0
             ));
         } else {
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Extrude {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     extent: ExtrudeExtent::TwoSided { .. },
                     ..
-                }
+                })
             ));
         }
         assert_valid_document(result.ir());
@@ -1512,7 +1516,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                 .expect("malformed extrusion selector");
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Pad"
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Pad"
             ));
             assert_valid_document(result.ir());
         }
@@ -1576,7 +1580,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
     fn assert_typed(result: &cadmpeg_ir::codec::DecodeResult, name: &str) {
         assert!(matches!(
             feature_definition(result, name),
-            FeatureDefinition::Extrude { .. }
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
         ));
         assert_valid_document(result.ir());
     }
@@ -1609,10 +1613,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             extent: ExtrudeExtent::OneSided { .. },
                             ..
-                        }
+                        })
                     ));
                 }
             }
@@ -1620,10 +1624,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             length_along_profile_normal: Some(true),
                             ..
-                        }
+                        })
                     ));
                 }
             }
@@ -1631,10 +1635,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             allow_multi_profile_faces: Some(false),
                             ..
-                        }
+                        })
                     ));
                 }
             }
@@ -1642,13 +1646,13 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.x == 1.0
+                        }) if direction.x == 1.0
                     ));
                 }
             }
@@ -1656,13 +1660,13 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.z == 1.0
+                        }) if direction.z == 1.0
                     ));
                 }
             }
@@ -1693,10 +1697,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             extent: ExtrudeExtent::Symmetric { .. },
                             ..
-                        }
+                        })
                     ));
                 }
             }
@@ -1704,10 +1708,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             length_along_profile_normal: Some(false),
                             ..
-                        }
+                        })
                     ));
                 }
             }
@@ -1715,10 +1719,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             allow_multi_profile_faces: Some(true),
                             ..
-                        }
+                        })
                     ));
                 }
             }
@@ -1726,13 +1730,13 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.x == -1.0
+                        }) if direction.x == -1.0
                     ));
                 }
             }
@@ -1740,13 +1744,13 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
                         feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.x == 1.0
+                        }) if direction.x == 1.0
                     ));
                 }
             }
@@ -1764,7 +1768,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             for name in ["Pad", "Pocket"] {
                 assert!(matches!(
                     feature_definition(&result, name),
-                    FeatureDefinition::Native { kind, .. } if kind.as_str() == format!("PartDesign::{name}")
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == format!("PartDesign::{name}")
                 ));
             }
             assert_eq!(result.report().losses.len(), 2);
@@ -1904,7 +1908,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(pocket_length.dependencies.len(), 1);
     assert!(matches!(
         pad.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -1916,11 +1920,11 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        } if actual_length.get() == 10.0
+        }) if actual_length.get() == 10.0
     ));
     assert!(matches!(
         pocket.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
@@ -1931,7 +1935,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        } if actual_length.get() == 2.5
+        }) if actual_length.get() == 2.5
     ));
     let native_findings = crate::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");

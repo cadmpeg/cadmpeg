@@ -499,7 +499,7 @@ fn sketch_constraint_native_ref_must_resolve() {
 fn sketch_feature_ownership_and_order_are_validated() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, PlanarProfileRef, ProfileRef,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
     use crate::sketches::{Sketch, SketchId};
 
@@ -531,7 +531,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id.clone())),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane {},
@@ -549,7 +549,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     });
@@ -567,9 +567,9 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_content: crate::features::FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Sketch {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-                },
+                }),
             ),
             native_ref: None,
         });
@@ -587,7 +587,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, PlanarProfileRef, ProfileRef, SketchProfileRegion,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef, SketchProfileRegion,
     };
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
 
@@ -619,7 +619,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Extrude {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane {},
@@ -637,7 +637,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
         native_ref: None,
     };
@@ -683,7 +683,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
 
 #[test]
 fn spatial_sketch_feature_owns_spatial_geometry() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::sketches::{SpatialSketch, SpatialSketchId};
 
     let mut ir = unit_cube();
@@ -708,9 +708,9 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::SpatialSketch {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
-            },
+            }),
         ),
         native_ref: None,
     });

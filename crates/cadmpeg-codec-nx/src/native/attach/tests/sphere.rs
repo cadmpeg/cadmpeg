@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_body_writing_sphere_retains_primitive_family_without_dimensions() {
@@ -14,9 +14,9 @@ fn nx_body_writing_sphere_retains_primitive_family_without_dimensions() {
 
     assert_eq!(
         definition,
-        Some(FeatureDefinition::Unresolved {
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Sphere
-        })
+        }))
     );
     assert_eq!(definition.unwrap().body_output_family(), Some("sphere"));
 }

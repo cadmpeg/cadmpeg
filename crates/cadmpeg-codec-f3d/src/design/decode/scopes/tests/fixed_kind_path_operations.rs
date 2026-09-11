@@ -79,11 +79,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             ..
-        }) if sections.len() == 2 && guides.is_empty()
+        })) if sections.len() == 2 && guides.is_empty()
     ));
     let guided_role_41 = [
         loft_group(0, DesignOperandRole::PROFILE),
@@ -100,11 +100,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             ..
-        }) if sections.len() == 3 && guides.len() == 1
+        })) if sections.len() == 3 && guides.len() == 1
     ));
     let role_shape = |groups: &[DesignConstructionOperandGroup]| {
         groups
@@ -144,11 +144,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }) if sections.len() == 2
+        })) if sections.len() == 2
     ));
     assert!(crate::validate::loft_operand_roles_are_valid(
         DesignExtrudeOperation::Cut,
@@ -192,11 +192,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }) if sections.len() == 2
+        })) if sections.len() == 2
     ));
     assert_eq!(
         crate::design::feature_project::project_fixed_loft(
@@ -237,11 +237,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             ..
-        }) if sections.len() == 3 && guides.is_empty()
+        })) if sections.len() == 3 && guides.is_empty()
     ));
     let centered = [
         loft_group(0, DesignOperandRole::ROLE_0X43),
@@ -257,13 +257,13 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(
                 cadmpeg_ir::features::PathRef::Native(centerline),
             ),
             ..
-        }) if sections.len() == 2 && centerline == "stream:loft-group-2"
+        })) if sections.len() == 2 && centerline == "stream:loft-group-2"
     ));
     let mixed = [
         loft_group(0, DesignOperandRole::ROLE_0X43),
@@ -315,11 +315,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             ..
-        }) if matches!(sections.as_slice(), [
+        })) if matches!(sections.as_slice(), [
             cadmpeg_ir::features::LoftSection::Point(
                 cadmpeg_ir::features::LoftPointSection::Native(_)
             ),
@@ -424,7 +424,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
                 along_fraction: fraction_0,
                 against_fraction: fraction_1,
@@ -432,7 +432,7 @@ pub(super) fn fixed_kind_path_operations(
             twist: Some(actual_twist),
             taper: None,
             ..
-        }) if fraction_1.get() == 0.0 && fraction_0.get() == 0.8 && actual_twist.get() == 6.632_251_157_578_453
+        })) if fraction_1.get() == 0.0 && fraction_0.get() == 0.8 && actual_twist.get() == 6.632_251_157_578_453
     ));
     let rail = sweep_group(2, DesignOperandRole::ROLE_0X5);
     {
@@ -463,7 +463,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
                 along_fraction: fraction_2,
@@ -477,7 +477,7 @@ pub(super) fn fixed_kind_path_operations(
                 },
             }),
             ..
-        }) if fraction_5.get() == 1.0 && fraction_4.get() == 0.0 && fraction_3.get() == 1.0 && fraction_2.get() == 0.0 && path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
+        })) if fraction_5.get() == 1.0 && fraction_4.get() == 0.0 && fraction_3.get() == 1.0 && fraction_2.get() == 0.0 && path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
     ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     {
@@ -507,10 +507,10 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+        ), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
-        }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
+        })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
     assert_eq!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -616,14 +616,14 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[entity_selection],
             &[],
-        ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+        ), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             }),
             guide_rail: None,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (cadmpeg_ir::features::PlanarProfileRef::Native(profile),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"))));
+        })) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (cadmpeg_ir::features::PlanarProfileRef::Native(profile),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"))));
     if let crate::records::feature::DesignScopePayloadMut::Sweep(slot) = sweep_scope.payload_mut() {
         slot.get_or_insert_with(Default::default).sweep_profile = None;
     }
@@ -654,10 +654,10 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+        ), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
-        }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {
+        })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {
                 op: cadmpeg_ir::features::SolidSweepOperation::Cut
             },))));
 

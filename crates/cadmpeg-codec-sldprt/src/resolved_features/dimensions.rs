@@ -32,7 +32,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
 };
 use cadmpeg_ir::{
-    features::FeatureDefinition,
+    features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
 use std::collections::{HashMap, HashSet};
@@ -612,9 +612,11 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+                },
+            ) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -854,9 +856,9 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sketch {
+            let FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = feature.evaluation.definition()
+            }) = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1324,9 +1326,9 @@ pub(crate) fn project_marker_dimensioned_circles(
     'feature: for feature in features {
         let (
             Some(native_ref),
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            },
+            }),
         ) = (
             feature.native_ref.as_deref(),
             feature.evaluation.definition(),

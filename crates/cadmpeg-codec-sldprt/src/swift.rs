@@ -293,8 +293,9 @@ pub(crate) fn pattern_hole_nominal_context(
         {
             continue;
         }
-        let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } =
-            pattern.evaluation.definition()
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
+        ) = pattern.evaluation.definition()
         else {
             continue;
         };
@@ -323,8 +324,9 @@ pub(crate) fn pattern_hole_nominal_context(
                     .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
             })
             .filter_map(|candidate| {
-                let cadmpeg_ir::features::FeatureDefinition::Hole { shape, .. } =
-                    candidate.evaluation.definition()
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
+                ) = candidate.evaluation.definition()
                 else {
                     return None;
                 };

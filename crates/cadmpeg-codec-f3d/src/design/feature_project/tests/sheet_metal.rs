@@ -18,7 +18,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
 
     use cadmpeg_ir::features::{
-        FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth,
+        FeatureDefinition, FeatureOperation, SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth,
         SheetMetalFlangeWidth, SheetMetalHeightDatum,
     };
 
@@ -183,7 +183,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs)
         .expect("typed EdgeFlange definition");
 
-    let FeatureDefinition::SheetMetalEdgeFlange {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height,
         angle,
         height_datum,
@@ -191,7 +191,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         width,
         bend_radius,
         ..
-    } = definition
+    }) = definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -282,7 +282,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let offset_definition =
         crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs)
             .expect("typed signed-offset EdgeFlange definition");
-    let FeatureDefinition::SheetMetalEdgeFlange { width, .. } = offset_definition else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
+        offset_definition
+    else {
         panic!("expected a sheet-metal edge flange");
     };
     assert_eq!(
@@ -355,7 +357,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let multi_definition =
         crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs)
             .expect("typed multi-edge EdgeFlange definition");
-    let FeatureDefinition::SheetMetalEdgeFlange { edges, .. } = multi_definition else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { edges, .. }) =
+        multi_definition
+    else {
         panic!("expected a sheet-metal edge flange");
     };
     assert_eq!(
@@ -439,7 +443,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let per_edge_definition =
         crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs)
             .expect("equal per-edge symmetric widths project to one neutral width");
-    let FeatureDefinition::SheetMetalEdgeFlange { width, .. } = per_edge_definition else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
+        per_edge_definition
+    else {
         panic!("expected a sheet-metal edge flange");
     };
     assert_eq!(
@@ -537,7 +543,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let two_sided_definition =
         crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs)
             .expect("independent two-sided per-edge widths project to a typed neutral law");
-    let FeatureDefinition::SheetMetalEdgeFlange { width, .. } = two_sided_definition else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
+        two_sided_definition
+    else {
         panic!("expected a sheet-metal edge flange");
     };
     assert_eq!(
@@ -566,7 +574,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     };
 
     use cadmpeg_ir::features::{
-        FeatureDefinition, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
@@ -781,7 +789,9 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     };
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs)
         .expect("typed to-object EdgeFlange definition");
-    let FeatureDefinition::SheetMetalEdgeFlange { height, .. } = definition else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
+        definition
+    else {
         panic!("expected a sheet-metal edge flange");
     };
     let SheetMetalFlangeHeight::ToObject { target, offset } = height else {
@@ -949,7 +959,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
-    use cadmpeg_ir::features::{FeatureDefinition, SurfaceContinuity};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceContinuity};
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
@@ -1050,10 +1060,10 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface {
+        Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        }) if matches!(continuity.resolved(), Some(
+        })) if matches!(continuity.resolved(), Some(
             cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
                 first: SurfaceContinuity::Contact,
                 rest,
@@ -1088,10 +1098,10 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             &[],
             &[],
         ),
-        Some(FeatureDefinition::FilledSurface {
+        Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        }) if matches!(continuity.resolved(), Some(
+        })) if matches!(continuity.resolved(), Some(
             cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
                 first: SurfaceContinuity::Contact,
                 rest,
@@ -1109,7 +1119,9 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
     use crate::records::{DesignParameter, DesignParameterOwner};
-    use cadmpeg_ir::features::{FeatureDefinition, SheetMetalHemDirection, SheetMetalHemForm};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
+    };
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let owner = |scope_record_index: u32,
@@ -1292,12 +1304,12 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         ],
     );
 
-    let FeatureDefinition::SheetMetalHem {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
         form,
         direction,
         bend_radius,
         ..
-    } = gap_length
+    }) = gap_length
     else {
         panic!("expected a gap-length Hem");
     };
@@ -1314,7 +1326,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()
     );
 
-    let FeatureDefinition::SheetMetalHem { form, .. } = rolled else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { form, .. }) = rolled else {
         panic!("expected a rolled Hem");
     };
     assert_eq!(
@@ -1325,7 +1337,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         }
     );
 
-    let FeatureDefinition::SheetMetalHem { form, .. } = teardrop else {
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { form, .. }) = teardrop
+    else {
         panic!("expected a teardrop Hem");
     };
     assert_eq!(

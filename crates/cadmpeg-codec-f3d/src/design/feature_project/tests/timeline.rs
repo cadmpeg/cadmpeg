@@ -8,6 +8,7 @@
 )]
 use super::prelude::*;
 use crate::design::feature_project::{ScopeHistoryBinding, ScopeHistoryGraph};
+use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn work_point_history_state_keys_are_history_qualified() {
@@ -503,7 +504,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     assert_eq!(feature.native_ref.as_deref(), Some(origin.id.as_str()));
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::DatumCoordinateSystem { .. }
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
     ));
     assert_ne!(
         feature.native_ref.as_deref(),

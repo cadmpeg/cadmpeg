@@ -199,7 +199,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
 
 #[test]
 fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
-    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
     let operation = super::FeatureBooleanOperation {
@@ -222,7 +222,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
             &BTreeMap::new(),
         )
         .unwrap(),
-        FeatureDefinition::Combine {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#10".to_string()),
                 BodySelection::Native("nx:om-object-indices#20".to_string())
@@ -231,7 +231,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
-        }
+        })
     );
 
     let missing_tool = BTreeMap::from([(10, 10)]);
@@ -241,11 +241,11 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
             &missing_tool,
             &crate::native::segments::BooleanOffsetStoreResolution::None,
             &BTreeMap::new(),
-        ).unwrap(), FeatureDefinition::Combine {
+        ).unwrap(), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
 
             ..
-        } if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
 }
 
 #[test]
@@ -636,12 +636,12 @@ fn decode_retains_role_scoped_om_record_area_header() {
         Some(&"6466".to_string())
     );
     assert!(matches!(
-        feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Combine {
+        feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Combine {
             operands,
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
-        } if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127")));
+        }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127")));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

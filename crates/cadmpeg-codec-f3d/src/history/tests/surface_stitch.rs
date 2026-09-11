@@ -24,6 +24,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     };
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
+        FeatureOperation,
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -180,12 +181,12 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut feature = Feature::new(
         feature_id.clone(),
         0,
-        FeatureDefinition::KnitSurface {
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces: FaceSelection::Native(scope_id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
             gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
-        },
+        }),
     );
     feature.native_ref = Some(scope_id.clone());
     let mut input_topologies = vec![FeatureInputTopology {
@@ -224,7 +225,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     )
     .unwrap();
 
-    let FeatureDefinition::KnitSurface {
+    let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces:
             FaceSelection::Historical {
                 state,
@@ -232,7 +233,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 native,
             },
         ..
-    } = feature.evaluation.definition()
+    }) = feature.evaluation.definition()
     else {
         panic!("SurfaceStitch face selection remains unresolved");
     };
@@ -264,10 +265,10 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     .unwrap();
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),
-        FeatureDefinition::KnitSurface {
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces: FaceSelection::Native(native),
             ..
-        } if native == &scope_id
+        }) if native == &scope_id
     ));
     assert!(ambiguous_topologies[0].faces.is_empty());
 }

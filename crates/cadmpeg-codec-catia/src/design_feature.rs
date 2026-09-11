@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, ParameterId, PatternKind, PrincipalPlane,
-    UnresolvedFamily,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId, PatternKind,
+    PrincipalPlane, UnresolvedFamily,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -359,22 +359,22 @@ fn assign_native_operation_parameter_values(
             continue;
         };
         match feature.evaluation.definition() {
-            FeatureDefinition::Native { kind, parameters } => {
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) => {
                 if parameters.is_empty() {
                     feature
                         .evaluation
-                        .set_definition(FeatureDefinition::Native {
+                        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: kind.clone(),
                             parameters: values,
-                        });
+                        }));
                 }
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family:
                     UnresolvedFamily::Extrude | UnresolvedFamily::Revolve | UnresolvedFamily::Fillet,
-            }
-            | FeatureDefinition::Pattern { .. }
-            | FeatureDefinition::Sweep { .. } => {
+            })
+            | FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
+            | FeatureDefinition::Operation(FeatureOperation::Sweep { .. }) => {
                 for (name, expression) in values {
                     feature
                         .source_properties
@@ -610,9 +610,9 @@ fn transfer_principal_plane(
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::DatumPrincipalPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: candidate.plane,
-            },
+            }),
         ),
         native_ref: Some(object.id.clone()),
     });
@@ -645,9 +645,9 @@ fn transfer_reference_plane(
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            },
+            }),
         ),
         native_ref: Some(object.id.clone()),
     });
@@ -689,9 +689,9 @@ fn transfer_sketch(
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            },
+            }),
         ),
         native_ref: Some(object.id.clone()),
     });
@@ -876,36 +876,46 @@ fn native_operation_definition(
     let definition = match kind {
         NativeOperationClass::PrismEndLimitLength
         | NativeOperationClass::PrismThickThin1
-        | NativeOperationClass::PrismThickThin2 => FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::Extrude,
-        },
-        NativeOperationClass::RevolThickThin1 => FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::Revolve,
-        },
-        NativeOperationClass::CircPatternRadialNumber => FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::UNRESOLVED_CIRCULAR,
-        },
-        NativeOperationClass::SweepThickThin1 => FeatureDefinition::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::unresolved(Some(native_ref.to_string())),
-            path: Some(cadmpeg_ir::features::PathRef::Unresolved(
-                native_ref.to_string(),
-            )),
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
-        NativeOperationClass::EdgeFillet => FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::Fillet,
-        },
+        | NativeOperationClass::PrismThickThin2 => {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::Extrude,
+            })
+        }
+        NativeOperationClass::RevolThickThin1 => {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::Revolve,
+            })
+        }
+        NativeOperationClass::CircPatternRadialNumber => {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED_CIRCULAR,
+            })
+        }
+        NativeOperationClass::SweepThickThin1 => {
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
+                shape: cadmpeg_ir::features::SweepShape::unresolved(Some(native_ref.to_string())),
+                path: Some(cadmpeg_ir::features::PathRef::Unresolved(
+                    native_ref.to_string(),
+                )),
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            })
+        }
+        NativeOperationClass::EdgeFillet => {
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::Fillet,
+            })
+        }
     };
     (definition, properties)
 }

@@ -1146,12 +1146,10 @@ fn semantic_losses(
         .iter()
         .filter_map(|feature| {
             let definition = match feature.evaluation.definition() {
-                cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
-                    operation.as_ref()
-                }
-                definition => definition,
+                cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. }
+                | cadmpeg_ir::features::FeatureDefinition::Operation(operation) => operation,
             };
-            let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } = definition
+            let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition
             else {
                 return None;
             };

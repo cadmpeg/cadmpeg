@@ -4,6 +4,7 @@ use super::*;
 use crate::f3z::merge::{
     append_feature_history, compose_transforms, extend_native, rescope_record, OccurrenceScope,
 };
+use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
@@ -18,10 +19,10 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         source_content: Default::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
                 parameters: std::collections::BTreeMap::new(),
-            },
+            }),
         ),
         native_ref: None,
     }

@@ -23,7 +23,7 @@ use cadmpeg_ir::sketches::{
     SketchId,
 };
 use cadmpeg_ir::{
-    features::FeatureDefinition,
+    features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
 use std::collections::{HashMap, HashSet};
@@ -1291,50 +1291,51 @@ pub(super) fn sketch_plane_frames(
         .iter()
         .filter_map(|feature| {
             let frame = match feature.evaluation.definition() {
-                cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    SketchPlaneFrame::native(principal_sketch_frame(*plane))
-                }
-                cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame } => {
-                    SketchPlaneFrame::from_frame(
-                        (frame.origin(), frame.normal(), frame.u_axis()),
-                        feature_u_axis_source(feature),
-                    )
-                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DatumPrincipalPlane { plane },
+                ) => SketchPlaneFrame::native(principal_sketch_frame(*plane)),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DatumPlane { frame },
+                ) => SketchPlaneFrame::from_frame(
+                    (frame.origin(), frame.normal(), frame.u_axis()),
+                    feature_u_axis_source(feature),
+                ),
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
         })
         .collect::<HashMap<_, _>>();
     loop {
-        let derived =
-            features
-                .iter()
-                .filter(|feature| !frames_by_feature.contains_key(&feature.id))
-                .filter_map(|feature| {
-                    let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+        let derived = features
+            .iter()
+            .filter(|feature| !frames_by_feature.contains_key(&feature.id))
+            .filter_map(|feature| {
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
                         reference:
                             Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
                                 feature: reference,
                             }),
                         distance,
-                    } = feature.evaluation.definition()
-                    else {
-                        return None;
-                    };
-                    let frame = *frames_by_feature.get(reference)?;
-                    Some((
-                        feature.id.clone(),
-                        SketchPlaneFrame {
-                            origin: Point3::new(
-                                frame.origin.x + frame.normal.x * distance.get(),
-                                frame.origin.y + frame.normal.y * distance.get(),
-                                frame.origin.z + frame.normal.z * distance.get(),
-                            ),
-                            ..frame
-                        },
-                    ))
-                })
-                .collect::<Vec<_>>();
+                    },
+                ) = feature.evaluation.definition()
+                else {
+                    return None;
+                };
+                let frame = *frames_by_feature.get(reference)?;
+                Some((
+                    feature.id.clone(),
+                    SketchPlaneFrame {
+                        origin: Point3::new(
+                            frame.origin.x + frame.normal.x * distance.get(),
+                            frame.origin.y + frame.normal.y * distance.get(),
+                            frame.origin.z + frame.normal.z * distance.get(),
+                        ),
+                        ..frame
+                    },
+                ))
+            })
+            .collect::<Vec<_>>();
         if derived.is_empty() {
             break;
         }
@@ -1366,13 +1367,15 @@ pub(super) fn lane_sketch_plane_frames(
             continue;
         };
         let frame = match feature.evaluation.definition() {
-            FeatureDefinition::DatumPrincipalPlane { plane } => {
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
                 SketchPlaneFrame::native(principal_sketch_frame(*plane))
             }
-            FeatureDefinition::DatumPlane { frame } => SketchPlaneFrame::from_frame(
-                (frame.origin(), frame.normal(), frame.u_axis()),
-                feature_u_axis_source(feature),
-            ),
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
+                SketchPlaneFrame::from_frame(
+                    (frame.origin(), frame.normal(), frame.u_axis()),
+                    feature_u_axis_source(feature),
+                )
+            }
             _ => continue,
         };
         lane_candidates.entry(source).or_default().push(frame);

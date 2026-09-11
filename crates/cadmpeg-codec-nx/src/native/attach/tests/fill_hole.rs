@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_fill_hole_retains_body_affecting_family_without_roles() {
@@ -8,9 +8,9 @@ fn nx_fill_hole_retains_body_affecting_family_without_roles() {
 
     assert_eq!(
         definition,
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FillHole
-        }
+        })
     );
     assert_eq!(definition.body_output_family(), Some("fill hole"));
 }

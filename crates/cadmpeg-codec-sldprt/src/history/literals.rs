@@ -4,8 +4,8 @@
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, ParameterValue,
-        PatternTransform,
+        BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, FeatureOperation,
+        ParameterValue, PatternTransform,
     },
     scalar::{Angle, Length},
 };
@@ -277,27 +277,27 @@ pub(crate) fn parse_neutral_parameter_literal(
     let positional_length = match name {
         "D1" => matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Extrude { .. }
-                | FeatureDefinition::Fillet { .. }
-                | FeatureDefinition::Chamfer { .. }
-                | FeatureDefinition::Shell { .. }
-                | FeatureDefinition::Thicken { .. }
-                | FeatureDefinition::DatumOffsetPlane { .. }
-                | FeatureDefinition::MoveFace {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Shell { .. })
+                | FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+                | FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+                | FeatureDefinition::Operation(FeatureOperation::MoveFace {
                     motion: FaceMotion::Offset { .. } | FaceMotion::Translate { .. },
                     ..
-                }
+                })
         ),
         "D2" => matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Chamfer { groups, .. }
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
                 if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
         ),
         "D3" => matches!(&(feature.evaluation.definition()),
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 pattern: admitted_pattern,
                 ..
-            } if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::CurveDriven { .. })
+            }) if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::CurveDriven { .. })
         ),
         _ => false,
     };

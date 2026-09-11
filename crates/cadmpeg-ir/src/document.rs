@@ -761,7 +761,7 @@ fn admit_feature_regeneration_parents(
     model: &mut Model,
     wire_parents: Vec<Option<crate::features::FeatureId>>,
 ) -> Result<(), String> {
-    use crate::features::FeatureDefinition;
+    use crate::features::{FeatureDefinition, FeatureOperation};
     use std::collections::HashMap;
 
     let indices = model
@@ -772,7 +772,9 @@ fn admit_feature_regeneration_parents(
         .collect::<HashMap<_, _>>();
     let mut tree_parents = HashMap::<crate::features::FeatureId, crate::features::FeatureId>::new();
     for parent in &model.features {
-        let FeatureDefinition::TreeNode { children, .. } = parent.evaluation.definition() else {
+        let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
+            parent.evaluation.definition()
+        else {
             continue;
         };
         for child in children {
@@ -820,8 +822,9 @@ impl Model {
         child: &crate::features::FeatureId,
     ) -> Option<&crate::features::FeatureId> {
         self.features.iter().find_map(|candidate| {
-            let crate::features::FeatureDefinition::TreeNode { children, .. } =
-                candidate.evaluation.definition()
+            let crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::TreeNode { children, .. },
+            ) = candidate.evaluation.definition()
             else {
                 return None;
             };

@@ -13,7 +13,7 @@ use crate::records::topology::{
     DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
 };
 use crate::records::ConstructionRecipeKind;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
 fn group(
     scope_record_index: u32,
@@ -172,10 +172,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     )
     .expect("typed ReplaceFace");
     assert!(matches!(
-        definition, FeatureDefinition::ReplaceFace {
+        definition, FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands,
 
-        } if matches!((operands.targets(), operands.replacements(),), (FaceSelection::Historical { ref faces, ref native, .. }, FaceSelection::Historical {
+        }) if matches!((operands.targets(), operands.replacements(),), (FaceSelection::Historical { ref faces, ref native, .. }, FaceSelection::Historical {
                 faces: ref replacement_faces,
                 native: ref replacement_native,
                 ..
@@ -271,11 +271,11 @@ fn surface_trim_projects_body_target_and_curve_tool() {
     .expect("typed SurfaceTrim");
     assert!(matches!(
         definition,
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Historical { ref faces, ref native, .. },
             tool: cadmpeg_ir::features::PathRef::Native(ref tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-        } if faces.len() == 1
+        }) if faces.len() == 1
             && native.as_str() == target_group.id
             && tool == &tool_group.id
     ));
@@ -291,11 +291,11 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let mut feature = cadmpeg_ir::features::Feature::new(
         cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").expect("identity grammar"),
         0,
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-        },
+        }),
     );
     feature.native_ref = Some(scope.id.clone());
     let operation = DesignSurfaceTrimOperation::try_from(
@@ -359,9 +359,9 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
 
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
             ..
-        } if selection.removed() == [1, 4] && selection.total() == 5
+        }) if selection.removed() == [1, 4] && selection.total() == 5
     ));
 }

@@ -61,7 +61,7 @@ fn a_face_maker_is_its_class_and_carries_no_mode_key() {
 
 #[test]
 fn draft_anchor_round_trips_as_a_nested_key() {
-    use crate::features::{DraftAnchor, FeatureDefinition};
+    use crate::features::{DraftAnchor, FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({
         "definition": "draft",
@@ -80,17 +80,17 @@ fn draft_anchor_round_trips_as_a_nested_key() {
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         &definition,
-        FeatureDefinition::Draft {
+        FeatureDefinition::Operation(FeatureOperation::Draft {
             anchor: DraftAnchor::PartingLine { .. },
             ..
-        }
+        })
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 }
 
 #[test]
 fn wrap_mode_round_trips_as_a_nested_key() {
-    use crate::features::{FeatureDefinition, WrapMode};
+    use crate::features::{FeatureDefinition, FeatureOperation, WrapMode};
 
     let wire = serde_json::json!({
         "definition": "wrap",
@@ -101,25 +101,25 @@ fn wrap_mode_round_trips_as_a_nested_key() {
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         &definition,
-        FeatureDefinition::Wrap {
+        FeatureDefinition::Operation(FeatureOperation::Wrap {
             mode: WrapMode::Emboss { depth: actual_depth },
             ..
-        } if actual_depth.get() == 2.5
+        }) if actual_depth.get() == 2.5
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
-    let scribe = FeatureDefinition::Wrap {
+    let scribe = FeatureDefinition::Operation(FeatureOperation::Wrap {
         profile: crate::features::PlanarProfileRef::Native("wrap:profile".into()),
         face: crate::features::FaceSelection::Native("wrap:face".into()),
         mode: WrapMode::Scribe,
-    };
+    });
     let encoded = serde_json::to_value(scribe).unwrap();
     assert_eq!(encoded.get("mode"), Some(&serde_json::json!("scribe")));
 }
 
 #[test]
 fn helix_shape_round_trips_as_a_nested_key() {
-    use crate::features::{FeatureDefinition, HelixShape};
+    use crate::features::{FeatureDefinition, FeatureOperation, HelixShape};
 
     let conical_wire = serde_json::json!({
         "definition": "helix",
@@ -134,10 +134,10 @@ fn helix_shape_round_trips_as_a_nested_key() {
     let conical: FeatureDefinition = serde_json::from_value(conical_wire.clone()).unwrap();
     assert!(matches!(
         &conical,
-        FeatureDefinition::Helix {
+        FeatureDefinition::Operation(FeatureOperation::Helix {
             shape: HelixShape::Conical { pitch, .. },
             ..
-        } if pitch.get() == 3.0
+        }) if pitch.get() == 3.0
     ));
     assert_eq!(serde_json::to_value(conical).unwrap(), conical_wire);
 
@@ -154,12 +154,12 @@ fn helix_shape_round_trips_as_a_nested_key() {
     let spiral: FeatureDefinition = serde_json::from_value(spiral_wire.clone()).unwrap();
     assert!(matches!(
         &spiral,
-        FeatureDefinition::Helix {
+        FeatureDefinition::Operation(FeatureOperation::Helix {
             shape: HelixShape::Spiral {
                 radial_growth: actual_radial_growth
             },
             ..
-        } if actual_radial_growth.get() == 1.5
+        }) if actual_radial_growth.get() == 1.5
     ));
     assert_eq!(serde_json::to_value(spiral).unwrap(), spiral_wire);
 }
@@ -175,13 +175,15 @@ fn trim_cell_selection_requires_unique_in_range_ordinals() {
 
 #[test]
 fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
-    use crate::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
+    use crate::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
+    };
 
-    let definition = FeatureDefinition::TrimSurface {
+    let definition = FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces: FaceSelection::Unresolved,
         tool: PathRef::Unresolved("test:trim-tool".into()),
         keep: TrimRegion::Cells(TrimCellSelection::new(vec![1, 4], 5).unwrap()),
-    };
+    });
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(wire["definition"], "trim_surface");
     assert_eq!(wire["keep"]["cells"]["removed"], serde_json::json!([1, 4]));
@@ -189,10 +191,10 @@ fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
     let decoded: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         decoded,
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: TrimRegion::Cells(ref selection),
             ..
-        } if selection.removed() == [1, 4] && selection.total() == 5
+        }) if selection.removed() == [1, 4] && selection.total() == 5
     ));
 
     let mut invalid = wire;
@@ -202,7 +204,7 @@ fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
 
 #[test]
 fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
-    use crate::features::{FeatureDefinition, PathRef, RevolveConstruction};
+    use crate::features::{FeatureDefinition, FeatureOperation, PathRef, RevolveConstruction};
 
     let wire = serde_json::json!({
         "definition": "revolve",
@@ -226,10 +228,10 @@ fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         definition,
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: RevolveConstruction::Resolved { ref axis, .. },
             ..
-        } if axis.reference == Some(PathRef::Native("test:axis".into()))
+        }) if axis.reference == Some(PathRef::Native("test:axis".into()))
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
@@ -238,7 +240,7 @@ fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
         "axis_reference".to_string(),
         serde_json::json!({"kind": "native", "value": "test:axis"}),
     );
-    let error = serde_json::from_value::<FeatureDefinition>(sibling)
+    let error = serde_json::from_value::<FeatureOperation>(sibling)
         .unwrap_err()
         .to_string();
     assert!(error.contains("axis_reference"), "{error}");
@@ -246,7 +248,7 @@ fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
 
 #[test]
 fn revolve_construction_admits_only_typed_partial_states() {
-    use crate::features::{FeatureDefinition, RevolveConstruction};
+    use crate::features::{FeatureDefinition, FeatureOperation, RevolveConstruction};
 
     let partial_wire = serde_json::json!({
         "definition": "revolve",
@@ -261,10 +263,10 @@ fn revolve_construction_admits_only_typed_partial_states() {
     let partial: FeatureDefinition = serde_json::from_value(partial_wire.clone()).unwrap();
     assert!(matches!(
         partial,
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: RevolveConstruction::Unresolved(_),
             ..
-        }
+        })
     ));
     assert_eq!(serde_json::to_value(partial).unwrap(), partial_wire);
 
@@ -283,7 +285,7 @@ fn revolve_construction_admits_only_typed_partial_states() {
         },
         "op": "unresolved"
     });
-    let error = serde_json::from_value::<FeatureDefinition>(resolved_without_a_profile)
+    let error = serde_json::from_value::<FeatureOperation>(resolved_without_a_profile)
         .unwrap_err()
         .to_string();
     assert!(error.contains("profile"), "{error}");
@@ -345,7 +347,9 @@ fn an_unresolved_revolve_names_its_first_missing_operand() {
 
 #[test]
 fn extrude_direction_round_trips_as_a_nested_key() {
-    use crate::features::{ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, PathRef};
+    use crate::features::{
+        ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, FeatureOperation, PathRef,
+    };
 
     let wire = serde_json::json!({
         "definition": "extrude",
@@ -371,7 +375,7 @@ fn extrude_direction_round_trips_as_a_nested_key() {
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         definition,
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: ExtrudeDirection::Explicit {
                 source: Some(ExtrusionDirectionSource::Edge {
                     reference: PathRef::Native(ref reference),
@@ -379,7 +383,7 @@ fn extrude_direction_round_trips_as_a_nested_key() {
                 ..
             },
             ..
-        } if reference == "test:direction-edge"
+        }) if reference == "test:direction-edge"
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 }
@@ -787,13 +791,15 @@ fn feature_geometry_admission_preserves_nonunit_directions_and_zero_displacement
 
 #[test]
 fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_fields() {
-    use crate::features::{FeatureDefinition, FeatureLineSegment, FeaturePolyline};
+    use crate::features::{
+        FeatureDefinition, FeatureLineSegment, FeatureOperation, FeaturePolyline,
+    };
     let first = Point3::new(0.0, 1.0, 2.0);
     let second = Point3::new(3.0, 4.0, 5.0);
     let segment = FeatureLineSegment::new(first, second).unwrap();
     let wire =
         serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":second}});
-    let definition = FeatureDefinition::LineSegment { segment };
+    let definition = FeatureDefinition::Operation(FeatureOperation::LineSegment { segment });
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
@@ -813,7 +819,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     ] {
         let chain = FeaturePolyline::new(points.clone(), closed).unwrap();
         let wire = serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}});
-        let definition = FeatureDefinition::Polyline { chain };
+        let definition = FeatureDefinition::Operation(FeatureOperation::Polyline { chain });
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
@@ -839,7 +845,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
 
 #[test]
 fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing_domain() {
-    use crate::features::{FeatureDefinition, FeatureEquationCurve};
+    use crate::features::{FeatureDefinition, FeatureEquationCurve, FeatureOperation};
     let curve = FeatureEquationCurve::new(
         " t ".into(),
         " t*t ".into(),
@@ -849,7 +855,7 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
         3.0,
     )
     .unwrap();
-    let definition = FeatureDefinition::EquationCurve { curve };
+    let definition = FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve });
     let wire = serde_json::json!({"definition":"equation_curve", "curve":{"parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0}});
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
@@ -892,7 +898,7 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
 fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() {
     use crate::geometry::DirectedParameterRange;
     use crate::{
-        features::{FeatureCircularArc, FeatureDefinition, FeatureEllipticArc},
+        features::{FeatureCircularArc, FeatureDefinition, FeatureEllipticArc, FeatureOperation},
         scalar::PositiveLength,
     };
     let center = Point3::new(1.0, 2.0, 3.0);
@@ -903,7 +909,7 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
     for endpoints in [[0.0, std::f64::consts::TAU], [2.0, -1.0]] {
         let angles = DirectedParameterRange::new(endpoints).unwrap();
         let arc = FeatureCircularArc::new(center, normal, major, angles).unwrap();
-        let definition = FeatureDefinition::CircularArc { arc };
+        let definition = FeatureDefinition::Operation(FeatureOperation::CircularArc { arc });
         let wire = serde_json::json!({"definition":"circular_arc", "arc":{"center":center, "normal":normal, "radius":4.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
         assert_eq!(
@@ -916,7 +922,7 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
 
         let arc =
             FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
-        let definition = FeatureDefinition::EllipticArc { arc };
+        let definition = FeatureDefinition::Operation(FeatureOperation::EllipticArc { arc });
         let wire = serde_json::json!({"definition":"elliptic_arc", "arc":{"center":center, "normal":normal, "major_axis":major_axis, "major_radius":4.0, "minor_radius":2.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
         assert_eq!(
@@ -1037,7 +1043,9 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
 
 #[test]
 fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
-    use crate::features::{FeatureCoordinateFrame, FeatureDefinition, EPS_FEATURE_UNIT_FRAME};
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDefinition, FeatureOperation, EPS_FEATURE_UNIT_FRAME,
+    };
     use crate::math::{Point3, Vector3};
     let origin = Point3::new(1.0, 2.0, 3.0);
     let x = Vector3::new(1.0, 0.0, 0.0);
@@ -1045,7 +1053,8 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
     let z = Vector3::new(0.0, 0.0, 1.0);
     let frame = FeatureCoordinateFrame::new(origin, x, y, z).unwrap();
     let wire = serde_json::json!({"definition":"datum_coordinate_system","frame":{"origin":origin,"x_axis":x,"y_axis":y,"z_axis":z}});
-    let definition = FeatureDefinition::DatumCoordinateSystem { frame };
+    let definition =
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame });
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
@@ -1173,7 +1182,8 @@ fn reference_image_and_coil_frames_preserve_wire_fields_and_reject_invalid_frame
 #[test]
 fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
     use crate::features::{
-        DatumPlaneReference, FeatureDatumPlaneFrame, FeatureDefinition, FeatureSupportPlaneFrame,
+        DatumPlaneReference, FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation,
+        FeatureSupportPlaneFrame,
     };
     let origin = Point3::new(1.0, 2.0, 3.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
@@ -1184,7 +1194,7 @@ fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
     assert_eq!(serde_json::to_value(datum).unwrap(), geometry);
     assert_eq!(serde_json::to_value(support).unwrap(), geometry);
     let datum_wire = serde_json::json!({"definition":"datum_plane","frame":geometry.clone()});
-    let definition = FeatureDefinition::DatumPlane { frame: datum };
+    let definition = FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame: datum });
     assert_eq!(serde_json::to_value(&definition).unwrap(), datum_wire);
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(datum_wire).unwrap(),

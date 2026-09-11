@@ -13,8 +13,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
-        ParameterValue,
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        ParameterId, ParameterValue,
     },
     scalar::Length,
 };
@@ -57,9 +57,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };
@@ -671,9 +671,9 @@ fn line_handle_interior_points_identify_profile_entities() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };
@@ -868,9 +868,9 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            },
+            }),
         ),
         native_ref: Some("feature-native".into()),
     };

@@ -15,7 +15,8 @@ use crate::records::{
     FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed, PatternTransform,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternSeed,
+    PatternTransform,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
@@ -208,10 +209,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED_MIRROR,
-            },
+            }),
         ),
         native_ref: Some("mirror-native".into()),
     };
@@ -288,10 +289,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     )
     .unwrap();
     assert!(matches!(&(feature.evaluation.definition()),
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
                 plane_origin: Point3 {
                     x: 13.0,
                     y: 2.0,
@@ -307,10 +308,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
 
     feature
         .evaluation
-        .set_definition(FeatureDefinition::Pattern {
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_MIRROR,
-        });
+        }));
     let mut nonmirror_history = history.clone();
     nonmirror_history.features[0].input_class = Some("moCirPattern_c".into());
     bind_mirror_surface_planes(
@@ -330,10 +331,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     )
     .unwrap();
     assert!(matches!(&(feature.evaluation.definition()),
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) })
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) })
     ));
 
     let mut second_face = face.clone();
@@ -366,10 +367,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     )
     .unwrap();
     assert!(matches!(&(feature.evaluation.definition()),
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) })
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) })
     ));
 }
 
@@ -479,10 +480,10 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Pattern {
+                FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
                     pattern: PatternKind::UNRESOLVED_CIRCULAR,
-                },
+                }),
             ),
             native_ref: Some("pattern-native".into()),
         },
@@ -498,10 +499,10 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Pattern {
+                FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
                     pattern: PatternKind::UNRESOLVED,
-                },
+                }),
             ),
             native_ref: Some("seed-native".into()),
         },
@@ -520,7 +521,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     );
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Pattern { seeds, pattern: admitted_pattern }
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern: admitted_pattern })
             if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Circular) } if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))])
     ));
 }
@@ -622,12 +623,12 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
                     FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
                 )],
                 pattern: PatternKind::UNRESOLVED_CIRCULAR,
-            },
+            }),
         ),
         native_ref: Some("pattern-native".into()),
     }];
@@ -636,10 +637,10 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
 
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Pattern {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::Circular {
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
                 angle,
