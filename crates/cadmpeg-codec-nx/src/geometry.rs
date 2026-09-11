@@ -15,7 +15,9 @@
 
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::framing::{
@@ -251,10 +253,10 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(origin) {
         return None;
     }
-    Some(SurfaceGeometry::Plane(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(mm_point(origin), vec3(normal), vec3(x_axis))
             .ok()?,
-    ))
+    )))
 }
 
 fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -265,7 +267,7 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_radius(radius) {
         return None;
     }
-    Some(SurfaceGeometry::Cylinder(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             mm_point(origin),
             vec3(axis),
@@ -273,7 +275,7 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
             radius * 1000.0,
         )
         .ok()?,
-    ))
+    )))
 }
 
 fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -297,7 +299,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Cone(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             mm_point(origin),
             vec3(axis),
@@ -307,7 +309,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
             sin_half.abs().atan2(cos_half.abs()),
         )
         .ok()?,
-    ))
+    )))
 }
 
 fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -318,7 +320,7 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
-    Some(SurfaceGeometry::Sphere(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             mm_point(center),
             vec3(axis),
@@ -326,7 +328,7 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
             radius * 1000.0,
         )
         .ok()?,
-    ))
+    )))
 }
 
 fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -344,7 +346,7 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Torus(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             mm_point(center),
             vec3(axis),
@@ -353,7 +355,7 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
             minor * 1000.0,
         )
         .ok()?,
-    ))
+    )))
 }
 
 // --- Curve decoders ---
@@ -364,9 +366,9 @@ fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
     if !is_unit(direction) || !valid_position(origin) {
         return None;
     }
-    Some(CurveGeometry::Line(
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(mm_point(origin), vec3(direction)).ok()?,
-    ))
+    )))
 }
 
 fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
@@ -377,7 +379,7 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
-    Some(CurveGeometry::Circle(
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             mm_point(center),
             vec3(normal),
@@ -385,7 +387,7 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
             radius * 1000.0,
         )
         .ok()?,
-    ))
+    )))
 }
 
 fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
@@ -400,7 +402,7 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
     if !valid_radius(major) || !valid_radius(minor) || minor > major {
         return None;
     }
-    Some(CurveGeometry::Ellipse(
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::EllipseCurve::try_new(
             mm_point(center),
             vec3(normal),
@@ -409,7 +411,7 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
             minor * 1000.0,
         )
         .ok()?,
-    ))
+    )))
 }
 
 // --- Primitives and gates ---

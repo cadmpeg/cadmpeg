@@ -38,7 +38,10 @@ use crate::decode::sweep::{
 };
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
@@ -432,7 +435,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(2.0, 3.0, 0.0),
                     Vector3::new(0.0, -1.0, 0.0),
@@ -440,12 +443,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                     1.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cone(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     Point3::new(2.0, -5.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -455,12 +458,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                     0.5,
                 )
                 .expect("valid ConeSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Sphere(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     Point3::new(2.0, 8.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -468,7 +471,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                     2.0,
                 )
                 .expect("valid SphereSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -540,7 +543,9 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         },
     };
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
-    if let SurfaceGeometry::Cone(cone_surface) = &mut ir.model.surfaces[1].geometry {
+    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
+        &mut ir.model.surfaces[1].geometry
+    {
         let origin = cone_surface.origin();
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
@@ -560,7 +565,9 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         .expect("valid ConeSurface fixture");
     }
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
-    if let SurfaceGeometry::Cone(cone_surface) = &mut ir.model.surfaces[1].geometry {
+    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
+        &mut ir.model.surfaces[1].geometry
+    {
         let origin = cone_surface.origin();
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
@@ -579,7 +586,9 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         )
         .expect("valid ConeSurface fixture");
     }
-    let SurfaceGeometry::Sphere(sphere_surface) = &mut ir.model.surfaces[2].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) =
+        &mut ir.model.surfaces[2].geometry
+    else {
         unreachable!();
     };
     let center = sphere_surface.center();
@@ -1171,7 +1180,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         .expect("valid profile entity");
     let surface =
         revolved_brep_surface(&transform, &spline, false, &axis).expect("revolved spline surface");
-    let SurfaceGeometry::Nurbs(surface) = &surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
     };
 
@@ -1202,7 +1211,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let start_pcurve = revolution_profile_boundary_pcurve(
         &transform,
         &segment,
-        &SurfaceGeometry::Nurbs(surface.clone()),
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         segment.start(),
         RevolutionBoundary::Start,
@@ -1211,7 +1220,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let end_pcurve = revolution_profile_boundary_pcurve(
         &transform,
         &segment,
-        &SurfaceGeometry::Nurbs(surface.clone()),
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         segment.end(),
         RevolutionBoundary::End,
@@ -1231,7 +1240,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let forward_sense = revolution_face_sense(
         &transform,
         &segment,
-        &SurfaceGeometry::Nurbs(surface.clone()),
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         1.0,
     )
@@ -1239,7 +1248,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let reverse_sense = revolution_face_sense(
         &transform,
         &segment,
-        &SurfaceGeometry::Nurbs(surface.clone()),
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         -1.0,
     )
@@ -1248,7 +1257,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
 
     let reversed = revolved_brep_surface(&transform, &spline, true, &axis)
         .expect("reversed revolved spline surface");
-    let SurfaceGeometry::Nurbs(reversed) = reversed else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
     };
     assert_eq!(reversed.u_knots(), [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
@@ -1423,7 +1432,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         },
     )
     .expect("v1 boundary");
-    let CurveGeometry::Nurbs(boundary) = boundary else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(boundary)) = boundary else {
         panic!("extrusion boundary must retain its NURBS parameterization");
     };
     assert_eq!(boundary.degree(), 3);
@@ -1447,7 +1456,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         },
     )
     .expect("u1 boundary");
-    let CurveGeometry::Nurbs(generator) = generator else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generator)) = generator else {
         panic!("extrusion generator must retain its NURBS parameterization");
     };
     assert_eq!(generator.degree(), 1);
@@ -1524,7 +1533,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .expect("valid second extrusion surface");
     let shared =
         shared_extrusion_generator_curve(&first, &second).expect("shared generator boundary");
-    let CurveGeometry::Nurbs(shared) = shared else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(shared)) = shared else {
         panic!("shared extrusion generator must retain its NURBS representation");
     };
     assert_eq!(shared.degree(), 1);
@@ -1603,7 +1612,7 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     })
     .expect("resource limits")
     .expect("unique directrix-plane root");
-    let CurveGeometry::Nurbs(generator) = generator else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generator)) = generator else {
         panic!("plane section generator must retain its NURBS representation");
     };
     assert_eq!(generator.degree(), 1);
@@ -1715,7 +1724,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 [upper_radius, 0.0, upper_parameter],
                 [0.0, upper_radius, upper_parameter],
             ],
-        ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
+        ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
                     let center = circle_curve.center();
     let radius = circle_curve.radius();
@@ -1741,7 +1750,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     });
     let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
     assert!(
-        matches!(tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle")]
+        matches!(tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle")]
                 if {
                     let center = circle_curve.center();
         let radius = circle_curve.radius();
@@ -1749,7 +1758,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 })
     );
     assert!(
-        matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
+        matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
                     let center = circle_curve.center();
         let radius = circle_curve.radius();
@@ -1789,7 +1798,7 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
     assert!(resolve_curve_candidates(candidates.clone(), None).is_none());
     assert!(
         matches!(select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]), Some((
-                    CurveGeometry::Circle(circle_curve),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     "axis_containing_plane_torus_meridian_circle",
                 )) if {
                     let center = circle_curve.center();
@@ -1844,7 +1853,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     let candidates = coaxial_cones_section_candidates(first, second);
     assert_eq!(candidates.len(), 2);
     assert!(
-        matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Circle(circle_curve), "coaxial_cones_circle"))
+        matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cones_circle"))
                 if {
                     let center = circle_curve.center();
         let radius = circle_curve.radius();
@@ -1876,7 +1885,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert_eq!(reversed_candidates.len(), 2);
     assert!(reversed_candidates
         .iter()
-        .any(|(geometry, _)| matches!(geometry, CurveGeometry::Circle(circle_curve)
+        .any(|(geometry, _)| matches!(geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let center = circle_curve.center();
                     let radius = circle_curve.radius();
@@ -1927,7 +1936,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     let selected = select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 3.0, 4.0]])
         .expect("selected coaxial elliptical-cone section");
     assert!(
-        matches!(&selected, (CurveGeometry::Ellipse(ellipse_curve), "coaxial_cones_ellipse")
+        matches!(&selected, (CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "coaxial_cones_ellipse")
                 if {
                     let center = ellipse_curve.center();
         let major_radius = ellipse_curve.major_radius();
@@ -1971,7 +1980,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     let selected = select_unique_curve_candidate(candidates, [[14.0, 0.0, 12.0], [0.0, 7.0, 12.0]])
         .expect("selected reciprocal-frame cone section");
     assert!(
-        matches!(&selected, (CurveGeometry::Ellipse(ellipse_curve), "coaxial_cones_ellipse")
+        matches!(&selected, (CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "coaxial_cones_ellipse")
                 if {
                     let center = ellipse_curve.center();
         let major_radius = ellipse_curve.major_radius();

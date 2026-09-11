@@ -11,7 +11,7 @@ use super::*;
 use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, Shell};
@@ -62,7 +62,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             native_position: Point3::new(0.0, 0.0, 0.0),
             revision_form: None,
         };
-    let Some(SurfaceGeometry::Cylinder(cylinder_surface)) =
+    let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
         analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0)))
     else {
         panic!("exact circle extrusion did not reduce")
@@ -166,7 +166,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
                 revision_form: None,
             }
         ),
-        Some(SurfaceGeometry::Cylinder(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
         .edit_control_points(|points| points[5].x += 1.0e-5)
@@ -175,13 +175,13 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
 }
 
 fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {
-    SurfaceGeometry::Plane(
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
-    )
+    ))
 }
 
 fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Cylinder(
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             origin,
             axis,
@@ -189,7 +189,7 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
             radius,
         )
         .unwrap(),
-    )
+    ))
 }
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
@@ -230,7 +230,7 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         native: None,
     };
     assert!(
-        matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Cylinder(cylinder_surface))
+        matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
@@ -286,7 +286,7 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
         native: None,
     };
     assert!(
-        matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Torus(torus_surface))
+        matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();

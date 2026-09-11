@@ -29,8 +29,8 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs, RollingBallSide,
-    RollingBallSideExtension, RollingBallSupportCurve, RollingBallSupportSurface, SurfaceGeometry,
-    VariableBlendCache,
+    RollingBallSideExtension, RollingBallSupportCurve, RollingBallSupportSurface,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -236,7 +236,10 @@ pub(crate) fn decode_rolling_ball_surface(
             let surface = decode_surface_block(bytes, *position, int_width)?;
             *position = surface.end();
             let ranges = decode_surface_ranges(bytes, position)?;
-            return Some((SurfaceGeometry::Nurbs(surface.surface), ranges));
+            return Some((
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.surface)),
+                ranges,
+            ));
         }
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
@@ -247,7 +250,10 @@ pub(crate) fn decode_rolling_ball_surface(
             .or_else(|| decode_owned_surface_cache_at(scope, int_width))?;
         *position += scope.len();
         let ranges = decode_surface_ranges(bytes, position)?;
-        return Some((SurfaceGeometry::Nurbs(surface), ranges));
+        return Some((
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+            ranges,
+        ));
     }
     *position = saved;
     decode_embedded_surface_with_ranges(bytes, position, int_width)
@@ -283,7 +289,7 @@ pub(crate) fn decode_rolling_ball_curve(
             take_optional_range_value(bytes, position)?.value(),
         ];
         return Some(RollingBallSupportCurve {
-            curve: CurveGeometry::Nurbs(curve.curve),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.curve)),
             parameter_range,
         });
     }
@@ -303,7 +309,7 @@ pub(crate) fn decode_rolling_ball_curve(
             take_optional_range_value(bytes, position)?.value(),
         ];
         return Some(RollingBallSupportCurve {
-            curve: CurveGeometry::Nurbs(curve),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
         });
     }
@@ -311,7 +317,7 @@ pub(crate) fn decode_rolling_ball_curve(
         "straight" => {
             let origin = take_native_vec3(bytes, position, 0x13)?;
             let direction = take_native_vec3(bytes, position, 0x14)?;
-            CurveGeometry::Line(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(
                         origin[0] * LEN_TO_MM,
@@ -321,7 +327,7 @@ pub(crate) fn decode_rolling_ball_curve(
                     unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
                 )
                 .ok()?,
-            )
+            ))
         }
         "ellipse" => {
             let center = take_native_vec3(bytes, position, 0x13)?;
@@ -331,7 +337,7 @@ pub(crate) fn decode_rolling_ball_curve(
             let reference = Vector3::new(reference[0], reference[1], reference[2]);
             let major_radius = reference.norm() * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
-                CurveGeometry::Circle(
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
@@ -343,9 +349,9 @@ pub(crate) fn decode_rolling_ball_curve(
                         major_radius,
                     )
                     .ok()?,
-                )
+                ))
             } else {
-                CurveGeometry::Ellipse(
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::EllipseCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
@@ -358,19 +364,19 @@ pub(crate) fn decode_rolling_ball_curve(
                         major_radius * ratio.abs(),
                     )
                     .ok()?,
-                )
+                ))
             }
         }
         "degenerate_curve" => {
             let point = take_native_vec3(bytes, position, 0x13)?;
-            CurveGeometry::Degenerate(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
                     point[0] * LEN_TO_MM,
                     point[1] * LEN_TO_MM,
                     point[2] * LEN_TO_MM,
                 ))
                 .ok()?,
-            )
+            ))
         }
         _ => return None,
     };
@@ -475,7 +481,10 @@ pub(crate) fn rolling_ball_surface(
             let (surface, surface_end) = surface_block(toks, cur.pos())?;
             cur.set_pos(surface_end);
             let ranges = surface_ranges(cur)?;
-            return Some((SurfaceGeometry::Nurbs(surface), ranges));
+            return Some((
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                ranges,
+            ));
         }
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
@@ -484,7 +493,10 @@ pub(crate) fn rolling_ball_surface(
             .or_else(|| crate::nurbs::core::owned_surface_cache(scope))?;
         cur.set_pos(cur.pos() + scope.len());
         let ranges = surface_ranges(cur)?;
-        return Some((SurfaceGeometry::Nurbs(surface), ranges));
+        return Some((
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+            ranges,
+        ));
     }
     cur.set_pos(saved);
     embedded_surface_with_ranges(cur)
@@ -520,7 +532,7 @@ pub(crate) fn rolling_ball_curve(
             cur.take_optional_range_value()?.value(),
         ];
         return Some(RollingBallSupportCurve {
-            curve: CurveGeometry::Nurbs(curve),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
         });
     }
@@ -538,7 +550,7 @@ pub(crate) fn rolling_ball_curve(
             cur.take_optional_range_value()?.value(),
         ];
         return Some(RollingBallSupportCurve {
-            curve: CurveGeometry::Nurbs(curve),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
         });
     }
@@ -546,7 +558,7 @@ pub(crate) fn rolling_ball_curve(
         "straight" => {
             let origin = cur.take_position()?;
             let direction = cur.take_vector3()?;
-            CurveGeometry::Line(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(
                         origin[0] * LEN_TO_MM,
@@ -556,7 +568,7 @@ pub(crate) fn rolling_ball_curve(
                     unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
                 )
                 .ok()?,
-            )
+            ))
         }
         "ellipse" => {
             let center = cur.take_position()?;
@@ -566,7 +578,7 @@ pub(crate) fn rolling_ball_curve(
             let reference = Vector3::new(reference[0], reference[1], reference[2]);
             let major_radius = reference.norm() * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
-                CurveGeometry::Circle(
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
@@ -578,9 +590,9 @@ pub(crate) fn rolling_ball_curve(
                         major_radius,
                     )
                     .ok()?,
-                )
+                ))
             } else {
-                CurveGeometry::Ellipse(
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::EllipseCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
@@ -593,19 +605,19 @@ pub(crate) fn rolling_ball_curve(
                         major_radius * ratio.abs(),
                     )
                     .ok()?,
-                )
+                ))
             }
         }
         "degenerate_curve" => {
             let point = cur.take_position()?;
-            CurveGeometry::Degenerate(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
                     point[0] * LEN_TO_MM,
                     point[1] * LEN_TO_MM,
                     point[2] * LEN_TO_MM,
                 ))
                 .ok()?,
-            )
+            ))
         }
         _ => return None,
     };
@@ -1228,7 +1240,7 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             let parameters = [cur.take_f64()?, cur.take_f64()?];
             let sense = cur.take_bool()?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
-                curve: CurveGeometry::Nurbs(curve),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 curve_endpoints: [None; 2],
                 twists,
                 parameters,
@@ -1273,7 +1285,7 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             EmbeddedVertexBlendBoundaryGeometry::Plane {
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
                 parameters,
-                curve: CurveGeometry::Nurbs(curve),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 curve_endpoints: [None; 2],
             }
         }
@@ -1331,7 +1343,7 @@ fn revision_vertex_blend_boundary(
             let parameters = [cur.take_f64()?, cur.take_f64()?];
             let sense = cur.take_bool()?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
-                curve: CurveGeometry::Nurbs(curve),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 curve_endpoints,
                 twists,
                 parameters,
@@ -1379,7 +1391,7 @@ fn revision_vertex_blend_boundary(
             EmbeddedVertexBlendBoundaryGeometry::Plane {
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
                 parameters,
-                curve: CurveGeometry::Nurbs(curve),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 curve_endpoints,
             }
         }
@@ -1522,7 +1534,7 @@ pub(crate) fn full_rb_blend_spl_sur(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
-                CurveGeometry::Nurbs(curve) => Some(curve.clone()),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve.clone()),
                 _ => None,
             },
             radius,
@@ -1579,7 +1591,9 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
             cur.set_pos(payload_start);
             let (surface, end) = surface_block(span, cur.pos())?;
             cur.set_pos(end);
-            Some(SurfaceGeometry::Nurbs(surface))
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                surface,
+            )))
         };
         supports[support_count] = support;
         support_count += 1;

@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
@@ -92,8 +92,8 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected a bicubic NURBS carrier");
     };
@@ -121,7 +121,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a cubic NURBS carrier");
     };
@@ -159,7 +159,8 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("expected a cubic NURBS carrier");
     };
     let point = cadmpeg_ir::eval::nurbs_curve_point(
@@ -187,7 +188,9 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("expected a bicubic NURBS carrier");
     };
     assert_eq!(

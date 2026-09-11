@@ -8,7 +8,9 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::geometry::{derive_reference_direction, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    derive_reference_direction, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -235,7 +237,7 @@ pub(super) fn project(
                 ) else {
                     continue;
                 };
-                SurfaceGeometry::Plane(payload)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(payload))
             }
             192 => {
                 let axis = match transformed_direction(
@@ -290,7 +292,7 @@ pub(super) fn project(
                 ) else {
                     continue;
                 };
-                SurfaceGeometry::Cylinder(payload)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(payload))
             }
             194 => {
                 let axis = match transformed_direction(
@@ -356,7 +358,7 @@ pub(super) fn project(
                 ) else {
                     continue;
                 };
-                SurfaceGeometry::Cone(payload)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(payload))
             }
             196 => {
                 let Some(radius) = record
@@ -421,7 +423,7 @@ pub(super) fn project(
                 ) else {
                     continue;
                 };
-                SurfaceGeometry::Sphere(payload)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(payload))
             }
             198 => {
                 let axis = match transformed_direction(
@@ -486,7 +488,7 @@ pub(super) fn project(
                 ) else {
                     continue;
                 };
-                SurfaceGeometry::Torus(payload)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(payload))
             }
             _ => {
                 losses.push(entity_loss(entry, "analytic surface type is unsupported"));

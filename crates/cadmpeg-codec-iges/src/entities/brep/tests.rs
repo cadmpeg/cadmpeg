@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Edge;
@@ -21,13 +21,13 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.edges.extend([
@@ -58,10 +58,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let source_edge = super::source_edge_for_vertices(
         &ir,
         &[0, 1],
-        ir.model.curves[0]
-            .geometry
-            .solved_cache()
-            .unwrap_or(&ir.model.curves[0].geometry),
+        &ir.model.curves[0].geometry,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
         EPS_EDGE_ENDPOINT_MATCH,
@@ -79,7 +76,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -87,7 +84,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
                 1.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.edges.extend([
@@ -118,10 +115,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let result = super::source_edge_for_vertices(
         &ir,
         &[0, 1],
-        ir.model.curves[0]
-            .geometry
-            .solved_cache()
-            .unwrap_or(&ir.model.curves[0].geometry),
+        &ir.model.curves[0].geometry,
         Point3::new(1.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
         EPS_EDGE_ENDPOINT_MATCH,

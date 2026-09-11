@@ -15,8 +15,9 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
@@ -295,22 +296,26 @@ fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64,
         }
         ProceduralSourceParameterMap::Unavailable => None,
         ProceduralSourceParameterMap::NotApplicable => match support.geometry {
-            SurfaceGeometry::Plane(_) => Some((1.0, 0.0, 1.0, 0.0)),
-            SurfaceGeometry::Cylinder(_) => Some((1.0 / support.factor, 0.0, 1.0, 0.0)),
-            SurfaceGeometry::Cone(_) => Some((1.0 / support.factor, 0.0, 1.0, 0.0)),
-            SurfaceGeometry::Sphere(_) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Some((1.0, 0.0, 1.0, 0.0)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+                Some((1.0 / support.factor, 0.0, 1.0, 0.0))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+                Some((1.0 / support.factor, 0.0, 1.0, 0.0))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
                 Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
-            SurfaceGeometry::Torus(_) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
                 Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
-            SurfaceGeometry::Nurbs(_) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
                 Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
             SurfaceGeometry::Procedural { .. } => None,
-            SurfaceGeometry::Polygonal(_)
-            | SurfaceGeometry::Transformed { .. }
-            | SurfaceGeometry::Unknown { .. } => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
         },
     }
 }
@@ -403,13 +408,13 @@ pub(super) fn pcurve_geometry(
 }
 
 fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
-    fn is_line(geometry: &CurveGeometry, depth: usize) -> bool {
+    fn is_line(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
         if depth > 256 {
             return false;
         }
         match geometry {
-            CurveGeometry::Line(_) => true,
-            CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
+            SolvedCurveGeometry::Line(_) => true,
+            SolvedCurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
             _ => false,
         }
     }
@@ -418,7 +423,12 @@ fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| is_line(curve.geometry.solved_cache().unwrap_or(&curve.geometry), 0))
+        .is_some_and(|curve| {
+            curve
+                .geometry
+                .solved()
+                .is_some_and(|geometry| is_line(geometry, 0))
+        })
 }
 
 fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
@@ -601,8 +611,8 @@ fn source_curve_control_intervals(
                 return (!controls.is_empty()).then_some(controls);
             }
         }
-        match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-            CurveGeometry::Composite { segments, .. } => {
+        match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let mut controls = Vec::new();
                 for segment in segments {
                     controls.extend(source_curve_control_intervals(
@@ -617,7 +627,7 @@ fn source_curve_control_intervals(
                 }
                 (!controls.is_empty()).then_some(controls)
             }
-            CurveGeometry::Nurbs(nurbs) => {
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 if nurbs.weights().is_some_and(|weights| {
                     weights
                         .iter()
@@ -828,9 +838,9 @@ fn linear_boundary_model_points(
     let mut points = Vec::new();
     for item in items {
         let curve = index.curves(item.model_curve.as_str())?;
-        let mut curve_points = match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-            CurveGeometry::Line(_) => vec![item.start, item.end],
-            CurveGeometry::Nurbs(nurbs) => {
+        let mut curve_points = match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Line(_)) => vec![item.start, item.end],
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 linear_model_nurbs_points(nurbs, item.source_edge.param_range()?)?
             }
             _ => return None,
@@ -875,7 +885,7 @@ fn linear_boundary_geometry(
     closure_tolerance: f64,
     surface_kind: BoundarySurfaceKind,
 ) -> Option<LinearBoundaryGeometry> {
-    let SurfaceGeometry::Plane(plane_surface) = support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = support else {
         return None;
     };
     let origin = plane_surface.origin();
@@ -886,8 +896,11 @@ fn linear_boundary_geometry(
         let Some(curve) = index.curves(item.model_curve.as_str()) else {
             return true;
         };
+        let Some(geometry) = curve.geometry.solved() else {
+            return true;
+        };
         !super::geometry::curve_geometry_coplanar(
-            curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+            geometry,
             index,
             cadmpeg_ir::transform::Transform::identity(),
             model_plane,
@@ -1078,7 +1091,13 @@ fn linear_boundary_relationship_is_valid(
             }
         }
         Some(_) => return None,
-        None if !matches!(support, SurfaceGeometry::Plane(_)) => return None,
+        None if !matches!(
+            support,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        ) =>
+        {
+            return None
+        }
         None => {}
     }
     Some(rings.iter().enumerate().all(|(left_index, left)| {
@@ -1353,7 +1372,9 @@ fn pcurve_within_declared_intervals(
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
     match surface {
-        SurfaceGeometry::Nurbs(surface) => [surface.u_periodic(), surface.v_periodic()],
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
+            [surface.u_periodic(), surface.v_periodic()]
+        }
         _ => [false, false],
     }
 }
@@ -1465,11 +1486,11 @@ fn edge_range_matches_curve(
     if !range.iter().all(|parameter| parameter.is_finite()) {
         return false;
     }
-    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
+    let geometry = &curve.geometry;
     let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(geometry, range[0]) else {
         return false;
     };
-    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
+    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, range[1]) else {
         return false;
     };
     close(evaluated_start, start, tolerance) && close(evaluated_end, end, tolerance)
@@ -1923,11 +1944,10 @@ pub(super) fn project(
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(surface_sequence));
         let Some(support_geometry) = carrier_index.surfaces(surface_id.as_str()).map(|surface| {
-            surface
-                .geometry
-                .solved_cache()
-                .unwrap_or(&surface.geometry)
-                .clone()
+            surface.geometry.solved_cache().map_or_else(
+                || surface.geometry.clone(),
+                |cache| SurfaceGeometry::Solved(cache.clone()),
+            )
         }) else {
             losses.push(entity_loss(
                 entry,

@@ -40,7 +40,8 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -1104,7 +1105,7 @@ fn complete_support_uv_wave(
                                 attempted_without_seed = true;
                             }
                             let candidate = match &surface.geometry {
-                                SurfaceGeometry::Nurbs(nurbs) => {
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                                     if let Some(seed) = seed {
                                         nurbs_surface_parameter_within_tolerance_with_budget(
                                             nurbs,
@@ -1299,10 +1300,10 @@ fn complete_support_uv_wave(
                 };
                 if matches!(
                     surface.geometry,
-                    SurfaceGeometry::Cylinder(_)
-                        | SurfaceGeometry::Cone(_)
-                        | SurfaceGeometry::Sphere(_)
-                        | SurfaceGeometry::Torus(_)
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
+                        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+                        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
                 ) {
                     for index in 1..uv.len() {
                         let turns =
@@ -2333,14 +2334,14 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -2406,7 +2407,7 @@ mod tests {
             false,
         )
         .expect("valid test surface");
-        let geometry = SurfaceGeometry::Nurbs(nurbs.clone());
+        let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()));
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),

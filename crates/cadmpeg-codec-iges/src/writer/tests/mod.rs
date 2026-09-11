@@ -212,13 +212,13 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ]);
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(2_000_000.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid LineCurve fixture"),
-        ),
+        )),
         source_object: None,
     });
     ir.model.edges.push(Edge {
@@ -557,18 +557,18 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
 fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     let cases = [
         (
-            SurfaceGeometry::Plane(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             190,
         ),
         (
-            SurfaceGeometry::Cylinder(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -576,11 +576,11 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     1.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             192,
         ),
         (
-            SurfaceGeometry::Cone(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -590,11 +590,11 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     std::f64::consts::FRAC_PI_6,
                 )
                 .expect("valid ConeSurface fixture"),
-            ),
+            )),
             194,
         ),
         (
-            SurfaceGeometry::Sphere(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -602,11 +602,11 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     1.0,
                 )
                 .expect("valid SphereSurface fixture"),
-            ),
+            )),
             196,
         ),
         (
-            SurfaceGeometry::Torus(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -615,13 +615,17 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     1.0,
                 )
                 .expect("valid TorusSurface fixture"),
-            ),
+            )),
             198,
         ),
     ];
     for (geometry, expected_type) in cases {
-        let entities = surface_entities(&geometry, 0, IgesVersion::V5_3)
-            .expect("analytic surface has a carrier");
+        let entities = surface_entities(
+            geometry.solved().expect("solved carrier"),
+            0,
+            IgesVersion::V5_3,
+        )
+        .expect("analytic surface has a carrier");
         let surface = entities
             .last()
             .expect("analytic surface emits a surface entity");
@@ -632,7 +636,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
 
 #[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
-    let geometry = CurveGeometry::Hyperbola(
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         cadmpeg_ir::geometry::HyperbolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -641,7 +645,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
             3.0,
         )
         .expect("valid HyperbolaCurve fixture"),
-    );
+    ));
     let range = [0.2, 1.1];
     let span = CurveSpan {
         range,
@@ -758,7 +762,7 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 
 #[test]
 fn generated_full_circle_has_lexically_identical_endpoints() {
-    let geometry = CurveGeometry::Circle(
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -766,8 +770,13 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
             2.0,
         )
         .expect("valid CircleCurve fixture"),
-    );
-    let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
+    ));
+    let entity = curve_entity(
+        geometry.solved().expect("solved carrier"),
+        None,
+        IgesVersion::V5_3,
+    )
+    .expect("full circle is writable");
     let parameters = String::from_utf8(entity.parameter_text()).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
@@ -778,7 +787,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
 
 #[test]
 fn generated_circle_refuses_a_zero_length_edge_span() {
-    let geometry = CurveGeometry::Circle(
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -786,13 +795,17 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
             2.0,
         )
         .expect("valid CircleCurve fixture"),
-    );
+    ));
     let span = CurveSpan {
         range: [0.5, 0.5],
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let Err(error) = curve_entity(&geometry, Some(&span), IgesVersion::V5_3) else {
+    let Err(error) = curve_entity(
+        geometry.solved().expect("solved carrier"),
+        Some(&span),
+        IgesVersion::V5_3,
+    ) else {
         panic!("zero-length span must not become a full revolution");
     };
     assert!(error.to_string().contains("non-zero ordered span"));

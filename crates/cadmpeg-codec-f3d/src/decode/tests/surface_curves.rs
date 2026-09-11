@@ -203,7 +203,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_three_surface_intersection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = F3dCodec
         .decode(
@@ -232,7 +232,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { sphere_surface.radius() == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) if { sphere_surface.radius() == -12.5 })
     );
 
     let mut edited = result.ir().clone();
@@ -295,7 +295,7 @@ let mut edited_selector = *definition_payload.selector();
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("round-trip third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { sphere_surface.radius() == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) if { sphere_surface.radius() == -12.5 })
     );
 }
 

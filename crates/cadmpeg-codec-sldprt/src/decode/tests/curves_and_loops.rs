@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn edge_uses_decoded_line_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = Vec::new();
     body.extend(plane_carrier(
@@ -44,7 +44,7 @@ fn edge_uses_decoded_line_curve() {
 
     assert_eq!(result.ir().model.curves.len(), 1);
     match &result.ir().model.curves[0].geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let direction = line_curve.direction();
             assert_eq!(direction.x, 1.0);
         }
@@ -73,7 +73,7 @@ fn edge_uses_decoded_line_curve() {
 
 #[test]
 fn edge_uses_decode_nurbs_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
     body.extend(nurbs_curve_carrier(170, 171));
@@ -95,7 +95,7 @@ fn edge_uses_decode_nurbs_curve() {
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS curve");
@@ -106,7 +106,7 @@ fn edge_uses_decode_nurbs_curve() {
 
 #[test]
 fn edge_uses_decode_typed_reference_nurbs_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
     body.extend(typed_nurbs_curve_carrier(170, 171));
@@ -129,7 +129,7 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS curve");
@@ -139,7 +139,9 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
 
 #[test]
 fn reused_carrier_attribute_resolves_by_geometry_kind() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge = body
@@ -169,11 +171,11 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
 
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line(_)
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
 }
 

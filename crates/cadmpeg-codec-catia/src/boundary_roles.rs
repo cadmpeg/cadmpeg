@@ -2,7 +2,7 @@
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 
@@ -155,7 +155,7 @@ pub(crate) fn classify_planar_boundary_roles(
     if boundaries.len() == 1 {
         return vec![LoopBoundaryRole::Outer];
     }
-    let SurfaceGeometry::Plane(plane_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
     let origin = plane_surface.origin();
@@ -271,21 +271,21 @@ pub(crate) fn classify_planar_boundary_roles(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::LoopBoundaryRole;
 
     use super::classify_planar_boundary_roles;
 
     fn plane() -> SurfaceGeometry {
-        SurfaceGeometry::Plane(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        )
+        ))
     }
 
     fn square(min_u: f64, min_v: f64, max_u: f64, max_v: f64) -> Vec<Point3> {

@@ -8,6 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::SldprtCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const EPS_POLAR_RADIAL_COMPONENT: f64 = 1.0e-9;
 
@@ -29,7 +30,7 @@ fn decode_does_not_report_derived_pcurves_as_stored_geometry_loss() {
 
 #[test]
 fn closed_cylinder_gets_derived_seam() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let f = sldprt_with_body(&closed_cylinder_body());
     let mut cur = Cursor::new(f);
 
@@ -47,12 +48,10 @@ fn closed_cylinder_gets_derived_seam() {
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
     assert_eq!(result.ir().model.edges.len(), 3);
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line(_))));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    )));
 }
 
 #[test]
@@ -340,7 +339,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .find(|curve| seam.curve().as_ref() == Some(&curve.id))
         .expect("sphere seam curve");
     assert!(
-        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Degenerate(degenerate_curve)
+        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve))
         if {
             let point = degenerate_curve.point();
             *point == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)

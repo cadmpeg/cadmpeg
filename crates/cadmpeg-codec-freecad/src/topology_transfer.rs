@@ -8,7 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, PolygonalSurface, PolylineCurve,
-    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -846,14 +847,14 @@ impl<'a> Builder<'a> {
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
-                    geometry: SurfaceGeometry::Polygonal(
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
                         PolygonalSurface::new(
                             vertices.clone(),
                             triangles.clone(),
                             triangulation.deflection * deflection_scale,
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                    ),
+                    )),
                     source_object: Some(self.source_association()),
                 });
             }
@@ -1087,7 +1088,7 @@ impl<'a> Builder<'a> {
             .as_ref()
             .and_then(|curve| ir.model.curves.iter().find(|item| item.id == *curve))
             .map_or(param_range, |curve| {
-                normalize_occt_curve_range(&curve.geometry, param_range)
+                normalize_occt_curve_range(curve.geometry.solved()?, param_range)
             });
         ir.model.edges.push(Edge {
             id: id.clone(),
@@ -1152,7 +1153,7 @@ impl<'a> Builder<'a> {
             CurveId::mint(format!("{edge}:polygon:{}", ordinal + 1)).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Polyline(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
                 PolylineCurve::new(
                     points
                         .iter()
@@ -1162,7 +1163,7 @@ impl<'a> Builder<'a> {
                     deflection * scale,
                 )
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
-            ),
+            )),
             source_object: Some(self.source_association()),
         });
         if let TextEdgeRepresentation::PolygonPair {
@@ -1179,7 +1180,7 @@ impl<'a> Builder<'a> {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("{edge}:polygon:{}:secondary", ordinal + 1))
                     .expect("identity grammar"),
-                geometry: CurveGeometry::Polyline(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
                     PolylineCurve::new(
                         points
                             .iter()
@@ -1189,7 +1190,7 @@ impl<'a> Builder<'a> {
                         deflection * scale,
                     )
                     .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                ),
+                )),
                 source_object: Some(self.source_association()),
             });
         }
@@ -1737,10 +1738,20 @@ fn transform_curve(
     transform: Transform,
 ) -> Result<CurveGeometry, CodecError> {
     ensure_similarity(transform)?;
-    Ok(CurveGeometry::Transformed {
-        basis: Box::new(geometry.clone()),
+    Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+        basis: Box::new(
+            geometry
+                .clone()
+                .solved()
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::NotImplemented(
+                        "carrier has no solved geometry".into(),
+                    )
+                })?
+                .clone(),
+        ),
         transform,
-    })
+    }))
 }
 
 fn transform_surface(
@@ -1748,10 +1759,22 @@ fn transform_surface(
     transform: Transform,
 ) -> Result<SurfaceGeometry, CodecError> {
     ensure_similarity(transform)?;
-    Ok(SurfaceGeometry::Transformed {
-        basis: Box::new(geometry.clone()),
-        transform,
-    })
+    Ok(SurfaceGeometry::Solved(
+        SolvedSurfaceGeometry::Transformed {
+            basis: Box::new(
+                geometry
+                    .clone()
+                    .solved()
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::NotImplemented(
+                            "carrier has no solved geometry".into(),
+                        )
+                    })?
+                    .clone(),
+            ),
+            transform,
+        },
+    ))
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Vector3 {
@@ -2057,11 +2080,11 @@ fn unique_fallback_polygon_representation(
 }
 
 pub(crate) fn normalize_occt_curve_range(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     range: Option<[f64; 2]>,
 ) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Circle(_) => {
+        SolvedCurveGeometry::Circle(_) => {
             let [start, end] = range?;
             let sweep = end - start;
             let tau = std::f64::consts::TAU;
@@ -2080,7 +2103,7 @@ pub(crate) fn normalize_occt_curve_range(
                 };
             Some([canonical_start, canonical_start + sweep])
         }
-        CurveGeometry::Ellipse(_) => {
+        SolvedCurveGeometry::Ellipse(_) => {
             let [start, end] = range?;
             let sweep = end - start;
             let tau = std::f64::consts::TAU;
@@ -2099,7 +2122,7 @@ pub(crate) fn normalize_occt_curve_range(
                 };
             Some([canonical_start, canonical_start + sweep])
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let focal_distance = parabola_curve.focal_distance();
             if !focal_distance.is_finite() || focal_distance <= 0.0 {
                 return range;
@@ -2109,7 +2132,7 @@ pub(crate) fn normalize_occt_curve_range(
                 [start / scale, end / scale]
             })
         }
-        CurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
+        SolvedCurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
         _ => range,
     }
 }

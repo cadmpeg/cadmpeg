@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::geometry::SurfaceGeometry;
+use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
 use crate::validate::validate_neutral;
@@ -143,7 +143,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 #[test]
 fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         crate::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -151,7 +151,7 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
             -1e-200,
         )
         .unwrap(),
-    );
+    ));
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

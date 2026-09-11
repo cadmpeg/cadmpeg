@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded-curve wrappers.
 
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::View;
@@ -63,7 +63,7 @@ fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Opti
 
 fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match curve {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             Some(Point3::new(
@@ -72,7 +72,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                 origin.z + parameter * direction.z * LEN_TO_MM,
             ))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -87,7 +87,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             ))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -106,7 +106,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                     + minor_radius * parameter.sin() * minor_direction.z,
             ))
         }
-        CurveGeometry::Nurbs(curve) => nurbs_point(curve, parameter),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => nurbs_point(curve, parameter),
         _ => None,
     }
 }
@@ -207,13 +207,13 @@ mod tests {
             attr: 10,
             offset: 100,
             end: 120,
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                 )
                 .expect("valid line fixture"),
-            ),
+            )),
             parameter_range: None,
         }));
         carriers
@@ -224,7 +224,10 @@ mod tests {
         let decoded = scan(&wrapper(0.005, false), &carriers());
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
-        assert!(matches!(decoded[0].geometry, CurveGeometry::Line(_)));
+        assert!(matches!(
+            decoded[0].geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        ));
         assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
     }
 

@@ -20,6 +20,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn generated_surface_offset_decodes_and_writes_source_less() {
@@ -365,7 +366,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -377,7 +378,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 false,
             )
             .unwrap(),
-        );
+        ));
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -422,7 +423,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 .iter()
                 .find(|curve| curve.id == *round_source)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
                     && curve.knots() == [0.0, 0.0, 1.0, 1.0]
                     && curve.control_points() == [
@@ -599,7 +600,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone() else {
+    let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         panic!("expected NURBS edge carrier")
     };
     let mut control_points = nurbs.control_points().to_vec();
@@ -613,10 +614,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
         nurbs.periodic(),
     )
     .unwrap();
-    *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs.clone()),
-    )
-    .unwrap();
+    *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = curve.clone();
 
     let mut regenerated = Vec::new();

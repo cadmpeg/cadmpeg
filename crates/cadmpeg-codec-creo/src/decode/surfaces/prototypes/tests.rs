@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::{build_prt, push_named_analytic_prototype};
 use crate::CreoCodec;
@@ -51,7 +51,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .find(|surface| surface.id.as_str().ends_with("#7"))
         .expect("first cone instance");
     assert!(
-        matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let origin = cone_surface.origin();
         let axis = cone_surface.axis();
@@ -132,7 +132,10 @@ fn later_positional_spline_replay_transfers_as_a_nurbs_surface() {
             .iter()
             .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{surface_id}"))
             .expect("spline surface");
-        assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+        assert!(matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+        ));
     }
 }
 
@@ -158,7 +161,7 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("first instance surface");
-    let SurfaceGeometry::Torus(torus_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = surface.geometry.solved() else {
         panic!("first instance geometry: {:?}", surface.geometry);
     };
     let center = *torus_surface.center();
@@ -310,7 +313,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy cylinder surface");
-    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
     let origin = *cylinder_surface.origin();
@@ -344,7 +347,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .find(|surface| surface.id.as_str() == "creo:novisgeom:surface#42")
         .expect("non-visible legacy cylinder surface");
     assert!(
-        matches!(nonvisible_surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        matches!(nonvisible_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let radius = cylinder_surface.radius();
             radius == 50.8
@@ -409,7 +412,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy cone surface");
-    let SurfaceGeometry::Cone(cone_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
     let origin = *cone_surface.origin();
@@ -478,7 +481,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy plane surface");
-    let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
     let origin = *plane_surface.origin();
@@ -573,7 +576,7 @@ ${}
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy spline surface");
-    let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("legacy spline geometry: {:?}", surface.geometry);
     };
     assert_eq!(surface.poles().count(), 16);

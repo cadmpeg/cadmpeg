@@ -20,7 +20,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     if index == 0 {
@@ -31,7 +31,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -82,7 +82,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     assert_eq!(ir.model.curves[0].id, id);
     assert_eq!(
         ir.model.curves[0].geometry.solved_cache(),
-        Some(&CurveGeometry::Line(
+        Some(&SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
@@ -133,7 +133,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     ir.model.surfaces.extend([
         Surface {
             id: sphere_id.clone(),
-            geometry: SurfaceGeometry::Sphere(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -141,19 +141,19 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                     2.0,
                 )
                 .expect("valid SphereSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: plane_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(1.0, 3.0, 3.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -177,7 +177,8 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
-    let CurveGeometry::Circle(circle_curve) = &ir.model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = ir.model.curves[0].geometry.solved()
+    else {
         panic!("sphere-plane spline did not derive a circle");
     };
     let center = circle_curve.center();
@@ -215,7 +216,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     ir.model.surfaces.extend([
         Surface {
             id: cylinder_id.clone(),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -223,19 +224,19 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                     2.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: plane_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, sqrt_three / 2.0, -0.5),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -262,7 +263,8 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
-    let CurveGeometry::Ellipse(ellipse_curve) = &ir.model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.model.curves[0].geometry.solved()
+    else {
         panic!("cylinder-plane spline did not derive an ellipse");
     };
     let center = ellipse_curve.center();
@@ -309,7 +311,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     ir.model.surfaces.extend([
         Surface {
             id: first_id.clone(),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -317,12 +319,12 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                     2.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: second_id.clone(),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -330,7 +332,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                     2.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -354,7 +356,8 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
-    let CurveGeometry::Ellipse(ellipse_curve) = &ir.model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.model.curves[0].geometry.solved()
+    else {
         panic!("perpendicular cylinders did not select an ellipse branch");
     };
     let center = ellipse_curve.center();
@@ -404,15 +407,16 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
             .expect("valid LinePcurve fixture"),
     );
-    let plane =
-        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
+    let plane = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ));
+        )),
+    );
     let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet(
         cadmpeg_ir::geometry::RollingBallJetStations::try_new(
             5,
@@ -531,7 +535,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             [0, 1],
         )
     };
-    let cylinder = SurfaceGeometry::Cylinder(
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -539,7 +543,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             2.0,
         )
         .expect("valid CylinderSurface fixture"),
-    );
+    ));
     assert!(solve(
         cylinder.clone(),
         [Point3::new(2.0, 0.0, -3.0), Point3::new(2.0, 0.0, 4.0)]
@@ -556,7 +560,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     )
     .is_none());
 
-    let cone = SurfaceGeometry::Cone(
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(2.0, 0.0, 2.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -566,7 +570,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             std::f64::consts::FRAC_PI_4,
         )
         .expect("valid ConeSurface fixture"),
-    );
+    ));
     assert!(solve(
         cone.clone(),
         [Point3::new(3.0, 0.0, 1.0), Point3::new(5.0, 0.0, 3.0)]

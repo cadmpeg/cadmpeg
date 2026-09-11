@@ -18,7 +18,7 @@ use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
-    SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -42,8 +42,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         false,
     )
     .expect("valid affine curve");
-    let CurveGeometry::Nurbs(translated) = curve_on_parameter_range(
-        CurveGeometry::Nurbs(nurbs.clone()),
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated)) = curve_on_parameter_range(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         [10.0, 20.0],
         [0.0, 10.0],
     )
@@ -53,51 +53,55 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(translated.knots(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(translated.control_points(), nurbs.control_points());
 
-    let line = CurveGeometry::Line(
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(10.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("valid LineCurve fixture"),
-    );
+    ));
     assert_eq!(
         curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0]),
-        Some(CurveGeometry::Line(
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(20.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
             .expect("valid LineCurve fixture")
-        ))
+        )))
     );
     assert_eq!(
         curve_on_parameter_range(
-            CurveGeometry::Nurbs(nurbs.clone()),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
             [10.0, 20.0],
             [12.0, 18.0],
         ),
-        Some(CurveGeometry::Nurbs(nurbs.clone()))
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            nurbs.clone()
+        )))
     );
-    let CurveGeometry::Nurbs(scaled) =
-        curve_on_parameter_range(CurveGeometry::Nurbs(nurbs), [10.0, 20.0], [0.0, 2.0])
-            .expect("positive affine NURBS mapping")
-    else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scaled)) = curve_on_parameter_range(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        [10.0, 20.0],
+        [0.0, 2.0],
+    )
+    .expect("positive affine NURBS mapping") else {
         unreachable!();
     };
     assert_eq!(scaled.knots(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(
         curve_on_parameter_range(
-            CurveGeometry::Line(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(10.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0)
                 )
                 .expect("valid LineCurve fixture")
-            ),
+            )),
             [10.0, 20.0],
             [0.0, 2.0],
         ),
-        Some(CurveGeometry::Nurbs(
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
@@ -106,7 +110,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
                 false,
             )
             .expect("valid NurbsCurve fixture")
-        ))
+        )))
     );
 }
 
@@ -723,14 +727,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
 #[test]
 fn procedural_support_requires_physical_edge_endpoint_agreement() {
     let plane = || SurfacePlan {
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         procedure: None,
     };
     let surfaces = BTreeMap::from([(10, plane()), (11, plane())]);
@@ -1186,14 +1190,14 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     let surfaces = BTreeMap::from([(
         4,
         SurfacePlan {
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             procedure: None,
         },
     )]);

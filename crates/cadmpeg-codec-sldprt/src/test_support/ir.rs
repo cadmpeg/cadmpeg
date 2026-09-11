@@ -13,17 +13,19 @@ use crate::SldprtCodec;
 /// Translate every model-space carrier along x so a forced modification stays
 /// geometrically consistent: vertices remain on their edge curves and surfaces.
 pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
     fn translate_curve_x(curve: &mut CurveGeometry, dx: f64) {
         match curve {
-            CurveGeometry::Line(line_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = line_curve.origin();
                 let direction = line_curve.direction();
                 let mut origin = *origin;
                 origin.x += dx;
                 *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
             }
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
@@ -38,7 +40,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            CurveGeometry::Ellipse(ellipse_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = ellipse_curve.center();
                 let axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
@@ -55,7 +57,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            CurveGeometry::Hyperbola(hyperbola_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
                 let center = hyperbola_curve.center();
                 let axis = hyperbola_curve.axis();
                 let major_direction = hyperbola_curve.major_direction();
@@ -72,7 +74,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            CurveGeometry::Parabola(parabola_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
                 let vertex = parabola_curve.vertex();
                 let axis = parabola_curve.axis();
                 let major_direction = parabola_curve.major_direction();
@@ -87,20 +89,20 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            CurveGeometry::Degenerate(degenerate_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = degenerate_curve.point();
                 let mut point = *point;
                 point.x += dx;
                 *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap();
             }
-            CurveGeometry::Nurbs(nurbs) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let _ = nurbs.edit_control_points(|points| {
                     for pole in points {
                         pole.x += dx;
                     }
                 });
             }
-            CurveGeometry::Polyline(polyline) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
                 polyline
                     .edit_points(|points| {
                         for point in points {
@@ -109,15 +111,15 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     })
                     .unwrap();
             }
-            CurveGeometry::Transformed { transform, .. } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Transformed { transform, .. }) => {
                 let mut rows = transform.rows();
                 rows[0][3] += dx;
                 *transform =
                     cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
             }
-            CurveGeometry::Composite { .. } => {}
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
             CurveGeometry::Procedural { .. } => {}
-            CurveGeometry::Unknown { .. } => {}
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {}
         }
     }
     for point in &mut ir.model.points {
@@ -128,7 +130,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
     }
     for surface in &mut ir.model.surfaces {
         match &mut surface.geometry {
-            SurfaceGeometry::Plane(plane_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 let u_axis = plane_surface.u_axis();
@@ -137,7 +139,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 *plane_surface =
                     cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
             }
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
@@ -152,7 +154,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
@@ -171,7 +173,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center();
                 let axis = sphere_surface.axis();
                 let ref_direction = sphere_surface.ref_direction();
@@ -186,7 +188,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            SurfaceGeometry::Torus(torus_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
@@ -203,14 +205,14 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 )
                 .unwrap();
             }
-            SurfaceGeometry::Nurbs(nurbs) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let _ = nurbs.edit_control_points(|rows| {
                     for pole in rows.iter_mut().flatten() {
                         pole.x += dx;
                     }
                 });
             }
-            SurfaceGeometry::Polygonal(surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
                 surface
                     .edit_vertices(|points| {
                         for point in points {
@@ -219,14 +221,14 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     })
                     .unwrap();
             }
-            SurfaceGeometry::Transformed { transform, .. } => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { transform, .. }) => {
                 let mut rows = transform.rows();
                 rows[0][3] += dx;
                 *transform =
                     cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
             }
             SurfaceGeometry::Procedural { .. } => {}
-            SurfaceGeometry::Unknown { .. } => {}
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {}
         }
     }
 }
@@ -246,14 +248,16 @@ pub(crate) fn strict_options() -> DecodeOptions {
 /// normals are invariant under translation, so a pure translation is a rigid
 /// motion of the whole body.
 pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
     use cadmpeg_ir::math::Point3;
     let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
     for point in &mut ir.model.points {
         point.position = shift(&point.position);
     }
     for curve in &mut ir.model.curves {
-        if let CurveGeometry::Line(line_curve) = &mut curve.geometry {
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut curve.geometry {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             let mut origin = *origin;
@@ -262,7 +266,9 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
         }
     }
     for surface in &mut ir.model.surfaces {
-        if let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry {
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+            &mut surface.geometry
+        {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();

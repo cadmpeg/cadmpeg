@@ -6,7 +6,9 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::Point3;
 
 use crate::test_support::*;
@@ -975,7 +977,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
     for second_limit in [false, true] {
         let curve = crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
             .expect("exact limiting curve");
-        let geometry = CurveGeometry::Nurbs(curve);
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
         let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|sample| {
             let point = if second_limit {
                 sample.site.limit2
@@ -1288,7 +1290,9 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("NURBS surface");
     };
     assert_eq!(surface.poles().count(), 9);
@@ -1333,7 +1337,9 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
         )
         .expect("decode elided A8 surface topology");
     assert_eq!(result.ir().model.surfaces.len(), 1);
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("NURBS surface");
     };
     assert_eq!(
@@ -1426,7 +1432,7 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
         .unwrap();
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Nurbs(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
     ));
     assert_eq!(
         result.ir().model.surfaces[0]
@@ -1449,7 +1455,7 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
         .unwrap();
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Nurbs(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
     ));
     assert_eq!(
         result.ir().model.surfaces[0]

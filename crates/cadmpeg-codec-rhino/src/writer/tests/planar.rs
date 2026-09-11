@@ -272,7 +272,9 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
 
 #[test]
 fn brep_and_free_geometry_round_trip_in_one_archive() {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::Vector3;
 
@@ -288,7 +290,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
     });
     ir.model.curves.push(Curve {
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(5.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -296,19 +298,19 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.finalize();
@@ -341,9 +343,9 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .model
             .curves
             .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve) if { circle_curve.radius() == 2.0 })));
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 2.0 })));
         assert!(decoded.ir().model.surfaces.iter().any(
-            |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+            |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
             if {
                 let origin = plane_surface.origin();
                 origin.z == 3.0

@@ -7,8 +7,8 @@
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
 //! over their stored knot vectors. [`model_surface_point`] resolves construction-
 //! backed carriers that require other model entities. Carriers without a typed
-//! parameterization ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`],
-//! [`SurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
+//! parameterization ([`CurveGeometry::Solved(SolvedCurveGeometry::Unknown)`], [`CurveGeometry::Solved(SolvedCurveGeometry::Composite)`],
+//! [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)`], parabolas, and hyperbolas) evaluate to `None`.
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
@@ -19,7 +19,8 @@ use std::collections::BinaryHeap;
 use crate::geometry::{
     knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
     PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SurfaceGeometry, SurfaceParameterAxis, SweepSurfaceLayout,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, SurfaceParameterAxis,
+    SweepSurfaceLayout,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -83,7 +84,10 @@ pub fn spatial_points_are_reflections(
 }
 
 /// Recover native parameters for an analytic surface point.
-pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+pub fn analytic_surface_parameters_solved(
+    geometry: &SolvedSurfaceGeometry,
+    point: Point3,
+) -> Option<Point2> {
     let components = |origin: Point3, axis: Vector3, reference: Vector3| {
         let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
         let transverse = axis.cross(reference);
@@ -94,14 +98,14 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
         )
     };
     let result = match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let (u, v, _) = components(*origin, *normal, *u_axis);
             Point2::new(u, v)
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -112,7 +116,7 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             let (x, y, v) = components(*origin, *axis, *ref_direction);
             Point2::new((y / radius).atan2(x / radius), v)
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -126,7 +130,7 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             }
             Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -137,7 +141,7 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             let (x, y, z) = components(*center, *axis, *ref_direction);
             Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -2282,8 +2286,8 @@ pub fn nurbs_pcurve_contains_point(
             return None;
         }
         let middle = start + (end - start) * 0.5;
-        let curve_point = nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle)?;
-        let distance = (curve_point.u - point.u).hypot(curve_point.v - point.v);
+        let curve_uv = nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle)?;
+        let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
         if distance <= tolerance {
             return Some(true);
         }
@@ -2688,12 +2692,12 @@ fn periodic_parameter(
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
-pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
+pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Point3> {
     curve_point_inner(geometry, t, 0)
 }
 
 /// Evaluate the exact first derivative of a directly stored curve.
-pub fn curve_tangent(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
+pub fn curve_tangent_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3> {
     if !t.is_finite() {
         return None;
     }
@@ -2702,7 +2706,7 @@ pub fn curve_tangent(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
 }
 
 /// Evaluate the exact second derivative of a directly stored curve.
-pub fn curve_second_derivative(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
+pub fn curve_second_derivative_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3> {
     if !t.is_finite() {
         return None;
     }
@@ -2714,13 +2718,13 @@ pub fn curve_second_derivative(geometry: &CurveGeometry, t: f64) -> Option<Vecto
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
 /// Analytic curves are constant-cost; transformed, polyline, and NURBS curves
 /// charge the work performed by their representation.
-pub fn curve_point_with_budget(
-    geometry: &CurveGeometry,
+pub fn curve_point_with_budget_solved(
+    geometry: &SolvedCurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Point3> {
     fn evaluate(
-        geometry: &CurveGeometry,
+        geometry: &SolvedCurveGeometry,
         t: f64,
         depth: usize,
         budget: &WorkBudget<'_>,
@@ -2729,23 +2733,23 @@ pub fn curve_point_with_budget(
             return None;
         }
         match geometry {
-            CurveGeometry::Nurbs(nurbs) => {
+            SolvedCurveGeometry::Nurbs(nurbs) => {
                 budget
                     .charge_by(nurbs_curve_evaluation_cost(nurbs)?)
                     .then_some(())?;
-                curve_point(geometry, t)
+                curve_point_solved(geometry, t)
             }
-            CurveGeometry::Polyline(polyline) => {
+            SolvedCurveGeometry::Polyline(polyline) => {
                 budget
                     .charge_by(polyline.points().len().max(1))
                     .then_some(())?;
-                curve_point(geometry, t)
+                curve_point_solved(geometry, t)
             }
-            CurveGeometry::Transformed { basis, transform } => {
+            SolvedCurveGeometry::Transformed { basis, transform } => {
                 budget.charge().then_some(())?;
                 evaluate(basis, t, depth + 1, budget).map(|point| affine_point(*transform, point))
             }
-            _ => curve_point(geometry, t),
+            _ => curve_point_solved(geometry, t),
         }
     }
 
@@ -2754,13 +2758,13 @@ pub fn curve_point_with_budget(
 
 /// Evaluate the exact first derivative of a directly stored curve within a
 /// caller-owned work slice.
-pub fn curve_tangent_with_budget(
-    geometry: &CurveGeometry,
+pub fn curve_tangent_with_budget_solved(
+    geometry: &SolvedCurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Vector3> {
     fn evaluate(
-        geometry: &CurveGeometry,
+        geometry: &SolvedCurveGeometry,
         t: f64,
         depth: usize,
         budget: &WorkBudget<'_>,
@@ -2769,24 +2773,24 @@ pub fn curve_tangent_with_budget(
             return None;
         }
         match geometry {
-            CurveGeometry::Nurbs(nurbs) => {
+            SolvedCurveGeometry::Nurbs(nurbs) => {
                 budget
                     .charge_by(nurbs_curve_derivative_evaluation_cost(nurbs, 2)?)
                     .then_some(())?;
-                curve_tangent(geometry, t)
+                curve_tangent_solved(geometry, t)
             }
-            CurveGeometry::Polyline(polyline) => {
+            SolvedCurveGeometry::Polyline(polyline) => {
                 budget
                     .charge_by(polyline.points().len().max(1))
                     .then_some(())?;
-                curve_tangent(geometry, t)
+                curve_tangent_solved(geometry, t)
             }
-            CurveGeometry::Transformed { basis, transform } => {
+            SolvedCurveGeometry::Transformed { basis, transform } => {
                 budget.charge().then_some(())?;
                 evaluate(basis, t, depth + 1, budget)
                     .map(|tangent| affine_vector(*transform, tangent))
             }
-            _ => curve_tangent(geometry, t),
+            _ => curve_tangent_solved(geometry, t),
         }
     }
 
@@ -2795,13 +2799,13 @@ pub fn curve_tangent_with_budget(
 
 /// Evaluate the exact second derivative of a directly stored curve within a
 /// caller-owned work slice.
-pub fn curve_second_derivative_with_budget(
-    geometry: &CurveGeometry,
+pub fn curve_second_derivative_with_budget_solved(
+    geometry: &SolvedCurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Vector3> {
     fn evaluate(
-        geometry: &CurveGeometry,
+        geometry: &SolvedCurveGeometry,
         t: f64,
         depth: usize,
         budget: &WorkBudget<'_>,
@@ -2810,24 +2814,24 @@ pub fn curve_second_derivative_with_budget(
             return None;
         }
         match geometry {
-            CurveGeometry::Nurbs(nurbs) => {
+            SolvedCurveGeometry::Nurbs(nurbs) => {
                 budget
                     .charge_by(nurbs_curve_derivative_evaluation_cost(nurbs, 3)?)
                     .then_some(())?;
-                curve_second_derivative(geometry, t)
+                curve_second_derivative_solved(geometry, t)
             }
-            CurveGeometry::Polyline(polyline) => {
+            SolvedCurveGeometry::Polyline(polyline) => {
                 budget
                     .charge_by(polyline.points().len().max(1))
                     .then_some(())?;
-                curve_second_derivative(geometry, t)
+                curve_second_derivative_solved(geometry, t)
             }
-            CurveGeometry::Transformed { basis, transform } => {
+            SolvedCurveGeometry::Transformed { basis, transform } => {
                 budget.charge().then_some(())?;
                 evaluate(basis, t, depth + 1, budget)
                     .map(|derivative| affine_vector(*transform, derivative))
             }
-            _ => curve_second_derivative(geometry, t),
+            _ => curve_second_derivative_solved(geometry, t),
         }
     }
 
@@ -2846,16 +2850,16 @@ fn nurbs_curve_derivative_evaluation_cost(
     nurbs_curve_evaluation_cost(curve)?.checked_mul(basis_levels)
 }
 
-fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Vector3> {
+fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Option<Vector3> {
     if depth > 256 {
         return None;
     }
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let direction = line_curve.direction();
             Some(*direction)
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
@@ -2864,7 +2868,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
                 (radius * t.cos(), axis.cross(*ref_direction)),
             ]))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius();
@@ -2874,7 +2878,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
                 (minor_radius * t.cos(), axis.cross(*major_direction)),
             ]))
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
@@ -2883,7 +2887,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
                 (2.0 * focal_distance, axis.cross(*major_direction)),
             ]))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
             let major_radius = hyperbola_curve.major_radius();
@@ -2893,7 +2897,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
                 (minor_radius * t.cosh(), axis.cross(*major_direction)),
             ]))
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_tangent(
                 nurbs.degree(),
@@ -2903,24 +2907,21 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
                 parameter,
             )
         }
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Polyline(polyline) => {
             polyline_tangent(polyline.points(), polyline.parameters(), t)
         }
-        CurveGeometry::Transformed { basis, transform } => curve_tangent_inner(basis, t, depth + 1)
-            .map(|tangent| affine_vector(*transform, tangent)),
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_tangent_inner(geometry, t, depth + 1),
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Procedural { .. } => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Transformed { basis, transform } => {
+            curve_tangent_inner(basis, t, depth + 1)
+                .map(|tangent| affine_vector(*transform, tangent))
+        }
+        SolvedCurveGeometry::Degenerate(_) => None,
+        SolvedCurveGeometry::Composite { .. } => None,
+        SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
 fn curve_second_derivative_inner(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     t: f64,
     depth: usize,
 ) -> Option<Vector3> {
@@ -2929,8 +2930,8 @@ fn curve_second_derivative_inner(
     }
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
-        CurveGeometry::Line(_) => Some(zero),
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Line(_) => Some(zero),
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
@@ -2939,7 +2940,7 @@ fn curve_second_derivative_inner(
                 (-radius * t.sin(), axis.cross(*ref_direction)),
             ]))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius();
@@ -2949,12 +2950,12 @@ fn curve_second_derivative_inner(
                 (-minor_radius * t.sin(), axis.cross(*major_direction)),
             ]))
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
             Some(vector_sum(&[(2.0 * focal_distance, *major_direction)]))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
             let major_radius = hyperbola_curve.major_radius();
@@ -2964,7 +2965,7 @@ fn curve_second_derivative_inner(
                 (minor_radius * t.sinh(), axis.cross(*major_direction)),
             ]))
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_second_derivative(
                 nurbs.degree(),
@@ -2974,21 +2975,16 @@ fn curve_second_derivative_inner(
                 parameter,
             )
         }
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Polyline(polyline) => {
             polyline_tangent(polyline.points(), polyline.parameters(), t).map(|_| zero)
         }
-        CurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed { basis, transform } => {
             curve_second_derivative_inner(basis, t, depth + 1)
                 .map(|derivative| affine_vector(*transform, derivative))
         }
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_second_derivative_inner(geometry, t, depth + 1),
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Procedural { .. } => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Degenerate(_) => None,
+        SolvedCurveGeometry::Composite { .. } => None,
+        SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -3287,11 +3283,11 @@ fn model_curve_differential_by_id_inner(
     if let Some(cache) = curve.geometry.solved_cache() {
         return Some(ModelCurveDifferential {
             point: budget.map_or_else(
-                || curve_point(cache, parameter),
-                |budget| curve_point_with_budget(cache, parameter, budget),
+                || curve_point_solved(cache, parameter),
+                |budget| curve_point_with_budget_solved(cache, parameter, budget),
             )?,
-            tangent: curve_tangent(cache, parameter)?,
-            acceleration: curve_second_derivative(cache, parameter)?,
+            tangent: curve_tangent_solved(cache, parameter)?,
+            acceleration: curve_second_derivative_solved(cache, parameter)?,
         });
     }
     if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
@@ -3405,13 +3401,13 @@ fn record_u_interval(record_bounds: Option<[Option<f64>; 4]>) -> Option<[f64; 2]
     Some([start, end])
 }
 
-fn is_line_geometry(geometry: &CurveGeometry, depth: usize) -> bool {
+fn is_line_geometry(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
     if depth > 256 {
         return false;
     }
     match geometry {
-        CurveGeometry::Line(_) => true,
-        CurveGeometry::Transformed { basis, .. } => is_line_geometry(basis, depth + 1),
+        SolvedCurveGeometry::Line(_) => true,
+        SolvedCurveGeometry::Transformed { basis, .. } => is_line_geometry(basis, depth + 1),
         _ => false,
     }
 }
@@ -3480,7 +3476,11 @@ fn construction_curve_parameter(
         };
     };
     let surface_width = surface_end - surface_start;
-    if !is_line_geometry(&curve.geometry, 0) {
+    if !curve
+        .geometry
+        .solved()
+        .is_some_and(|geometry| is_line_geometry(geometry, 0))
+    {
         return if reversed {
             Some((-parameter, -surface_derivative))
         } else {
@@ -3747,8 +3747,8 @@ fn model_curve_point_by_id_inner(
         _ => {
             if let Some(cache) = curve.geometry.solved_cache() {
                 budget.map_or_else(
-                    || curve_point(cache, parameter),
-                    |budget| curve_point_with_budget(cache, parameter, budget),
+                    || curve_point_solved(cache, parameter),
+                    |budget| curve_point_with_budget_solved(cache, parameter, budget),
                 )
             } else if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
                 None
@@ -3932,7 +3932,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         let origin = line_pcurve.origin();
         let direction = line_pcurve.direction();
         let parameter = match &surface.geometry {
-            SurfaceGeometry::Plane(_) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
                 let Some(base) = model_surface_point_by_id(index, support_id, origin.u, origin.v)
                 else {
                     continue;
@@ -3951,8 +3951,8 @@ fn model_curve_parameter_near_point_with_tolerance(
                 (denominator.is_finite() && denominator > 0.0)
                     .then(|| offset.dot(tangent) / denominator)
             }
-            SurfaceGeometry::Cylinder(_) => analytic_surface_parameters(&surface.geometry, point)
-                .and_then(|mut uv| {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+                analytic_surface_parameters(&surface.geometry, point).and_then(|mut uv| {
                     if direction.v == 0.0 && direction.u != 0.0 {
                         let expected = origin.u + direction.u * seed;
                         uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
@@ -3960,7 +3960,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                         Some((uv.u - origin.u) / direction.u)
                     } else if direction.u == 0.0
                         && direction.v != 0.0
-                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                        && matches!(
+                            surface.geometry.solved(),
+                            Some(SolvedSurfaceGeometry::Torus(_))
+                        )
                     {
                         let expected = origin.v + direction.v * seed;
                         uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
@@ -3971,9 +3974,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                     } else {
                         None
                     }
-                }),
-            SurfaceGeometry::Cone(_) => analytic_surface_parameters(&surface.geometry, point)
-                .and_then(|mut uv| {
+                })
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+                analytic_surface_parameters(&surface.geometry, point).and_then(|mut uv| {
                     if direction.v == 0.0 && direction.u != 0.0 {
                         let expected = origin.u + direction.u * seed;
                         uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
@@ -3981,7 +3985,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                         Some((uv.u - origin.u) / direction.u)
                     } else if direction.u == 0.0
                         && direction.v != 0.0
-                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                        && matches!(
+                            surface.geometry.solved(),
+                            Some(SolvedSurfaceGeometry::Torus(_))
+                        )
                     {
                         let expected = origin.v + direction.v * seed;
                         uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
@@ -3992,9 +3999,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                     } else {
                         None
                     }
-                }),
-            SurfaceGeometry::Sphere(_) => analytic_surface_parameters(&surface.geometry, point)
-                .and_then(|mut uv| {
+                })
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
+                analytic_surface_parameters(&surface.geometry, point).and_then(|mut uv| {
                     if direction.v == 0.0 && direction.u != 0.0 {
                         let expected = origin.u + direction.u * seed;
                         uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
@@ -4002,7 +4010,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                         Some((uv.u - origin.u) / direction.u)
                     } else if direction.u == 0.0
                         && direction.v != 0.0
-                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                        && matches!(
+                            surface.geometry.solved(),
+                            Some(SolvedSurfaceGeometry::Torus(_))
+                        )
                     {
                         let expected = origin.v + direction.v * seed;
                         uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
@@ -4013,9 +4024,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                     } else {
                         None
                     }
-                }),
-            SurfaceGeometry::Torus(_) => analytic_surface_parameters(&surface.geometry, point)
-                .and_then(|mut uv| {
+                })
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
+                analytic_surface_parameters(&surface.geometry, point).and_then(|mut uv| {
                     if direction.v == 0.0 && direction.u != 0.0 {
                         let expected = origin.u + direction.u * seed;
                         uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
@@ -4023,7 +4035,10 @@ fn model_curve_parameter_near_point_with_tolerance(
                         Some((uv.u - origin.u) / direction.u)
                     } else if direction.u == 0.0
                         && direction.v != 0.0
-                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                        && matches!(
+                            surface.geometry.solved(),
+                            Some(SolvedSurfaceGeometry::Torus(_))
+                        )
                     {
                         let expected = origin.v + direction.v * seed;
                         uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
@@ -4034,8 +4049,9 @@ fn model_curve_parameter_near_point_with_tolerance(
                     } else {
                         None
                     }
-                }),
-            SurfaceGeometry::Nurbs(surface) => {
+                })
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
                     if direction.u == 0.0 && direction.v != 0.0 {
                         (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
@@ -4156,11 +4172,11 @@ pub(crate) fn curve_parameter_near_point(
     seed: f64,
     tolerance: f64,
 ) -> Option<f64> {
-    direct_curve_parameter_near_point(geometry, point, seed, tolerance)
+    direct_curve_parameter_near_point(geometry.solved()?, point, seed, tolerance)
 }
 
 fn direct_curve_parameter_near_point(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: f64,
     tolerance: f64,
@@ -4174,7 +4190,7 @@ fn direct_curve_parameter_near_point(
         (delta.dot(reference), delta.dot(transverse), delta.dot(axis))
     };
     let parameter = match geometry {
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
@@ -4182,7 +4198,7 @@ fn direct_curve_parameter_near_point(
             (denominator.is_finite() && denominator > 0.0)
                 .then(|| delta.dot(*direction) / denominator)?
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -4194,7 +4210,7 @@ fn direct_curve_parameter_near_point(
             let canonical = (y / radius).atan2(x / radius);
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -4207,7 +4223,7 @@ fn direct_curve_parameter_near_point(
             let canonical = (y / minor_radius).atan2(x / major_radius);
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -4218,7 +4234,7 @@ fn direct_curve_parameter_near_point(
             let (_, transverse, _) = components(*vertex, *axis, *major_direction);
             transverse / (2.0 * focal_distance)
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -4229,17 +4245,17 @@ fn direct_curve_parameter_near_point(
             let (_, transverse, _) = components(*center, *axis, *major_direction);
             (transverse / minor_radius).asinh()
         }
-        CurveGeometry::Nurbs(curve) => {
+        SolvedCurveGeometry::Nurbs(curve) => {
             nurbs_curve_parameter_near_point(curve, point, tolerance, seed)?
         }
-        CurveGeometry::Polyline(polyline) => polyline_parameter_near_point(
+        SolvedCurveGeometry::Polyline(polyline) => polyline_parameter_near_point(
             polyline.points(),
             polyline.parameters(),
             point,
             tolerance,
             seed,
         )?,
-        CurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed { basis, transform } => {
             let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
             let basis_tolerance = tolerance * tolerance_scale;
             if !basis_tolerance.is_finite() {
@@ -4247,22 +4263,16 @@ fn direct_curve_parameter_near_point(
             }
             direct_curve_parameter_near_point(basis, basis_point, seed, basis_tolerance)?
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let stored = degenerate_curve.point();
             let error = (stored.x - point.x)
                 .hypot(stored.y - point.y)
                 .hypot(stored.z - point.z);
             (error.is_finite() && error <= tolerance).then_some(seed)?
         }
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => direct_curve_parameter_near_point(geometry, point, seed, tolerance)?,
-        CurveGeometry::Procedural { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => return None,
+        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => return None,
     };
-    let evaluated = curve_point(geometry, parameter)?;
+    let evaluated = curve_point_solved(geometry, parameter)?;
     let error = ((evaluated.x - point.x).powi(2)
         + (evaluated.y - point.y).powi(2)
         + (evaluated.z - point.z).powi(2))
@@ -4396,17 +4406,17 @@ fn polyline_parameter_near_point(
         .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
 }
 
-fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
+fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Option<Point3> {
     if depth > 256 {
         return None;
     }
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             Some(offset(*origin, &[(t, *direction)]))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -4419,7 +4429,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 ],
             ))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -4433,7 +4443,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 ],
             ))
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -4446,7 +4456,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 ],
             ))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -4460,11 +4470,11 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 ],
             ))
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let point = degenerate_curve.point();
             Some(*point)
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_point(
                 nurbs.degree(),
@@ -4474,34 +4484,28 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 parameter,
             )
         }
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Polyline(polyline) => {
             polyline_point(polyline.points(), polyline.parameters(), t)
         }
-        CurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed { basis, transform } => {
             curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
         }
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_point_inner(geometry, t, depth + 1),
-        CurveGeometry::Procedural { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization: `u` is
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
-pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+pub fn surface_point_solved(geometry: &SolvedSurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
     surface_second_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
 }
 
 /// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
 /// slice. Analytic surfaces are constant-cost; transformed carriers charge
 /// each transform layer and NURBS carriers charge their local basis work.
-pub fn surface_point_with_budget(
-    geometry: &SurfaceGeometry,
+pub fn surface_point_with_budget_solved(
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
@@ -4510,7 +4514,7 @@ pub fn surface_point_with_budget(
 }
 
 fn surface_point_with_budget_inner(
-    geometry: &SurfaceGeometry,
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     depth: usize,
@@ -4520,14 +4524,14 @@ fn surface_point_with_budget_inner(
         return None;
     }
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
             Some(offset(*origin, &[(u, *u_axis), (v, v_axis)]))
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -4544,7 +4548,7 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -4565,7 +4569,7 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -4584,7 +4588,7 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -4605,19 +4609,13 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
-        SurfaceGeometry::Transformed { basis, transform } => {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
+        SolvedSurfaceGeometry::Transformed { basis, transform } => {
             budget.charge().then_some(())?;
             surface_point_with_budget_inner(basis, u, v, depth + 1, budget)
                 .map(|point| affine_point(*transform, point))
         }
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_point_with_budget_inner(geometry, u, v, depth + 1, budget),
-        SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -4806,7 +4804,11 @@ fn rolling_ball_jet_interpolate_scalar(
 }
 
 /// Evaluate a directly stored surface and its exact first partial derivatives.
-pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfacePartials> {
+pub fn surface_partials_solved(
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Option<SurfacePartials> {
     surface_second_partials_inner(geometry, u, v, 0).map(|partials| SurfacePartials {
         point: partials.point,
         du: partials.du,
@@ -4816,8 +4818,8 @@ pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Su
 
 /// Evaluate a directly stored surface and its exact first and second partial
 /// derivatives.
-pub fn surface_second_partials(
-    geometry: &SurfaceGeometry,
+pub fn surface_second_partials_solved(
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
@@ -4825,7 +4827,7 @@ pub fn surface_second_partials(
 }
 
 fn surface_second_partials_inner(
-    geometry: &SurfaceGeometry,
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     depth: usize,
@@ -4835,7 +4837,7 @@ fn surface_second_partials_inner(
     }
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -4849,7 +4851,7 @@ fn surface_second_partials_inner(
                 dvv: zero,
             })
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -4879,7 +4881,7 @@ fn surface_second_partials_inner(
                 dvv: zero,
             })
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -4920,7 +4922,7 @@ fn surface_second_partials_inner(
                 dvv: zero,
             })
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -4963,7 +4965,7 @@ fn surface_second_partials_inner(
                 ]),
             })
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -5008,8 +5010,8 @@ fn surface_second_partials_inner(
                 ]),
             })
         }
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v),
-        SurfaceGeometry::Transformed { basis, transform } => {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v),
+        SolvedSurfaceGeometry::Transformed { basis, transform } => {
             surface_second_partials_inner(basis, u, v, depth + 1).map(|partials| {
                 SurfaceSecondPartials {
                     point: affine_point(*transform, partials.point),
@@ -5021,13 +5023,7 @@ fn surface_second_partials_inner(
                 }
             })
         }
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_second_partials_inner(geometry, u, v, depth + 1),
-        SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -5040,7 +5036,7 @@ pub fn model_surface_point(
     v: f64,
 ) -> Option<Point3> {
     if let Some(cache) = geometry.solved_cache() {
-        return surface_point(cache, u, v);
+        return surface_point_solved(cache, u, v);
     }
     let Some(construction) = geometry.procedural_construction() else {
         return surface_point(geometry, u, v);
@@ -5541,11 +5537,11 @@ fn straight_sweep_path_origin(
 ) -> Option<Point3> {
     let curve = index.curves(spine.as_str())?;
     match &curve.geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             Some(*origin)
         }
-        CurveGeometry::Nurbs(nurbs)
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.degree() == 1 && nurbs.control_points().len() == 2 && !nurbs.periodic() =>
         {
             let [start, _] = nurbs_curve_parameter_domain(nurbs)?;
@@ -5612,7 +5608,7 @@ fn sweep_profile_differential(
     }
     let curve = index.curves(profile.as_str())?;
     let (native_parameter, parameter_scale) = match &curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)?;
             let native_span = native_end - native_start;
             let fraction = (parameter - profile_range[0]) / profile_span;
@@ -6436,9 +6432,9 @@ fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
         && finite_vector(partials.dvv)
 }
 
-fn model_surface_point_with_budget(
+fn model_surface_point_with_budget_solved(
     ir: &CadIr,
-    geometry: &SurfaceGeometry,
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
@@ -6448,26 +6444,26 @@ fn model_surface_point_with_budget(
         return None;
     }
     match (geometry, budget) {
-        (SurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
+        (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
             nurbs_surface_point_with_budget(nurbs, u, v, budget)
         }
-        (SurfaceGeometry::Transformed { basis, transform }, Some(budget)) => {
+        (SolvedSurfaceGeometry::Transformed { basis, transform }, Some(budget)) => {
             budget.charge().then_some(())?;
-            model_surface_point_with_budget(ir, basis, u, v, Some(budget), depth + 1)
+            model_surface_point_with_budget_solved(ir, basis, u, v, Some(budget), depth + 1)
                 .map(|point| affine_point(*transform, point))
         }
-        _ => model_surface_point(ir, geometry, u, v),
+        _ => surface_point_solved(geometry, u, v),
     }
 }
 
-fn surface_partials_with_budget(
-    geometry: &SurfaceGeometry,
+fn surface_partials_with_budget_solved(
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfacePartials> {
     fn evaluate(
-        geometry: &SurfaceGeometry,
+        geometry: &SolvedSurfaceGeometry,
         u: f64,
         v: f64,
         depth: usize,
@@ -6477,10 +6473,10 @@ fn surface_partials_with_budget(
             return None;
         }
         match geometry {
-            SurfaceGeometry::Nurbs(nurbs) => {
+            SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_partials_with_budget(nurbs, u, v, budget)
             }
-            SurfaceGeometry::Transformed { basis, transform } => {
+            SolvedSurfaceGeometry::Transformed { basis, transform } => {
                 budget.charge().then_some(())?;
                 evaluate(basis, u, v, depth + 1, budget).map(|partials| SurfacePartials {
                     point: affine_point(*transform, partials.point),
@@ -6488,24 +6484,24 @@ fn surface_partials_with_budget(
                     dv: affine_vector(*transform, partials.dv),
                 })
             }
-            _ => surface_partials(geometry, u, v),
+            _ => surface_partials_solved(geometry, u, v),
         }
     }
 
     match (geometry, budget) {
         (_, Some(budget)) => evaluate(geometry, u, v, 0, budget),
-        _ => surface_partials(geometry, u, v),
+        _ => surface_partials_solved(geometry, u, v),
     }
 }
 
-fn surface_second_partials_with_budget(
-    geometry: &SurfaceGeometry,
+fn surface_second_partials_with_budget_solved(
+    geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
     fn evaluate(
-        geometry: &SurfaceGeometry,
+        geometry: &SolvedSurfaceGeometry,
         u: f64,
         v: f64,
         depth: usize,
@@ -6515,10 +6511,10 @@ fn surface_second_partials_with_budget(
             return None;
         }
         match geometry {
-            SurfaceGeometry::Nurbs(nurbs) => {
+            SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_second_partials_with_budget(nurbs, u, v, budget)
             }
-            SurfaceGeometry::Transformed { basis, transform } => {
+            SolvedSurfaceGeometry::Transformed { basis, transform } => {
                 budget.charge().then_some(())?;
                 evaluate(basis, u, v, depth + 1, budget).map(|partials| SurfaceSecondPartials {
                     point: affine_point(*transform, partials.point),
@@ -6529,13 +6525,13 @@ fn surface_second_partials_with_budget(
                     dvv: affine_vector(*transform, partials.dvv),
                 })
             }
-            _ => surface_second_partials(geometry, u, v),
+            _ => surface_second_partials_solved(geometry, u, v),
         }
     }
 
     match (geometry, budget) {
         (_, Some(budget)) => evaluate(geometry, u, v, 0, budget),
-        _ => surface_second_partials(geometry, u, v),
+        _ => surface_second_partials_solved(geometry, u, v),
     }
 }
 
@@ -6583,7 +6579,7 @@ fn model_surface_point_by_id_inner(
         budget: Option<&WorkBudget<'_>>,
     ) -> Option<SurfaceEvaluation> {
         let support = index.surfaces(support.as_str())?;
-        let SurfaceGeometry::Nurbs(nurbs) = &support.geometry else {
+        let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = support.geometry.solved() else {
             return None;
         };
         let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
@@ -6773,7 +6769,9 @@ fn model_surface_point_by_id_inner(
                     surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                         let normal = partials.du.cross(partials.dv);
                         let normal = match &surface.geometry {
-                            SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+                                if nurbs.normal_reversed() =>
+                            {
                                 scale_vector(normal, -1.0)
                             }
                             _ => normal,
@@ -6857,7 +6855,9 @@ fn model_surface_point_by_id_inner(
                     surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                         let normal = partials.du.cross(partials.dv);
                         let normal = match &surface.geometry {
-                            SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+                                if nurbs.normal_reversed() =>
+                            {
                                 scale_vector(normal, -1.0)
                             }
                             _ => normal,
@@ -6969,7 +6969,9 @@ fn model_surface_point_by_id_inner(
             _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                 let normal = partials.du.cross(partials.dv);
                 let normal = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+                        if nurbs.normal_reversed() =>
+                    {
                         scale_vector(normal, -1.0)
                     }
                     _ => normal,
@@ -7960,3 +7962,111 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 
 #[cfg(test)]
 mod tests;
+
+/// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
+pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
+    curve_point_solved(geometry.solved()?, t)
+}
+
+/// Evaluate the exact first derivative of a stored curve carrier.
+pub fn curve_tangent(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
+    curve_tangent_solved(geometry.solved()?, t)
+}
+
+/// Evaluate the exact second derivative of a stored curve carrier.
+pub fn curve_second_derivative(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
+    curve_second_derivative_solved(geometry.solved()?, t)
+}
+
+/// Evaluate a stored curve carrier at `t` within a caller-owned work slice.
+pub fn curve_point_with_budget(
+    geometry: &CurveGeometry,
+    t: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    curve_point_with_budget_solved(geometry.solved()?, t, budget)
+}
+
+/// Evaluate the first derivative of a stored curve within a work slice.
+pub fn curve_tangent_with_budget(
+    geometry: &CurveGeometry,
+    t: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Vector3> {
+    curve_tangent_with_budget_solved(geometry.solved()?, t, budget)
+}
+
+/// Evaluate the second derivative of a stored curve within a work slice.
+pub fn curve_second_derivative_with_budget(
+    geometry: &CurveGeometry,
+    t: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Vector3> {
+    curve_second_derivative_with_budget_solved(geometry.solved()?, t, budget)
+}
+
+/// Evaluate a surface carrier at `(u, v)` on its own parameterization.
+pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+    surface_point_solved(geometry.solved()?, u, v)
+}
+
+/// Evaluate a surface carrier at `(u, v)` within a caller-owned work slice.
+pub fn surface_point_with_budget(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    surface_point_with_budget_solved(geometry.solved()?, u, v, budget)
+}
+
+/// Evaluate the first partial derivatives of a surface carrier.
+pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfacePartials> {
+    surface_partials_solved(geometry.solved()?, u, v)
+}
+
+/// Evaluate the second partial derivatives of a surface carrier.
+pub fn surface_second_partials(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    surface_second_partials_solved(geometry.solved()?, u, v)
+}
+
+/// Analytic surface parameters of the point on a surface carrier.
+pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+    analytic_surface_parameters_solved(geometry.solved()?, point)
+}
+
+fn surface_partials_with_budget(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<SurfacePartials> {
+    surface_partials_with_budget_solved(geometry.solved()?, u, v, budget)
+}
+
+fn surface_second_partials_with_budget(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<SurfaceSecondPartials> {
+    surface_second_partials_with_budget_solved(geometry.solved()?, u, v, budget)
+}
+
+fn model_surface_point_with_budget(
+    ir: &CadIr,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+    depth: usize,
+) -> Option<Point3> {
+    match geometry.solved() {
+        Some(solved) => model_surface_point_with_budget_solved(ir, solved, u, v, budget, depth),
+        None => model_surface_point(ir, geometry, u, v),
+    }
+}

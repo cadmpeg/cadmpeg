@@ -41,7 +41,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
     NurbsCurve, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
@@ -324,16 +325,18 @@ pub(crate) fn try_decode_geometry(
             .enumerate()
         {
             match &geometry {
-                SurfaceGeometry::Plane(_) => counts.planes += 1,
-                SurfaceGeometry::Cylinder(_) => counts.cylinders += 1,
-                SurfaceGeometry::Cone(_) => counts.cones += 1,
-                SurfaceGeometry::Sphere(_) => counts.spheres += 1,
-                SurfaceGeometry::Torus(_) => counts.tori += 1,
-                SurfaceGeometry::Nurbs(_)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => counts.planes += 1,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+                    counts.cylinders += 1
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => counts.cones += 1,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => counts.spheres += 1,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => counts.tori += 1,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
                 | SurfaceGeometry::Procedural { .. }
-                | SurfaceGeometry::Polygonal(_)
-                | SurfaceGeometry::Transformed { .. }
-                | SurfaceGeometry::Unknown { .. } => {}
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {}
             }
             let id: SurfaceId = scope.id("surf", fi);
             annotate_node(
@@ -341,7 +344,11 @@ pub(crate) fn try_decode_geometry(
                 &id,
                 &source_stream,
                 node,
-                surface_tag(&geometry),
+                surface_tag(geometry.solved().ok_or_else(|| {
+                    cadmpeg_core::CodecError::NotImplemented(
+                        "carrier has no solved geometry".into(),
+                    )
+                })?),
             );
             annotations
                 .derived(&id, "geometry")
@@ -554,18 +561,18 @@ pub(crate) fn try_decode_geometry(
             .enumerate()
         {
             match &geometry {
-                CurveGeometry::Line(_) => counts.lines += 1,
-                CurveGeometry::Circle(_) => counts.circles += 1,
-                CurveGeometry::Ellipse(_) => counts.ellipses += 1,
-                CurveGeometry::Parabola(_) => {}
-                CurveGeometry::Hyperbola(_) => {}
-                CurveGeometry::Degenerate(_) => {}
-                CurveGeometry::Composite { .. } => {}
-                CurveGeometry::Nurbs(_) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => counts.lines += 1,
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => counts.circles += 1,
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => counts.ellipses += 1,
+                CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => {}
                 CurveGeometry::Procedural { .. } => {}
-                CurveGeometry::Polyline(_) => {}
-                CurveGeometry::Transformed { .. } => {}
-                CurveGeometry::Unknown { .. } => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {}
             }
             let id: CurveId = scope.id("crv", ci);
             annotate_node(
@@ -573,7 +580,11 @@ pub(crate) fn try_decode_geometry(
                 &id,
                 &source_stream,
                 node,
-                curve_tag(&geometry),
+                curve_tag(geometry.solved().ok_or_else(|| {
+                    cadmpeg_core::CodecError::NotImplemented(
+                        "carrier has no solved geometry".into(),
+                    )
+                })?),
             );
             annotations
                 .derived(&id, "geometry")
@@ -722,7 +733,7 @@ pub(crate) fn try_decode_geometry(
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: if let Some(charted) = charted {
-                    CurveGeometry::Nurbs(
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         NurbsCurve::new(
                             1,
                             linear_knots(&charted.samples.parameters()),
@@ -731,16 +742,16 @@ pub(crate) fn try_decode_geometry(
                             false,
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                    )
+                    ))
                 } else if uncharted.is_some() {
                     CurveGeometry::Procedural {
                         construction: procedural_id.clone(),
                         cache: None,
                     }
                 } else {
-                    CurveGeometry::Unknown {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: Some(unknown_id.clone()),
-                    }
+                    })
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
@@ -1293,11 +1304,16 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
         }
     }
     ir.model.surfaces.retain(|surface| {
-        !matches!(surface.geometry, SurfaceGeometry::Unknown { .. })
-            || used_surfaces.contains(&surface.id)
+        !matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        ) || used_surfaces.contains(&surface.id)
     });
     ir.model.curves.retain(|curve| {
-        !matches!(curve.geometry, CurveGeometry::Unknown { .. }) || used_curves.contains(&curve.id)
+        !matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        ) || used_curves.contains(&curve.id)
     });
 }
 

@@ -17,38 +17,38 @@ fn variable_blend_eval_fixture(
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: slice.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.extend([
         Surface {
             id: first_surface.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: second_surface.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::PlaneSurface::try_new(
                     second_origin,
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
@@ -246,10 +246,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
     let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[2].geometry else {
         panic!("fixture surface must retain its construction");
     };
-    *cache = Some(
-        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
-            .unwrap(),
-    );
+    *cache = Some(SolvedSurfaceGeometry::Nurbs(bilinear_surface()));
     ir.model.procedural_surfaces[0]
         .edit_definition(|definition| {
             let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
@@ -403,13 +400,13 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         [3.0, 3.0],
         Some(VariableBlendCrossSection::Circular),
     );
-    ir.model.curves[0].geometry = CurveGeometry::Line(
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::LineCurve::try_new(
             Point3::new(3.0, 0.0, 3.0),
             Vector3::new(0.0, 1.0, 0.0),
         )
         .unwrap(),
-    );
+    ));
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
         ir.model.procedural_surfaces[0].definition()
     else {
@@ -525,7 +522,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!((replica.y - 20.5).abs() <= tolerance);
     assert!((replica.z - (expected + 30.0)).abs() <= tolerance);
 
-    ir.model.curves[0].geometry = CurveGeometry::Polyline(
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
         crate::geometry::PolylineCurve::new(
             vec![
                 Point3::new(2.0, 0.0, 3.0),
@@ -536,7 +533,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             0.0,
         )
         .unwrap(),
-    );
+    ));
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_some());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
@@ -570,10 +567,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[2].geometry else {
         panic!("fixture surface must retain its construction");
     };
-    *cache = Some(
-        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
-            .unwrap(),
-    );
+    *cache = Some(SolvedSurfaceGeometry::Nurbs(bilinear_surface()));
     ir.model.procedural_surfaces[0]
         .edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {

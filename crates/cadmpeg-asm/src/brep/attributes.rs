@@ -388,7 +388,7 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
 }
 
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough
-/// `UnknownRecord` and any `SurfaceGeometry::Unknown` that links to it, so the
+/// `UnknownRecord` and any `SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)` that links to it, so the
 /// reference resolves under validation.
 pub fn unknown_record_id(rec: &Record, format: IdFormat<'_>) -> String {
     format!("{format}:brep:{}#{}", rec.head(), rec.index)

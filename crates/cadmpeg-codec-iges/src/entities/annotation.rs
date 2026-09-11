@@ -89,8 +89,11 @@ fn sectioned_area_curves_coplanar(
         if !active.insert(curve_id.clone()) {
             return false;
         }
+        let Some(geometry) = curve.geometry.solved() else {
+            return false;
+        };
         let valid = curve_geometry_coplanar(
-            &curve.geometry,
+            geometry,
             &index,
             identity,
             pattern_plane,

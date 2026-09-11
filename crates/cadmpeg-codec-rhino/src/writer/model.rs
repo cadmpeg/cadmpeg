@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
@@ -45,9 +48,10 @@ pub(super) enum WritableEdgeCurve<'a> {
 impl WritableEdgeCurve<'_> {
     pub(super) fn point(self, parameter: f64) -> Option<Point3> {
         match self {
-            Self::Line(line) => {
-                cadmpeg_ir::eval::curve_point(&CurveGeometry::Line(line), parameter)
-            }
+            Self::Line(line) => cadmpeg_ir::eval::curve_point(
+                &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+                parameter,
+            ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::nurbs_curve_point(
                 nurbs.degree(),
                 nurbs.knots(),
@@ -106,13 +110,13 @@ impl<'a> WritableObjectCurve<'a> {
             )));
         }
         let geometry = match &curve.geometry {
-            CurveGeometry::Circle(circle) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
                 let axis = circle.axis();
                 let ref_direction = circle.ref_direction();
                 check_frame(curve.id.as_str(), *axis, *ref_direction, "circle")?;
                 ObjectCurveGeometry::Circle(circle)
             }
-            CurveGeometry::Nurbs(nurbs) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 ObjectCurveGeometry::Nurbs(nurbs)
             }
@@ -165,7 +169,7 @@ impl<'a> WritableFaceSurface<'a> {
             )));
         }
         match &surface.geometry {
-            SurfaceGeometry::Plane(plane) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin();
                 let normal = plane.normal();
                 let u_axis = plane.u_axis();
@@ -176,7 +180,7 @@ impl<'a> WritableFaceSurface<'a> {
                     u_axis: *u_axis,
                 })
             }
-            SurfaceGeometry::Nurbs(nurbs) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 check_nurbs_surface(surface.id.as_str(), nurbs)?;
                 Ok(Self::Nurbs(nurbs))
             }
@@ -432,7 +436,7 @@ impl<'a> WritableModel<'a> {
                 )));
             }
             let (geometry, expected_start, expected_end) = match &curve.geometry {
-                CurveGeometry::Line(line) => {
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
                     let origin = line.origin();
                     let direction = line.direction();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
@@ -455,7 +459,7 @@ impl<'a> WritableModel<'a> {
                         ),
                     )
                 }
-                CurveGeometry::Nurbs(nurbs) => {
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()

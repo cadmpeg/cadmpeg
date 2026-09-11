@@ -4,7 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
 
@@ -764,7 +765,7 @@ pub(crate) fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
             attr,
             offset: off,
             end: off + 2,
-            geometry: CurveGeometry::Nurbs(nurbs),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             parameter_range: None,
         });
     }
@@ -984,7 +985,7 @@ pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier
             attr,
             offset: off,
             end: off + 2,
-            geometry: SurfaceGeometry::Nurbs(nurbs),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             orientation_reversed: false,
         });
     }

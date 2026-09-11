@@ -13,7 +13,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputLane, FeatureInputName, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId};
@@ -886,7 +886,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
 fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
     let cylinder = |id: &str, origin: Point3| Surface {
         id: SurfaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 origin,
                 Vector3::new(1.0, 0.0, 0.0),
@@ -894,7 +894,7 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
                 5.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let first = cylinder("first", Point3::new(0.0, 0.0, 0.0));

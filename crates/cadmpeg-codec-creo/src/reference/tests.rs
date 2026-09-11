@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
@@ -437,7 +438,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert!(result.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
+        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if { circle_curve.radius() == 1.0 })
     ));
     let circle = result
@@ -547,7 +548,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert!(result.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Ellipse(ellipse_curve)
+        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if { (ellipse_curve.major_radius() == 1.0) && (ellipse_curve.minor_radius() == 1.0) })
     ));
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_ellipses"][0];

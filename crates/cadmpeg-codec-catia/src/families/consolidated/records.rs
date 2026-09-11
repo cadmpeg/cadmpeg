@@ -6,7 +6,7 @@
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1355,7 +1355,9 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     .iter()
                     .filter_map(|surface| {
                         nurbs_carrier_offset(
-                            &SurfaceGeometry::Nurbs(surface.geometry.clone()),
+                            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                                surface.geometry.clone(),
+                            )),
                             &partner_points,
                             &anchor_points,
                         )
@@ -1548,7 +1550,7 @@ fn nurbs_carrier_offset(
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Option<f64> {
-    let SurfaceGeometry::Nurbs(surface) = geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
         return None;
     };
     if parameters.len() != anchors.len() || parameters.is_empty() {
@@ -1772,7 +1774,7 @@ fn object_stream_vertex_row_ranges_from_records(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
 
     use crate::families::b2::records::B2Circle;
@@ -1782,7 +1784,7 @@ mod tests {
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
-        let surface = SurfaceGeometry::Nurbs(
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::new(
                 1,
                 1,
@@ -1798,7 +1800,7 @@ mod tests {
                 false,
             )
             .expect("valid unit-square surface"),
-        );
+        ));
         let tiny = 1e-200;
         let offset = nurbs_carrier_offset(
             &surface,

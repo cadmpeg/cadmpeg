@@ -6040,25 +6040,25 @@ fn analytic_axis_for_face(
 fn analytic_surface_axis(
     geometry: &cadmpeg_ir::geometry::SurfaceGeometry,
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let (origin, direction) = match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             (*origin, *normal)
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             (*origin, *axis)
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             (*origin, *axis)
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             (*center, *axis)

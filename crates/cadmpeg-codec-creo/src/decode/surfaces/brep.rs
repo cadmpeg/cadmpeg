@@ -4,7 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Pcurve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, Pcurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -736,13 +739,13 @@ fn parameter_points_agree(first: [f64; 2], second: [f64; 2]) -> bool {
         .all(|(first, second)| (first - second).abs() <= EPS_PARAMETER_AGREE * scale)
 }
 
-fn curve_geometry_is_typed_nonlinear(geometry: &CurveGeometry) -> bool {
+fn curve_geometry_is_typed_nonlinear(geometry: &SolvedCurveGeometry) -> bool {
     match geometry {
-        CurveGeometry::Circle(_) => true,
-        CurveGeometry::Ellipse(_) => true,
-        CurveGeometry::Parabola(_) => true,
-        CurveGeometry::Hyperbola(_) => true,
-        CurveGeometry::Transformed { basis, .. } => curve_geometry_is_typed_nonlinear(basis),
+        SolvedCurveGeometry::Circle(_) => true,
+        SolvedCurveGeometry::Ellipse(_) => true,
+        SolvedCurveGeometry::Parabola(_) => true,
+        SolvedCurveGeometry::Hyperbola(_) => true,
+        SolvedCurveGeometry::Transformed { basis, .. } => curve_geometry_is_typed_nonlinear(basis),
         _ => false,
     }
 }
@@ -758,7 +761,7 @@ fn model_typed_nonlinear_curve_ids(ir: &CadIr) -> BTreeSet<u32> {
                 .strip_prefix("creo:visibgeom:curve#")?
                 .parse()
                 .ok()?;
-            curve_geometry_is_typed_nonlinear(&curve.geometry).then_some(id)
+            curve_geometry_is_typed_nonlinear(curve.geometry.solved()?).then_some(id)
         })
         .collect()
 }
@@ -813,8 +816,10 @@ fn native_circle_loop_geometry(
         .expect("identity grammar");
     let first = exactly_one(model_curves.iter().filter(|curve| curve.id == first_id))?;
     let second = exactly_one(model_curves.iter().filter(|curve| curve.id == second_id))?;
-    let (CurveGeometry::Circle(circle_curve), CurveGeometry::Circle(circle_curve_2)) =
-        (&first.geometry, &second.geometry)
+    let (
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
+    ) = (&first.geometry, &second.geometry)
     else {
         return None;
     };
@@ -848,7 +853,7 @@ fn ordered_two_edge_circle_loops<'a>(
     if loops.len() < 2 || loops.len() != polygons.len() {
         return None;
     }
-    let SurfaceGeometry::Plane(plane_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return None;
     };
     let origin = plane_surface.origin();
@@ -1513,7 +1518,12 @@ pub(in super::super) fn transfer_native_brep(
                     .iter()
                     .filter(|candidate| candidate.id == curve),
             )
-            .is_some_and(|candidate| matches!(&candidate.geometry, CurveGeometry::Line(_)));
+            .is_some_and(|candidate| {
+                matches!(
+                    candidate.geometry.solved(),
+                    Some(SolvedCurveGeometry::Line(_))
+                )
+            });
         let param_range = if model_curve_count == 0 {
             None
         } else if derived_line {
@@ -1597,9 +1607,9 @@ pub(in super::super) fn transfer_native_brep(
             );
             ir.model.curves.push(Curve {
                 id: curve,
-                geometry: CurveGeometry::Unknown {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: geometry_section_record(scan, offset),
-                },
+                }),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -1811,9 +1821,9 @@ pub(in super::super) fn transfer_native_brep(
                 );
                 ir.model.surfaces.push(Surface {
                     id: surface.clone(),
-                    geometry: SurfaceGeometry::Unknown {
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: geometry_section_record(scan, face_offset),
-                    },
+                    }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -2100,7 +2110,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -2174,7 +2184,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             );
             ir.model.curves.push(Curve {
                 id,
-                geometry: CurveGeometry::Circle(circle_curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

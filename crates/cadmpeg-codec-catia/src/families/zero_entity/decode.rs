@@ -146,8 +146,8 @@ fn append_oriented_wire_curve(
             Ok(procedural) => {
                 let cache = match geometry {
                     CurveGeometry::Procedural { cache, .. } => cache,
-                    CurveGeometry::Unknown { .. } => None,
-                    geometry => SolvedCurveGeometry::new(geometry).ok(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => None,
+                    CurveGeometry::Solved(geometry) => Some(geometry),
                 };
                 ir.model.procedural_curves.push(procedural);
                 CurveGeometry::Procedural {
@@ -968,7 +968,9 @@ pub(crate) fn try_decode_zero_entity(
 mod tests {
     use super::*;
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurve};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, NurbsCurve, ProceduralCurve, SolvedCurveGeometry,
+    };
     use cadmpeg_ir::math::Vector3;
     use std::num::NonZeroUsize;
 
@@ -1008,7 +1010,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1017,15 +1019,15 @@ mod tests {
                     false,
                 )
                 .expect("valid linear NURBS"),
-            ),
+            )),
             source_object: None,
         });
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(corner, Vector3::new(-1.0, 0.0, 0.0))
                     .expect("valid LineCurve fixture"),
-            ),
+            )),
             source_object: None,
         });
         let support_runs = vec![
@@ -1108,10 +1110,10 @@ mod tests {
         {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
-                geometry: CurveGeometry::Line(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
                         .expect("valid LineCurve fixture"),
-                ),
+                )),
                 source_object: None,
             });
         }
@@ -1236,7 +1238,7 @@ mod tests {
                 .iter()
                 .find(|curve| curve.id
                     == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
-                .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+                .map(|curve| &curve.geometry), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
                     if {
                         let origin = line_curve.origin();
         let direction = line_curve.direction();
@@ -1269,7 +1271,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1277,18 +1279,18 @@ mod tests {
                     1.0,
                 )
                 .expect("valid CircleCurve fixture"),
-            ),
+            )),
             source_object: None,
         });
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     corner,
                     first.vector_from(corner).scale(1.0 / chord),
                 )
                 .expect("valid LineCurve fixture"),
-            ),
+            )),
             source_object: None,
         });
         let support_runs = vec![

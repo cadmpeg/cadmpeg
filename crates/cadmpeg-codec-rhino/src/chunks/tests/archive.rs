@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
@@ -21,6 +21,7 @@ use crate::test_support::{
     POLYLINE_CLASS, SUBD_CLASS,
 };
 use crate::RhinoCodec;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 fn decode(bytes: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec
@@ -71,7 +72,8 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     assert_eq!(result.ir().model.curves.len(), 1);
-    let CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("bounded line must decode to an exact NURBS carrier");
     };
     assert_eq!(curve.degree(), 1);
@@ -349,12 +351,12 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .find(|curve| {
             matches!(
                 &curve.geometry,
-                CurveGeometry::Nurbs(nurbs)
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
                     if nurbs.knots() == [-1.0, -1.0, 3.0, 3.0]
             )
         })
         .expect("bounded line");
-    let CurveGeometry::Nurbs(line) = &line.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(line)) = line.geometry.solved() else {
         panic!("line carrier");
     };
     assert_eq!(line.knots(), [-1.0, -1.0, 3.0, 3.0]);
@@ -366,12 +368,12 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .find(|curve| {
             matches!(
                 &curve.geometry,
-                CurveGeometry::Nurbs(nurbs)
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
                     if nurbs.knots() == [2.0, 2.0, 3.5, 9.0, 9.0]
             )
         })
         .expect("polyline");
-    let CurveGeometry::Nurbs(polyline) = &polyline.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(polyline)) = polyline.geometry.solved() else {
         panic!("polyline carrier");
     };
     assert_eq!(polyline.knots(), [2.0, 2.0, 3.5, 9.0, 9.0]);
@@ -632,7 +634,9 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
             .iter()
             .filter(|surface| matches!(
                 surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Unknown { .. }
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { .. }
+                )
             ))
             .count(),
         1

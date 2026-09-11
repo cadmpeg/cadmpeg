@@ -12,7 +12,7 @@ use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use super::attributes::source_less_body_key;
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
@@ -46,7 +46,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
         if surface.geometry.solved_cache().is_some_and(|geometry| {
             !matches!(
                 geometry,
-                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
+                SolvedSurfaceGeometry::Nurbs(_) | SolvedSurfaceGeometry::Unknown { .. }
             )
         }) {
             return Err(CodecError::NotImplemented(format!(
@@ -84,7 +84,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 ))
             })?;
         match curve.geometry.solved_cache() {
-            Some(CurveGeometry::Nurbs(_)) => {}
+            Some(SolvedCurveGeometry::Nurbs(_)) => {}
             None if procedural.cache_fit_tolerance().is_none() => {}
             None => {
                 return Err(CodecError::InvalidInput(format!(
@@ -920,7 +920,10 @@ pub(crate) fn validate_source_less_design_links(
                             use_curve.curve
                         ))
                     })?;
-                if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
+                if !matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+                ) {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
                         parameters.id()

@@ -4,7 +4,7 @@
 use crate::decode::axis::Axis;
 use crate::vecmath::normalize;
 use cadmpeg_ir::features::LinearTermination;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -183,7 +183,7 @@ pub fn cylinder_from_complementary_outline_bounds(
     plane: &SurfaceGeometry,
     bounds: [[[f64; 2]; 2]; 2],
 ) -> Option<SurfaceGeometry> {
-    let SurfaceGeometry::Plane(plane_surface) = plane else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = plane else {
         return None;
     };
     let origin = plane_surface.origin();
@@ -233,7 +233,7 @@ pub fn cylinder_from_complementary_outline_bounds(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(center[0], center[1], center[2]),
             Vector3::new(axis[0], axis[1], axis[2]),
@@ -241,7 +241,7 @@ pub fn cylinder_from_complementary_outline_bounds(
             0.5 * spans[0],
         )
         .ok()?,
-    ))
+    )))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -262,7 +262,7 @@ impl TryFrom<HoleCylinder> for SurfaceGeometry {
             cylinder.ref_direction,
             cylinder.radius,
         )
-        .map(Self::Cylinder)
+        .map(|surface| Self::Solved(SolvedSurfaceGeometry::Cylinder(surface)))
     }
 }
 

@@ -870,7 +870,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .curves
         .iter()
         .filter_map(|curve| match &curve.geometry {
-            CurveGeometry::Composite { segments, .. } => Some((
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => Some((
                 curve.id.as_str(),
                 segments
                     .iter()
@@ -941,7 +941,8 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
-                CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => {
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
                     // the seam ends past `τ`. A full-period edge retains
@@ -954,7 +955,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                         <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
                         && (full_period || (0.0..tau).contains(&start));
                 }
-                CurveGeometry::Nurbs(nurbs) => {
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
                         |[lower, upper]| {
                             if nurbs.periodic() {
@@ -994,7 +995,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let [start, end] = use_curve.parameter_range.endpoints();
             let geometry = curves.get(use_curve.curve.as_str());
             let mut valid = geometry.is_some();
-            if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
+            if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = geometry {
                 valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(|domain| {
                     parameter_in_domain(start, domain) && parameter_in_domain(end, domain)
                 });

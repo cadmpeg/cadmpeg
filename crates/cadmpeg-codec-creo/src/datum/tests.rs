@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::container::{self};
 use crate::test_support::*;
@@ -510,7 +510,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
         .expect("active datum cylinder surface");
     assert!(
-        matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let radius = cylinder_surface.radius();
             (radius - 0.75).abs() < EPS_DATUM_RADIUS

@@ -6,8 +6,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
@@ -102,7 +102,7 @@ pub(crate) fn append_consolidated_revolutions(
         );
         ir.model.curves.push(Curve {
             id: directrix.clone(),
-            geometry: CurveGeometry::Circle(payload),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source("profile-circle", profile.record_id)?),
         });
         let surface = SurfaceId::mint(format!(
@@ -155,7 +155,8 @@ pub(crate) fn append_consolidated_revolutions(
                     profile.radius.get(),
                 )
                 .ok()
-                .map(SurfaceGeometry::Torus)
+                .map(SolvedSurfaceGeometry::Torus)
+                .map(SurfaceGeometry::Solved)
             })
             .flatten();
         annotate(
@@ -168,9 +169,9 @@ pub(crate) fn append_consolidated_revolutions(
         );
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: torus_geometry
-                .clone()
-                .unwrap_or(SurfaceGeometry::Unknown { record: None }),
+            geometry: torus_geometry.clone().unwrap_or(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Unknown { record: None },
+            )),
             source_object: Some(cgm_source(
                 "revolution",
                 u32::from(revolution.profile_allocation_id),
@@ -545,7 +546,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Nurbs(curve.geometry),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
             source_object: Some(
                 cgm_source_key("b2-nurbs-curve-frame", format!("{:010}", curve.pos)).ok()?,
             ),
@@ -569,7 +570,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Nurbs(curve.geometry),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
             source_object: Some(
                 cgm_source_key("a5-nurbs-curve-frame", format!("{:010}", curve.pos)).ok()?,
             ),
@@ -598,7 +599,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     circle.center,
                     cadmpeg_ir::math::Vector3::from(circle.axis.get()),
@@ -606,7 +607,7 @@ pub(crate) fn try_decode_freeform_surfaces(
                     circle.radius.get(),
                 )
                 .ok()?,
-            ),
+            )),
             source_object: Some(
                 cgm_source_key("b2-spatial-circle-frame", format!("{:010}", circle.pos)).ok()?,
             ),
@@ -993,7 +994,7 @@ fn freeform_surface_carriers(
             let (source_object, source_tag) = freeform_surface_source(&surface)?;
             Ok::<_, cadmpeg_core::CodecError>(FreeformSurfaceCarrier {
                 pos: surface.pos,
-                geometry: SurfaceGeometry::Nurbs(surface.geometry),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.geometry)),
                 source_object,
                 source_tag: format!("freeform:{source_tag}"),
             })
@@ -1129,8 +1130,11 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         else {
             continue;
         };
-        let candidate = (!matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-            .then(|| surface.id.clone());
+        let candidate = (!matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        ))
+        .then(|| surface.id.clone());
         by_tag
             .entry(tag)
             .and_modify(|selected: &mut Option<SurfaceId>| *selected = None)
@@ -1182,7 +1186,7 @@ fn append_consolidated_line_profiles(
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Line(payload),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
             source_object: Some(cgm_source_key(
                 "b2-03-0e-frame",
                 format!("{:010}", line.pos),
@@ -1222,7 +1226,9 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Nurbs(surface.geometry.clone()),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                surface.geometry.clone(),
+            )),
             source_object: Some(source_object),
         });
     }
@@ -1247,7 +1253,7 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
 
@@ -1349,7 +1355,7 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Nurbs(geometry),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             source_object: None,
         });
     }
@@ -1374,7 +1380,7 @@ pub(crate) fn append_freeform_surface_pools(
             );
             ir.model.curves.push(Curve {
                 id,
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
         }
@@ -1690,7 +1696,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             else {
                 return None;
             };
-            if !matches!(cache.as_ref(), CurveGeometry::Unknown { .. }) {
+            if !matches!(cache, SolvedCurveGeometry::Unknown { .. }) {
                 return None;
             }
             let procedures = ir
@@ -1829,7 +1835,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         );
                         ir.model.surfaces.push(Surface {
                             id: id.clone(),
-                            geometry: SurfaceGeometry::Unknown { record: None },
+                            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                                record: None,
+                            }),
                             source_object: None,
                         });
                         let procedural_id = ProceduralSurfaceId::mint(format!(
@@ -1874,7 +1882,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     };
                     let Some(carrier) = cylinder.surface_geometry() else { continue; };
-                    let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
+                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = carrier else {
                         continue;
                     };
  let radius = cylinder_surface.radius();
@@ -1895,7 +1903,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     continue;
                 };
                 let Some(carrier) = value.cylinder.surface_geometry() else { continue; };
-                let SurfaceGeometry::Cylinder(cylinder) = carrier else {
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = carrier else {
                     continue;
                 };
                 let radius = cylinder.radius();
@@ -2036,7 +2044,14 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             let candidates: Vec<_> = freeform_surfaces
                 .iter()
                 .enumerate()
-                .map(|(index, surface)| (index, SurfaceGeometry::Nurbs(surface.geometry.clone())))
+                .map(|(index, surface)| {
+                    (
+                        index,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                            surface.geometry.clone(),
+                        )),
+                    )
+                })
                 .collect();
             let carrier = unique_paired_surface_lift_match(
                 &sides[*resolved_side].pcurve.as_ref()?.geometry,
@@ -2143,11 +2158,13 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             .iter()
                             .find(|surface| &surface.id == standard_partner)?
                             .geometry;
-                        if !matches!(standard_partner_geometry, SurfaceGeometry::Unknown { .. })
-                            && *standard_partner_geometry
-                                != SurfaceGeometry::Nurbs(
-                                    freeform_surfaces[carrier].geometry.clone(),
-                                )
+                        if !matches!(
+                            standard_partner_geometry,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                        ) && *standard_partner_geometry
+                            != SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                                freeform_surfaces[carrier].geometry.clone(),
+                            ))
                         {
                             return Some((identity, None));
                         }
@@ -2281,7 +2298,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 .map_or(edge_allowance, |value| edge_allowance.max(value.get()));
                             pcurve_lift_reaches_endpoints(
                                 &geometry,
-                                surface_geometry,
+                                surface_geometry.solved()?,
                                 resolved.block.parameters.range,
                                 edge_endpoints,
                                 face_allowance,
@@ -2314,9 +2331,13 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     .iter_mut()
                     .find(|surface| &surface.id == surface_id)
                 {
-                    if matches!(surface.geometry, SurfaceGeometry::Unknown { .. }) {
-                        surface.geometry =
-                            SurfaceGeometry::Nurbs(freeform_surfaces[carrier].geometry.clone());
+                    if matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    ) {
+                        surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                            freeform_surfaces[carrier].geometry.clone(),
+                        ));
                         annotations
                             .derived(&surface.id, "geometry")
                             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2435,7 +2456,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             );
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Unknown { record: None },
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: None,
             });
             let procedural_id = ProceduralCurveId::mint(format!(
@@ -2484,7 +2505,11 @@ fn solve_planar_chart_rechart(
     loci: &[Point3],
     target: &SurfaceGeometry,
 ) -> Option<ConsolidatedCarrierChart<'static>> {
-    if !matches!(target, SurfaceGeometry::Plane(_)) || sites.len() != loci.len() {
+    if !matches!(
+        target,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+    ) || sites.len() != loci.len()
+    {
         return None;
     }
     // Target-chart image of each locus. A locus off the plane has no image,
@@ -2575,17 +2600,17 @@ fn solve_planar_chart_rechart(
 /// A carrier with no geometry has no chart and therefore admits no witness.
 fn pcurve_lift_reaches_endpoints(
     pcurve: &PcurveGeometry,
-    surface: &SurfaceGeometry,
+    surface: &SolvedSurfaceGeometry,
     range: [f64; 2],
     endpoints: [Point3; 2],
     allowance: f64,
 ) -> bool {
-    if matches!(surface, SurfaceGeometry::Unknown { .. }) {
+    if matches!(surface, SolvedSurfaceGeometry::Unknown { .. }) {
         return false;
     }
     let lift = |parameter| {
         let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
-        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+        cadmpeg_ir::eval::surface_point_solved(surface, uv.u, uv.v)
     };
     let (Some(start), Some(end)) = (lift(range[0]), lift(range[1])) else {
         return false;
@@ -2666,8 +2691,10 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     if left == right {
         return true;
     }
-    let (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2)) =
-        (left, right)
+    let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface_2)),
+    ) = (left, right)
     else {
         return false;
     };
@@ -2733,8 +2760,10 @@ fn rechart_equivalent_surface_pcurve(
     if source == target {
         return Ok(Some(pcurve.clone()));
     }
-    let (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2)) =
-        (source, target)
+    let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface_2)),
+    ) = (source, target)
     else {
         return Ok(None);
     };
@@ -2853,7 +2882,8 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
-        PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceGeometry,
+        PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
         CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId, SurfaceId,
@@ -2950,7 +2980,7 @@ mod tests {
         let curve_id = CurveId::mint("catia:test:curve#0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2959,7 +2989,7 @@ mod tests {
                     false,
                 )
                 .expect("valid linear NURBS"),
-            ),
+            )),
             source_object: None,
         });
         assert!(attach_standalone_wires(
@@ -2988,7 +3018,7 @@ mod tests {
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2997,7 +3027,7 @@ mod tests {
                     false,
                 )
                 .expect("valid linear NURBS"),
-            ),
+            )),
             source_object: None,
         });
         let before = ir.model.clone();
@@ -3058,10 +3088,10 @@ mod tests {
         assert!(matches!(
             ir.model.curves.as_slice(),
             [Curve {
-                geometry: CurveGeometry::Nurbs(first),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
                 ..
             }, Curve {
-                geometry: CurveGeometry::Nurbs(second),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
                 ..
             }] if first.degree() == 5
                 && second.degree() == 5
@@ -3116,14 +3146,14 @@ mod tests {
     #[test]
     fn paired_surface_lifts_require_one_matching_carrier() {
         let plane = |z| {
-            SurfaceGeometry::Plane(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, z),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            )
+            ))
         };
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
@@ -3157,7 +3187,7 @@ mod tests {
     #[test]
     fn cone_locus_equality_accepts_only_the_same_apex_shift() {
         let cone = |origin, radius| {
-            SurfaceGeometry::Cone(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin,
                     Vector3::new(-1.0, 0.0, 0.0),
@@ -3167,7 +3197,7 @@ mod tests {
                     std::f64::consts::FRAC_PI_4,
                 )
                 .expect("valid ConeSurface fixture"),
-            )
+            ))
         };
         let apex_form = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
         let shifted = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
@@ -3179,7 +3209,7 @@ mod tests {
     #[test]
     fn equivalent_cone_pcurve_moves_to_the_target_axial_origin() {
         let cone = |origin, radius| {
-            SurfaceGeometry::Cone(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin,
                     Vector3::new(-1.0, 0.0, 0.0),
@@ -3189,7 +3219,7 @@ mod tests {
                     std::f64::consts::FRAC_PI_4,
                 )
                 .expect("valid ConeSurface fixture"),
-            )
+            ))
         };
         let source = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
         let target = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
@@ -3216,7 +3246,7 @@ mod tests {
     #[test]
     fn equivalent_cone_rechart_reports_overflow_for_finite_nurbs_poles() {
         let cone = |origin, radius| {
-            SurfaceGeometry::Cone(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin,
                     Vector3::new(-1.0, 0.0, 0.0),
@@ -3226,7 +3256,7 @@ mod tests {
                     std::f64::consts::FRAC_PI_4,
                 )
                 .expect("valid ConeSurface fixture"),
-            )
+            ))
         };
         let shift = f64::MAX * 0.5;
         let source = cone(
@@ -3301,7 +3331,7 @@ mod tests {
             CurveId::mint("catia:test:curve#standard-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Unknown { record: None },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -3331,7 +3361,7 @@ mod tests {
         });
         ir.model.surfaces.push(Surface {
             id: support_ids[1].clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
         for (side, support_id) in support_ids.iter().enumerate() {
@@ -3452,14 +3482,14 @@ mod tests {
             .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: Some(
                 crate::assemble::cgm_source("carrier", 0x1234)
                     .expect("valid source object identity"),
@@ -3511,14 +3541,14 @@ mod tests {
             .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: Some(
                 crate::assemble::cgm_source("carrier", 0x1234)
                     .expect("valid source object identity"),
@@ -3557,27 +3587,30 @@ mod tests {
         for (id, geometry) in [
             (
                 "known-0",
-                SurfaceGeometry::Plane(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
             ),
             (
                 "known-1",
-                SurfaceGeometry::Plane(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
             ),
-            ("unknown", SurfaceGeometry::Unknown { record: None }),
+            (
+                "unknown",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            ),
         ] {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("catia:test:surface#{id}")).expect("identity grammar"),
@@ -3626,7 +3659,7 @@ mod tests {
             .expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Unknown { record: None },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -3639,14 +3672,14 @@ mod tests {
                 .expect("identity grammar"),
             tolerance: None,
         });
-        let plane = SurfaceGeometry::Plane(
+        let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(10.0, 20.0, 0.0),
                 Vector3::new(0.0, -1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        );
+        ));
         let support_ids = [
             SurfaceId::mint("catia:test:surface#standard-plane%230".to_string())
                 .expect("identity grammar"),
@@ -3719,7 +3752,7 @@ mod tests {
         let origin = Point3::new(7.0, -2.0, 11.0);
         let u_axis = Vector3::new(0.0, 1.0, 0.0);
         let normal = Vector3::new(1.0, 0.0, 0.0);
-        let target = SurfaceGeometry::Plane(
+        let target = SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
                 .expect("valid PlaneSurface fixture"),
         );
@@ -3729,7 +3762,7 @@ mod tests {
         let loci = target_sites
             .iter()
             .map(|[u, v]| {
-                cadmpeg_ir::eval::surface_point(&target, *u, *v).expect("plane evaluates")
+                cadmpeg_ir::eval::surface_point_solved(&target, *u, *v).expect("plane evaluates")
             })
             .collect::<Vec<_>>();
         let (cosine, sine) = (angle.cos(), angle.sin());
@@ -3742,7 +3775,7 @@ mod tests {
                 ]
             })
             .collect::<Vec<_>>();
-        (target, stored, loci)
+        (SurfaceGeometry::Solved(target), stored, loci)
     }
 
     #[test]
@@ -3803,7 +3836,7 @@ mod tests {
         assert!(solve_planar_chart_rechart(
             &stored,
             &loci,
-            &SurfaceGeometry::Unknown { record: None }
+            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         )
         .is_none());
         // Two sites leave both orientation choices valid. Three collinear
@@ -3842,7 +3875,7 @@ mod tests {
         assert!(
             pcurve_lift_reaches_endpoints(
                 &recharted,
-                &target,
+                target.solved().expect("solved carrier"),
                 range,
                 endpoints,
                 cadmpeg_ir::units::COINCIDENCE_TOLERANCE
@@ -3853,7 +3886,7 @@ mod tests {
         assert!(
             !pcurve_lift_reaches_endpoints(
                 &naive,
-                &target,
+                target.solved().expect("solved carrier"),
                 range,
                 endpoints,
                 cadmpeg_ir::units::COINCIDENCE_TOLERANCE
@@ -3863,7 +3896,7 @@ mod tests {
         // The witness is independent of endpoint order.
         assert!(pcurve_lift_reaches_endpoints(
             &recharted,
-            &target,
+            target.solved().expect("solved carrier"),
             range,
             [endpoints[1], endpoints[0]],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
@@ -3871,7 +3904,7 @@ mod tests {
         // A carrier with no geometry has no chart and admits no witness.
         assert!(!pcurve_lift_reaches_endpoints(
             &naive,
-            &SurfaceGeometry::Unknown { record: None },
+            &SolvedSurfaceGeometry::Unknown { record: None },
             range,
             endpoints,
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
@@ -3885,7 +3918,7 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-                if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
+                if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
@@ -3904,7 +3937,7 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-                if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
+                if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
@@ -3924,7 +3957,7 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-                if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+                if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();

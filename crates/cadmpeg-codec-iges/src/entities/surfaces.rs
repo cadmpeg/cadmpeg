@@ -14,8 +14,8 @@ use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-    SurfaceParameterAxis,
+    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -126,12 +126,12 @@ fn bounded_nurbs(
 
 fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
     match geometry {
-        CurveGeometry::Line(_) => true,
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => true,
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let radius = circle_curve.radius();
             radius.is_finite() && radius > 0.0
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             major_radius.is_finite()
@@ -140,7 +140,7 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
                 && minor_radius > 0.0
                 && major_radius == minor_radius
         }
-        CurveGeometry::Nurbs(curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
             curve.degree() == 1
                 && curve.weights().is_none()
                 && curve.control_points().len() == 2
@@ -291,7 +291,7 @@ fn equal_arc_length_parameterization(
             .curves
             .iter()
             .find(|curve| curve.id == crate::ids::curve(&crate::ids::Stem::directory(sequence)))
-            .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry))
+            .map(|curve| &curve.geometry)
     };
     let Some((first, second)) = curve_geometry(first_sequence).zip(curve_geometry(second_sequence))
     else {
@@ -307,14 +307,14 @@ fn equal_arc_length_parameterization(
         if constant_speed_curve(geometry) {
             return true;
         }
-        let CurveGeometry::Nurbs(curve) = geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
             return false;
         };
         records
             .get(&sequence)
             .is_some_and(|record| interval_certified_linear_bezier(curve, record, global))
     };
-    constant_speed(first_sequence, first) && constant_speed(second_sequence, second)
+    constant_speed(first_sequence, &first) && constant_speed(second_sequence, &second)
 }
 
 fn bounded_evaluable_curve(
@@ -324,12 +324,12 @@ fn bounded_evaluable_curve(
     index: &CompositeIndex,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let curve = index.curve_by_id(ir, curve_id)?;
-    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
+    let geometry = &curve.geometry;
     if matches!(
         geometry,
-        CurveGeometry::Composite { .. }
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
             | CurveGeometry::Procedural { .. }
-            | CurveGeometry::Unknown { .. }
+            | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     ) {
         return None;
     }
@@ -345,22 +345,28 @@ fn bounded_evaluable_curve(
     parameter_interval
         .into_iter()
         .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
-        .then_some((geometry, parameter_interval))
+        .then_some((
+            CurveGeometry::Solved(geometry.solved()?.clone()),
+            parameter_interval,
+        ))
 }
 
-fn is_line_carrier(geometry: &CurveGeometry, depth: usize) -> bool {
+fn is_line_carrier(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
     if depth > 256 {
         return false;
     }
     match geometry {
-        CurveGeometry::Line(_) => true,
-        CurveGeometry::Transformed { basis, .. } => is_line_carrier(basis, depth + 1),
+        SolvedCurveGeometry::Line(_) => true,
+        SolvedCurveGeometry::Transformed { basis, .. } => is_line_carrier(basis, depth + 1),
         _ => false,
     }
 }
 
 fn source_parameter_interval(geometry: &CurveGeometry, carrier_interval: [f64; 2]) -> [f64; 2] {
-    if is_line_carrier(geometry, 0) {
+    if geometry
+        .solved()
+        .is_some_and(|geometry| is_line_carrier(geometry, 0))
+    {
         [0.0, 1.0]
     } else {
         carrier_interval
@@ -372,7 +378,7 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry))
+        .map(|curve| &curve.geometry)
 }
 
 #[derive(Clone)]
@@ -986,25 +992,25 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
 
 fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            Some(SurfaceGeometry::Plane(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     origin.translated(*normal, distance),
                     *normal,
                     *u_axis,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
-            Some(SurfaceGeometry::Cylinder(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     *origin,
                     *axis,
@@ -1012,14 +1018,14 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
                     radius + distance,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
-            Some(SurfaceGeometry::Sphere(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     *center,
                     *axis,
@@ -1027,15 +1033,15 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
                     radius + distance,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
-            Some(SurfaceGeometry::Torus(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     *center,
                     *axis,
@@ -1044,9 +1050,9 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
                     minor_radius + distance,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cone(cone_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if {
                 let ratio = cone_surface.ratio();
                 ratio == 1.0
@@ -1058,7 +1064,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let radius = cone_surface.radius();
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
-            Some(SurfaceGeometry::Cone(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin.translated(*axis, -distance * half_angle.sin()),
                     *axis,
@@ -1068,14 +1074,14 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
                     half_angle,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cone(_) => None,
-        SurfaceGeometry::Nurbs(_) => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => None,
         SurfaceGeometry::Procedural { .. } => None,
-        SurfaceGeometry::Polygonal(_) => None,
-        SurfaceGeometry::Transformed { .. } => None,
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
     }
 }
 
@@ -1278,14 +1284,14 @@ pub(super) fn project(
         );
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     transform.point(local_origin),
                     normal,
                     u_axis,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            ),
+            )),
             source_object: Some(source_object(entry)?),
         });
         decoded.insert(entry.sequence);
@@ -1388,7 +1394,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
@@ -1489,6 +1495,9 @@ pub(super) fn project(
                 ));
                 continue;
             };
+            let Some(directrix_solved) = directrix_geometry.solved() else {
+                continue;
+            };
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
             let Some(start) =
                 cadmpeg_ir::eval::curve_point(&directrix_geometry, carrier_interval[0])
@@ -1516,10 +1525,10 @@ pub(super) fn project(
                 sequences.record_curve(&placed_id, entry.sequence);
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
-                    geometry: CurveGeometry::Transformed {
-                        basis: Box::new(directrix_geometry),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+                        basis: Box::new(directrix_solved.clone()),
                         transform: transform.body_transform(),
-                    },
+                    }),
                     source_object: Some(source_object(entry)?),
                 });
                 placed_id
@@ -1634,7 +1643,9 @@ pub(super) fn project(
             sequences.record_curve(&placed_id, entry.sequence);
             ir.model.curves.push(Curve {
                 id: placed_id.clone(),
-                geometry: CurveGeometry::Nurbs(placed_directrix.clone()),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    placed_directrix.clone(),
+                )),
                 source_object: Some(source_object(entry)?),
             });
             placed_id
@@ -1660,7 +1671,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
@@ -1750,7 +1761,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "revolution axis carrier is missing"));
             continue;
         };
-        let CurveGeometry::Line(line_curve) = axis_curve.geometry else {
+        let Some(SolvedCurveGeometry::Line(line_curve)) = axis_curve.geometry.solved() else {
             losses.push(entity_loss(
                 entry,
                 "revolution axis is not a Line Entity carrier",
@@ -1781,6 +1792,9 @@ pub(super) fn project(
                 ));
                 continue;
             };
+            let Some(directrix_solved) = directrix_geometry.solved() else {
+                continue;
+            };
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
             let mut procedural_directrix = generatrix_id.clone();
             let mut procedural_axis_origin = axis_origin;
@@ -1800,10 +1814,10 @@ pub(super) fn project(
                 sequences.record_curve(&procedural_directrix, entry.sequence);
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
-                    geometry: CurveGeometry::Transformed {
-                        basis: Box::new(directrix_geometry),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+                        basis: Box::new(directrix_solved.clone()),
                         transform: transform.body_transform(),
-                    },
+                    }),
                     source_object: Some(source_object(entry)?),
                 });
                 procedural_axis_origin = transform.point(axis_origin);
@@ -1940,7 +1954,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
         });
         let mut procedural_directrix =
@@ -1974,7 +1988,7 @@ pub(super) fn project(
             sequences.record_curve(&procedural_directrix, entry.sequence);
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
-                geometry: CurveGeometry::Nurbs(placed_generatrix),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry)?),
             });
             procedural_axis_origin = transform.point(axis_origin);
@@ -2366,7 +2380,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
@@ -2473,29 +2487,29 @@ pub(super) fn project(
             continue;
         };
         let regular = match &geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let radius = cylinder_surface.radius();
                 radius > 0.0
             }
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let radius = sphere_surface.radius();
                 radius > 0.0
             }
-            SurfaceGeometry::Torus(torus_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let major_radius = torus_surface.major_radius();
                 let minor_radius = torus_surface.minor_radius();
                 major_radius > 0.0 && minor_radius > 0.0
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let radius = cone_surface.radius();
                 radius > 0.0
             }
-            SurfaceGeometry::Plane(_) => true,
-            SurfaceGeometry::Nurbs(_)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => true,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Polygonal(_)
-            | SurfaceGeometry::Transformed { .. }
-            | SurfaceGeometry::Unknown { .. } => false,
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => false,
         };
         if !regular {
             losses.push(entity_loss(

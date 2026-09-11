@@ -74,9 +74,10 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
     let decoded = nurbs::proc_surface::procedural_surface_resolving_refs(&record.tokens, &table)
         .expect("syntactically complete T-spline reaches surface admission");
     let mut carriers = Carriers::default();
-    carriers
-        .surface_geo
-        .insert(0, SurfaceGeometry::Unknown { record: None });
+    carriers.surface_geo.insert(
+        0,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+    );
     carriers.procedural_surface_defs.insert(0, decoded);
     emit_carrier_surface(
         &mut AsmBrep::default(),

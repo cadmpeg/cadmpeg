@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput};
 
@@ -342,7 +343,12 @@ pub(crate) fn curve_transfer_coverage(
     let unique_rows = crate::topology::uniquely_identified_rows(rows);
     let transferred_ids = curves
         .iter()
-        .filter(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter(|curve| {
+            !matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
         .filter_map(|curve| {
             curve
                 .source_object
@@ -357,7 +363,12 @@ pub(crate) fn curve_transfer_coverage(
         .collect::<BTreeSet<_>>();
     let unknown_ids = curves
         .iter()
-        .filter(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
         .filter_map(|curve| {
             curve
                 .source_object
@@ -433,7 +444,12 @@ pub(crate) fn surface_transfer_coverage(
         .collect::<Vec<_>>();
     let unknown_ids = surfaces
         .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        .filter(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            )
+        })
         .filter_map(|surface| {
             surface
                 .source_object

@@ -20,7 +20,7 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -62,7 +62,11 @@ pub(crate) fn saved_offset_carriers(
                 .iter()
                 .find(|surface| &surface.id == id)?
                 .geometry;
-            matches!(geometry, SurfaceGeometry::Nurbs(_)).then_some((id, geometry))
+            matches!(
+                geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            )
+            .then_some((id, geometry))
         })
         .collect::<Vec<_>>();
 
@@ -162,7 +166,10 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let (SurfaceGeometry::Nurbs(support), SurfaceGeometry::Nurbs(candidate)) = (support, candidate)
+    let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)),
+    ) = (support, candidate)
     else {
         return None;
     };
@@ -848,7 +855,7 @@ fn offset_support_control_hull_excludes_point(
         index
             .surfaces(surface.as_str())
             .is_some_and(|carrier| match &carrier.geometry {
-                SurfaceGeometry::Nurbs(nurbs)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
                     if positive_weights(nurbs.pole_weights())
                         && nurbs.poles().all(|control| {
                             control.x.is_finite() && control.y.is_finite() && control.z.is_finite()
@@ -1294,7 +1301,7 @@ fn coarse_surface_sample_counts(
         return [9, 9];
     };
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let sample_count = |count| {
                 usize::try_from(count)
                     .ok()
@@ -1330,7 +1337,7 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
 ) -> Option<Point2> {
     let carrier = index.surfaces(surface.as_str())?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => fit_tolerance.map_or_else(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => fit_tolerance.map_or_else(
             || nurbs_surface_closest_parameter_with_budget(nurbs, point, seed, geometry_budget),
             |tolerance| {
                 nurbs_surface_parameter_within_tolerance_with_budget(
@@ -1373,7 +1380,7 @@ pub(crate) fn surface_parameter_domain_with_index(
 ) -> Option<([f64; 2], [f64; 2])> {
     let carrier = index.surfaces(surface.as_str())?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
             let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
             let u_count = usize::try_from(nurbs.u_count()).ok()?;
@@ -1599,13 +1606,15 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     let mut fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
         let geometry = &index.surfaces(surface.as_str())?.geometry;
         match geometry {
-            SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
-                nurbs,
-                point,
-                seed,
-                fit_tolerance,
-                geometry_budget,
-            ),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                nurbs_surface_parameter_within_tolerance_with_budget(
+                    nurbs,
+                    point,
+                    seed,
+                    fit_tolerance,
+                    geometry_budget,
+                )
+            }
             SurfaceGeometry::Procedural { .. } => {
                 offset_surface_parameters_with_tolerance_with_index_and_budget(
                     index,
@@ -1784,11 +1793,19 @@ fn surface_parameter_periods_inner(
         return [None, None];
     };
     let periods = match &carrier.geometry {
-        SurfaceGeometry::Cylinder(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Cone(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Torus(_) => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
-        SurfaceGeometry::Nurbs(nurbs) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+            [Some(std::f64::consts::TAU), None]
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+            [Some(std::f64::consts::TAU), None]
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
+            [Some(std::f64::consts::TAU), None]
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
+            [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)]
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let period = |periodic: bool, knots: &[f64], degree: u32, count: u32| {
                 periodic.then(|| {
                     let degree = usize::try_from(degree).ok()?;
@@ -2231,16 +2248,23 @@ pub(crate) fn intersection_side(
 
 pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
     let point = match surface {
-        SurfaceGeometry::Plane(_) => Point2::new(uv[0] * 1000.0, uv[1] * 1000.0),
-        SurfaceGeometry::Cylinder(_) => Point2::new(uv[0], uv[1] * 1000.0),
-        SurfaceGeometry::Cone(_) => Point2::new(uv[0], uv[1] * 1000.0),
-        SurfaceGeometry::Sphere(_) => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Torus(_) => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Nurbs(_) => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Polygonal(_) => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Procedural { .. } => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Transformed { basis, .. } => return surface_parameters(basis, uv),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+            Point2::new(uv[0] * 1000.0, uv[1] * 1000.0)
+        }
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_),
+        ) => Point2::new(uv[0], uv[1] * 1000.0),
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Sphere(_)
+            | SolvedSurfaceGeometry::Torus(_)
+            | SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { basis, .. }) => {
+            return surface_parameters(&SurfaceGeometry::Solved((**basis).clone()), uv)
+        }
     };
     [point.u, point.v]
         .into_iter()
@@ -2319,8 +2343,8 @@ mod tests {
         candidate
             .edit_control_points(|rows| rows[1][1].z += 1.0)
             .expect("finite offset-support test pole edit");
-        let support = SurfaceGeometry::Nurbs(support);
-        let candidate = SurfaceGeometry::Nurbs(candidate);
+        let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
+        let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
         let budget = GeometryWorkBudget::new(200);
 
         assert!(
@@ -2338,7 +2362,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::new(
                     1,
                     1,
@@ -2355,7 +2379,7 @@ mod tests {
                     false,
                 )
                 .expect("valid rational hull support"),
-            ),
+            )),
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -2389,7 +2413,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::new(
                     1,
                     1,
@@ -2405,7 +2429,7 @@ mod tests {
                     false,
                 )
                 .expect("valid linear support"),
-            ),
+            )),
             source_object: None,
         });
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {

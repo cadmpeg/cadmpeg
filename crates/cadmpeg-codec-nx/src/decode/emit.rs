@@ -26,7 +26,8 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
-    ProceduralCurveDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -950,9 +951,9 @@ pub(crate) fn retain_unresolved_topology_carriers(
         annotations.exactness(&id, Exactness::Unknown);
         ir.model.surfaces.push(Surface {
             id: id.clone(),
-            geometry: SurfaceGeometry::Unknown {
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(unknown.clone()),
-            },
+            }),
             source_object: None,
         });
         surfaces.insert(surface_xmt, id);
@@ -975,9 +976,9 @@ pub(crate) fn retain_unresolved_topology_carriers(
         annotations.exactness(&id, Exactness::Unknown);
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Unknown {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown.clone()),
-            },
+            }),
             source_object: None,
         });
         curves.insert(curve_xmt, id);
@@ -994,35 +995,33 @@ pub(crate) fn annotate_node(
     annotations.note(id, stream, node.pos as u64).tag(tag);
 }
 
-pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
+pub(crate) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
     match geometry {
-        SurfaceGeometry::Plane(_) => "PLANE",
-        SurfaceGeometry::Cylinder(_) => "CYLINDER",
-        SurfaceGeometry::Cone(_) => "CONE",
-        SurfaceGeometry::Sphere(_) => "SPHERE",
-        SurfaceGeometry::Torus(_) => "TORUS",
-        SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
-        SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
-        SurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
-        SurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
-        SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
+        SolvedSurfaceGeometry::Plane(_) => "PLANE",
+        SolvedSurfaceGeometry::Cylinder(_) => "CYLINDER",
+        SolvedSurfaceGeometry::Cone(_) => "CONE",
+        SolvedSurfaceGeometry::Sphere(_) => "SPHERE",
+        SolvedSurfaceGeometry::Torus(_) => "TORUS",
+        SolvedSurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
+        SolvedSurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
+        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
+        SolvedSurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
 }
 
-pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
+pub(crate) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
     match geometry {
-        CurveGeometry::Line(_) => "LINE",
-        CurveGeometry::Circle(_) => "CIRCLE",
-        CurveGeometry::Ellipse(_) => "ELLIPSE",
-        CurveGeometry::Parabola(_) => "PARABOLA",
-        CurveGeometry::Hyperbola(_) => "HYPERBOLA",
-        CurveGeometry::Degenerate(_) => "DEGENERATE_CURVE",
-        CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
-        CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
-        CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
-        CurveGeometry::Polyline(_) => "POLYLINE",
-        CurveGeometry::Transformed { basis, .. } => curve_tag(basis),
-        CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
+        SolvedCurveGeometry::Line(_) => "LINE",
+        SolvedCurveGeometry::Circle(_) => "CIRCLE",
+        SolvedCurveGeometry::Ellipse(_) => "ELLIPSE",
+        SolvedCurveGeometry::Parabola(_) => "PARABOLA",
+        SolvedCurveGeometry::Hyperbola(_) => "HYPERBOLA",
+        SolvedCurveGeometry::Degenerate(_) => "DEGENERATE_CURVE",
+        SolvedCurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
+        SolvedCurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
+        SolvedCurveGeometry::Polyline(_) => "POLYLINE",
+        SolvedCurveGeometry::Transformed { basis, .. } => curve_tag(basis),
+        SolvedCurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }
 
@@ -1054,7 +1053,9 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         let geometry = &ir.model.curves[curve_index].geometry;
         range.map_or_else(
             || match geometry {
-                CurveGeometry::Nurbs(nurbs) => nurbs.knots().first().copied().unwrap_or(0.0),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                    nurbs.knots().first().copied().unwrap_or(0.0)
+                }
                 _ => 0.0,
             },
             |range| range[0],
@@ -1089,11 +1090,11 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
 
 pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Line(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
             let range = [raw[0] * 1000.0, raw[1] * 1000.0];
             range.into_iter().all(f64::is_finite).then_some(range)
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let domain = [*nurbs.knots().first()?, *nurbs.knots().last()?];
             let epsilon =
                 EPS_EMIT_CANONICAL_TRIM_RANGE_E6 * (1.0 + domain[0].abs().max(domain[1].abs()));
@@ -1236,7 +1237,7 @@ fn orient_edge_range_for_geometry_with_budget(
         [range[1], range[0]]
     };
     let range = match geometry {
-        CurveGeometry::Circle(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => {
             let sweep = range[1] - range[0];
             (0.0..=std::f64::consts::TAU)
                 .contains(&sweep)
@@ -1244,7 +1245,7 @@ fn orient_edge_range_for_geometry_with_budget(
             let start = range[0].rem_euclid(std::f64::consts::TAU);
             [start, start + sweep]
         }
-        CurveGeometry::Ellipse(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
             let sweep = range[1] - range[0];
             (0.0..=std::f64::consts::TAU)
                 .contains(&sweep)
@@ -1530,7 +1531,7 @@ mod tests {
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
         let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
-        let geometry = CurveGeometry::Nurbs(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1539,7 +1540,7 @@ mod tests {
                 false,
             )
             .expect("valid test curve"),
-        );
+        ));
         let geometry_budget = GeometryWorkBudget::new(1024);
         let mut cache = CurvePointCache::default();
 

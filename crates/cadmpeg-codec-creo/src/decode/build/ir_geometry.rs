@@ -676,7 +676,9 @@ pub(super) fn transfer_and_record_scanned_geometry(
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::AnnotationBuilder;
@@ -739,7 +741,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 4.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -747,12 +749,12 @@ mod tests {
                     5.0,
                 )
                 .expect("valid CircleCurve fixture"),
-            ),
+            )),
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -760,7 +762,7 @@ mod tests {
                     5.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
 
@@ -792,7 +794,7 @@ mod tests {
                         .expect("identity grammar")
             })
             .expect("plane-cylinder intersection curve");
-        let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
+        let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
             panic!("expected exact plane-cylinder circle");
         };
         let center = circle_curve.center();

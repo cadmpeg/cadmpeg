@@ -5,6 +5,7 @@
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -212,7 +213,9 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         .expect("retained unresolved surface carrier");
     assert!(matches!(
         surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(_)
+        })
     ));
     assert_eq!(
         result

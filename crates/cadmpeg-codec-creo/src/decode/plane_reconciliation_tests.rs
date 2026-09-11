@@ -13,7 +13,9 @@ use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
 use crate::vecmath::dot;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -23,10 +25,10 @@ fn nurbs_curve(
     control_points: Vec<Point3>,
     weights: Option<Vec<f64>>,
 ) -> CurveGeometry {
-    CurveGeometry::Nurbs(
+    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::new(degree, knots, control_points, weights, false)
             .expect("cardinality-valid test curve"),
-    )
+    ))
 }
 
 #[test]
@@ -54,7 +56,7 @@ fn topology_boundary_points_define_one_plane() {
 
 #[test]
 fn analytic_conic_boundary_defines_its_plane() {
-    let plane = analytic_curve_plane(&CurveGeometry::Circle(
+    let plane = analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(3.0, 4.0, 5.0),
             Vector3::new(0.0, 0.0, -2.0)
@@ -64,18 +66,20 @@ fn analytic_conic_boundary_defines_its_plane() {
             7.0,
         )
         .expect("valid CircleCurve fixture"),
-    ))
+    )))
     .expect("circle plane");
     assert_eq!(plane.origin, [3.0, 4.0, 5.0]);
     assert_eq!(plane.normal, [0.0, 0.0, -1.0]);
-    assert!(analytic_curve_plane(&CurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0)
-        )
-        .expect("valid LineCurve fixture")
-    ))
-    .is_none());
+    assert!(
+        analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .expect("valid LineCurve fixture")
+        )))
+        .is_none()
+    );
 }
 
 #[test]
@@ -158,7 +162,7 @@ fn distinct_boundary_lines_define_one_plane() {
     ])
     .is_none());
 
-    let analytic = analytic_boundary_line(&CurveGeometry::Line(
+    let analytic = analytic_boundary_line(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(2.0, 0.0, 0.0)
@@ -166,7 +170,7 @@ fn distinct_boundary_lines_define_one_plane() {
                 .expect("nonzero fixture direction"),
         )
         .expect("valid LineCurve fixture"),
-    ))
+    )))
     .expect("analytic line");
     assert_eq!(analytic.direction, [1.0, 0.0, 0.0]);
 }
@@ -204,7 +208,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(2.0, 3.0, 4.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -212,7 +216,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
                 5.0,
             )
             .expect("valid CircleCurve fixture"),
-        ),
+        )),
         source_object: None,
     });
 
@@ -235,7 +239,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
                     .expect("identity grammar")
         })
         .expect("topology-bound plane");
-    let SurfaceGeometry::Plane(plane_surface) = &plane.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = plane.geometry.solved() else {
         panic!("expected plane geometry");
     };
     let origin = plane_surface.origin();
@@ -331,7 +335,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
     assert!(ir.model.surfaces.iter().any(|surface| {
         surface.id
             == SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar")
-            && matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
+            && matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                         if {
                             let origin = plane_surface.origin();
             let normal = plane_surface.normal();

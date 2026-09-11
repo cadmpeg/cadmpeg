@@ -25,7 +25,7 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometryDefinition};
@@ -2132,7 +2132,7 @@ pub(super) fn unique_cylindrical_face(
     let cylindrical = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let candidate = cylinder_surface.radius();
                     (candidate - radius).abs() <= tolerance
@@ -2158,7 +2158,11 @@ pub(super) fn unique_topological_cylindrical_face(
     let cylindrical = surfaces
         .iter()
         .filter_map(|surface| {
-            matches!(surface.geometry, SurfaceGeometry::Cylinder(_)).then_some(&surface.id)
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+            )
+            .then_some(&surface.id)
         })
         .collect::<HashSet<_>>();
     let mut candidates = faces
@@ -2226,7 +2230,7 @@ pub(super) fn unique_planar_face(
     let planar = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane(plane_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let candidate_origin = *plane_surface.origin();
                 let candidate_normal = *plane_surface.normal();
                 let candidate_length = candidate_normal.norm();

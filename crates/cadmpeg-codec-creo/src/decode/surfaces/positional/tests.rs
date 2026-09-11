@@ -1,3 +1,4 @@
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 // SPDX-License-Identifier: Apache-2.0
 use std::io::Cursor;
 
@@ -108,8 +109,8 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
         .expect("valid source object identity"),
         1
     );
-    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface) =
-        &ir.model.surfaces[0].geometry
+    let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) =
+        ir.model.surfaces[0].geometry.solved()
     else {
         panic!("zero-major positional frame must transfer as a sphere");
     };

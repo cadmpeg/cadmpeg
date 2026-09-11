@@ -25,6 +25,7 @@ use crate::container::{self};
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const HEADER_ANGULAR_TOLERANCE: f64 = 1.0e-10;
@@ -217,7 +218,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .find(|curve| {
             matches!(
                 curve.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(_))
+                Some(SolvedCurveGeometry::Nurbs(_))
             )
         })
         .expect("generated BinaryFile4 NURBS curve");
@@ -227,7 +228,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone() else {
+    let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
     let mut control_points = nurbs.control_points().to_vec();
@@ -240,10 +241,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         true,
     )
     .unwrap();
-    *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs.clone()),
-    )
-    .unwrap();
+    *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
 
     let mut regenerated = Vec::new();
@@ -253,7 +251,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 NURBS decode");
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
-        matches!(curve.geometry.solved_cache(), Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
+        matches!(curve.geometry.solved_cache(), Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
     }));
 }
 
@@ -287,7 +285,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .iter()
         .find(|curve| &curve.id == curve_id)
         .expect("conic carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = &carrier.geometry else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = carrier.geometry.solved() else {
         panic!("expected the ratio-1 ellipse to decode as a circle");
     };
     let axis = circle_curve.axis();

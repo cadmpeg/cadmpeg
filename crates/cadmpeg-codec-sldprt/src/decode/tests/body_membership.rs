@@ -12,7 +12,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_builds_valid_topology_and_plane() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
 
     let result = SldprtCodec
@@ -33,7 +33,7 @@ fn decode_builds_valid_topology_and_plane() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
 
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();

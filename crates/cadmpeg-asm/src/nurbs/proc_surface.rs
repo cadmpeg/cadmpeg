@@ -19,7 +19,7 @@ use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveNurbs,
     RevisionCacheForm, RevisionSurfaceParameterization, RollingBallSide, RollingBallSupportCurve,
-    SurfaceGeometry, VariableBlendCache,
+    SolvedCurveGeometry, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
@@ -732,7 +732,7 @@ fn g2_blend_spl_sur(
                     revision,
                     leading_parameters,
                     sides,
-                    center: CurveGeometry::Nurbs(center),
+                    center: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(center)),
                     center_range,
                     radii,
                     radius_selector,
@@ -3583,7 +3583,7 @@ fn rot_spl_sur(
         ];
         return Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Revolution {
-                directrix: CurveGeometry::Nurbs(profile),
+                directrix: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile)),
                 axis_origin: Point3::new(
                     origin[0] * LEN_TO_MM,
                     origin[1] * LEN_TO_MM,
@@ -3623,7 +3623,7 @@ fn rot_spl_sur(
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Revolution {
-            directrix: CurveGeometry::Nurbs(directrix),
+            directrix: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
             axis_origin,
             axis_direction,
             angular_interval,
@@ -3669,8 +3669,8 @@ fn sum_spl_sur(
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Sum {
-                first: CurveGeometry::Nurbs(first),
-                second: CurveGeometry::Nurbs(second),
+                first: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
+                second: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
                 basepoint: Vector3::new(
                     origin[0] * LEN_TO_MM,
                     origin[1] * LEN_TO_MM,
@@ -3709,8 +3709,8 @@ fn sum_spl_sur(
     };
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Sum {
-            first: CurveGeometry::Nurbs(first),
-            second: CurveGeometry::Nurbs(second),
+            first: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
+            second: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
             basepoint,
             revision_form: None,
         },

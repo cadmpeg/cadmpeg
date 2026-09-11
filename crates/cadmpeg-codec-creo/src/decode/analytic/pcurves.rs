@@ -7,7 +7,8 @@ use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -402,8 +403,10 @@ fn pcurve_plane_carrier_status(
     {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair);
     }
-    if !matches!(surface, SurfaceGeometry::Plane(_))
-        || linear_pcurve_carrier(surface, endpoints).is_none()
+    if !matches!(
+        surface,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+    ) || linear_pcurve_carrier(surface, endpoints).is_none()
     {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPath);
     }
@@ -483,7 +486,7 @@ fn pcurve_endpoint_carrier_status(
 }
 
 fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeometry> {
-    let SurfaceGeometry::Cone(cone_surface) = geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = geometry else {
         return None;
     };
     let origin = cone_surface.origin();
@@ -512,7 +515,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     {
         return None;
     }
-    Some(SurfaceGeometry::Cone(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(-origin.x, -origin.y, -origin.z),
             Vector3::new(-axis.x, -axis.y, -axis.z),
@@ -522,7 +525,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
             half_angle,
         )
         .ok()?,
-    ))
+    )))
 }
 
 fn support_cone_witness_matches(
@@ -1058,22 +1061,24 @@ pub fn linear_pcurve_carrier(
         return None;
     }
     match surface {
-        SurfaceGeometry::Plane(_) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             let [first, second] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(first[0], first[1], first[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) if { start[0] == end[0] } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+            if { start[0] == end[0] } =>
+        {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -1092,15 +1097,15 @@ pub fn linear_pcurve_carrier(
                 origin.z + radius * radial[2] + start[1] * axis.z,
             ];
             let direction = normalize([axis.x, axis.y, axis.z])?;
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(point[0], point[1], point[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cylinder(cylinder_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if {
                 let radius = cylinder_surface.radius();
                 start[1] == end[1] && radius.is_finite() && radius > 0.0
@@ -1110,7 +1115,7 @@ pub fn linear_pcurve_carrier(
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     offset_point(*origin, *axis, start[1]),
                     *axis,
@@ -1118,9 +1123,11 @@ pub fn linear_pcurve_carrier(
                     radius,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cone(cone_surface) if { start[0] == end[0] } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+            if { start[0] == end[0] } =>
+        {
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
             let [first, second] = endpoints.map(|uv| {
@@ -1130,15 +1137,15 @@ pub fn linear_pcurve_carrier(
             let [first, second] = [first?, second?];
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             (ratio.is_finite() && ratio > 0.0 && half_angle.is_finite()).then_some(())?;
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(first[0], first[1], first[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Cone(cone_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if {
                 let ratio = cone_surface.ratio();
                 start[1] == end[1] && ratio.is_finite() && ratio > 0.0
@@ -1160,7 +1167,7 @@ pub fn linear_pcurve_carrier(
             if (first_radius - second_radius).abs()
                 <= EPS_NEAR_ZERO * first_radius.max(second_radius).max(1.0)
             {
-                (first_radius > 0.0).then_some(CurveGeometry::Circle(
+                (first_radius > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         center,
                         *axis,
@@ -1168,7 +1175,7 @@ pub fn linear_pcurve_carrier(
                         first_radius,
                     )
                     .ok()?,
-                ))
+                )))
             } else {
                 let transverse = cross(
                     [axis.x, axis.y, axis.z],
@@ -1189,7 +1196,7 @@ pub fn linear_pcurve_carrier(
                         first_radius,
                     )
                 };
-                (minor_radius > 0.0).then_some(CurveGeometry::Ellipse(
+                (minor_radius > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::EllipseCurve::try_new(
                         center,
                         *axis,
@@ -1198,10 +1205,10 @@ pub fn linear_pcurve_carrier(
                         minor_radius,
                     )
                     .ok()?,
-                ))
+                )))
             }
         }
-        SurfaceGeometry::Sphere(sphere_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if {
                 let radius = sphere_surface.radius();
                 start[1] == end[1] && radius.is_finite() && radius > 0.0
@@ -1212,7 +1219,7 @@ pub fn linear_pcurve_carrier(
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
             let ring = radius * start[1].cos();
-            (ring.abs() > 0.0).then_some(CurveGeometry::Circle(
+            (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     offset_point(*center, *axis, radius * start[1].sin()),
                     *axis,
@@ -1220,9 +1227,9 @@ pub fn linear_pcurve_carrier(
                     ring.abs(),
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Sphere(sphere_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if {
                 let radius = sphere_surface.radius();
                 start[0] == end[0] && radius.is_finite() && radius > 0.0
@@ -1242,7 +1249,7 @@ pub fn linear_pcurve_carrier(
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     *center,
                     Vector3::new(normal[0], normal[1], normal[2]),
@@ -1250,9 +1257,9 @@ pub fn linear_pcurve_carrier(
                     radius,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Torus(torus_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if {
                 let major_radius = torus_surface.major_radius();
                 let minor_radius = torus_surface.minor_radius();
@@ -1268,7 +1275,7 @@ pub fn linear_pcurve_carrier(
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
             let ring = major_radius + minor_radius * start[1].cos();
-            (ring.abs() > 0.0).then_some(CurveGeometry::Circle(
+            (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     offset_point(*center, *axis, minor_radius * start[1].sin()),
                     *axis,
@@ -1276,9 +1283,9 @@ pub fn linear_pcurve_carrier(
                     ring.abs(),
                 )
                 .ok()?,
-            ))
+            )))
         }
-        SurfaceGeometry::Torus(torus_surface)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if {
                 let major_radius = torus_surface.major_radius();
                 let minor_radius = torus_surface.minor_radius();
@@ -1303,7 +1310,7 @@ pub fn linear_pcurve_carrier(
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     offset_point(*center, radial, major_radius),
                     Vector3::new(normal[0], normal[1], normal[2]),
@@ -1311,7 +1318,7 @@ pub fn linear_pcurve_carrier(
                     minor_radius,
                 )
                 .ok()?,
-            ))
+            )))
         }
         _ => None,
     }
@@ -1728,7 +1735,7 @@ pub fn planar_curve_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
-    let SurfaceGeometry::Plane(plane_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return None;
     };
     let origin = plane_surface.origin();
@@ -1764,7 +1771,7 @@ pub fn planar_curve_pcurve(
     };
 
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             let direction = [direction.x, direction.y, direction.z];
@@ -1776,7 +1783,7 @@ pub fn planar_curve_pcurve(
                 .ok()?,
             ))
         }
-        CurveGeometry::Circle(circle_curve)
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
             if {
                 let radius = circle_curve.radius();
                 radius.is_finite() && radius > 0.0
@@ -1796,7 +1803,7 @@ pub fn planar_curve_pcurve(
                 cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius).ok()?,
             ))
         }
-        CurveGeometry::Ellipse(ellipse_curve)
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
             if {
                 let major_radius = ellipse_curve.major_radius();
                 let minor_radius = ellipse_curve.minor_radius();
@@ -1828,7 +1835,7 @@ pub fn planar_curve_pcurve(
                 .ok()?,
             ))
         }
-        CurveGeometry::Parabola(parabola_curve)
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve))
             if {
                 let focal_distance = parabola_curve.focal_distance();
                 focal_distance.is_finite() && focal_distance > 0.0
@@ -1854,7 +1861,7 @@ pub fn planar_curve_pcurve(
                 .ok()?,
             ))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve)
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve))
             if {
                 let major_radius = hyperbola_curve.major_radius();
                 let minor_radius = hyperbola_curve.minor_radius();
@@ -1886,7 +1893,7 @@ pub fn planar_curve_pcurve(
                 .ok()?,
             ))
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs_intrinsic_parameter_range(nurbs)?;
             nurbs
                 .weights()
@@ -1957,27 +1964,27 @@ mod tests {
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 1.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
         ]);
@@ -1998,7 +2005,7 @@ mod tests {
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Nurbs(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::new(
                         1,
                         1,
@@ -2014,20 +2021,20 @@ mod tests {
                         false,
                     )
                     .expect("valid test surface"),
-                ),
+                )),
                 source_object: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#8".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
         ]);
@@ -2086,7 +2093,7 @@ mod tests {
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Cone(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                     cadmpeg_ir::geometry::ConeSurface::try_new(
                         Point3::new(-1.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -2096,20 +2103,20 @@ mod tests {
                         std::f64::consts::FRAC_PI_4,
                     )
                     .expect("valid ConeSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(-0.5, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
         ]);
@@ -2204,27 +2211,27 @@ mod tests {
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
         ]);
@@ -2306,14 +2313,14 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#43".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
 
@@ -2343,20 +2350,23 @@ mod tests {
         assert!(ir.model.curves.iter().any(|curve| {
             curve.id
                 == CurveId::mint("creo:visibgeom:curve#846".to_string()).expect("identity grammar")
-                && matches!(curve.geometry, CurveGeometry::Line(_))
+                && matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                )
         }));
     }
 
     #[test]
     fn pcurve_plane_carrier_status_requires_a_unique_join() {
-        let surface = SurfaceGeometry::Plane(
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        );
+        ));
         let face_carrier = CarrierEquation::Plane(PlaneEquation {
             origin: [0.0, 0.0, 0.0],
             normal: [0.0, 0.0, 1.0],
@@ -2423,27 +2433,27 @@ mod tests {
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                     )
                     .expect("valid PlaneSurface fixture"),
-                ),
+                )),
                 source_object: None,
             },
         ]);
@@ -2461,7 +2471,7 @@ mod tests {
 
     #[test]
     fn support_apex_cone_mirror_is_selected_by_plane_endpoint_witness() {
-        let current = SurfaceGeometry::Cone(
+        let current = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::ConeSurface::try_new(
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(-1.0, 0.0, 0.0),
@@ -2471,7 +2481,7 @@ mod tests {
                 std::f64::consts::FRAC_PI_4,
             )
             .expect("valid ConeSurface fixture"),
-        );
+        ));
         let mirrored = mirrored_support_apex_cone(&current).expect("support cone mirror");
         let plane = PlaneEquation {
             origin: [-0.5, 0.0, 0.0],

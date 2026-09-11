@@ -645,7 +645,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
 #[test]
 fn occt_parabola_ranges_convert_to_step_parameters() {
-    let geometry = CurveGeometry::Parabola(
+    let geometry = SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -663,7 +663,7 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
 
 #[test]
 fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
-    let geometry = CurveGeometry::Circle(
+    let geometry = SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1020,12 +1020,12 @@ So 1001000 +2 0 *
     assert_eq!(result.ir().model.tessellations[0].vertices()[0].x, 0.0);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Polygonal(ref surface)
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(ref surface))
             if (surface.chordal_deflection() - 0.02).abs() < f64::EPSILON
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Polyline(ref polyline)
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Polyline(ref polyline))
             if (polyline.chordal_deflection() - 0.01).abs() < f64::EPSILON
     ));
     assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
@@ -1332,14 +1332,11 @@ Co 1001000 +2 1 +2 3 *
         .iter()
         .find(|surface| surface.id == face.surface)
         .expect("required invariant");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Transformed { basis, transform } = &surface.geometry
+    let Some(SolvedSurfaceGeometry::Transformed { basis, transform }) = surface.geometry.solved()
     else {
         panic!("located face must retain its exact transformed basis");
     };
-    assert!(matches!(
-        basis.as_ref(),
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane(_)
-    ));
+    assert!(matches!(basis.as_ref(), SolvedSurfaceGeometry::Plane(_)));
     assert_eq!(transform.rows()[0][0], -2.0);
     assert_eq!(transform.rows()[1][1], 2.0);
     let origin =

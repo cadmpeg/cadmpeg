@@ -21,7 +21,9 @@ use crate::nurbs::reader::NUBS_MARKER;
 use crate::nurbs::subtypes::SubtypeTables;
 use crate::nurbs::toks::{lex_test_span, test_table};
 use cadmpeg_ir::geometry::RollingBallSupportCurve;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn push_int(out: &mut Vec<u8>, tag: u8, value: i64, int_width: RefWidth) {

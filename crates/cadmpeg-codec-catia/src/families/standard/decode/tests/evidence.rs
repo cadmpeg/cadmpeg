@@ -66,14 +66,14 @@ fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
         sphere_radius: 10.0,
     };
     let plane = |origin: Point3| {
-        SurfaceGeometry::Plane(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin,
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        )
+        ))
     };
     let edge_faces = [[0, 0]];
     let face_bounds = [
@@ -150,7 +150,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
         &HashSet::new(),
     );
     assert!(
-        matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Plane(plane_surface))
+        matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
         if {
             let origin = plane_surface.origin();
             *origin == Point3::new(0.0, 0.0, 0.0)
@@ -223,7 +223,7 @@ fn targeted_surface_evidence_retains_revolution_construction() {
     };
     assert!(matches!(
         evidence.geometry_ref(),
-        Some(SurfaceGeometry::Nurbs(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
     ));
     assert_eq!(revolution.angular_interval, angular_range);
     assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
@@ -278,7 +278,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
         standard_object_evidence_from_streams([stream], &HashSet::from([120]), &HashSet::new());
     assert!(matches!(
         evidence.surface_geometries.get(&120),
-        Some(SurfaceGeometry::Nurbs(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
     ));
     let Some(StandardSurfaceProcedure::Revolution(revolution)) =
         evidence.procedural_surfaces.get(&120)
@@ -293,7 +293,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
 #[test]
 fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     let tiny = 1e-200;
-    let cone = SurfaceGeometry::Cone(
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -303,13 +303,13 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             std::f64::consts::FRAC_PI_6,
         )
         .expect("valid ConeSurface fixture"),
-    );
+    ));
     let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point");
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
     assert!((cone_uv.u - 0.5).abs() < 1.0e-12);
     assert_eq!(cone_uv.v, 1.0);
 
-    let sphere = SurfaceGeometry::Sphere(
+    let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -317,13 +317,13 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             -tiny,
         )
         .expect("valid SphereSurface fixture"),
-    );
+    ));
     let sphere_point = surface_point(&sphere, 0.5, 0.25).expect("sphere point");
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
     assert!(sphere_uv.u.is_finite());
     assert!((sphere_uv.v - 0.25).abs() < 1.0e-12);
 
-    let signed_sphere = SurfaceGeometry::Sphere(
+    let signed_sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -331,12 +331,12 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             -2.0,
         )
         .expect("valid SphereSurface fixture"),
-    );
+    ));
     let signed_sphere_point =
         surface_point(&signed_sphere, 0.5, 0.25).expect("signed sphere point");
     assert!(point_on_surface(signed_sphere_point, &signed_sphere));
 
-    let torus = SurfaceGeometry::Torus(
+    let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -345,7 +345,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             -2.0,
         )
         .expect("valid TorusSurface fixture"),
-    );
+    ));
     let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point");
     assert!(point_on_surface(torus_point, &torus));
 }
@@ -561,7 +561,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
         } else {
             [Point3::new(offset, 0.0, 0.0), Point3::new(offset, 1.0, 0.0)]
         };
-        SurfaceGeometry::Nurbs(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::new(
                 1,
                 1,
@@ -588,7 +588,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
                 false,
             )
             .expect("valid bilinear NURBS"),
-        )
+        ))
     };
     let left = surface(false, 0.0);
     let right = surface(true, 0.0);
@@ -789,22 +789,26 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
         carriers: [
-            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
+            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+            ),
+            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+            ),
         ],
         pcurves: [pcurve.clone(), pcurve],
         parameter_range: [2.0, 5.0],
@@ -856,22 +860,26 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
         carriers: [
-            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
+            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+            ),
+            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+            ),
         ],
         pcurves: [pcurve.clone(), pcurve],
         parameter_range: [1.0, 4.0],
@@ -977,14 +985,14 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     });
     let support = StandardCurveSupport {
@@ -1039,7 +1047,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         curve
             .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == id))
             .map(|curve| &curve.geometry),
-        Some(CurveGeometry::Nurbs(curve)) if curve == &limit_curve
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) if curve == &limit_curve
     ));
     let duplicated = standard_limit_curve_bindings(
         &ir,
@@ -1138,7 +1146,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1146,7 +1154,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
                 2.0,
             )
             .expect("valid CylinderSurface fixture"),
-        ),
+        )),
         source_object: None,
     });
     let bindings = [(surface_id.clone(), true, 0), (surface_id.clone(), true, 0)];
@@ -1184,7 +1192,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
 
 #[test]
 fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
-    let cylinder = SurfaceGeometry::Cylinder(
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1192,7 +1200,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
             1.0,
         )
         .expect("valid CylinderSurface fixture"),
-    );
+    ));
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
             .expect("valid LinePcurve fixture"),
@@ -1315,7 +1323,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
     }
@@ -1386,14 +1394,14 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
     {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     normal,
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -1451,14 +1459,14 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -1524,7 +1532,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1532,7 +1540,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
                     2.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
     }

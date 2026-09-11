@@ -77,11 +77,12 @@ pub use carriers::{
     SurfaceParameterAxis, TorusSurface, TrimmedPcurve,
 };
 
-/// Analytic, NURBS, or opaque surface geometry.
+/// Analytic, NURBS, or opaque surface geometry established without a
+/// construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SurfaceGeometry {
+pub enum SolvedSurfaceGeometry {
     /// Infinite plane through `origin` with the given `normal`.
     Plane(PlaneSurface),
     /// Right circular cylinder of the given `radius` about the axis line.
@@ -97,21 +98,12 @@ pub enum SurfaceGeometry {
     Torus(TorusSurface),
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
-    /// Exact surface defined by a procedural construction in the same model.
-    Procedural {
-        /// Construction that produces this carrier.
-        construction: ProceduralSurfaceId,
-        /// Solved carrier geometry retained from the source cache.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "schema", schemars(skip))]
-        cache: Option<SolvedSurfaceGeometry>,
-    },
     /// Source-native polygonal surface with an explicit chordal error bound.
     Polygonal(PolygonalSurface),
     /// Exact affine placement of an inline basis surface.
     Transformed {
         /// Unplaced basis geometry with unchanged parameterization.
-        basis: Box<SurfaceGeometry>,
+        basis: Box<SolvedSurfaceGeometry>,
         /// Affine map from basis coordinates to model coordinates.
         transform: Transform,
     },
@@ -130,85 +122,52 @@ pub enum SurfaceGeometry {
     },
 }
 
-/// A solved surface cache that cannot recursively contain a procedural carrier.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SolvedSurfaceGeometry(Box<SurfaceGeometry>);
-
-impl SolvedSurfaceGeometry {
-    /// Wrap a non-procedural solved surface geometry.
-    // Failed admission returns the complete input geometry to its caller.
-    #[allow(clippy::result_large_err)]
-    pub fn new(geometry: SurfaceGeometry) -> Result<Self, SurfaceGeometry> {
-        let mut basis = &geometry;
-        while let SurfaceGeometry::Transformed { basis: inner, .. } = basis {
-            basis = inner;
-        }
-        if matches!(basis, SurfaceGeometry::Procedural { .. }) {
-            Err(geometry)
-        } else {
-            Ok(Self(Box::new(geometry)))
-        }
-    }
-
-    /// Borrow the solved geometry.
-    #[must_use]
-    pub fn as_geometry(&self) -> &SurfaceGeometry {
-        &self.0
-    }
-}
-
-impl Serialize for SolvedSurfaceGeometry {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.as_geometry().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SolvedSurfaceGeometry {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(SurfaceGeometry::deserialize(deserializer)?).map_err(|_| {
-            serde::de::Error::custom("a solved cache cannot contain a procedural carrier")
-        })
-    }
-}
-
-impl AsRef<SurfaceGeometry> for SolvedSurfaceGeometry {
-    fn as_ref(&self) -> &SurfaceGeometry {
-        self.as_geometry()
-    }
-}
-
-impl std::ops::Deref for SolvedSurfaceGeometry {
-    type Target = SurfaceGeometry;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_geometry()
-    }
+/// Analytic, NURBS, procedural, or opaque surface geometry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SurfaceGeometry {
+    /// Exact surface defined by a procedural construction in the same model.
+    Procedural {
+        /// Construction that produces this carrier.
+        construction: ProceduralSurfaceId,
+        /// Solved carrier geometry retained from the source cache.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "schema", schemars(skip))]
+        cache: Option<SolvedSurfaceGeometry>,
+    },
+    /// A carrier whose shape is established without a construction.
+    #[serde(untagged)]
+    Solved(SolvedSurfaceGeometry),
 }
 
 impl SurfaceGeometry {
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
-    pub fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
+    pub const fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
         match self {
             Self::Procedural { construction, .. } => Some(construction),
-            _ => None,
+            Self::Solved(_) => None,
         }
     }
 
-    /// Geometry used to evaluate this carrier without following a construction.
+    /// Solved carrier retained from the source cache, when this carrier is
+    /// procedural.
     #[must_use]
-    pub fn solved_cache(&self) -> Option<&SurfaceGeometry> {
+    pub const fn solved_cache(&self) -> Option<&SolvedSurfaceGeometry> {
         match self {
-            Self::Procedural {
-                cache: Some(geometry),
-                ..
-            } => Some(geometry.as_geometry()),
-            _ => None,
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(_) => None,
         }
     }
 
-    pub(crate) fn wire_geometry(&self) -> &SurfaceGeometry {
-        self.solved_cache().unwrap_or(self)
+    /// Geometry that evaluates this carrier without following a construction.
+    #[must_use]
+    pub const fn solved(&self) -> Option<&SolvedSurfaceGeometry> {
+        match self {
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(geometry) => Some(geometry),
+        }
     }
 }
 
@@ -225,11 +184,12 @@ pub struct Surface {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
-/// The analytic or free-form shape of a 3D curve carrier.
+/// The analytic or free-form shape of a 3D curve carrier established without a
+/// construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CurveGeometry {
+pub enum SolvedCurveGeometry {
     /// Infinite line.
     Line(LineCurve),
     /// Full circle.
@@ -251,21 +211,12 @@ pub enum CurveGeometry {
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
-    /// Exact curve defined by a procedural construction in the same model.
-    Procedural {
-        /// Construction that produces this carrier.
-        construction: ProceduralCurveId,
-        /// Solved carrier geometry retained from the source cache.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "schema", schemars(skip))]
-        cache: Option<SolvedCurveGeometry>,
-    },
     /// Source-native polyline with an explicit chordal error bound.
     Polyline(PolylineCurve),
     /// Exact affine placement of an inline basis curve.
     Transformed {
         /// Unplaced basis geometry with unchanged parameterization.
-        basis: Box<CurveGeometry>,
+        basis: Box<SolvedCurveGeometry>,
         /// Affine map from basis coordinates to model coordinates.
         transform: Transform,
     },
@@ -277,101 +228,60 @@ pub enum CurveGeometry {
     },
 }
 
-/// A solved curve cache that cannot recursively contain a procedural carrier.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SolvedCurveGeometry(Box<CurveGeometry>);
-
-impl SolvedCurveGeometry {
-    /// Wrap a non-procedural solved curve geometry.
-    // Failed admission returns the complete input geometry to its caller.
-    #[allow(clippy::result_large_err)]
-    pub fn new(geometry: CurveGeometry) -> Result<Self, CurveGeometry> {
-        let mut basis = &geometry;
-        while let CurveGeometry::Transformed { basis: inner, .. } = basis {
-            basis = inner;
-        }
-        if matches!(basis, CurveGeometry::Procedural { .. }) {
-            Err(geometry)
-        } else {
-            Ok(Self(Box::new(geometry)))
-        }
-    }
-
-    /// Borrow the solved geometry.
-    #[must_use]
-    pub fn as_geometry(&self) -> &CurveGeometry {
-        &self.0
-    }
-
-    #[cfg(test)]
-    pub(crate) fn as_geometry_mut(&mut self) -> &mut CurveGeometry {
-        &mut self.0
-    }
-}
-
-impl Serialize for SolvedCurveGeometry {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.as_geometry().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SolvedCurveGeometry {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(CurveGeometry::deserialize(deserializer)?).map_err(|_| {
-            serde::de::Error::custom("a solved cache cannot contain a procedural carrier")
-        })
-    }
-}
-
-impl AsRef<CurveGeometry> for SolvedCurveGeometry {
-    fn as_ref(&self) -> &CurveGeometry {
-        self.as_geometry()
-    }
-}
-
-impl std::ops::Deref for SolvedCurveGeometry {
-    type Target = CurveGeometry;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_geometry()
-    }
+/// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CurveGeometry {
+    /// Exact curve defined by a procedural construction in the same model.
+    Procedural {
+        /// Construction that produces this carrier.
+        construction: ProceduralCurveId,
+        /// Solved carrier geometry retained from the source cache.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "schema", schemars(skip))]
+        cache: Option<SolvedCurveGeometry>,
+    },
+    /// A carrier whose shape is established without a construction.
+    #[serde(untagged)]
+    Solved(SolvedCurveGeometry),
 }
 
 impl CurveGeometry {
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
-    pub fn procedural_construction(&self) -> Option<&ProceduralCurveId> {
+    pub const fn procedural_construction(&self) -> Option<&ProceduralCurveId> {
         match self {
             Self::Procedural { construction, .. } => Some(construction),
-            _ => None,
+            Self::Solved(_) => None,
         }
     }
 
-    /// Geometry used to evaluate this carrier without following a construction.
+    /// Solved carrier retained from the source cache, when this carrier is
+    /// procedural.
     #[must_use]
-    pub fn solved_cache(&self) -> Option<&CurveGeometry> {
+    pub const fn solved_cache(&self) -> Option<&SolvedCurveGeometry> {
         match self {
-            Self::Procedural {
-                cache: Some(geometry),
-                ..
-            } => Some(geometry.as_geometry()),
-            _ => None,
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(_) => None,
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn solved_cache_mut(&mut self) -> Option<&mut CurveGeometry> {
+    pub(crate) const fn solved_cache_mut(&mut self) -> Option<&mut SolvedCurveGeometry> {
         match self {
-            Self::Procedural {
-                cache: Some(geometry),
-                ..
-            } => Some(geometry.as_geometry_mut()),
-            _ => None,
+            Self::Procedural { cache, .. } => cache.as_mut(),
+            Self::Solved(_) => None,
         }
     }
 
-    pub(crate) fn wire_geometry(&self) -> &CurveGeometry {
-        self.solved_cache().unwrap_or(self)
+    /// Geometry that evaluates this carrier without following a construction.
+    #[must_use]
+    pub const fn solved(&self) -> Option<&SolvedCurveGeometry> {
+        match self {
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(geometry) => Some(geometry),
+        }
     }
 }
 

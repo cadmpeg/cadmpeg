@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::LinearTermination;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -79,7 +79,9 @@ pub fn counterbore_dimensions(
         .into_iter()
         .filter_map(|(surface_id, geometry)| {
             generated_cylinders.contains(&surface_id).then_some(())?;
-            let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                geometry
+            else {
                 return None;
             };
             let radius = cylinder_surface.radius();
@@ -849,7 +851,8 @@ pub fn counterbore_source_boundary_circle(
                         == CurveId::mint(format!("creo:visibgeom:curve#{}", edge.id))
                             .expect("identity grammar")
                 }))?;
-                let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
+                let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved()
+                else {
                     return None;
                 };
                 let center = circle_curve.center();
@@ -1032,7 +1035,7 @@ pub fn complete_cylinder_source_carrier(
         .map(|id| existing_geometries.get(id))
         .collect::<Option<Vec<_>>>()?;
     let first = *carriers.first()?;
-    let SurfaceGeometry::Cylinder(cylinder) = first else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = first else {
         return None;
     };
     let origin = cylinder.origin();

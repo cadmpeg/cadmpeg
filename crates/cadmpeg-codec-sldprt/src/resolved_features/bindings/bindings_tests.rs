@@ -17,7 +17,7 @@ use crate::records::{
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed, PatternTransform,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
@@ -257,8 +257,8 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     .expect("affine transform");
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Transformed {
-            basis: Box::new(SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
+            basis: Box::new(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -267,7 +267,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
                 .unwrap(),
             )),
             transform,
-        },
+        }),
         source_object: None,
     };
 

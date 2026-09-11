@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{DecodedCurve, GeometryError};
@@ -89,7 +89,7 @@ pub(crate) fn decode(
         source_range: range,
         view_range,
         boundary: DecodedCurve::leaf(
-            CurveGeometry::Nurbs(geometry),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             crate::loss::Diagnostics::new(),
         ),
         page_per_model_ratio,
@@ -158,7 +158,9 @@ mod tests {
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio, 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
-        let CurveGeometry::Nurbs(boundary) = detail.boundary.reported_geometry() else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(boundary)) =
+            detail.boundary.reported_geometry()
+        else {
             panic!("detail boundary must be NURBS");
         };
         assert_eq!(boundary.control_points()[1].x, 2.0);
@@ -190,7 +192,9 @@ mod tests {
 
         let detail =
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V5).expect("required invariant");
-        let CurveGeometry::Nurbs(boundary) = detail.boundary.reported_geometry() else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(boundary)) =
+            detail.boundary.reported_geometry()
+        else {
             panic!("detail boundary must be NURBS");
         };
         assert_eq!(boundary.control_points()[0].z, 7.0);

@@ -5,7 +5,9 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
@@ -787,9 +789,12 @@ pub(crate) fn assign_unique_surface_owners(
             .iter()
             .filter(|candidate| {
                 let tolerance = candidate.tolerance.max(quantization_tolerance);
+                let Some(surface) = candidate.surface.solved() else {
+                    return false;
+                };
                 mesh.vertices().iter().all(|point| {
                     surface_measure(
-                        candidate.surface,
+                        surface,
                         candidate.inverse.apply_point(*point),
                         Some(tolerance),
                     )
@@ -811,10 +816,12 @@ pub(crate) fn assign_unique_surface_owners(
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
             _ => {
-                if owners
-                    .iter()
-                    .any(|candidate| contains_nurbs_surface(candidate.surface))
-                {
+                if owners.iter().any(|candidate| {
+                    candidate
+                        .surface
+                        .solved()
+                        .is_some_and(contains_nurbs_surface)
+                }) {
                     continue;
                 }
                 let Some((index, deflection)) =
@@ -856,7 +863,7 @@ fn approximate_surface_owner(
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().iter().zip(mesh.vertex_normals()) {
                 let local_point = candidate.inverse.apply_point(*point);
-                let measure = surface_measure(candidate.surface, local_point, None)?;
+                let measure = surface_measure(candidate.surface.solved()?, local_point, None)?;
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
                 let mesh_normal = candidate.inverse.apply_vector(*normal).unit()?;
@@ -865,7 +872,9 @@ fn approximate_surface_owner(
                 }
                 max_residual = max_residual.max(residual);
             }
-            if is_planar_surface(candidate.surface) && max_residual > quantization_tolerance {
+            if is_planar_surface(candidate.surface.solved()?)
+                && max_residual > quantization_tolerance
+            {
                 return None;
             }
             Some((index, max_residual))
@@ -911,13 +920,15 @@ fn approximate_trimmed_surface_owner(
             let mut max_residual = 0.0_f64;
             for point in mesh.vertices() {
                 let measure = surface_measure(
-                    candidate.surface,
+                    candidate.surface.solved()?,
                     candidate.inverse.apply_point(*point),
                     None,
                 )?;
                 max_residual = max_residual.max(measure.residual);
             }
-            if is_planar_surface(candidate.surface) && max_residual > quantization_tolerance {
+            if is_planar_surface(candidate.surface.solved()?)
+                && max_residual > quantization_tolerance
+            {
                 return None;
             }
             trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
@@ -933,18 +944,18 @@ fn approximate_trimmed_surface_owner(
     Some((*index, *deflection))
 }
 
-fn is_planar_surface(surface: &SurfaceGeometry) -> bool {
+fn is_planar_surface(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Plane(_) => true,
-        SurfaceGeometry::Transformed { basis, .. } => is_planar_surface(basis),
+        SolvedSurfaceGeometry::Plane(_) => true,
+        SolvedSurfaceGeometry::Transformed { basis, .. } => is_planar_surface(basis),
         _ => false,
     }
 }
 
-fn contains_nurbs_surface(surface: &SurfaceGeometry) -> bool {
+fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Nurbs(_) => true,
-        SurfaceGeometry::Transformed { basis, .. } => contains_nurbs_surface(basis),
+        SolvedSurfaceGeometry::Nurbs(_) => true,
+        SolvedSurfaceGeometry::Transformed { basis, .. } => contains_nurbs_surface(basis),
         _ => false,
     }
 }
@@ -1321,7 +1332,9 @@ fn closed_planar_circle(
     if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
         return None;
     }
-    let CurveGeometry::Circle(circle_curve) = *curves.get(edge.curve().as_ref()?)? else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+        *curves.get(edge.curve().as_ref()?)?
+    else {
         return None;
     };
     let center = circle_curve.center();
@@ -1333,8 +1346,8 @@ fn closed_planar_circle(
     if !radius.is_finite()
         || radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-        || analytic_surface_residual(surface, *center)? > tolerance
-        || analytic_surface_residual(surface, boundary_point)? > tolerance
+        || analytic_surface_residual(surface.solved()?, *center)? > tolerance
+        || analytic_surface_residual(surface.solved()?, boundary_point)? > tolerance
         || boundary_point.distance(end_point) > tolerance
         || (boundary_point.distance(*center) - radius).abs() > tolerance
     {
@@ -1356,8 +1369,10 @@ fn planar_boundary_samples(
     sampling_tolerance: f64,
 ) -> Option<(Vec<Point2>, f64)> {
     match curve {
-        CurveGeometry::Line(_) => Some((vec![frame.project(start)], 0.0)),
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
+            Some((vec![frame.project(start)], 0.0))
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -1368,7 +1383,7 @@ fn planar_boundary_samples(
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || !radius.is_finite()
                 || radius <= tolerance
-                || analytic_surface_residual(surface, *center)? > tolerance
+                || analytic_surface_residual(surface.solved()?, *center)? > tolerance
             {
                 return None;
             }
@@ -1408,7 +1423,7 @@ fn planar_boundary_samples(
                 sampling_tolerance,
             )
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -1426,7 +1441,7 @@ fn planar_boundary_samples(
                 || major_radius <= tolerance
                 || minor_radius <= tolerance
                 || major_radius < minor_radius
-                || analytic_surface_residual(surface, *center)? > tolerance
+                || analytic_surface_residual(surface.solved()?, *center)? > tolerance
             {
                 return None;
             }
@@ -1502,8 +1517,10 @@ impl PlanarArc {
                 (point, frame.project(point))
             })
             .collect::<Vec<_>>();
+        let solved_surface = surface.solved()?;
         if points.iter().any(|(point, _)| {
-            analytic_surface_residual(surface, *point).is_none_or(|residual| residual > tolerance)
+            analytic_surface_residual(solved_surface, *point)
+                .is_none_or(|residual| residual > tolerance)
         }) {
             return None;
         }
@@ -1567,7 +1584,7 @@ fn planar_trim(
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<PlanarTrim> {
-    let frame = plane_frame(surface)?;
+    let frame = plane_frame(surface.solved()?)?;
     let tolerance = face
         .tolerance
         .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
@@ -1611,8 +1628,8 @@ fn planar_trim(
             };
             let start = *points.get(&vertices.get(start)?.point)?;
             let end = *points.get(&vertices.get(end)?.point)?;
-            if analytic_surface_residual(surface, start)? > tolerance
-                || analytic_surface_residual(surface, end)? > tolerance
+            if analytic_surface_residual(surface.solved()?, start)? > tolerance
+                || analytic_surface_residual(surface.solved()?, end)? > tolerance
                 || previous_end.is_some_and(|previous: Point3| previous.distance(start) > tolerance)
             {
                 return None;
@@ -1723,7 +1740,7 @@ fn planar_hole_trim(
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<PlanarTrim> {
-    let frame = plane_frame(surface)?;
+    let frame = plane_frame(surface.solved()?)?;
     let tolerance = face
         .tolerance
         .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
@@ -1766,7 +1783,7 @@ fn cylindrical_trim(
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<CylindricalTrim> {
-    let SurfaceGeometry::Cylinder(cylinder_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         return None;
     };
     let origin = cylinder_surface.origin();
@@ -1797,13 +1814,13 @@ fn cylindrical_trim(
         let edge = *edges.get(&coedge.edge)?;
         let curve = curves.get(edge.curve().as_ref()?)?;
         match curve {
-            CurveGeometry::Line(line_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = line_curve.direction();
                 if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                     return None;
                 }
             }
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let curve_axis = circle_curve.axis();
                 let curve_radius = circle_curve.radius();
                 if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
@@ -1817,7 +1834,7 @@ fn cylindrical_trim(
         }
         for vertex_id in [edge.start.clone(), edge.end.clone()] {
             let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-            if analytic_surface_residual(surface, point)? > tolerance {
+            if analytic_surface_residual(surface.solved()?, point)? > tolerance {
                 return None;
             }
             let axial = point.vector_from(*origin).dot(axis);
@@ -1873,7 +1890,7 @@ fn conical_trim(
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<ConicalTrim> {
-    let SurfaceGeometry::Cone(cone_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
         return None;
     };
     let origin = cone_surface.origin();
@@ -1913,25 +1930,27 @@ fn conical_trim(
         let edge = *edges.get(&coedge.edge)?;
         let curve = curves.get(edge.curve().as_ref()?)?;
         match curve {
-            CurveGeometry::Line(line_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = line_curve.direction();
                 if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                     return None;
                 }
             }
-            CurveGeometry::Nurbs(nurbs) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 if nurbs.degree() != 1
                     || nurbs.periodic()
                     || nurbs.control_points().len() != 2
                     || nurbs.control_points().iter().any(|point| {
-                        analytic_surface_residual(surface, *point)
-                            .is_none_or(|residual| residual > tolerance)
+                        surface.solved().is_none_or(|surface| {
+                            analytic_surface_residual(surface, *point)
+                                .is_none_or(|residual| residual > tolerance)
+                        })
                     })
                 {
                     return None;
                 }
             }
-            CurveGeometry::Ellipse(ellipse_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = ellipse_curve.center();
                 let curve_axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
@@ -1966,7 +1985,7 @@ fn conical_trim(
                     return None;
                 }
             }
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
                 let curve_axis = circle_curve.axis();
                 let curve_radius = circle_curve.radius();
@@ -1990,7 +2009,7 @@ fn conical_trim(
         }
         for vertex_id in [edge.start.clone(), edge.end.clone()] {
             let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-            if analytic_surface_residual(surface, point)? > tolerance {
+            if analytic_surface_residual(surface.solved()?, point)? > tolerance {
                 return None;
             }
             let axial = point.vector_from(*origin).dot(axis);
@@ -2108,7 +2127,7 @@ fn analytic_trim(
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<AnalyticTrim> {
     match surface {
-        SurfaceGeometry::Plane(_) => planar_trim(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => planar_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
         )
         .or_else(|| {
@@ -2117,11 +2136,11 @@ fn analytic_trim(
             )
         })
         .map(AnalyticTrim::Planar),
-        SurfaceGeometry::Cylinder(_) => cylindrical_trim(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => cylindrical_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
         )
         .map(AnalyticTrim::Cylindrical),
-        SurfaceGeometry::Cone(_) => conical_trim(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => conical_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
         )
         .map(AnalyticTrim::Conical),
@@ -2129,15 +2148,15 @@ fn analytic_trim(
     }
 }
 
-fn plane_frame(surface: &SurfaceGeometry) -> Option<PlaneFrame> {
+fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
     let (origin, normal, u_axis) = match surface {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             (*origin, *normal, *u_axis)
         }
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             let basis = plane_frame(basis)?;
             (
                 transform.apply_point(basis.origin),
@@ -2589,16 +2608,16 @@ fn circle_overlaps_polygon(circle: CircularHole, polygon: &[Point2], tolerance: 
         })
 }
 
-fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<Vector3> {
+fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Option<Vector3> {
     let subtract = |left: Point3, right: Point3| {
         Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
     };
     match surface {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let normal = plane_surface.normal();
             normal.unit()
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let axis = axis.unit()?;
@@ -2606,11 +2625,11 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
             let radial = delta - axis.scale(delta.dot(axis));
             radial.unit()
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             subtract(point, *center).unit()
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius();
@@ -2621,7 +2640,7 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
             let radial_unit = radial.unit()?;
             (radial_unit.scale(radial.norm() - major_radius) + axis.scale(axial)).unit()
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -2649,7 +2668,7 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
                 - axis.scale(slope * local_radius.signum()))
             .unit()
         }
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             transform
                 .apply_vector(analytic_surface_normal(
                     basis,
@@ -2657,25 +2676,24 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
                 )?)
                 .unit()
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed { .. }
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
 
-fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option<f64> {
+fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> Option<f64> {
     let subtract = |left: Point3, right: Point3| {
         Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
     };
     match surface {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             Some(subtract(point, *origin).dot(*normal).abs() / normal.norm())
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius();
@@ -2689,12 +2707,12 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             );
             Some((radial.norm() - radius).abs())
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let radius = sphere_surface.radius();
             Some((subtract(point, *center).norm() - radius).abs())
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius();
@@ -2712,7 +2730,7 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
                     .abs(),
             )
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -2738,17 +2756,16 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             let elliptical_radius = major.hypot(minor / ratio);
             Some((elliptical_radius - local_radius.abs()).abs())
         }
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             analytic_surface_residual(
                 basis,
                 transform.try_inverse_affine().ok()?.apply_point(point),
             )
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed { .. }
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
     .filter(|residual| residual.is_finite())
 }
@@ -2760,11 +2777,11 @@ struct SurfaceMeasure {
 }
 
 fn surface_measure(
-    surface: &SurfaceGeometry,
+    surface: &SolvedSurfaceGeometry,
     point: Point3,
     fit_tolerance: Option<f64>,
 ) -> Option<SurfaceMeasure> {
-    if let SurfaceGeometry::Nurbs(nurbs) = surface {
+    if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
         let tolerance = fit_tolerance?;
         let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)?;
         let partials = cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v)?;
@@ -2778,7 +2795,7 @@ fn surface_measure(
         })
         .filter(|measure| measure.residual.is_finite());
     }
-    if let SurfaceGeometry::Transformed { basis, transform } = surface {
+    if let SolvedSurfaceGeometry::Transformed { basis, transform } = surface {
         if transform.is_proper_rigid() {
             let mut measure = surface_measure(
                 basis,

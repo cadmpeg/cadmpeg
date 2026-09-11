@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
@@ -51,9 +52,22 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
             assert!(
                 matches!(
                     (&result.ir().model.curves[0].geometry, family_number),
-                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse(_), 0)
-                        | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_), 1)
-                        | (cadmpeg_ir::geometry::CurveGeometry::Parabola(_), 2)
+                    (
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                            _
+                        )),
+                        0
+                    ) | (
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(
+                            SolvedCurveGeometry::Hyperbola(_)
+                        ),
+                        1
+                    ) | (
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                            _
+                        )),
+                        2
+                    )
                 ),
                 "{version} {family}: {:?}",
                 result.ir().model.curves[0].geometry
@@ -113,9 +127,13 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             .map(cadmpeg_ir::units::PositiveScalar::get)
             == Some(0.001)));
         match (&result.ir().model.curves[0].geometry, form) {
-            (cadmpeg_ir::geometry::CurveGeometry::Ellipse(_), 0 | 1) => {}
-            (cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_), 2) => {}
-            (cadmpeg_ir::geometry::CurveGeometry::Parabola(_), 3) => {}
+            (
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),
+                0 | 1,
+            ) => {}
+            (cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)), 2) => {
+            }
+            (cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)), 3) => {}
             (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
         }
         assert!(result.report().losses.is_empty(), "form {form}");

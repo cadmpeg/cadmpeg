@@ -4,7 +4,7 @@
 use super::*;
 use crate::loss::Diagnostics;
 use crate::test_support::test_dump::*;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -19,7 +19,10 @@ fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
 }
 
 fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
-    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), crate::loss::Diagnostics::new())
+    crate::curves::DecodedCurve::leaf(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+        crate::loss::Diagnostics::new(),
+    )
 }
 
 #[test]
@@ -65,7 +68,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
     transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0))
         .expect("required invariant");
-    let CurveGeometry::Nurbs(curve) = curve.reported_geometry() else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = curve.reported_geometry() else {
         panic!("hatch loop must remain NURBS");
     };
     assert_eq!(curve.control_points()[0], Point3::new(100.0, 200.0, 300.0));
@@ -390,12 +393,14 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
     };
     staged.draft.model_mut().curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: None,
+        }),
         source_object: None,
     });
     staged.draft.model_mut().bodies.push(Body {
@@ -440,7 +445,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     };
     staged.draft.model_mut().curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
     });
     let links = staged.links.clone();
@@ -466,7 +471,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         .expect("valid identity");
     let curve = Curve {
         id: curve_id,
-        geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
     };
     let mut live = CadIr::empty();
@@ -1093,7 +1098,9 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                     .expect("valid identity");
                 ir.model.curves.push(Curve {
                     id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(boundary.start_nurbs.clone()),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        boundary.start_nurbs.clone(),
+                    )),
                     source_object: Some(association.clone()),
                 });
                 CommittedExtrusionBoundary {
@@ -1292,7 +1299,7 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { .. }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert!(!result.report().geometry_transferred());
 }

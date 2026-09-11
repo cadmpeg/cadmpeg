@@ -297,7 +297,7 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .expect("intersection carrier");
     assert!(matches!(
         curve.geometry.solved_cache(),
-        Some(CurveGeometry::Unknown { .. })
+        Some(SolvedCurveGeometry::Unknown { .. })
     ));
     let records = result
         .ir()
@@ -450,7 +450,7 @@ fn decode_emits_charted_surface_intersection_construction() {
         .iter()
         .find(|curve| result.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .expect("solved chart cache");
-    let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("charted NURBS cache");
     };
     assert_eq!(nurbs.degree(), 1);

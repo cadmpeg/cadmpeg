@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -440,11 +440,14 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                 supports.push((loop_.surface, pcurve_id, support_range));
             }
             let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
-                let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(cache)) =
+                    &surface_plan.get(&loop_.surface)?.geometry
                 else {
                     return None;
                 };
-                nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
+                nurbs_isocurve(pcurve, cache)
+                    .map(SolvedCurveGeometry::Nurbs)
+                    .map(CurveGeometry::Solved)
             });
             if let Some(geometry) = lifted {
                 let [edge_start, edge_end] = graph.vertices.edge_points(edge_id)?;
@@ -458,9 +461,15 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                         .and_then(|parameters| {
                             oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
                         })
-                } else if matches!(geometry, CurveGeometry::Line(_)) {
+                } else if matches!(
+                    geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                ) {
                     oriented_line_plan(&geometry, edge_start, edge_end)
-                } else if matches!(geometry, CurveGeometry::Circle(_)) {
+                } else if matches!(
+                    geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                ) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
                         oriented_circle_plan(
                             pcurve, surface, &geometry, parameters, edge_start, edge_end,
@@ -508,7 +517,9 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                     &mut conflicting_edge_curves,
                     edge_id,
                     CurvePlan {
-                        geometry: CurveGeometry::Nurbs(helix.cache.clone()),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            helix.cache.clone(),
+                        )),
                         parameter_range: Some(helix.parameter_range),
                         edge_tolerance: Some(cadmpeg_ir::units::PositiveScalar::new(
                             helix.fit_tolerance,
@@ -616,7 +627,11 @@ pub(crate) fn resolved_surface_geometry(
     let payload =
         UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     let geometry = surfaces::neutral_surface(surface, graph, surface_id, &payload).geometry;
-    (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
+    (!matches!(
+        geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+    ))
+    .then_some(geometry)
 }
 
 /// Exact construction of a surface-of-revolution carrier.
@@ -651,7 +666,11 @@ pub(crate) fn resolved_revolution_surface(
     let SurfaceProcedure::Revolution(plan) = procedure? else {
         return None;
     };
-    matches!(geometry, SurfaceGeometry::Nurbs(_)).then_some(())?;
+    matches!(
+        geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+    )
+    .then_some(())?;
     Some(ResolvedRevolutionSurface {
         directrix: plan.directrix,
         axis_origin: plan.axis_origin,
@@ -991,7 +1010,7 @@ fn curve_on_parameter_range(
     let target_per_source = target_span / source_span;
     let source_per_target = source_span / target_span;
     match curve {
-        CurveGeometry::Nurbs(mut curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) => {
             curve
                 .edit_knots(|knots| {
                     for knot in knots {
@@ -999,9 +1018,9 @@ fn curve_on_parameter_range(
                     }
                 })
                 .ok()?;
-            Some(CurveGeometry::Nurbs(curve))
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
         }
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
             if source_per_target != 1.0 {
@@ -1022,9 +1041,10 @@ fn curve_on_parameter_range(
                     false,
                 )
                 .ok()
-                .map(CurveGeometry::Nurbs);
+                .map(SolvedCurveGeometry::Nurbs)
+                .map(CurveGeometry::Solved);
             }
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(
                         origin.x + (source[0] - target[0] * source_per_target) * direction.x,
@@ -1034,7 +1054,7 @@ fn curve_on_parameter_range(
                     direction,
                 )
                 .ok()?,
-            ))
+            )))
         }
         _ => None,
     }
@@ -1118,7 +1138,7 @@ fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
 }
 
 fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool {
-    let CurveGeometry::Circle(circle_curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return false;
     };
     let center = circle_curve.center();

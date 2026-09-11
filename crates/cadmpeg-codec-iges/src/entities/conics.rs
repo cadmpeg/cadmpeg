@@ -9,7 +9,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -270,7 +270,7 @@ pub(super) fn project(
                     continue;
                 };
                 (sweep > 0.0).then_some((
-                    CurveGeometry::Ellipse(payload),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(payload)),
                     [start_parameter, start_parameter + sweep],
                 ))
             }
@@ -331,7 +331,7 @@ pub(super) fn project(
                     continue;
                 };
                 (end_parameter > start_parameter).then_some((
-                    CurveGeometry::Hyperbola(payload),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(payload)),
                     [start_parameter, end_parameter],
                 ))
             }
@@ -370,7 +370,7 @@ pub(super) fn project(
                 continue;
             };
             (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
-                CurveGeometry::Parabola(payload),
+                CurveGeometry::Solved(SolvedCurveGeometry::Parabola(payload)),
                 [start_parameter, end_parameter],
             ))
         } else if zero(*coeff_a) && zero(*coeff_f) && !zero(*coeff_c) && !zero(*coeff_d) {
@@ -408,7 +408,7 @@ pub(super) fn project(
                 continue;
             };
             (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
-                CurveGeometry::Parabola(payload),
+                CurveGeometry::Solved(SolvedCurveGeometry::Parabola(payload)),
                 [start_parameter, end_parameter],
             ))
         } else {

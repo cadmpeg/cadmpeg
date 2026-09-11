@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -163,7 +163,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(x, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -171,7 +171,7 @@ fn cylinder(id: usize, x: f64) -> Surface {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     }
 }

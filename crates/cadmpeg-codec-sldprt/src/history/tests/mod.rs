@@ -5,7 +5,7 @@
 use super::*;
 use crate::records::FeatureSource;
 use cadmpeg_ir::attributes::AttributeValue;
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::{

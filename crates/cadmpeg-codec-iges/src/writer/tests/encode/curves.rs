@@ -66,12 +66,13 @@ fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .unwrap();
-    let geometry = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Nurbs(nurbs)),
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+        basis: Box::new(SolvedCurveGeometry::Nurbs(nurbs)),
         transform,
-    };
+    });
     let before = geometry.clone();
-    let error = crate::writer::flatten_curve(&geometry).unwrap_err();
+    let error =
+        crate::writer::flatten_curve(geometry.solved().expect("solved carrier")).unwrap_err();
     assert!(error.to_string().contains("non-finite"));
     assert_eq!(geometry, before);
 }

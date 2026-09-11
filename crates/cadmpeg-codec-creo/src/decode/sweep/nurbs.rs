@@ -8,7 +8,9 @@ use crate::decode::analytic::planes::valid_positive_nurbs_curve;
 use crate::vecmath::cross;
 use crate::vecmath::normalize;
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    NurbsCurve, NurbsSurface, PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
@@ -26,19 +28,19 @@ pub(in super::super) fn extruded_geometry_surface(
             let end = section_point_in_model(transform, [end.u, end.v]);
             let line = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             let normal = normalize(cross(line, transform.normal()))?;
-            Some(SurfaceGeometry::Plane(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(start[0], start[1], start[2]),
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(line[0], line[1], line[2]),
                 )
                 .ok()?,
-            ))
+            )))
         }
         SketchGeometryDefinition::Arc { center, radius, .. }
         | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
-            Some(SurfaceGeometry::Cylinder(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(center[0], center[1], center[2]),
                     Vector3::new(
@@ -54,7 +56,7 @@ pub(in super::super) fn extruded_geometry_surface(
                     radius.get(),
                 )
                 .ok()?,
-            ))
+            )))
         }
         _ => None,
     }
@@ -501,10 +503,9 @@ pub(in super::super) fn extrusion_brep_side_surface(
             .map(|value| value * (span.upper - span.lower));
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;
-        return Some(SurfaceGeometry::Nurbs(extruded_nurbs_surface(
-            &translated,
-            sweep,
-        )?));
+        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            extruded_nurbs_surface(&translated, sweep)?,
+        )));
     }
     let section_geometry = match geometry.definition() {
         SketchGeometryDefinition::Line { .. } => {

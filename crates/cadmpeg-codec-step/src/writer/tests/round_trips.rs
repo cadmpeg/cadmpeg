@@ -10,7 +10,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -28,13 +29,13 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
     let line = |origin: Point2, direction: Point2| {
         let length = direction.u.hypot(direction.v);
         (length.is_finite() && length > 0.0).then(|| {
-            CurveGeometry::Line(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     point(origin),
                     vector(Point2::new(direction.u / length, direction.v / length)),
                 )
                 .unwrap(),
-            )
+            ))
         })
     };
     match geometry {
@@ -47,7 +48,7 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             let center = circle_pcurve.center();
             let x_axis = circle_pcurve.x_axis();
             let radius = circle_pcurve.radius();
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -55,14 +56,14 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                     radius,
                 )
                 .unwrap(),
-            ))
+            )))
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
             let center = ellipse_pcurve.center();
             let x_axis = ellipse_pcurve.x_axis();
             let major_radius = ellipse_pcurve.major_radius();
             let minor_radius = ellipse_pcurve.minor_radius();
-            Some(CurveGeometry::Ellipse(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -71,13 +72,13 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                     minor_radius,
                 )
                 .unwrap(),
-            ))
+            )))
         }
         PcurveGeometry::Parabola(parabola_pcurve) => {
             let vertex = parabola_pcurve.vertex();
             let x_axis = parabola_pcurve.x_axis();
             let focal_distance = parabola_pcurve.focal_distance();
-            Some(CurveGeometry::Parabola(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaCurve::try_new(
                     point(*vertex),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -85,14 +86,14 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                     focal_distance,
                 )
                 .unwrap(),
-            ))
+            )))
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
             let center = hyperbola_pcurve.center();
             let x_axis = hyperbola_pcurve.x_axis();
             let major_radius = hyperbola_pcurve.major_radius();
             let minor_radius = hyperbola_pcurve.minor_radius();
-            Some(CurveGeometry::Hyperbola(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -101,9 +102,9 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                     minor_radius,
                 )
                 .unwrap(),
-            ))
+            )))
         }
-        PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Nurbs(
+        PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
@@ -112,9 +113,11 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                 nurbs.periodic(),
             )
             .ok()?,
-        )),
+        ))),
         PcurveGeometry::Transformed { basis, transform } => {
-            let CurveGeometry::Line(line_curve) = curve_geometry_for_sheet_pcurve(basis)? else {
+            let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) =
+                curve_geometry_for_sheet_pcurve(basis)?
+            else {
                 return None;
             };
             let origin = line_curve.origin();
@@ -139,13 +142,13 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             let direction = transform.apply_vector(*direction);
             let length = direction.norm();
             (length.is_finite() && length > 0.0).then(|| {
-                CurveGeometry::Line(
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(
                         transform.apply_point(*origin),
                         direction.scale(1.0 / length),
                     )
                     .unwrap(),
-                )
+                ))
             })
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
@@ -244,14 +247,16 @@ fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
-    crate::geometry::surface(&mut e, g).expect("surface geometry is writable");
+    crate::geometry::surface(&mut e, g.solved().expect("solved surface"))
+        .expect("surface geometry is writable");
     e.into_lines().join("\n")
 }
 
 /// Emit a single curve carrier in isolation and return the DATA lines joined.
 fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
-    crate::geometry::curve(&mut e, g).expect("curve geometry is writable");
+    crate::geometry::curve(&mut e, g.solved().expect("solved curve"))
+        .expect("curve geometry is writable");
     e.into_lines().join("\n")
 }
 
@@ -269,7 +274,7 @@ pub(crate) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -277,7 +282,7 @@ pub(crate) fn cylinder_surface_doc() -> CadIr {
                 5.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir
@@ -687,7 +692,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
 
 #[test]
 pub(crate) fn analytic_conics_round_trip_through_step() {
-    let parabola = CurveGeometry::Parabola(
+    let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::ParabolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -695,8 +700,8 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
             2.5,
         )
         .unwrap(),
-    );
-    let hyperbola = CurveGeometry::Hyperbola(
+    ));
+    let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         cadmpeg_ir::geometry::HyperbolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -705,7 +710,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
             1.5,
         )
         .unwrap(),
-    );
+    ));
     let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
@@ -750,13 +755,13 @@ pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let output = export(&ir);
@@ -1118,7 +1123,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
     // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
         (
-            SurfaceGeometry::Cylinder(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1126,11 +1131,11 @@ fn analytic_surfaces_map_to_their_step_entities() {
                     5.0,
                 )
                 .unwrap(),
-            ),
+            )),
             "CYLINDRICAL_SURFACE",
         ),
         (
-            SurfaceGeometry::Cone(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1140,11 +1145,11 @@ fn analytic_surfaces_map_to_their_step_entities() {
                     0.5,
                 )
                 .unwrap(),
-            ),
+            )),
             "CONICAL_SURFACE",
         ),
         (
-            SurfaceGeometry::Sphere(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1152,11 +1157,11 @@ fn analytic_surfaces_map_to_their_step_entities() {
                     4.0,
                 )
                 .unwrap(),
-            ),
+            )),
             "SPHERICAL_SURFACE",
         ),
         (
-            SurfaceGeometry::Torus(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1165,7 +1170,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
                     1.0,
                 )
                 .unwrap(),
-            ),
+            )),
             "TOROIDAL_SURFACE",
         ),
     ];
@@ -1178,19 +1183,14 @@ fn analytic_surfaces_map_to_their_step_entities() {
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
-        let s = emit_surface_only(
-            ir.model.surfaces[0]
-                .geometry
-                .solved_cache()
-                .unwrap_or(&ir.model.surfaces[0].geometry),
-        );
+        let s = emit_surface_only(&ir.model.surfaces[0].geometry);
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
 }
 
 #[test]
 fn analytic_surface_placements_preserve_orientation() {
-    let geometry = SurfaceGeometry::Sphere(
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -1198,7 +1198,7 @@ fn analytic_surface_placements_preserve_orientation() {
             4.0,
         )
         .unwrap(),
-    );
+    ));
     let s = emit_surface_only(&geometry);
     assert!(s.contains("DIRECTION('',(0.,1.,0.))"));
     assert!(s.contains("DIRECTION('',(0.,0.,1.))"));
@@ -1218,7 +1218,7 @@ fn nurbs_curve_non_rational_uses_with_knots() {
         false,
     )
     .unwrap();
-    let s = emit_curve_only(&CurveGeometry::Nurbs(n));
+    let s = emit_curve_only(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n)));
     assert!(s.contains("B_SPLINE_CURVE_WITH_KNOTS"));
     // Clamped end knots collapse to multiplicity 3.
     assert!(s.contains("(3,3)"), "knot multiplicities: {s}");
@@ -1239,7 +1239,7 @@ fn nurbs_curve_rational_uses_complex_form() {
         false,
     )
     .unwrap();
-    let s = emit_curve_only(&CurveGeometry::Nurbs(n));
+    let s = emit_curve_only(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n)));
     assert!(s.contains("RATIONAL_B_SPLINE_CURVE"));
     assert!(s.contains("BOUNDED_CURVE()"));
 }
@@ -1261,7 +1261,7 @@ pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
         false,
     )
     .unwrap();
-    let s = emit_surface_only(&SurfaceGeometry::Nurbs(n));
+    let s = emit_surface_only(&SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(n)));
     assert!(s.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
 }
 

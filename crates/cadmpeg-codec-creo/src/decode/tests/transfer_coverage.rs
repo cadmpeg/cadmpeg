@@ -9,8 +9,8 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -46,14 +46,14 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     ];
     let plane = |id: &str, native_id: u32| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: Some(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
             object_id: cadmpeg_ir::products::NonEmptyString::new(format!("VisibGeom:{native_id}"))
@@ -76,7 +76,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             "test:model:entity#extrusion-construction".to_string(),
         )
         .expect("identity grammar"),
-        cache: Some(SolvedSurfaceGeometry::new(cache).unwrap()),
+        cache: Some(cache.solved().expect("solved carrier").clone()),
     };
     let procedural_surfaces = vec![ProceduralSurface::new(
         ProceduralSurfaceId::mint("test:model:entity#extrusion-construction".to_string())
@@ -139,18 +139,18 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     let curves = vec![
         Curve {
             id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid LineCurve fixture"),
-            ),
+            )),
             source_object: Some(source(41)),
         },
         Curve {
             id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Unknown { record: None },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: Some(source(42)),
         },
     ];

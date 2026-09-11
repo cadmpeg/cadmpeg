@@ -8,7 +8,9 @@ use std::io::{Cursor, Read, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
@@ -115,32 +117,30 @@ pub fn write_semantic(
         .model
         .curves
         .iter()
-        .filter_map(
-            |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
-                    let before = baseline
-                        .ir()
-                        .model
-                        .curves
-                        .iter()
-                        .find(|before| before.id == curve.id)?;
-                    let CurveGeometry::Nurbs(before) =
-                        before.geometry.solved_cache().unwrap_or(&before.geometry)
-                    else {
-                        return None;
-                    };
-                    Some((
-                        curve.id.as_str().to_owned(),
-                        NurbsCurveEdit {
-                            curve: nurbs.clone(),
-                            periodic: (before.periodic() != nurbs.periodic())
-                                .then_some(nurbs.periodic()),
-                        },
-                    ))
-                }
-                _ => None,
-            },
-        )
+        .filter_map(|curve| match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Nurbs(nurbs))
+                if edited_curves.contains(curve.id.as_str()) =>
+            {
+                let before = baseline
+                    .ir()
+                    .model
+                    .curves
+                    .iter()
+                    .find(|before| before.id == curve.id)?;
+                let Some(SolvedCurveGeometry::Nurbs(before)) = before.geometry.solved() else {
+                    return None;
+                };
+                Some((
+                    curve.id.as_str().to_owned(),
+                    NurbsCurveEdit {
+                        curve: nurbs.clone(),
+                        periodic: (before.periodic() != nurbs.periodic())
+                            .then_some(nurbs.periodic()),
+                    },
+                ))
+            }
+            _ => None,
+        })
         .collect::<BTreeMap<_, _>>();
     let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
     let edited_surfaces =
@@ -149,33 +149,31 @@ pub fn write_semantic(
         .model
         .surfaces
         .iter()
-        .filter_map(
-            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
-                    let before = baseline
-                        .ir()
-                        .model
-                        .surfaces
-                        .iter()
-                        .find(|before| before.id == surface.id)?;
-                    let SurfaceGeometry::Nurbs(before) =
-                        before.geometry.solved_cache().unwrap_or(&before.geometry)
-                    else {
-                        return None;
-                    };
-                    Some((
-                        surface.id.as_str().to_owned(),
-                        NurbsSurfaceEdit {
-                            surface: nurbs.clone(),
-                            periodic: (before.u_periodic() != nurbs.u_periodic()
-                                || before.v_periodic() != nurbs.v_periodic())
-                            .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
-                        },
-                    ))
-                }
-                _ => None,
-            },
-        )
+        .filter_map(|surface| match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Nurbs(nurbs))
+                if edited_surfaces.contains(surface.id.as_str()) =>
+            {
+                let before = baseline
+                    .ir()
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|before| before.id == surface.id)?;
+                let Some(SolvedSurfaceGeometry::Nurbs(before)) = before.geometry.solved() else {
+                    return None;
+                };
+                Some((
+                    surface.id.as_str().to_owned(),
+                    NurbsSurfaceEdit {
+                        surface: nurbs.clone(),
+                        periodic: (before.u_periodic() != nurbs.u_periodic()
+                            || before.v_periodic() != nurbs.v_periodic())
+                        .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
+                    },
+                ))
+            }
+            _ => None,
+        })
         .collect::<BTreeMap<_, _>>();
     let extrusion_direction_edits = validate_procedural_surface_edits(baseline.ir(), target)?;
     let procedural_surface_fit_edits =
@@ -241,7 +239,11 @@ pub fn write_semantic(
             .and_then(|edge| edge.curve().as_ref())
             .is_some_and(|curve_id| {
                 target.model.curves.iter().any(|curve| {
-                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line(_))
+                    curve.id == *curve_id
+                        && matches!(
+                            curve.geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                        )
                 })
             });
         if is_line {
@@ -429,7 +431,7 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Line(line_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = *line_curve.origin();
                 let direction = *line_curve.direction();
                 edited_curves
@@ -444,7 +446,7 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = *circle_curve.center();
                 let axis = *circle_curve.axis();
                 let ref_direction = *circle_curve.ref_direction();
@@ -456,7 +458,7 @@ pub fn write_semantic(
                     )
                 })
             }
-            CurveGeometry::Ellipse(ellipse_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = *ellipse_curve.center();
                 let axis = *ellipse_curve.axis();
                 let major_direction = *ellipse_curve.major_direction();
@@ -477,7 +479,7 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Degenerate(degenerate_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = *degenerate_curve.point();
                 edited_curves
                     .contains(curve.id.as_str())
@@ -491,7 +493,7 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane(plane_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = *plane_surface.origin();
                 let normal = *plane_surface.normal();
                 let u_axis = *plane_surface.u_axis();
@@ -507,7 +509,7 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = *sphere_surface.center();
                 let axis = *sphere_surface.axis();
                 let ref_direction = *sphere_surface.ref_direction();
@@ -527,7 +529,7 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Torus(torus_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = *torus_surface.center();
                 let axis = *torus_surface.axis();
                 let ref_direction = *torus_surface.ref_direction();
@@ -548,7 +550,7 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = *cylinder_surface.origin();
                 let axis = *cylinder_surface.axis();
                 let ref_direction = *cylinder_surface.ref_direction();
@@ -560,7 +562,7 @@ pub fn write_semantic(
                     )
                 })
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = *cone_surface.origin();
                 let axis = *cone_surface.axis();
                 let ref_direction = *cone_surface.ref_direction();

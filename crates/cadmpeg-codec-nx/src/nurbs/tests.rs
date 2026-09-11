@@ -2,7 +2,9 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::test_support::*;
@@ -47,8 +49,10 @@ fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
     assert_eq!(actual.len(), expected.len());
     for (actual, expected) in actual.iter().zip(expected) {
         assert_eq!(actual.pos, expected.pos);
-        let (SurfaceGeometry::Nurbs(actual), SurfaceGeometry::Nurbs(expected)) =
-            (&actual.geometry, &expected.geometry)
+        let (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(actual)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(expected)),
+        ) = (&actual.geometry, &expected.geometry)
         else {
             panic!("shared and standalone surface kinds differ");
         };
@@ -82,8 +86,10 @@ fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
     assert_eq!(actual.len(), expected.len());
     for (actual, expected) in actual.iter().zip(expected) {
         assert_eq!(actual.pos, expected.pos);
-        let (CurveGeometry::Nurbs(actual), CurveGeometry::Nurbs(expected)) =
-            (&actual.geometry, &expected.geometry)
+        let (
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(actual)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(expected)),
+        ) = (&actual.geometry, &expected.geometry)
         else {
             panic!("shared and standalone curve kinds differ");
         };
@@ -182,7 +188,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let [surface] = crate::nurbs::surfaces(&surface)
         .try_into()
         .expect("one surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
     assert!(surface.u_periodic());
@@ -198,7 +204,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let [open_surface] = crate::nurbs::surfaces(&open_surface)
         .try_into()
         .expect("one surface");
-    let SurfaceGeometry::Nurbs(open_surface) = open_surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(open_surface)) = open_surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
     assert!(!open_surface.u_periodic());
@@ -211,7 +217,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     curve[curve_descriptor + 16] = 2;
     curve[curve_descriptor + 17] = 1;
     let [curve] = crate::nurbs::curves(&curve).try_into().expect("one curve");
-    let CurveGeometry::Nurbs(curve) = curve.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
         panic!("expected NURBS curve");
     };
     assert!(curve.periodic());
@@ -226,7 +232,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let [open_curve] = crate::nurbs::curves(&open_curve)
         .try_into()
         .expect("one curve");
-    let CurveGeometry::Nurbs(open_curve) = open_curve.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(open_curve)) = open_curve.geometry.solved() else {
         panic!("expected NURBS curve");
     };
     assert!(!open_curve.periodic());
@@ -267,7 +273,7 @@ fn nurbs_surface_retains_reversed_carrier_normal() {
     let [surface] = crate::nurbs::surfaces(&stream)
         .try_into()
         .expect("one surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
 
@@ -287,7 +293,7 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
         let [surface] = crate::nurbs::surfaces(&surface)
             .try_into()
             .expect("one surface");
-        let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
             panic!("expected NURBS surface");
         };
         assert!(!surface.u_periodic() && !surface.v_periodic());
@@ -299,7 +305,7 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
             .expect("curve descriptor");
         curve[curve_descriptor + 16] = knot_type;
         let [curve] = crate::nurbs::curves(&curve).try_into().expect("one curve");
-        let CurveGeometry::Nurbs(curve) = curve.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
             panic!("expected NURBS curve");
         };
         assert!(!curve.periodic());
@@ -495,7 +501,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let [high_degree] = crate::nurbs::curves(&curve_stream(11, 12))
         .try_into()
         .expect("one high-degree curve");
-    let CurveGeometry::Nurbs(high_degree) = high_degree.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(high_degree)) = high_degree.geometry.solved() else {
         panic!("expected high-degree NURBS curve");
     };
     assert_eq!(high_degree.degree(), 11);
@@ -505,7 +511,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let [wide_curve] = crate::nurbs::curves(&curve_stream(1, 5000))
         .try_into()
         .expect("one wide curve");
-    let CurveGeometry::Nurbs(wide_curve) = wide_curve.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(wide_curve)) = wide_curve.geometry.solved() else {
         panic!("expected wide NURBS curve");
     };
     assert_eq!(wide_curve.control_points().len(), 5000);
@@ -514,7 +520,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let [wide_surface] = crate::nurbs::surfaces(&surface_stream(1, 2001, 1, 2))
         .try_into()
         .expect("one wide surface");
-    let SurfaceGeometry::Nurbs(wide_surface) = wide_surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(wide_surface)) = wide_surface.geometry.solved() else {
         panic!("expected wide NURBS surface");
     };
     assert_eq!(wide_surface.poles().count(), 4002);
@@ -653,7 +659,7 @@ fn nurbs_decodes_descriptors_at_the_stream_boundary() {
 fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     let surfaces = crate::nurbs::surfaces(&extended_bspline_surface_stream());
     assert_eq!(surfaces.len(), 1);
-    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
     };
     assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
@@ -673,7 +679,7 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
 
     let surfaces = crate::nurbs::surfaces(&stream);
     assert_eq!(surfaces.len(), 1);
-    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
     };
     assert_eq!(surface.poles().count(), 4);
@@ -704,7 +710,7 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
 
     let surfaces = crate::nurbs::surfaces(&stream);
     assert_eq!(surfaces.len(), 1);
-    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
     };
     assert_eq!(surface.poles().count(), 4);
@@ -732,7 +738,7 @@ fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
 
     let curves = crate::nurbs::curves(&stream);
     assert_eq!(curves.len(), 1);
-    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
     };
     assert_eq!(curve.control_points().len(), 2);
@@ -755,7 +761,7 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
 
     let curves = crate::nurbs::curves(&stream);
     assert_eq!(curves.len(), 1);
-    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
     };
     assert_eq!(curve.control_points().len(), 2);
@@ -801,7 +807,7 @@ fn nurbs_decodes_dimension_four_rational_curve() {
 
     let curves = crate::nurbs::curves(&stream);
     assert_eq!(curves.len(), 1);
-    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
     };
     assert_eq!(curve.weights(), Some([1.0, 2.0].as_slice()));

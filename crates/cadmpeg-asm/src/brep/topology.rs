@@ -6,7 +6,9 @@ use super::records::{MeshSurfaceSentinel, WireMembers, WireSide, WireTopology};
 use crate::ids::IdFormat;
 use crate::nurbs;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
     CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
     SurfaceId, UnknownId, VertexId,
@@ -34,7 +36,7 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
                 if inward {
                     inward_normal_surfaces.insert(r.index as i64);
                 }
-                surface_geo.insert(r.index as i64, geometry);
+                surface_geo.insert(r.index as i64, SurfaceGeometry::Solved(geometry));
             }
         } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(r) {
@@ -110,9 +112,9 @@ pub(crate) fn keep_faces_and_carriers(
                     procedural_surface_defs.insert(surf_ref, procedural);
                 }
             }
-            surface_geo
-                .entry(surf_ref)
-                .or_insert_with(|| SurfaceGeometry::Unknown { record: None });
+            surface_geo.entry(surf_ref).or_insert_with(|| {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
+            });
             kept_surfaces.insert(surf_ref);
             continue;
         }
@@ -142,7 +144,7 @@ pub(crate) fn keep_faces_and_carriers(
                 if let Some(ns) =
                     nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
                 {
-                    e.insert(SurfaceGeometry::Nurbs(ns));
+                    e.insert(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns)));
                     if surf_rec.head() == "spline"
                         && !procedural_surface_defs.contains_key(&surf_ref)
                     {
@@ -170,12 +172,12 @@ pub(crate) fn keep_faces_and_carriers(
                         cache: None,
                     }
                 } else {
-                    SurfaceGeometry::Unknown {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: Some(
                             UnknownId::mint(unknown_record_id(surf_rec, format))
                                 .expect("identity grammar"),
                         ),
-                    }
+                    })
                 },
             );
             if !construction_is_exact_carrier {
@@ -400,7 +402,7 @@ pub(crate) fn walk_reachable_topology(
                                             if purpose == DecodePurpose::History {
                                                 curve_geo.insert(
                                                     cv,
-                                                    CurveGeometry::Unknown { record: None },
+                                                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                                                 );
                                                 kept_curves.insert(cv);
                                             // A procedural curve carries an inline
@@ -420,7 +422,7 @@ pub(crate) fn walk_reachable_topology(
                                                 if record_reversed(crec) {
                                                     curve.reverse_parameterization();
                                                 }
-                                                curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
+                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
                                                 procedural_curve_defs.insert(
                                                     cv,
                                                     super::ProceduralCurveSource::Cached {
@@ -691,7 +693,9 @@ fn keep_wire_edge(
                 return;
             };
             if purpose == DecodePurpose::History {
-                entry.insert(CurveGeometry::Unknown { record: None });
+                entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: None,
+                }));
                 kept_curves.insert(curve_index);
                 return;
             }
@@ -704,7 +708,7 @@ fn keep_wire_edge(
                 if record_reversed(curve_record) {
                     curve.reverse_parameterization();
                 }
-                entry.insert(CurveGeometry::Nurbs(curve));
+                entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
                 procedural_curve_defs.insert(
                     curve_index,
                     super::ProceduralCurveSource::Cached {

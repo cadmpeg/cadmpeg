@@ -8,7 +8,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SupportPcurve, SurfaceCurveFamily,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SupportPcurve,
+    SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;
@@ -67,7 +68,7 @@ pub(super) fn merge_curve_plan(
 
 pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
     plan.parameter_range.or_else(|| {
-        let CurveGeometry::Nurbs(curve) = &plan.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = plan.geometry.solved() else {
             return None;
         };
         let degree = usize::try_from(curve.degree()).ok()?;
@@ -287,9 +288,9 @@ pub(super) fn emit_edges(
             .edge_curve_plan
             .remove(&edge_id)
             .unwrap_or_else(|| CurvePlan {
-                geometry: CurveGeometry::Unknown {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: Some(payload.clone()),
-                },
+                }),
                 parameter_range: None,
                 edge_tolerance: None,
                 cache_fit_tolerance: None,
@@ -306,13 +307,19 @@ pub(super) fn emit_edges(
             &curve_id,
             "object_stream_b5_03",
             "pcurve_lifted_3d_curve",
-            if matches!(geometry, CurveGeometry::Unknown { .. }) {
+            if matches!(
+                geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            ) {
                 Exactness::Unknown
             } else {
                 Exactness::Derived
             },
         );
-        if !matches!(geometry, CurveGeometry::Unknown { .. }) {
+        if !matches!(
+            geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        ) {
             annotations
                 .derived(&curve_id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;

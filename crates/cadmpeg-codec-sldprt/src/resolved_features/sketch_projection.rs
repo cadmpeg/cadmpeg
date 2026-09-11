@@ -4,7 +4,7 @@ use super::names::configuration;
 use super::sketch_edges::{project_edge, project_endpoint_constraints, project_point};
 use crate::container::ContainerScan;
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
@@ -119,7 +119,8 @@ fn project_brep(
         .collect::<HashMap<_, _>>();
 
     for (face_ordinal, face) in brep.faces.iter().enumerate() {
-        let Some(SurfaceGeometry::Plane(plane_surface)) = surfaces.get(&face.surface).copied()
+        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
+            surfaces.get(&face.surface).copied()
         else {
             continue;
         };

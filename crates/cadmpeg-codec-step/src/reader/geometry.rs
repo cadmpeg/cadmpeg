@@ -10,8 +10,8 @@ use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
     NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -112,21 +112,21 @@ pub(super) fn infer_edge_parameter_ranges(
         .into_iter()
         .filter_map(|(edge_index, curve, start, end)| {
             let geometry = &model_index.curves(curve.as_str())?.geometry;
-            let start_seed = curve_endpoint_seed(geometry, false, 0.0);
+            let start_seed = curve_endpoint_seed(geometry.solved()?, false, 0.0);
             let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 start,
                 start_seed,
             )?;
-            let end_seed = curve_endpoint_seed(geometry, true, start_parameter);
+            let end_seed = curve_endpoint_seed(geometry.solved()?, true, start_parameter);
             let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 end,
                 end_seed,
             )?;
-            edge_parameter_range(geometry, start_parameter, end_parameter)
+            edge_parameter_range(geometry.solved()?, start_parameter, end_parameter)
                 .map(|range| (edge_index, range))
         })
         .collect::<Vec<_>>();
@@ -141,9 +141,9 @@ pub(super) fn infer_edge_parameter_ranges(
     Ok(())
 }
 
-fn curve_endpoint_seed(geometry: &CurveGeometry, upper: bool, fallback: f64) -> f64 {
+fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f64) -> f64 {
     match geometry {
-        CurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
+        SolvedCurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
             nurbs_curve_parameter_domain(nurbs).map_or(fallback, |[lower, upper_bound]| {
                 if upper {
                     upper_bound
@@ -152,19 +152,25 @@ fn curve_endpoint_seed(geometry: &CurveGeometry, upper: bool, fallback: f64) -> 
                 }
             })
         }
-        CurveGeometry::Transformed { basis, .. } => curve_endpoint_seed(basis, upper, fallback),
+        SolvedCurveGeometry::Transformed { basis, .. } => {
+            curve_endpoint_seed(basis, upper, fallback)
+        }
         _ => fallback,
     }
 }
 
-fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
+fn edge_parameter_range(geometry: &SolvedCurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
     if !start.is_finite() || !end.is_finite() {
         return None;
     }
     let periodic_domain = match geometry {
-        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
-        CurveGeometry::Nurbs(nurbs) if nurbs.periodic() => nurbs_curve_parameter_domain(nurbs),
-        CurveGeometry::Transformed { basis, .. } => {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+            Some([0.0, std::f64::consts::TAU])
+        }
+        SolvedCurveGeometry::Nurbs(nurbs) if nurbs.periodic() => {
+            nurbs_curve_parameter_domain(nurbs)
+        }
+        SolvedCurveGeometry::Transformed { basis, .. } => {
             return edge_parameter_range(basis, start, end);
         }
         _ => None,
@@ -711,7 +717,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|(origin, direction)| {
                     cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
                         .ok()
-                        .map(CurveGeometry::Line)
+                        .map(SolvedCurveGeometry::Line)
+                        .map(CurveGeometry::Solved)
                 }),
             LeafCurveEntity::Circle => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
@@ -725,7 +732,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         radius * record_scale,
                     )
                     .ok()
-                    .map(CurveGeometry::Circle)
+                    .map(SolvedCurveGeometry::Circle)
+                    .map(CurveGeometry::Solved)
                 }),
             LeafCurveEntity::Ellipse => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
@@ -754,7 +762,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             minor_radius,
                         )
                         .ok()
-                        .map(CurveGeometry::Ellipse)
+                        .map(SolvedCurveGeometry::Ellipse)
+                        .map(CurveGeometry::Solved)
                     },
                 ),
             LeafCurveEntity::Parabola => named_parameter(record, "PARABOLA", 1)
@@ -769,7 +778,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         focal_distance * record_scale,
                     )
                     .ok()
-                    .map(CurveGeometry::Parabola)
+                    .map(SolvedCurveGeometry::Parabola)
+                    .map(CurveGeometry::Solved)
                 }),
             LeafCurveEntity::Hyperbola => named_parameter(record, "HYPERBOLA", 1)
                 .and_then(Value::reference)
@@ -786,16 +796,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             minor_radius * record_scale,
                         )
                         .ok()
-                        .map(CurveGeometry::Hyperbola)
+                        .map(SolvedCurveGeometry::Hyperbola)
+                        .map(CurveGeometry::Solved)
                     },
                 ),
-            LeafCurveEntity::Polyline => polyline(record, &points).map(CurveGeometry::Nurbs),
+            LeafCurveEntity::Polyline => polyline(record, &points)
+                .map(SolvedCurveGeometry::Nurbs)
+                .map(CurveGeometry::Solved),
             LeafCurveEntity::BSplineWithKnots
             | LeafCurveEntity::UniformCurve
             | LeafCurveEntity::QuasiUniformCurve
-            | LeafCurveEntity::BezierCurve => {
-                nurbs_curve(id, record, &points, &mut losses).map(CurveGeometry::Nurbs)
-            }
+            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses)
+                .map(SolvedCurveGeometry::Nurbs)
+                .map(CurveGeometry::Solved),
         };
         if let Some(geometry) = geometry {
             if let Some(offset) = parameter_offset {
@@ -824,7 +837,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
-                geometry: CurveGeometry::Nurbs(nurbs),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 source_object: None,
             });
             typed.insert(id);
@@ -880,13 +893,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
                 continue;
             };
-            let Some(basis) = ir.model.curves.get(parent_index.0).map(|curve| {
-                curve
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&curve.geometry)
-                    .clone()
-            }) else {
+            let Some(basis) = ir
+                .model
+                .curves
+                .get(parent_index.0)
+                .and_then(|curve| curve.geometry.solved().cloned())
+            else {
                 continue;
             };
             let curve_index = CurveIndex(ir.model.curves.len());
@@ -909,10 +921,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             };
             ir.model.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Transformed {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
                     basis: Box::new(basis),
                     transform,
-                },
+                }),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_curve(curve, procedural);
@@ -944,13 +956,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .curves
                 .get(&basis_step)
                 .and_then(|index| ir.model.curves.get(index.0))
-                .map(|candidate| {
-                    candidate
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&candidate.geometry)
-                        .clone()
-                })
+                .and_then(|candidate| candidate.geometry.solved().cloned())
             else {
                 continue;
             };
@@ -965,7 +971,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
-                    geometry: &geometry,
+                    geometry: &CurveGeometry::Solved(geometry.clone()),
                     angle_scale: record_angle_scale,
                     linear_parameter_scale,
                     parameter_offset,
@@ -986,7 +992,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some((start, end)) = start.zip(end) else {
                 continue;
             };
-            let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
+            let parameter_range = trimmed_curve_parameter_range(
+                &CurveGeometry::Solved(geometry.clone()),
+                start,
+                end,
+                sense,
+            );
             let procedural =
                 match cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
                     basis,
@@ -1012,7 +1023,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
-                geometry,
+                geometry: CurveGeometry::Solved(geometry.clone()),
                 source_object: None,
             });
 
@@ -1047,7 +1058,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Composite {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                     segments: match cadmpeg_ir::geometry::CompositeCurveSegments::try_from(
                         segments
                             .into_iter()
@@ -1064,7 +1075,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         }
                     },
                     self_intersect,
-                },
+                }),
                 source_object: None,
             });
             carrier_index.curves.insert(id, curve_index);
@@ -1108,13 +1119,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .curves
             .get(&source_step)
             .and_then(|index| ir.model.curves.get(index.0))
-            .map(|candidate| {
-                candidate
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&candidate.geometry)
-                    .clone()
-            })
+            .and_then(|candidate| candidate.geometry.solved().cloned())
         else {
             continue;
         };
@@ -1144,7 +1149,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             };
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry,
+            geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
@@ -1163,12 +1168,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
-                geometry: CurveGeometry::Unknown {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
                         .records
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
-                },
+                }),
                 source_object: None,
             });
             entry.insert(curve_index);
@@ -1216,12 +1221,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Unknown {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
                         .records
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
-                },
+                }),
                 source_object: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -1316,7 +1321,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
         let _attached = ir.model.add_procedural_surface(
@@ -1356,7 +1361,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
                 cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
                     .ok()
-                    .map(SurfaceGeometry::Plane)
+                    .map(SolvedSurfaceGeometry::Plane)
+                    .map(SurfaceGeometry::Solved)
             }),
             LeafSurfaceEntity::Cylindrical => placement
                 .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
@@ -1368,7 +1374,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         radius * record_scale,
                     )
                     .ok()
-                    .map(SurfaceGeometry::Cylinder)
+                    .map(SolvedSurfaceGeometry::Cylinder)
+                    .map(SurfaceGeometry::Solved)
                 }),
             LeafSurfaceEntity::Conical => placement
                 .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
@@ -1383,7 +1390,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         half_angle * record_angle_scale,
                     )
                     .ok()
-                    .map(SurfaceGeometry::Cone)
+                    .map(SolvedSurfaceGeometry::Cone)
+                    .map(SurfaceGeometry::Solved)
                 }),
             LeafSurfaceEntity::Spherical => placement
                 .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
@@ -1395,7 +1403,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         radius * record_scale,
                     )
                     .ok()
-                    .map(SurfaceGeometry::Sphere)
+                    .map(SolvedSurfaceGeometry::Sphere)
+                    .map(SurfaceGeometry::Solved)
                 }),
             LeafSurfaceEntity::Toroidal | LeafSurfaceEntity::DegenerateToroidal => placement
                 .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
@@ -1410,15 +1419,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             minor_radius * record_scale,
                         )
                         .ok()
-                        .map(SurfaceGeometry::Torus)
+                        .map(SolvedSurfaceGeometry::Torus)
+                        .map(SurfaceGeometry::Solved)
                     },
                 ),
             LeafSurfaceEntity::BSplineWithKnots
             | LeafSurfaceEntity::UniformSurface
             | LeafSurfaceEntity::QuasiUniformSurface
-            | LeafSurfaceEntity::BezierSurface => {
-                nurbs_surface(id, record, &points, &mut losses).map(SurfaceGeometry::Nurbs)
-            }
+            | LeafSurfaceEntity::BezierSurface => nurbs_surface(id, record, &points, &mut losses)
+                .map(SolvedSurfaceGeometry::Nurbs)
+                .map(SurfaceGeometry::Solved),
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
@@ -1443,7 +1453,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
-                geometry: SurfaceGeometry::Nurbs(nurbs),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: None,
             });
             typed.insert(id);
@@ -1519,13 +1529,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .surfaces
                 .get(&support_step)
                 .and_then(|index| ir.model.surfaces.get(index.0))
-                .map(|surface| {
-                    surface
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&surface.geometry)
-                        .clone()
-                })
+                .and_then(|surface| surface.geometry.solved().cloned())
             else {
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
@@ -1533,7 +1537,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameter_scales) = surface_parameter_scales_for_step(
                 ir,
                 &SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                &geometry,
+                &SurfaceGeometry::Solved(geometry.clone()),
                 record_scale,
                 record_angle_scale,
                 &source_curve_parameter_scales,
@@ -1570,7 +1574,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry,
+                geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_surface(
@@ -1640,13 +1644,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .model
                 .surfaces
                 .get(support_index.0)
-                .map(|surface| {
-                    surface
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&surface.geometry)
-                        .clone()
-                })
+                .and_then(|surface| surface.geometry.solved().cloned())
                 .zip(boundaries)
                 .zip(implicit_outer)
                 .map(|((geometry, boundaries), implicit_outer)| {
@@ -1665,7 +1663,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry,
+                geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_surface(
@@ -1720,7 +1718,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Unknown { record: None },
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_surface(
@@ -1758,23 +1756,22 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
                 continue;
             };
-            let Some(basis) = ir.model.surfaces.get(parent_index.0).map(|surface| {
-                surface
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&surface.geometry)
-                    .clone()
-            }) else {
+            let Some(basis) = ir
+                .model
+                .surfaces
+                .get(parent_index.0)
+                .and_then(|surface| surface.geometry.solved().cloned())
+            else {
                 continue;
             };
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Transformed {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
                     basis: Box::new(basis),
                     transform,
-                },
+                }),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_surface(
@@ -1816,12 +1813,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
-                geometry: SurfaceGeometry::Unknown {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
                         .records
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
-                },
+                }),
                 source_object: None,
             });
             entry.insert(surface_index);
@@ -1859,12 +1856,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data(kind!("curve"), curve_step)),
-                geometry: CurveGeometry::Unknown {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
                         .records
                         .get(&curve_step)
                         .map(|record| opaque_record_id(curve_step, record)),
-                },
+                }),
                 source_object: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -1883,12 +1880,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface,
-                geometry: SurfaceGeometry::Unknown {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
                         .records
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
-                },
+                }),
                 source_object: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -1912,12 +1909,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
-                geometry: SurfaceGeometry::Unknown {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
                         .records
                         .get(&surface_step)
                         .map(|record| opaque_record_id(surface_step, record)),
-                },
+                }),
                 source_object: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -2165,7 +2162,7 @@ fn decode_tessellated_curve_sets(
             };
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data(kind!("curve"), curve_key)),
-                geometry: CurveGeometry::Polyline(polyline),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
                 source_object: Some(super::step_source_association(id, source_name.clone())),
             });
         }
@@ -3655,8 +3652,9 @@ fn trimmed_curve_parameter_range(
 
 fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
     let period = match geometry {
-        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => std::f64::consts::TAU,
-        CurveGeometry::Nurbs(curve) if curve.periodic() => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+        | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => std::f64::consts::TAU,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
             upper - lower
         }
@@ -3675,7 +3673,7 @@ fn is_parameter_trim_value(value: &Value) -> bool {
 
 fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
     let scale = parameter_scale(
-        context.geometry,
+        context.geometry.solved()?,
         context.angle_scale,
         context.linear_parameter_scale,
     );
@@ -3693,10 +3691,9 @@ fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -
     let Value::Reference(id) = value else {
         return None;
     };
-    context
-        .points
-        .get(id)
-        .and_then(|point| curve_parameter_at_point(context.geometry, *point, context.tolerance))
+    context.points.get(id).and_then(|point| {
+        curve_parameter_at_point(context.geometry.solved()?, *point, context.tolerance)
+    })
 }
 
 fn select_trim_parameter(
@@ -3741,28 +3738,27 @@ fn select_trim_parameter(
     }
 }
 
-fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_scale: f64) -> f64 {
+fn parameter_scale(
+    geometry: &SolvedCurveGeometry,
+    angle_scale: f64,
+    linear_parameter_scale: f64,
+) -> f64 {
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => parameter_scale(geometry, angle_scale, linear_parameter_scale),
-        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => angle_scale,
-        CurveGeometry::Line(_) => linear_parameter_scale,
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => angle_scale,
+        SolvedCurveGeometry::Line(_) => linear_parameter_scale,
         // A replica and the constructions that inherit a parent curve's
         // parameterization keep the parent's parameter units even when their
         // model-space dimensions change.
-        CurveGeometry::Transformed { basis, .. } => {
+        SolvedCurveGeometry::Transformed { basis, .. } => {
             parameter_scale(basis, angle_scale, linear_parameter_scale)
         }
-        CurveGeometry::Parabola(_)
-        | CurveGeometry::Hyperbola(_)
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_)
-        | CurveGeometry::Degenerate(_)
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => 1.0,
+        SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Nurbs(_)
+        | SolvedCurveGeometry::Polyline(_)
+        | SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => 1.0,
     }
 }
 
@@ -3849,23 +3845,19 @@ fn first_projected_axis(axis: Vector3) -> Option<Vector3> {
 }
 
 fn curve_parameter_at_point(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     point: Point3,
     tolerance: f64,
 ) -> Option<f64> {
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_parameter_at_point(geometry, point, tolerance),
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             Some(offset(*origin).dot(*direction))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -3873,7 +3865,7 @@ fn curve_parameter_at_point(
             let y_axis = axis.cross(*ref_direction);
             Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -3886,11 +3878,11 @@ fn curve_parameter_at_point(
                     .atan2(radial.dot(*major_direction) / major_radius),
             )
         }
-        CurveGeometry::Nurbs(curve) => {
+        SolvedCurveGeometry::Nurbs(curve) => {
             let domain = nurbs_curve_parameter_domain(curve)?;
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
         }
-        CurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
+        SolvedCurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
             basis,
             transform.try_inverse_affine().ok()?.apply_point(point),
             tolerance,
@@ -4698,7 +4690,7 @@ fn procedural_surface_parameter_scales(
     let scales = surface_geometry_parameter_scales(
         ir,
         surface_id,
-        geometry,
+        geometry.solved()?,
         length_scale,
         angle_scale,
         source_curve_parameter_scales,
@@ -4711,20 +4703,22 @@ fn procedural_surface_parameter_scales(
 fn surface_geometry_parameter_scales(
     ir: &CadIr,
     surface_id: &SurfaceId,
-    geometry: &SurfaceGeometry,
+    geometry: &SolvedSurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, f64>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     match geometry {
-        SurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
-        SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_) => {
+        SolvedSurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
+        SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
             Some([angle_scale, length_scale])
         }
-        SurfaceGeometry::Sphere(_) | SurfaceGeometry::Torus(_) => Some([angle_scale, angle_scale]),
-        SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
-        SurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
+        SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_) => {
+            Some([angle_scale, angle_scale])
+        }
+        SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
+        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
             ir,
             surface_id,
             basis,
@@ -4733,34 +4727,7 @@ fn surface_geometry_parameter_scales(
             source_curve_parameter_scales,
             active,
         ),
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_geometry_parameter_scales(
-            ir,
-            surface_id,
-            geometry,
-            length_scale,
-            angle_scale,
-            source_curve_parameter_scales,
-            active,
-        ),
-        SurfaceGeometry::Procedural { construction, .. } => ir
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.id == *construction)
-            .and_then(|procedural| {
-                procedural_definition_parameter_scales(
-                    ir,
-                    procedural.definition(),
-                    length_scale,
-                    angle_scale,
-                    source_curve_parameter_scales,
-                    active,
-                )
-            }),
-        SurfaceGeometry::Unknown { .. } => {
+        SolvedSurfaceGeometry::Unknown { .. } => {
             let mut candidates = ir.model.procedural_surfaces.iter().filter(|procedural| {
                 ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
             });
@@ -4777,7 +4744,7 @@ fn surface_geometry_parameter_scales(
                 active,
             )
         }
-        SurfaceGeometry::Polygonal(_) => None,
+        SolvedSurfaceGeometry::Polygonal(_) => None,
     }
 }
 
@@ -4923,7 +4890,7 @@ fn directrix_parameter_scale_inner(
         .and_then(|curve| {
             directrix_geometry_parameter_scale(
                 ir,
-                &curve.geometry,
+                curve.geometry.solved()?,
                 length_scale,
                 angle_scale,
                 active,
@@ -4935,118 +4902,36 @@ fn directrix_parameter_scale_inner(
 
 fn directrix_geometry_parameter_scale(
     ir: &CadIr,
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     length_scale: f64,
     angle_scale: f64,
     active: &mut BTreeSet<CurveId>,
 ) -> Option<f64> {
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => directrix_geometry_parameter_scale(ir, geometry, length_scale, angle_scale, active),
-        CurveGeometry::Line(_) => Some(length_scale),
-        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some(angle_scale),
-        CurveGeometry::Parabola(_)
-        | CurveGeometry::Hyperbola(_)
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_) => Some(1.0),
-        CurveGeometry::Transformed { basis, .. } => {
+        SolvedCurveGeometry::Line(_) => Some(length_scale),
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Some(angle_scale),
+        SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Nurbs(_)
+        | SolvedCurveGeometry::Polyline(_) => Some(1.0),
+        SolvedCurveGeometry::Transformed { basis, .. } => {
             directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
         }
-        CurveGeometry::Procedural { construction, .. } => ir
-            .model
-            .procedural_curves
-            .iter()
-            .find(|procedural| procedural.id == *construction)
-            .and_then(|procedural| match procedural.definition() {
-                ProceduralCurveDefinition::Offset(definition_payload) => {
-                    let source = definition_payload.source();
-                    {
-                        directrix_parameter_scale_inner(
-                            ir,
-                            source,
-                            length_scale,
-                            angle_scale,
-                            active,
-                        )
-                    }
-                }
-                ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
-                    let source = definition_payload.source();
-                    {
-                        directrix_parameter_scale_inner(
-                            ir,
-                            source,
-                            length_scale,
-                            angle_scale,
-                            active,
-                        )
-                    }
-                }
-                ProceduralCurveDefinition::Subset(definition_payload) => {
-                    let source = definition_payload.source();
-                    {
-                        directrix_parameter_scale_inner(
-                            ir,
-                            source,
-                            length_scale,
-                            angle_scale,
-                            active,
-                        )
-                    }
-                }
-                ProceduralCurveDefinition::VectorOffset(definition_payload) => {
-                    let source = definition_payload.source();
-                    {
-                        directrix_parameter_scale_inner(
-                            ir,
-                            source,
-                            length_scale,
-                            angle_scale,
-                            active,
-                        )
-                    }
-                }
-                ProceduralCurveDefinition::Projection(definition_payload) => {
-                    let source = definition_payload.source();
-
-                    directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
-                }
-                ProceduralCurveDefinition::Replica { source, .. } => {
-                    directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
-                }
-                ProceduralCurveDefinition::Deformable(payload) => match payload.source() {
-                    cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve } => {
-                        directrix_parameter_scale_inner(
-                            ir,
-                            curve,
-                            length_scale,
-                            angle_scale,
-                            active,
-                        )
-                    }
-                    cadmpeg_ir::geometry::DeformableCurveSource::NativeReference { .. } => None,
-                },
-                _ => None,
-            }),
-        CurveGeometry::Degenerate(_)
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
-pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f64>; 2] {
+pub(super) fn surface_parameter_periods(geometry: &SolvedSurfaceGeometry) -> [Option<f64>; 2] {
     match geometry {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_parameter_periods(geometry),
-        SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_) | SurfaceGeometry::Sphere(_) => {
-            [Some(std::f64::consts::TAU), None]
+        SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
+        SolvedSurfaceGeometry::Torus(_) => {
+            [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)]
         }
-        SurfaceGeometry::Torus(_) => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
-        SurfaceGeometry::Nurbs(surface) => [
+        SolvedSurfaceGeometry::Nurbs(surface) => [
             surface
                 .u_periodic()
                 .then(|| {
@@ -5068,11 +4953,10 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
                 })
                 .flatten(),
         ],
-        SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
-        SurfaceGeometry::Plane(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => [None, None],
+        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 

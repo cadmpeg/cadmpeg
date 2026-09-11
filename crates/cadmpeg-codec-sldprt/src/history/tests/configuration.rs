@@ -41,14 +41,14 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.configurations.push(DesignConfiguration {
@@ -65,14 +65,14 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model
@@ -1678,7 +1678,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
 
 #[test]
 fn configuration_frame_alias_binds_without_body_membership() {
-    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Face, Sense};
     use cadmpeg_ir::{
@@ -1719,14 +1719,14 @@ fn configuration_frame_alias_binds_without_body_membership() {
     ir.model.features.push(feature);
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.faces.push(Face {

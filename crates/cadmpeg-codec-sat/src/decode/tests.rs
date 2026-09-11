@@ -4,7 +4,7 @@
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeResult};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::io::Cursor;
 
 use crate::loss::SatLossCode;
@@ -25,7 +25,7 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
 
 fn sphere_radius(result: &DecodeResult) -> f64 {
     let surface = &result.ir().model.surfaces[0];
-    let SurfaceGeometry::Sphere(sphere_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
 

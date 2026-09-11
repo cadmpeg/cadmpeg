@@ -24,6 +24,7 @@ use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySup
 use super::topology::{
     endpoint_locus_candidates_with_budget, zero_entity_endpoint_pair_candidates_with_budget,
 };
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const MODEL_POINT_TOLERANCE: f64 = 2e-3;
 
@@ -239,15 +240,17 @@ pub(crate) fn transfer_closed_face_topology(
                                 annotations.derived(&occurrence.curve, "geometry").ok()?;
                                 (occurrence.curve.clone(), parameter_range)
                             } else {
-                                curve.geometry =
-                                    cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None };
+                                curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+                                    SolvedCurveGeometry::Unknown { record: None },
+                                );
                                 annotations.derived(&occurrence.curve, "geometry").ok()?;
                                 (occurrence.curve.clone(), parameter_range)
                             }
                         }
                         None => {
-                            curve.geometry =
-                                cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None };
+                            curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+                                SolvedCurveGeometry::Unknown { record: None },
+                            );
                             annotations.derived(&occurrence.curve, "geometry").ok()?;
                             (occurrence.curve.clone(), parameter_range)
                         }
@@ -271,7 +274,10 @@ pub(crate) fn transfer_closed_face_topology(
                     &curve.geometry,
                     cadmpeg_ir::geometry::CurveGeometry::Procedural { .. }
                 ) {
-                    curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None };
+                    curve.geometry =
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                            record: None,
+                        });
                 }
                 annotations.derived(&occurrence.curve, "geometry").ok()?;
                 (occurrence.curve.clone(), parameter_range)
@@ -870,7 +876,9 @@ mod tests {
     use std::collections::HashMap;
 
     use cadmpeg_core::decode::WorkBudget;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::math::Vector3;
 
     use super::super::records::ZeroEntitySupportOccurrence;
@@ -884,7 +892,7 @@ mod tests {
             face_local_slot: ordinal,
             uv_endpoints: None,
             pcurve: None,
-            model_curve: Some(CurveGeometry::Line(
+            model_curve: Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     start,
                     end.vector_from(start)
@@ -892,7 +900,7 @@ mod tests {
                         .expect("non-degenerate test edge"),
                 )
                 .expect("valid LineCurve fixture"),
-            )),
+            ))),
             model_curve_construction: None,
             model_parameters: Some([0.0, end.distance(start)]),
             model_midpoint: Some(Point3::new(
@@ -995,14 +1003,14 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     points[0],
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
         for run in &runs {
@@ -1010,7 +1018,7 @@ mod tests {
                 let [start, end] = support.model_endpoints.expect("test endpoints");
                 ir.model.curves.push(Curve {
                     id: curve_ids[&support.record_ordinal].clone(),
-                    geometry: CurveGeometry::Line(
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::LineCurve::try_new(
                             start,
                             end.vector_from(start)
@@ -1018,7 +1026,7 @@ mod tests {
                                 .expect("non-degenerate test edge"),
                         )
                         .expect("valid LineCurve fixture"),
-                    ),
+                    )),
                     source_object: None,
                 });
             }
@@ -1105,21 +1113,21 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     points[0],
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
         for run in &runs {
             for support in &run.supports {
                 let [start, end] = support.model_endpoints.expect("test endpoints");
                 let geometry = if support.record_ordinal == 5 {
-                    CurveGeometry::Ellipse(
+                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                         cadmpeg_ir::geometry::EllipseCurve::try_new(
                             points[0],
                             Vector3::new(0.0, 0.0, 1.0),
@@ -1128,9 +1136,9 @@ mod tests {
                             1.0,
                         )
                         .expect("valid EllipseCurve fixture"),
-                    )
+                    ))
                 } else {
-                    CurveGeometry::Line(
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::LineCurve::try_new(
                             start,
                             end.vector_from(start)
@@ -1138,7 +1146,7 @@ mod tests {
                                 .expect("non-degenerate test edge"),
                         )
                         .expect("valid LineCurve fixture"),
-                    )
+                    ))
                 };
                 ir.model.curves.push(Curve {
                     id: curve_ids[&support.record_ordinal].clone(),
@@ -1171,7 +1179,7 @@ mod tests {
                 .find(|curve| curve.id == curve_ids[&5])
                 .expect("reversed carrier")
                 .geometry,
-            CurveGeometry::Unknown { .. }
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ));
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
     }

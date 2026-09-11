@@ -23,7 +23,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
@@ -36,6 +36,7 @@ use crate::brep::{self, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 struct DecodedBrep<'a> {
     /// Representative stream whose header is common to every merged site.
@@ -2085,14 +2086,19 @@ fn try_decode_brep<'a>(
 
 fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
     for surface in &mut brep.surfaces {
-        if let SurfaceGeometry::Unknown { record } = &mut surface.geometry {
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) =
+            &mut surface.geometry
+        {
             if record.is_none() {
                 *record = Some(source.clone());
             }
         }
     }
     for curve in &mut brep.curves {
-        if let cadmpeg_ir::geometry::CurveGeometry::Unknown { record } = &mut curve.geometry {
+        if let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+            record,
+        }) = &mut curve.geometry
+        {
             if record.is_none() {
                 *record = Some(source.clone());
             }
@@ -2918,9 +2924,9 @@ fn build_geometry_ir(
     }
     let mut opaque_links = BTreeMap::<String, Vec<String>>::new();
     for surface in &ir.model.surfaces {
-        if let SurfaceGeometry::Unknown {
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: Some(record),
-        } = &surface.geometry
+        }) = &surface.geometry
         {
             opaque_links
                 .entry(record.as_str().to_owned())
@@ -2929,9 +2935,9 @@ fn build_geometry_ir(
         }
     }
     for curve in &ir.model.curves {
-        if let cadmpeg_ir::geometry::CurveGeometry::Unknown {
+        if let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
             record: Some(record),
-        } = &curve.geometry
+        }) = &curve.geometry
         {
             opaque_links
                 .entry(record.as_str().to_owned())

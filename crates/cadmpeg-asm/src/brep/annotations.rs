@@ -6,7 +6,7 @@ use super::geometry::is_edge_record;
 use super::{id, AsmBrep, Carriers};
 use crate::ids::IdFormat;
 use crate::sab::Record;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use std::collections::{HashMap, HashSet};
 
 /// Provenance tag for a source record or a synthetic procedural entity.
@@ -121,10 +121,10 @@ pub(crate) fn emit_annotation_records(
                 }
                 "straight" => derived_fields.push("geometry.direction"),
                 "ellipse" => match curve_geometries.get(entity_id.as_str()) {
-                    Some(CurveGeometry::Circle(_)) => {
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
                         derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                     }
-                    Some(CurveGeometry::Ellipse(_)) => {
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
                         derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
                     }
                     _ => {}

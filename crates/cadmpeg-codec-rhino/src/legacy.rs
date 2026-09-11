@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -1663,7 +1663,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     .expect("valid identity");
             ir.model.curves.push(Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Nurbs(curve.clone()),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())),
                 source_object: None,
             });
             Some((id, curve_domain(&curve)?))
@@ -1712,7 +1712,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(face_record.surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
         });
         let mut face_loops = Vec::with_capacity(face_record.loops.len());
@@ -2405,7 +2405,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
                             id: curve_id.clone(),
-                            geometry: CurveGeometry::Nurbs(segment),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
                             source_object: None,
                         });
                         ir.model.points.extend([

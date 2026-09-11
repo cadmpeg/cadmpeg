@@ -8,7 +8,9 @@ use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{
+    knots_nondecreasing, Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1097,7 +1099,7 @@ fn direction_in_plane(direction: Vector3, plane_normal: Vector3) -> bool {
 }
 
 pub(super) fn curve_geometry_coplanar(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     index: &ModelIndex<'_>,
     transform: Transform,
     plane: (Point3, Vector3),
@@ -1114,66 +1116,67 @@ pub(super) fn curve_geometry_coplanar(
     let direction_valid =
         |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             point_valid(*origin) && direction_valid(*direction)
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction)
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
             point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
             point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction)
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
             point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let point = degenerate_curve.point();
             point_valid(*point)
         }
-        CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),
-        CurveGeometry::Polyline(polyline) => polyline.points().iter().copied().all(point_valid),
-        CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
+        SolvedCurveGeometry::Nurbs(curve) => {
+            curve.control_points().iter().copied().all(point_valid)
+        }
+        SolvedCurveGeometry::Polyline(polyline) => {
+            polyline.points().iter().copied().all(point_valid)
+        }
+        SolvedCurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
             let Some(curve) = index.curves(segment.curve.as_str()) else {
                 return false;
             };
             if !active.insert(segment.curve.clone()) {
                 return false;
             }
-            let valid = curve_geometry_coplanar(
-                &curve.geometry,
-                index,
-                transform,
-                plane,
-                resolution,
-                active,
-            );
+            let Some(geometry) = curve.geometry.solved() else {
+                return false;
+            };
+            let valid =
+                curve_geometry_coplanar(geometry, index, transform, plane, resolution, active);
             active.remove(&segment.curve);
             valid
         }),
-        CurveGeometry::Transformed {
+        SolvedCurveGeometry::Transformed {
             basis,
             transform: map,
         } => transform.compose(*map).is_ok_and(|transform| {
             curve_geometry_coplanar(basis, index, transform, plane, resolution, active)
         }),
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
+        SolvedCurveGeometry::Unknown { .. } => false,
     }
 }
 
@@ -1567,10 +1570,10 @@ pub(crate) fn project_geometry(
         sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(center, axis, ref_direction, radius)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-            ),
+            )),
             source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
@@ -1788,13 +1791,13 @@ pub(crate) fn project_geometry(
         sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     start,
                     Vector3::new(delta.x / length, delta.y / length, delta.z / length),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            ),
+            )),
             source_object: Some(source_object(entry)?),
         });
         if entry.form != 0 {
@@ -2179,7 +2182,7 @@ pub(crate) fn project_geometry(
         sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Nurbs(nurbs),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {

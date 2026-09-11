@@ -2,7 +2,7 @@
 //! Carrier equation types and vector/quadric/conic algebra.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::vecmath::{cross, dot, normalize};
@@ -788,7 +788,7 @@ pub fn intersect_plane_with_circle(
 }
 
 pub fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3], f64)> {
-    let CurveGeometry::Circle(circle_curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
     let center = circle_curve.center();
@@ -917,7 +917,7 @@ pub fn plane_cone_conic(
         }
         let direction = principal_u.map(|value| value * opening.signum());
         return Some((
-            CurveGeometry::Parabola(
+            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaCurve::try_new(
                     point(vertex_u, vertex_v),
                     axis_vector,
@@ -925,7 +925,7 @@ pub fn plane_cone_conic(
                     opening.abs() / 4.0,
                 )
                 .ok()?,
-            ),
+            )),
             "plane_cone_parabola",
         ));
     }
@@ -951,7 +951,7 @@ pub fn plane_cone_conic(
             (principal_v, v_radius, u_radius)
         };
         return Some((
-            CurveGeometry::Ellipse(
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
                     center,
                     axis_vector,
@@ -960,7 +960,7 @@ pub fn plane_cone_conic(
                     minor_radius,
                 )
                 .ok()?,
-            ),
+            )),
             "plane_cone_ellipse",
         ));
     }
@@ -978,7 +978,7 @@ pub fn plane_cone_conic(
         )
     };
     Some((
-        CurveGeometry::Hyperbola(
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
             cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                 center,
                 axis_vector,
@@ -987,7 +987,7 @@ pub fn plane_cone_conic(
                 minor_radius,
             )
             .ok()?,
-        ),
+        )),
         "plane_cone_hyperbola",
     ))
 }

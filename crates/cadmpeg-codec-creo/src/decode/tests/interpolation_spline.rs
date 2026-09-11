@@ -30,7 +30,7 @@ use cadmpeg_ir::features::{
     FeatureId as IrFeatureId, LinearTermination, PathRef, ProfileRef, SurfaceBoundary, ThickenSide,
     UnresolvedFamily,
 };
-use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -211,7 +211,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         },
     )
     .expect("spline side surface");
-    let SurfaceGeometry::Nurbs(side) = side else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(side)) = side else {
         panic!("spline side surface is not NURBS");
     };
     assert_eq!((side.u_degree(), side.v_degree()), (3, 1));
@@ -610,14 +610,14 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1098,14 +1098,14 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1303,14 +1303,14 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     });
 

@@ -3,11 +3,11 @@ use crate::decode::analytic::vertices::{
     line_line_intersection, model_points_agree,
 };
 use crate::decode::surfaces::curve_contains_points;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
-    CurveGeometry::Line(
+    CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(direction[0], direction[1], direction[2])
@@ -15,7 +15,7 @@ fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
                 .expect("nonzero fixture direction"),
         )
         .expect("valid LineCurve fixture"),
-    )
+    ))
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn incident_lines_reject_skew_parallel_and_disagreeing_candidates() {
 
 #[test]
 fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
-    let circle = CurveGeometry::Circle(
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -53,7 +53,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             2.0,
         )
         .expect("valid CircleCurve fixture"),
-    );
+    ));
     let secant = line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
     let tangent = line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]);
     let skew = line([-3.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
@@ -68,7 +68,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     );
     assert!(line_conic_intersections(&skew, &circle).is_empty());
 
-    let ellipse = CurveGeometry::Ellipse(
+    let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -77,13 +77,13 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             2.0,
         )
         .expect("valid EllipseCurve fixture"),
-    );
+    ));
     assert_eq!(
         line_conic_intersections(&secant, &ellipse),
         [[3.0, 0.0, 0.0], [-3.0, 0.0, 0.0]]
     );
 
-    let parabola = CurveGeometry::Parabola(
+    let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -91,7 +91,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             1.0,
         )
         .expect("valid ParabolaCurve fixture"),
-    );
+    ));
     assert_eq!(
         line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
         [[1.0, 2.0, 0.0], [1.0, -2.0, 0.0]]
@@ -101,7 +101,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         [[1.0, 2.0, 0.0]]
     );
 
-    let hyperbola = CurveGeometry::Hyperbola(
+    let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         cadmpeg_ir::geometry::HyperbolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -110,7 +110,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             1.0,
         )
         .expect("valid HyperbolaCurve fixture"),
-    );
+    ));
     let hyperbola_points =
         line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
     assert_eq!(hyperbola_points.len(), 2);
@@ -132,7 +132,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         } else {
             [1.0, 0.0, 0.0]
         };
-        CurveGeometry::Circle(
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(center[0], center[1], center[2]),
                 Vector3::new(axis[0], axis[1], axis[2]),
@@ -140,7 +140,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
                 radius,
             )
             .expect("valid CircleCurve fixture"),
-        )
+        ))
     };
     let first = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0);
     let secant = circle([2.0, 0.0, 0.0], [0.0, 0.0, -1.0], 2.0);
@@ -168,7 +168,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         model_points_agree(*point, [0.0, 2.0, 0.0]) || model_points_agree(*point, [0.0, -2.0, 0.0])
     }));
 
-    let ellipse = CurveGeometry::Ellipse(
+    let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -177,13 +177,13 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             2.0,
         )
         .expect("valid EllipseCurve fixture"),
-    );
+    ));
     let ellipse_points = conic_conic_intersections(&first, &ellipse);
     assert_eq!(ellipse_points.len(), 2);
     assert!(ellipse_points.iter().all(|point| {
         model_points_agree(*point, [0.0, 2.0, 0.0]) || model_points_agree(*point, [0.0, -2.0, 0.0])
     }));
-    let diagonal_ellipse = CurveGeometry::Ellipse(
+    let diagonal_ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -194,7 +194,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             2.0,
         )
         .expect("valid EllipseCurve fixture"),
-    );
+    ));
     let larger_circle = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.5);
     let diagonal_points = conic_conic_intersections(&larger_circle, &diagonal_ellipse);
     assert_eq!(diagonal_points.len(), 4);
@@ -203,7 +203,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             && curve_contains_points(&diagonal_ellipse, [*point, *point])
     }));
 
-    let parabola = CurveGeometry::Parabola(
+    let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -211,7 +211,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             1.0,
         )
         .expect("valid ParabolaCurve fixture"),
-    );
+    ));
     let tangent_circle = circle([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
     let tangent_points = conic_conic_intersections(&parabola, &tangent_circle);
     assert_eq!(tangent_points.len(), 1);

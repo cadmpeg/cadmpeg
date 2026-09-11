@@ -4,7 +4,10 @@ use crate::curve::CurveTopologyRow;
 use crate::decode::surfaces::transfer_carrier_intersection_curves;
 use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
@@ -127,7 +130,7 @@ fn source_ir() -> CadIr {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -135,36 +138,36 @@ fn source_ir() -> CadIr {
                     3.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(4.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -172,14 +175,14 @@ fn source_ir() -> CadIr {
                     3.0,
                 )
                 .expect("valid CylinderSurface fixture"),
-            ),
+            )),
             source_object: None,
         },
     ]);
     let y = 5.0_f64.sqrt();
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -188,7 +191,7 @@ fn source_ir() -> CadIr {
                 false,
             )
             .expect("valid intersection witness curve"),
-        ),
+        )),
         source_object: None,
     });
     ir
@@ -221,7 +224,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
         .iter()
         .find(|curve| curve.id
             == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
-        .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+        .map(|curve| &curve.geometry), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
             if {
                 let origin = line_curve.origin();
     let direction = line_curve.direction();

@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
@@ -694,7 +695,7 @@ fn encoder_writes_source_less_neutral_parameters() {
 
 #[test]
 fn encoder_bakes_rigid_body_transform() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::transform::Transform;
 
@@ -711,7 +712,7 @@ fn encoder_bakes_rigid_body_transform() {
         .surfaces
         .iter()
         .find_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane(plane_surface)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let normal = *plane_surface.normal();
                     normal.x == 1.0
@@ -754,7 +755,7 @@ fn encoder_bakes_rigid_body_transform() {
             && (point.position.z - expected_point.z).abs() < 1.0e-9
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
             let normal = plane_surface.normal();
             *normal == expected_normal
@@ -1045,7 +1046,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     let major_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     for geometry in [
-        cadmpeg_ir::geometry::CurveGeometry::Parabola(
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
             cadmpeg_ir::geometry::ParabolaCurve::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis,
@@ -1053,8 +1054,8 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
                 1.0,
             )
             .unwrap(),
-        ),
-        cadmpeg_ir::geometry::CurveGeometry::Hyperbola(
+        )),
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
             cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis,
@@ -1063,7 +1064,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
                 1.0,
             )
             .unwrap(),
-        ),
+        )),
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
@@ -1085,7 +1086,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
     let reference = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     let cases = [
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin,
                     axis,
@@ -1095,11 +1096,11 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
                     std::f64::consts::FRAC_PI_4,
                 )
                 .unwrap(),
-            ),
+            )),
             "elliptical cone ratio 0.5",
         ),
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin,
                     axis,
@@ -1109,21 +1110,21 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
                     -std::f64::consts::FRAC_PI_4,
                 )
                 .unwrap(),
-            ),
+            )),
             "cone half-angle -0.7853981633974483",
         ),
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(origin, axis, reference, -2.0)
                     .unwrap(),
-            ),
+            )),
             "signed sphere radius -2",
         ),
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(origin, axis, reference, 2.0, -0.5)
                     .unwrap(),
-            ),
+            )),
             "torus radii (2, -0.5)",
         ),
     ];
@@ -1230,7 +1231,9 @@ fn semantic_writer_preserves_multiple_body_ownership() {
 
 #[test]
 fn semantic_writer_regenerates_modified_nurbs_carriers() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
@@ -1248,14 +1251,18 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
-        let CurveGeometry::Nurbs(curve) = &mut ir_edit.model.curves[0].geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
+            &mut ir_edit.model.curves[0].geometry
+        else {
             panic!("expected NURBS curve");
         };
         curve
             .edit_control_points(|points| points[1].y += 250.0)
             .unwrap();
         let expected_curve = curve.clone();
-        let SurfaceGeometry::Nurbs(surface) = &mut ir_edit.model.surfaces[0].geometry else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &mut ir_edit.model.surfaces[0].geometry
+        else {
             panic!("expected NURBS surface");
         };
         surface
@@ -1277,10 +1284,10 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         .unwrap();
 
     assert!(regenerated.ir().model.curves.iter().any(
-        |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
+        |curve| matches!(&curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(value)) if value == &expected_curve)
     ));
     assert!(regenerated.ir().model.surfaces.iter().any(
-        |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
 }
 

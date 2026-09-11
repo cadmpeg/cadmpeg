@@ -2,7 +2,7 @@
 //! Multi-component intersection candidates and FC14 axis selection.
 
 use crate::vecmath::normalize;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 use crate::decode::analytic::edges::{
     nonperiodic_conic_parameter, periodic_conic_frame, PeriodicConicFrame,
@@ -74,7 +74,7 @@ pub(in super::super) fn curve_contains_points(
     points: [[f64; 3]; 2],
 ) -> bool {
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             let origin = [origin.x, origin.y, origin.z];
@@ -88,7 +88,7 @@ pub(in super::super) fn curve_contains_points(
                 dot(residual, residual).sqrt() <= EPS_ON_CURVE * scale
             })
         }
-        CurveGeometry::Circle(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => {
             let Some(PeriodicConicFrame {
                 center,
                 normal,
@@ -109,7 +109,7 @@ pub(in super::super) fn curve_contains_points(
                     && (x.mul_add(x, y * y) - 1.0).abs() <= EPS_ON_CURVE
             })
         }
-        CurveGeometry::Ellipse(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
             let Some(PeriodicConicFrame {
                 center,
                 normal,
@@ -130,10 +130,10 @@ pub(in super::super) fn curve_contains_points(
                     && (x.mul_add(x, y * y) - 1.0).abs() <= EPS_ON_CURVE
             })
         }
-        CurveGeometry::Parabola(_) => points
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => points
             .into_iter()
             .all(|point| nonperiodic_conic_parameter(geometry, point).is_some()),
-        CurveGeometry::Hyperbola(_) => points
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => points
             .into_iter()
             .all(|point| nonperiodic_conic_parameter(geometry, point).is_some()),
         _ => false,
@@ -200,7 +200,7 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
             if *tag != "coaxial_cone_cylinder_secant_circle" {
                 return false;
             }
-            let CurveGeometry::Circle(circle_curve) = geometry else {
+            let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
                 return false;
             };
             let center = circle_curve.center();

@@ -7,8 +7,8 @@ use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     NurbsSurface, Pcurve, PcurveGeometry, PcurveMetadata, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SupportPcurve,
-    Surface, SurfaceCurveFamily, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -46,25 +46,25 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
         SurfaceId::mint("test:model:surface#surface".to_string()).expect("valid identity");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(2.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let construction = procedural_curve! {
@@ -99,7 +99,7 @@ fn mapped_surface_offset() -> CadIr {
     *ir.model.curves[0]
         .geometry
         .solved_cache_mut()
-        .expect("mapped curve has a solved cache") = CurveGeometry::Line(
+        .expect("mapped curve has a solved cache") = SolvedCurveGeometry::Line(
         crate::geometry::LineCurve::try_new(
             Point3::new(2.0, 0.0, 25.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -108,13 +108,13 @@ fn mapped_surface_offset() -> CadIr {
     );
     ir.model.curves.push(Curve {
         id: base.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let ProceduralCurveDefinition::SurfaceCurve { family } =
@@ -180,7 +180,7 @@ fn untrimmed_surface_curve() -> CadIr {
     ]);
     ir.model.curves.push(Curve {
         id: "test:model:curve#curve".try_into().expect("valid identity"),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             crate::geometry::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -188,7 +188,7 @@ fn untrimmed_surface_curve() -> CadIr {
                 1.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.edges.push(Edge {
@@ -208,14 +208,14 @@ fn untrimmed_surface_curve() -> CadIr {
         id: "test:model:surface#surface"
             .try_into()
             .expect("valid identity"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.pcurves.push(Pcurve {
@@ -327,7 +327,9 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     assert!(findings.is_empty());
 
     let mut ir = mapped_surface_offset();
-    let CurveGeometry::Line(line_curve) = &mut ir.model.curves[1].geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) =
+        &mut ir.model.curves[1].geometry
+    else {
         unreachable!();
     };
     let origin = line_curve.origin();
@@ -393,7 +395,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         .unwrap();
     ir.model.points[0].position = Point3::new(1.0, 2.0, 0.0);
     ir.model.points[1].position = Point3::new(2.0, 1.0, 0.0);
-    ir.model.curves[0].geometry = CurveGeometry::Circle(
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         crate::geometry::CircleCurve::try_new(
             Point3::new(1.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -401,7 +403,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
             1.0,
         )
         .unwrap(),
-    );
+    ));
     ir.model.pcurves[0].geometry = PcurveGeometry::Circle(
         crate::geometry::CirclePcurve::try_new(
             Point2::new(1.0, 1.0),
@@ -519,7 +521,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // At v=0 the quadratic surface has a zero derivative. The ordinary
     // seed at t=0 therefore cannot start Newton recovery; the finite
     // surface domain supplies an interior seed on the same branch.
-    let surface = SurfaceGeometry::Nurbs(
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             1,
             2,
@@ -543,7 +545,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
             false,
         )
         .unwrap(),
-    );
+    ));
     let surface_id =
         SurfaceId::mint("test:model:surface#surface".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
@@ -673,7 +675,7 @@ fn self_referential_composite_curve_is_invalid() {
     let id = CurveId::mint("synthetic:test:curve#recursive").expect("valid identity");
     ir.model.curves.push(Curve {
         id: id.clone(),
-        geometry: CurveGeometry::Composite {
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: crate::geometry::CompositeCurveSegments::try_from(vec![
                 CompositeCurveSegment {
                     curve: id,
@@ -683,7 +685,7 @@ fn self_referential_composite_curve_is_invalid() {
             ])
             .unwrap(),
             self_intersect: Some(false),
-        },
+        }),
         source_object: None,
     });
 

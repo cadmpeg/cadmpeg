@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
@@ -124,7 +124,7 @@ fn generated_straight_record_patches_by_token_boundaries() {
     )
     .expect("patched generated straight record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Line(line_curve))
+        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
                 if {
                     let origin = line_curve.origin();
         let direction = line_curve.direction();
@@ -208,7 +208,7 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
     )
     .expect("patched sphere record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SurfaceGeometry::Sphere(sphere_surface), false))
+        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Sphere(sphere_surface), false))
                 if {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
@@ -301,7 +301,7 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
     )
     .expect("patched torus record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SurfaceGeometry::Torus(torus_surface), false))
+        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Torus(torus_surface), false))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
@@ -397,7 +397,7 @@ fn generated_cylinder_preserves_native_angle_branch() {
     // The patch preserves the record's native negative-cosine angle
     // branch, so decode reports the inward-normal flag.
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SurfaceGeometry::Cylinder(cylinder_surface), true))
+        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Cylinder(cylinder_surface), true))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
@@ -501,7 +501,7 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
     )
     .expect("patched ellipse record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Ellipse(ellipse_curve))
+        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
                 if {
                     let center = ellipse_curve.center();
         let axis = ellipse_curve.axis();

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use super::super::equations::{CarrierEquation, PlaneEquation};
 use super::{existing_plane_agrees_with_topology, placed_carriers, transfer_topology_bound_planes};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -20,7 +22,7 @@ fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
 fn cylinder_surface(id: u32, radius: f64) -> Surface {
     carrier_surface(
         id,
-        SurfaceGeometry::Cylinder(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -28,7 +30,7 @@ fn cylinder_surface(id: u32, radius: f64) -> Surface {
                 radius,
             )
             .expect("valid CylinderSurface fixture"),
-        ),
+        )),
     )
 }
 
@@ -53,14 +55,14 @@ fn topology_plane() -> PlaneEquation {
 
 #[test]
 fn existing_plane_carrier_accepts_reversed_normal() {
-    let existing = SurfaceGeometry::Plane(
+    let existing = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 4.0),
             Vector3::new(0.0, 0.0, -1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("valid PlaneSurface fixture"),
-    );
+    ));
 
     assert_eq!(
         existing_plane_agrees_with_topology(&existing, topology_plane()),
@@ -70,14 +72,14 @@ fn existing_plane_carrier_accepts_reversed_normal() {
 
 #[test]
 fn existing_plane_carrier_rejects_offset_conflict() {
-    let existing = SurfaceGeometry::Plane(
+    let existing = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("valid PlaneSurface fixture"),
-    );
+    ));
 
     assert_eq!(
         existing_plane_agrees_with_topology(&existing, topology_plane()),
@@ -87,7 +89,7 @@ fn existing_plane_carrier_rejects_offset_conflict() {
 
 #[test]
 fn existing_unknown_carrier_does_not_compete_with_topology() {
-    let existing = SurfaceGeometry::Unknown { record: None };
+    let existing = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
 
     assert_eq!(
         existing_plane_agrees_with_topology(&existing, topology_plane()),
@@ -97,7 +99,7 @@ fn existing_unknown_carrier_does_not_compete_with_topology() {
 
 #[test]
 fn existing_non_plane_carrier_conflicts_with_topology() {
-    let existing = SurfaceGeometry::Sphere(
+    let existing = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 4.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -105,7 +107,7 @@ fn existing_non_plane_carrier_conflicts_with_topology() {
             2.0,
         )
         .expect("valid SphereSurface fixture"),
-    );
+    ));
 
     assert_eq!(
         existing_plane_agrees_with_topology(&existing, topology_plane()),
@@ -160,7 +162,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
         });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.75));
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 12.5),
             Vector3::new(0.0, -1.0, 0.0),
@@ -168,7 +170,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             0.75,
         )
         .expect("valid CylinderSurface fixture"),
-    );
+    ));
 
     let carriers = placed_carriers(&scan, &ir);
     assert!(matches!(
@@ -255,25 +257,25 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
     ir.model.surfaces.extend([
         carrier_surface(
             7,
-            SurfaceGeometry::Plane(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
         ),
         carrier_surface(
             7,
-            SurfaceGeometry::Plane(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
         ),
     ]);
 
@@ -437,7 +439,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
 
     let curve = Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(2.0, 3.0, 4.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -445,7 +447,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
                 5.0,
             )
             .expect("valid CircleCurve fixture"),
-        ),
+        )),
         source_object: None,
     };
     let mut ir = CadIr::empty();

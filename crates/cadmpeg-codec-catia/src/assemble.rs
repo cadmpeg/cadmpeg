@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
@@ -92,7 +92,8 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .filter(|curve| {
             !matches!(
                 curve.geometry,
-                CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+                    | CurveGeometry::Procedural { .. }
             )
         })
         .map(|curve| curve.id.clone())
@@ -104,7 +105,8 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .filter(|surface| {
             !matches!(
                 surface.geometry,
-                SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    | SurfaceGeometry::Procedural { .. }
             )
         })
         .map(|surface| surface.id.clone())
@@ -185,7 +187,8 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .filter(|curve| {
             matches!(
                 curve.geometry,
-                CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+                    | CurveGeometry::Procedural { .. }
             ) && !resolved_curves.contains(&curve.id)
         })
         .count()
@@ -201,7 +204,8 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .filter(|surface| {
             matches!(
                 surface.geometry,
-                SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    | SurfaceGeometry::Procedural { .. }
             ) && !resolved_surfaces.contains(&surface.id)
         })
         .count();
@@ -411,11 +415,11 @@ pub(crate) struct TypedCounts {
 impl TypedCounts {
     pub(crate) fn record(&mut self, g: &SurfaceGeometry) {
         match g {
-            SurfaceGeometry::Plane(_) => self.plane += 1,
-            SurfaceGeometry::Cylinder(_) => self.cylinder += 1,
-            SurfaceGeometry::Cone(_) => self.cone += 1,
-            SurfaceGeometry::Sphere(_) => self.sphere += 1,
-            SurfaceGeometry::Torus(_) => self.torus += 1,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => self.plane += 1,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => self.cylinder += 1,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => self.cone += 1,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => self.sphere += 1,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => self.torus += 1,
             _ => {}
         }
     }
@@ -823,7 +827,8 @@ mod route_tests {
 
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+        ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+        Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -853,14 +858,14 @@ mod route_tests {
     #[test]
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
         let sweep = 1e-200_f64;
-        let surface = SurfaceGeometry::Plane(
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        );
+        ));
         let range = circle_parameter_range_from_surface_branch(
             &surface,
             Point3::new(0.0, 0.0, 0.0),
@@ -878,14 +883,14 @@ mod route_tests {
 
     #[test]
     fn surface_circle_branch_rejects_nonfinite_or_degenerate_inputs() {
-        let surface = SurfaceGeometry::Plane(
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        );
+        ));
         let args = || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -998,13 +1003,13 @@ mod route_tests {
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
-                geometry: CurveGeometry::Line(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(
                         Point3::new(0.0, 0.0, f64::from(key)),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid LineCurve fixture"),
-                ),
+                )),
                 source_object: None,
             });
         }
@@ -1048,9 +1053,9 @@ mod route_tests {
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Unknown {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(record_id.clone()),
-            },
+            }),
             source_object: None,
         });
         ir.model
@@ -1084,21 +1089,21 @@ mod route_tests {
             CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Unknown { record: None },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
         let surface_id =
             SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
         let offset_id =
             SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: offset_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));

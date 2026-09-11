@@ -12,13 +12,13 @@ use crate::SldprtCodec;
 
 #[test]
 fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
     let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("compact NURBS carrier");
-    let SurfaceGeometry::Nurbs(old) = carrier.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(old)) = carrier.geometry.solved() else {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
@@ -37,10 +37,10 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     let patched = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("patched compact NURBS carrier");
-    let SurfaceGeometry::Nurbs(patched) = patched.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(patched)) = patched.geometry.solved() else {
         panic!("patched compact NURBS surface");
     };
-    assert_eq!(patched, new);
+    assert_eq!(patched, &new);
     for dirty in dirty_slots {
         assert_eq!(
             bytes
@@ -54,7 +54,9 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
 
 #[test]
 fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
@@ -92,7 +94,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .curves
             .iter_mut()
             .find_map(|curve| match &mut curve.geometry {
-                CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
                 _ => None,
             })
             .unwrap();
@@ -106,7 +108,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .surfaces
             .iter_mut()
             .find_map(|surface| match &mut surface.geometry {
-                SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
                 _ => None,
             })
             .unwrap();
@@ -139,22 +141,25 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .unwrap();
 
     assert!(regenerated.ir().model.curves.iter().any(
-        |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
+        |curve| matches!(&curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(value)) if value == &expected_curve)
     ));
     assert!(regenerated.ir().model.surfaces.iter().any(
-        |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
     assert!(regenerated
         .ir()
         .model
         .surfaces
         .iter()
-        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
+        .any(|surface| matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )));
 }
 
 #[test]
 fn native_patch_edits_points_without_dropping_untyped_surfaces() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -199,7 +204,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     assert_eq!(regenerated.ir().model.points[1].position.x, 1_250.0);
     assert!(matches!(
         regenerated.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert_eq!(regenerated.ir().model.faces.len(), 1);
     let written = regenerated
@@ -266,7 +271,9 @@ fn native_patch_requires_point_provenance_annotation() {
 
 #[test]
 fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
@@ -299,9 +306,16 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             .model
             .surfaces
             .iter_mut()
-            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane(_)))
+            .find(|surface| {
+                matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
             .unwrap();
-        let SurfaceGeometry::Plane(plane_surface) = &mut plane.geometry else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+            &mut plane.geometry
+        else {
             unreachable!()
         };
         let origin = plane_surface.origin();
@@ -315,9 +329,15 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             .model
             .curves
             .iter_mut()
-            .find(|curve| matches!(curve.geometry, CurveGeometry::Line(_)))
+            .find(|curve| {
+                matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                )
+            })
             .unwrap();
-        let CurveGeometry::Line(line_curve) = &mut line.geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut line.geometry
+        else {
             unreachable!()
         };
         let origin = line_curve.origin();
@@ -339,7 +359,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .unwrap();
 
     assert!(regenerated.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
             let origin = plane_surface.origin();
             origin.x == 25.0
@@ -350,9 +370,12 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .model
         .surfaces
         .iter()
-        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
+        .any(|surface| matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )));
     assert!(regenerated.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, CurveGeometry::Line(line_curve)
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
         if {
             let origin = line_curve.origin();
             origin.y == 12.0
@@ -362,7 +385,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
 
 #[test]
 fn auxiliary_edit_retains_opaque_partition_payload() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -514,7 +537,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     assert!(matches!(
         regenerated.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
@@ -524,7 +547,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
 
 #[test]
 fn opaque_curve_is_retained_and_does_not_block_point_edits() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
     body.extend(edge_use(40, 999));
@@ -547,9 +570,9 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .find(|curve| curve.id == *curve_id)
         .expect("opaque curve carrier");
-    let CurveGeometry::Unknown {
+    let Some(SolvedCurveGeometry::Unknown {
         record: Some(record),
-    } = &curve.geometry
+    }) = curve.geometry.solved()
     else {
         panic!("opaque curve has no replay record");
     };
@@ -573,10 +596,8 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .unwrap();
 
     assert_eq!(regenerated.ir().model.points[1].position.x, 1_500.0);
-    assert!(regenerated
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. })));
+    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+    )));
 }

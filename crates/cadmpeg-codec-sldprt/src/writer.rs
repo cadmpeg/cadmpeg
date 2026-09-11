@@ -13,7 +13,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 use cadmpeg_ir::Annotations;
@@ -609,7 +610,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     }
     for surface in &ir.model.surfaces {
         match &surface.geometry {
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let ratio = cone_surface.ratio();
                 let half_angle = cone_surface.half_angle();
                 if ratio != 1.0 {
@@ -625,7 +626,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
                     )));
                 }
             }
-            SurfaceGeometry::Sphere(sphere_surface)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
                     let radius = sphere_surface.radius();
                     radius < 0.0
@@ -637,7 +638,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
                     surface.id.as_str(), radius
                 )));
             }
-            SurfaceGeometry::Torus(torus_surface)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let major_radius = torus_surface.major_radius();
                     let minor_radius = torus_surface.minor_radius();
@@ -2336,11 +2337,13 @@ pub(crate) fn brep_body(
         .curves
         .iter()
         .filter(|curve| {
-            matches!(curve.geometry, CurveGeometry::Degenerate(_))
-                && curve
-                    .id
-                    .as_str()
-                    .starts_with("sldprt:brep:curve#sphere-seam-face:")
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            ) && curve
+                .id
+                .as_str()
+                .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
@@ -2395,7 +2398,7 @@ pub(crate) fn brep_body(
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut out = Vec::new();
     for surface in &ir.model.surfaces {
-        if let SurfaceGeometry::Nurbs(nurbs) = &surface.geometry {
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
             write_nurbs_surface(
                 &mut out,
                 surfaces[&surface.id],
@@ -2406,7 +2409,9 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let reference = surface_reference(&surface.geometry);
+        let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
+            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+        })?);
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
         compact(&mut out, kind, surfaces[&surface.id], &values);
     }
@@ -2414,7 +2419,7 @@ pub(crate) fn brep_body(
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
-        if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
@@ -3021,7 +3026,7 @@ pub(super) fn surface_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             (
@@ -3039,7 +3044,7 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius();
@@ -3059,7 +3064,7 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let radius = cone_surface.radius();
@@ -3093,7 +3098,7 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let radius = sphere_surface.radius();
@@ -3119,7 +3124,7 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius();
@@ -3146,11 +3151,11 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => {
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -3440,7 +3445,7 @@ pub(super) fn curve_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             (
@@ -3455,7 +3460,7 @@ pub(super) fn curve_values(
                 ],
             )
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -3477,7 +3482,7 @@ pub(super) fn curve_values(
                 ],
             )
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -3500,42 +3505,43 @@ pub(super) fn curve_values(
                 ],
             )
         }
-        CurveGeometry::Parabola(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
-        CurveGeometry::Hyperbola(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
-        CurveGeometry::Degenerate(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
         }
-        CurveGeometry::Composite { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support composite curves".into(),
             ))
         }
-        CurveGeometry::Nurbs(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
-        CurveGeometry::Polyline(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
         }
-        CurveGeometry::Procedural { .. } | CurveGeometry::Transformed { .. } => {
+        CurveGeometry::Procedural { .. }
+        | CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
         }
-        CurveGeometry::Unknown { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
             ))
@@ -3544,33 +3550,32 @@ pub(super) fn curve_values(
     Ok(result)
 }
 
-pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
+pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let u_axis = plane_surface.u_axis();
             *u_axis
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let ref_direction = cylinder_surface.ref_direction();
             *ref_direction
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let ref_direction = cone_surface.ref_direction();
             *ref_direction
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let ref_direction = torus_surface.ref_direction();
             *ref_direction
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let ref_direction = sphere_surface.ref_direction();
             *ref_direction
         }
-        SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
+        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
             z: 0.0,
@@ -3659,7 +3664,7 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::*;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
 
     #[test]
@@ -3737,7 +3742,7 @@ mod nurbs_write_tests {
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
             .remove(&2)
             .expect("surface carrier");
-        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
             panic!("expected NURBS surface");
         };
         assert_eq!((decoded.u_degree(), decoded.v_degree()), (9, 1));
@@ -3775,7 +3780,7 @@ mod nurbs_write_tests {
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
             .remove(&2)
             .expect("surface carrier");
-        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
             panic!("expected NURBS surface");
         };
         assert_eq!(

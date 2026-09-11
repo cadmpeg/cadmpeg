@@ -19,7 +19,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
@@ -83,11 +84,11 @@ fn decode_keeps_stream_and_model_entity_admission_additive() {
 
 #[test]
 fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let angle = std::f64::consts::FRAC_PI_6;
-    let support = SurfaceGeometry::Cone(
+    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -97,10 +98,10 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
             angle,
         )
         .unwrap(),
-    );
+    ));
     let expected = 2.0;
     let axial_shift = -expected * angle.sin();
-    let offset = SurfaceGeometry::Cone(
+    let offset = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, axial_shift),
             Vector3::new(0.0, 0.0, 1.0),
@@ -110,7 +111,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
             angle,
         )
         .unwrap(),
-    );
+    ));
 
     let distance = analytic_surface_offset(&support, &offset).expect("offset");
     assert!((distance - expected).abs() <= 1.0e-12);
@@ -118,7 +119,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     assert!((reverse + expected).abs() <= 1.0e-12);
 
     let mut lateral = offset.clone();
-    let SurfaceGeometry::Cone(cone_surface) = &mut lateral else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = &mut lateral else {
         unreachable!()
     };
     let origin = cone_surface.origin();
@@ -141,7 +142,9 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     assert!(analytic_surface_offset(&support, &lateral).is_none());
 
     let mut shifted_parameterization = offset.clone();
-    let SurfaceGeometry::Cone(cone_surface) = &mut shifted_parameterization else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
+        &mut shifted_parameterization
+    else {
         unreachable!()
     };
     let origin = cone_surface.origin();
@@ -164,7 +167,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     assert!(analytic_surface_offset(&support, &shifted_parameterization).is_none());
 
     let mut elliptical = offset;
-    let SurfaceGeometry::Cone(cone_surface) = &mut elliptical else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = &mut elliptical else {
         unreachable!()
     };
     let origin = cone_surface.origin();
@@ -188,11 +191,11 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
 
 #[test]
 fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let sphere = |radius| {
-        SurfaceGeometry::Sphere(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::SphereSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -200,7 +203,7 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
                 radius,
             )
             .unwrap(),
-        )
+        ))
     };
     assert_eq!(
         analytic_surface_offset(&sphere(4.0), &sphere(6.5)),
@@ -219,11 +222,11 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
 
 #[test]
 fn nx_torus_offset_lineage_requires_one_ring_orientation() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let torus = |minor_radius| {
-        SurfaceGeometry::Torus(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
             cadmpeg_ir::geometry::TorusSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -232,7 +235,7 @@ fn nx_torus_offset_lineage_requires_one_ring_orientation() {
                 minor_radius,
             )
             .unwrap(),
-        )
+        ))
     };
     assert_eq!(analytic_surface_offset(&torus(2.0), &torus(3.5)), Some(1.5));
     assert_eq!(
@@ -520,7 +523,10 @@ fn decode_retains_connected_topology_with_unknown_surface_carrier() {
         .iter()
         .find(|surface| surface.id == result.ir().model.faces[0].surface)
         .expect("unknown face carrier");
-    assert!(matches!(surface.geometry, SurfaceGeometry::Unknown { .. }));
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+    ));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
@@ -550,7 +556,10 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
                 .find(|curve| &curve.id == id)
         })
         .expect("unknown edge carrier");
-    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert!(matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -569,12 +578,10 @@ fn decode_drops_unknown_carrier_outside_emitted_topology() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .all(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. })));
+    assert!(result.ir().model.curves.iter().all(|curve| !matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+    )));
     assert_eq!(result.ir().model.edges.len(), 1);
 }
 
@@ -747,7 +754,12 @@ fn decode_transfers_point_plane_cylinder_line() {
         .model
         .surfaces
         .iter()
-        .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane(_)))
+        .filter(|s| {
+            matches!(
+                s.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
+        })
         .count();
     let cyls: Vec<_> = result
         .ir()
@@ -755,7 +767,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         .surfaces
         .iter()
         .filter_map(|s| match &s.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let radius = cylinder_surface.radius();
                 Some(radius)
             }
@@ -766,14 +778,14 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(cyls.len(), 1);
     assert!((cyls[0] - 4.05).abs() < 1.0e-6);
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
             let axis = plane_surface.u_axis();
             *axis == Vector3::new(1.0, 0.0, 0.0)
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let direction = cylinder_surface.ref_direction();
             *direction == Vector3::new(1.0, 0.0, 0.0)
@@ -786,7 +798,12 @@ fn decode_transfers_point_plane_cylinder_line() {
         .model
         .curves
         .iter()
-        .filter(|c| matches!(c.geometry, CurveGeometry::Line(_)))
+        .filter(|c| {
+            matches!(
+                c.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+            )
+        })
         .collect();
     assert_eq!(lines.len(), 1);
 

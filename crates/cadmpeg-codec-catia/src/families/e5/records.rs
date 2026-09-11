@@ -7,7 +7,7 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
-    RollingBallJetSite, SurfaceGeometry,
+    RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
@@ -219,7 +219,7 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                         };
                         out.push(E5Circle {
                             pos,
-                            geometry: CurveGeometry::Circle(payload),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
                         });
                     }
                 }
@@ -650,7 +650,8 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
                 false,
             )
             .ok()
-            .map(SurfaceGeometry::Nurbs)
+            .map(SolvedSurfaceGeometry::Nurbs)
+            .map(SurfaceGeometry::Solved)
         })
         .flatten()
 }
@@ -756,6 +757,7 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use super::{e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces};
@@ -878,7 +880,7 @@ mod tests {
             let [surface] = surfaces.as_slice() else {
                 panic!("E7 surface did not decode");
             };
-            let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
+            let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface.geometry.solved() else {
                 panic!("E7 surface was not NURBS");
             };
             assert_eq!(nurbs.u_degree(), 1);

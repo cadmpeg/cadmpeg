@@ -5,7 +5,7 @@
 //! inline big-endian curved-surface parameter block.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -604,14 +604,14 @@ pub fn plane_params<S: std::hash::BuildHasher>(
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
 pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
     let normal = unit_vector(params.normal)?;
-    Some(SurfaceGeometry::Plane(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             params.origin,
             normal,
             cadmpeg_ir::geometry::derive_reference_direction(normal),
         )
         .ok()?,
-    ))
+    )))
 }
 
 /// Geometry family carried by one positional standard `0x60` edge row.
@@ -804,7 +804,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !all_finite(&[cx, cy, cz, r]) || r <= 0.0 {
                 return None;
             }
-            Some(SurfaceGeometry::Sphere(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     pt(cx, cy, cz),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -812,7 +812,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                     r as f64,
                 )
                 .ok()?,
-            ))
+            )))
         }
         AnalyticSurfaceKind::Torus => {
             // torus: cx cy cz ax ay signed_major minor; sign(major) carries sign(az).
@@ -832,7 +832,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 return None;
             }
             let axis = axis_from_xy(ax, ay, major)?;
-            Some(SurfaceGeometry::Torus(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     pt(cx, cy, cz),
                     axis,
@@ -841,7 +841,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                     minor as f64,
                 )
                 .ok()?,
-            ))
+            )))
         }
         AnalyticSurfaceKind::Cylinder => {
             // cylinder: px py pz ax ay radius; sign(radius) carries sign(az).
@@ -860,7 +860,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 return None;
             }
             let axis = axis_from_xy(ax, ay, radius)?;
-            Some(SurfaceGeometry::Cylinder(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     pt(px, py, pz),
                     axis,
@@ -868,7 +868,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                     radius.abs() as f64,
                 )
                 .ok()?,
-            ))
+            )))
         }
         AnalyticSurfaceKind::Cone => {
             // cone: apex_x apex_y apex_z ax ay semi_angle; radius at apex is 0.
@@ -887,7 +887,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 return None;
             }
             let axis = axis_from_xy(ax, ay, semi)?;
-            Some(SurfaceGeometry::Cone(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     pt(x, y, z),
                     axis,
@@ -897,7 +897,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                     semi.abs() as f64,
                 )
                 .ok()?,
-            ))
+            )))
         }
         AnalyticSurfaceKind::Plane => None, // plane: parameters in a separate bridged record.
     }

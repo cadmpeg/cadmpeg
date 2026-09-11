@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -571,7 +571,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     for (sequence, z) in [(1, 0.0), (3, 0.0)] {
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, z),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -579,7 +579,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     1.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -590,7 +590,9 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         pattern_plane,
         0.001
     ));
-    if let CurveGeometry::Circle(circle_curve) = &mut ir.model.curves[1].geometry {
+    if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+        &mut ir.model.curves[1].geometry
+    {
         let center = circle_curve.center();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
@@ -674,7 +676,9 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         1.0,
         0.001
     ));
-    if let CurveGeometry::Circle(circle_curve) = &mut ir.model.curves[0].geometry {
+    if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+        &mut ir.model.curves[0].geometry
+    {
         let center = circle_curve.center();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
@@ -710,7 +714,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
     for sequence in [1, 3] {
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -718,7 +722,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
                     1.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
     }

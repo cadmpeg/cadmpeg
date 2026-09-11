@@ -15,7 +15,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         true,
     )
     .unwrap();
-    let geometry = CurveGeometry::Nurbs(nurbs.clone());
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     assert_eq!(
         crate::eval::curve_point(&geometry, 0.5),
         crate::eval::curve_point(&geometry, 2.5)
@@ -43,7 +43,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
-    let CurveGeometry::Nurbs(nurbs) = &mut ir
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &mut ir
         .model
         .curves
         .iter_mut()
@@ -123,19 +123,19 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
 fn analytic_parabola_and_hyperbola_use_step_parameterization() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let major = Vector3::new(1.0, 0.0, 0.0);
-    let parabola = CurveGeometry::Parabola(
+    let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         crate::geometry::ParabolaCurve::try_new(Point3::new(0.0, 0.0, 0.0), axis, major, 2.0)
             .unwrap(),
-    );
+    ));
     assert_eq!(
         crate::eval::curve_point(&parabola, 1.5),
         Some(Point3::new(4.5, 6.0, 0.0))
     );
 
-    let hyperbola = CurveGeometry::Hyperbola(
+    let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         crate::geometry::HyperbolaCurve::try_new(Point3::new(1.0, 2.0, 3.0), axis, major, 2.0, 3.0)
             .unwrap(),
-    );
+    ));
     let point = crate::eval::curve_point(&hyperbola, 0.5).unwrap();
     assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
     assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
@@ -151,8 +151,8 @@ fn transformed_carriers_preserve_basis_parameters() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    let curve = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Line(
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+        basis: Box::new(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -160,14 +160,14 @@ fn transformed_carriers_preserve_basis_parameters() {
             .unwrap(),
         )),
         transform,
-    };
+    });
     assert_eq!(
         crate::eval::curve_point(&curve, 3.0),
         Some(Point3::new(-4.0, 5.0, 6.0))
     );
 
-    let surface = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane(
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
+        basis: Box::new(SolvedSurfaceGeometry::Plane(
             crate::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -176,7 +176,7 @@ fn transformed_carriers_preserve_basis_parameters() {
             .unwrap(),
         )),
         transform,
-    };
+    });
     assert_eq!(
         crate::eval::surface_point(&surface, 2.0, 3.0),
         Some(Point3::new(0.0, 11.0, 6.0))
@@ -185,27 +185,27 @@ fn transformed_carriers_preserve_basis_parameters() {
 
 #[test]
 fn polyline_carriers_evaluate_in_both_parameter_directions() {
-    let increasing = CurveGeometry::Polyline(
+    let increasing = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
         crate::geometry::PolylineCurve::new(
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
             Some(vec![1.0, 3.0]),
             0.01,
         )
         .unwrap(),
-    );
+    ));
     assert_eq!(
         crate::eval::curve_point(&increasing, 2.0),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
 
-    let decreasing = CurveGeometry::Polyline(
+    let decreasing = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
         crate::geometry::PolylineCurve::new(
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
             Some(vec![3.0, 1.0]),
             0.01,
         )
         .unwrap(),
-    );
+    ));
     assert_eq!(
         crate::eval::curve_point(&decreasing, 2.5),
         Some(Point3::new(0.5, 0.0, 0.0))

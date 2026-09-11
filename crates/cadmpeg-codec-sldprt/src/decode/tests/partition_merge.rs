@@ -105,7 +105,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
 
 #[test]
 fn merged_opaque_geometry_retains_its_owning_site() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
     let mut source = outer_header();
     source.extend(make_block(
@@ -145,9 +145,9 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         .surfaces
         .iter()
         .map(|surface| {
-            let SurfaceGeometry::Unknown {
+            let Some(SolvedSurfaceGeometry::Unknown {
                 record: Some(record),
-            } = &surface.geometry
+            }) = surface.geometry.solved()
             else {
                 panic!("site surface is not bound to opaque source bytes");
             };
@@ -160,9 +160,9 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         .curves
         .iter()
         .map(|curve| {
-            let CurveGeometry::Unknown {
+            let Some(SolvedCurveGeometry::Unknown {
                 record: Some(record),
-            } = &curve.geometry
+            }) = curve.geometry.solved()
             else {
                 panic!("site curve is not bound to opaque source bytes");
             };
@@ -337,30 +337,26 @@ fn decode_recovers_tripled_deltas_topology() {
 
 #[test]
 fn decode_resolves_prefixed_deltas_edge_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let mut cur = Cursor::new(sldprt_with_body(&prefixed_edge_triangle_body()));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line(_))));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    )));
 }
 
 #[test]
 fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let mut cur = Cursor::new(sldprt_with_body(&suffix_prefixed_edge_triangle_body()));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line(_))));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    )));
 }

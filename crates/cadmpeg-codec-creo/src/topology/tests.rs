@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -416,7 +417,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve().as_ref())
             .expect("edge curve");
-        let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) = curve.geometry else {
+        let Some(SolvedCurveGeometry::Line(line_curve)) = curve.geometry.solved() else {
             panic!("edge line: {curve:#?}");
         };
         let origin = *line_curve.origin();

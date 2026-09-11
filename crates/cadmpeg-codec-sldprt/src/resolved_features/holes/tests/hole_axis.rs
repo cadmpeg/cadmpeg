@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, LinearTermination,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
@@ -57,7 +57,7 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -65,7 +65,7 @@ fn cylindrical_support_point_defines_its_radial_axis() {
                 13.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
 
@@ -79,7 +79,9 @@ fn cylindrical_support_point_defines_its_radial_axis() {
 #[test]
 fn position_plane_owns_only_reversed_normal_cylinders() {
     let mut surfaces = [cylinder(0, -5.0), cylinder(1, 5.0), cylinder(2, -5.0)];
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surfaces[2].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut surfaces[2].geometry
+    else {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
@@ -203,7 +205,9 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         cylinder(2, 20.0),
         cylinder(3, 30.0),
     ];
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surfaces[3].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut surfaces[3].geometry
+    else {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
@@ -311,7 +315,9 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         cylinder(5, 20.0),
     ];
     for surface in &mut surfaces[3..] {
-        let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surface.geometry else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+            &mut surface.geometry
+        else {
             unreachable!();
         };
         let origin = cylinder_surface.origin();
@@ -444,7 +450,9 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     assert!(placements.is_none());
 
     let mut unmatched_surfaces = surfaces.clone();
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut unmatched_surfaces[5].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut unmatched_surfaces[5].geometry
+    else {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
@@ -495,7 +503,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 fn hole_topology_uses_exact_cylinder_spans() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -503,12 +511,12 @@ fn hole_topology_uses_exact_cylinder_spans() {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let cone = Surface {
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cone(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::ConeSurface::try_new(
                 Point3::new(0.0, 0.0, -10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -518,7 +526,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
                 1.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let face = Face {
@@ -681,7 +689,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut wrong_surfaces = surfaces.clone();
-    let SurfaceGeometry::Cone(cone_surface) = &mut wrong_surfaces[1].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
+        &mut wrong_surfaces[1].geometry
+    else {
         unreachable!();
     };
     let origin = cone_surface.origin();
@@ -888,7 +898,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .map(|(index, (origin, axis))| Surface {
             id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     *origin,
                     *axis,
@@ -900,7 +910,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
                     2.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         })
         .collect::<Vec<_>>();

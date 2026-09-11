@@ -25,7 +25,8 @@ use crate::decode::sketch_transfer::recipe::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::sketches::SketchId;
@@ -294,7 +295,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 definition.identity.id()
             ))
             .expect("identity grammar");
-            let Some(CurveGeometry::Nurbs(directrix)) =
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
                 exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
                     .map(|curve| &curve.geometry)
             else {
@@ -338,7 +339,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             );
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
-                geometry: SurfaceGeometry::Nurbs(surface),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

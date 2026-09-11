@@ -2,7 +2,7 @@
 //! Exact evaluation helpers for decoded neutral carriers.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 
 fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<Vec<f64>> {
@@ -181,12 +181,12 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
 
 pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             Some(origin.translated(*direction, parameter))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -195,7 +195,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let point = center.translated(*ref_direction, radius * parameter.cos());
             Some(point.translated(side, radius * parameter.sin()))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -205,7 +205,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let point = center.translated(*major_direction, major_radius * parameter.cos());
             Some(point.translated(minor_direction, minor_radius * parameter.sin()))
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -214,7 +214,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let point = vertex.translated(*major_direction, focal_distance * parameter * parameter);
             Some(point.translated(minor_direction, 2.0 * focal_distance * parameter))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -224,11 +224,11 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let point = center.translated(*major_direction, major_radius * parameter.cosh());
             Some(point.translated(minor_direction, minor_radius * parameter.sinh()))
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point();
             Some(*point)
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let values = basis(
                 nurbs.knots(),
                 usize::try_from(nurbs.degree()).ok()?,
@@ -253,12 +253,13 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
                 )
             })
         }
-        CurveGeometry::Polyline(_) | CurveGeometry::Transformed { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_))
+        | CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => {
             cadmpeg_ir::eval::curve_point(geometry, parameter)
         }
-        CurveGeometry::Composite { .. }
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
         | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => None,
     }
 }
 

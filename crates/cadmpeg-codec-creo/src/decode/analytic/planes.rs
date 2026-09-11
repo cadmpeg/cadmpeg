@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::SurfaceId;
 
 use crate::container::ContainerScan;
@@ -390,7 +392,7 @@ pub fn reconciled_model_plane(
     let model_plane = match model_surfaces.as_slice() {
         [] => None,
         [surface] => match &surface.geometry {
-            SurfaceGeometry::Plane(plane_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 Some(PlaneEquation {
@@ -398,7 +400,7 @@ pub fn reconciled_model_plane(
                     normal: [normal.x, normal.y, normal.z],
                 })
             }
-            SurfaceGeometry::Unknown { .. } => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
             _ => return None,
         },
         _ => return None,
@@ -1759,7 +1761,7 @@ pub fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Optio
 
 pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
     let (origin, normal) = match geometry {
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             (
@@ -1767,7 +1769,7 @@ pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
                 normalize([axis.x, axis.y, axis.z])?,
             )
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             (
@@ -1775,7 +1777,7 @@ pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
                 normalize([axis.x, axis.y, axis.z])?,
             )
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             valid_positive_nurbs_curve(nurbs)?;
             let plane = topology_bound_plane(
                 nurbs
@@ -1798,7 +1800,7 @@ pub struct BoundaryLine {
 
 pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
     let (origin, direction) = match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             (
@@ -1806,7 +1808,7 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
                 normalize([direction.x, direction.y, direction.z])?,
             )
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             (nurbs.degree() == 1 && !nurbs.periodic()).then_some(())?;
             valid_positive_nurbs_curve(nurbs)?;
             let first = *nurbs.control_points().first()?;

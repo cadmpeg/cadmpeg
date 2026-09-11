@@ -19,6 +19,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
@@ -53,7 +54,9 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
 
 #[test]
 fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carriers() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let decoded = F3dCodec
@@ -78,17 +81,14 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .unwrap()
         .geometry = SurfaceGeometry::Procedural {
         construction: source_less.model.procedural_surfaces[0].id.clone(),
-        cache: Some(
-            cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            ))
+        cache: Some(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
             .unwrap(),
-        ),
+        )),
     };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -120,16 +120,13 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .unwrap()
         .geometry = CurveGeometry::Procedural {
         construction: source_less.model.procedural_curves[0].id.clone(),
-        cache: Some(
-            cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            ))
+        cache: Some(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
             .unwrap(),
-        ),
+        )),
     };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -359,7 +356,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|candidate| candidate.id == curve)
         .expect("surface-curve deformable curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0)
@@ -367,7 +364,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
                 .unwrap(),
         )
         .unwrap(),
-    );
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -382,7 +379,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     ));
     assert!(round.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve)
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))
                     if curve.degree() == 1
                         && curve.knots() == [range[0], range[0], range[1], range[1]]
     )));
@@ -437,7 +434,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|candidate| candidate.id == curve)
             .expect("full deformable curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0)
@@ -445,7 +442,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
                     .unwrap(),
             )
             .unwrap(),
-        );
+        ));
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -468,7 +465,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         ));
         assert!(round.ir().model.curves.iter().any(|curve| matches!(
             &curve.geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve)
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))
                     if curve.degree() == 1
                         && curve.knots() == [range[0], range[0], range[1], range[1]]
         )));
@@ -580,7 +577,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
             .iter_mut()
             .find(|curve| curve.id == *curve_id)
             .expect("explicit sweep curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0)
@@ -588,7 +585,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
                     .unwrap(),
             )
             .unwrap(),
-        );
+        ));
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -627,7 +624,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
                 .iter()
                 .find(|curve| curve.id == *curve_id)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1 && curve.knots() == knots
         ));
     }
@@ -737,7 +734,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
             .iter_mut()
             .find(|curve| curve.id == *curve_id)
             .expect("explicit guide sweep curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, -2.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(2.0, 4.0, -3.0)
@@ -745,7 +742,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
                     .unwrap(),
             )
             .unwrap(),
-        );
+        ));
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -766,7 +763,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
                 .iter()
                 .find(|curve| curve.id == curve_id)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
                         && curve.knots() == [range[0], range[0], range[1], range[1]]
         ));
@@ -828,7 +825,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
             .iter_mut()
             .find(|curve| curve.id == *curve_id)
             .expect("explicit surface sweep curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, 1.0, -2.0),
                 cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
@@ -836,7 +833,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
                     .unwrap(),
             )
             .unwrap(),
-        );
+        ));
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -857,7 +854,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
                 .iter()
                 .find(|curve| curve.id == curve_id)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
                         && curve.knots() == [range[0], range[0], range[1], range[1]]
         ));
@@ -920,7 +917,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
             .iter_mut()
             .find(|curve| curve.id == *curve_id)
             .expect("law-driven sweep curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
                 cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0)
@@ -928,7 +925,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
                     .unwrap(),
             )
             .unwrap(),
-        );
+        ));
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -949,7 +946,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
                 .iter()
                 .find(|curve| curve.id == curve_id)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
                         && curve.knots() == [range[0], range[0], range[1], range[1]]
         ));

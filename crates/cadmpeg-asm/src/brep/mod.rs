@@ -9,7 +9,7 @@
 //!
 //! Faces retain their loops and trims when a referenced surface has no decoded
 //! shape; a decoded construction produces a [`SurfaceGeometry::Procedural`]
-//! carrier, while an undecoded record produces [`SurfaceGeometry::Unknown`]
+//! carrier, while an undecoded record produces [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)`]
 //! linked to the corresponding [`UnknownRecord`]. Edges retain vertices and
 //! parameter ranges when their 3D curve carrier is unavailable. [`Stats`]
 //! records these transfer losses for the decode report.

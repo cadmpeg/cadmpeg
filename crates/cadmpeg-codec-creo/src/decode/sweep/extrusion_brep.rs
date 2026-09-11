@@ -25,7 +25,9 @@ use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
 use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -220,7 +222,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             );
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
-                geometry: SurfaceGeometry::Plane(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(
                             transform.origin()[0] + offset * transform.normal()[0],
@@ -239,7 +241,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
+                )),
                 source_object: None,
             });
         }
@@ -315,7 +317,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             })) else {
                                 continue;
                             };
-                            CurveGeometry::Line(
+                            CurveGeometry::Solved(SolvedCurveGeometry::Line(
                                 cadmpeg_ir::geometry::LineCurve::try_new(
                                     Point3::new(
                                         placed_start[0] + offset * transform.normal()[0],
@@ -325,13 +327,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                     Vector3::new(direction[0], direction[1], direction[2]),
                                 )
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                            )
+                            ))
                         }
                         ProfileGeometry::Arc { center, radius, .. }
                         | ProfileGeometry::Circle { center, radius } => {
                             let center = section_point_in_model(transform, [center.u, center.v]);
                             let (axis_sign, _) = oriented_arc_parameterization(reversed, 0.0, 0.0);
-                            CurveGeometry::Circle(
+                            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                                 cadmpeg_ir::geometry::CircleCurve::try_new(
                                     Point3::new(
                                         center[0] + offset * transform.normal()[0],
@@ -351,7 +353,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                     radius.get(),
                                 )
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                            )
+                            ))
                         }
                         ProfileGeometry::Nurbs { .. } => {
                             let Some(nurbs) =
@@ -372,7 +374,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             ) else {
                                 continue;
                             };
-                            CurveGeometry::Nurbs(translated)
+                            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated))
                         }
                     };
                     ir.model.curves.push(Curve {
@@ -426,7 +428,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let origin = section_point_in_model(transform, start);
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
-                    geometry: CurveGeometry::Line(
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::LineCurve::try_new(
                             Point3::new(
                                 origin[0] + span.lower * transform.normal()[0],
@@ -440,7 +442,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             ),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                    ),
+                    )),
                     source_object: None,
                 });
                 ir.model.edges.push(Edge {

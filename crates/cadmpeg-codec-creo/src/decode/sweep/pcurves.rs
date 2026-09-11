@@ -11,7 +11,10 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
-use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, Pcurve, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
@@ -84,7 +87,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
         dot(relative, tangent).atan2(dot(relative, reference))
     };
     match surface {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -110,7 +113,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             };
             Some(circular_pcurve(center, radius, start, start + direction)?)
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -125,7 +128,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             };
             Some(line_pcurve([u, v], [u + direction, v])?)
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -140,7 +143,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             };
             Some(line_pcurve([u, v], [u + direction, v])?)
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -154,7 +157,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             let v = axial.atan2(dot(radial, radial).sqrt());
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -188,11 +191,11 @@ pub(in super::super) fn revolution_boundary_pcurve(
             let v = axial.atan2(signed_ring - major_radius);
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
     }
 }
 
@@ -207,10 +210,9 @@ pub(in super::super) fn revolved_brep_surface(
         SketchGeometryDefinition::Nurbs { .. }
     ) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        return Some(SurfaceGeometry::Nurbs(revolved_nurbs_surface(
-            &placed_section_nurbs(transform, &directrix)?,
-            axis,
-        )?));
+        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            revolved_nurbs_surface(&placed_section_nurbs(transform, &directrix)?, axis)?,
+        )));
     }
     revolved_section_surface(transform, geometry, axis)
 }
@@ -284,7 +286,7 @@ pub(in super::super) fn revolution_face_sense(
             oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
         let parameter = lower + (upper - lower) * 0.5;
-        let carrier = CurveGeometry::Nurbs(nurbs);
+        let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let point = cadmpeg_ir::eval::curve_point(&carrier, parameter)?;
         let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter)?;
         (

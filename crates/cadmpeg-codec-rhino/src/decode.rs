@@ -8,8 +8,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -1717,9 +1717,10 @@ impl<'a> DecodeContext<'a> {
             crate::surfaces::DecodedSurface::Typed {
                 geometry, derived, ..
             } => (geometry.into_geometry(), derived),
-            crate::surfaces::DecodedSurface::Procedural { geometry, .. } => {
-                (SurfaceGeometry::Nurbs(geometry), true)
-            }
+            crate::surfaces::DecodedSurface::Procedural { geometry, .. } => (
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
+                true,
+            ),
         };
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
@@ -2063,7 +2064,7 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
             if let Some(cache) = curve.geometry.solved_cache() {
-                curve.geometry = cache.clone();
+                curve.geometry = CurveGeometry::Solved(cache.clone());
             }
             transform_curve(curve, transform)?;
             links.push(curve.id.to_string());
@@ -2074,7 +2075,7 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
         {
             if let Some(cache) = surface.geometry.solved_cache() {
-                surface.geometry = cache.clone();
+                surface.geometry = SurfaceGeometry::Solved(cache.clone());
             }
             transform_surface(surface, transform)?;
             links.push(surface.id.to_string());
@@ -2886,7 +2887,7 @@ impl<'a> DecodeContext<'a> {
                 .expect("valid identity");
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
-                geometry: SurfaceGeometry::Nurbs(geometry),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
                 source_object: Some(association),
             });
             let procedural_id: cadmpeg_ir::ids::ProceduralSurfaceId =
@@ -2969,7 +2970,9 @@ impl<'a> DecodeContext<'a> {
                         .expect("valid identity");
                 candidate.model.surfaces.push(Surface {
                     id: surface_id.clone(),
-                    geometry: SurfaceGeometry::Nurbs(boundary.boundary.lateral.clone()),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                        boundary.boundary.lateral.clone(),
+                    )),
                     source_object: Some(association.clone()),
                 });
                 let _attached = candidate.model.add_procedural_surface(
@@ -3058,9 +3061,9 @@ impl<'a> DecodeContext<'a> {
         let validation = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
                 id: id.clone(),
-                geometry: SurfaceGeometry::Unknown {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: Some(unknown.clone()),
-                },
+                }),
                 source_object: Some(association),
             });
             set_exactness(candidate_annotations, &id, Exactness::Unknown);
@@ -3496,7 +3499,7 @@ fn stage_extrusion_caps(
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 match cadmpeg_ir::geometry::PlaneSurface::try_new(
                     extrusion.cap_origins[cap],
                     extrusion.cap_normals[cap],
@@ -3505,7 +3508,7 @@ fn stage_extrusion_caps(
                     Ok(plane) => plane,
                     Err(error) => return Err(format!("extrusion cap staging: {error}")),
                 },
-            ),
+            )),
             source_object: Some(association.clone()),
         });
         let mut loop_ids = Vec::with_capacity(boundaries.len());
@@ -3520,7 +3523,9 @@ fn stage_extrusion_caps(
                     .expect("valid identity");
                 ir.model.curves.push(Curve {
                     id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(boundary.end_nurbs.clone()),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        boundary.end_nurbs.clone(),
+                    )),
                     source_object: Some(association.clone()),
                 });
                 annotate_derived(annotations, &id.to_string());
@@ -4513,7 +4518,12 @@ fn scale_plane_pcurves(
         .model()
         .surfaces
         .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane(_)))
+        .filter(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
+        })
         .map(|surface| surface.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let plane_faces = staged
@@ -4620,7 +4630,7 @@ fn stage_brep_procedural_surface(
             .expect("valid identity");
     staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Nurbs(geometry),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
         source_object: Some(context.association.clone()),
     });
     let procedural_id: cadmpeg_ir::ids::ProceduralSurfaceId = format!(
@@ -4682,9 +4692,9 @@ fn stage_curve_tree(
             }
             parameters.push(end_parameter);
             (
-                CurveGeometry::Unknown {
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: Some(unknown.clone()),
-                },
+                }),
                 Some(ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         parameters, components,
@@ -4847,10 +4857,12 @@ fn c2_curve_to_nurbs_join(
 ) -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
     match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Nurbs(nurbs) => Ok(crate::curves::NurbsJoin {
-                curve: nurbs,
-                warnings: Diagnostics::new(),
-            }),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                Ok(crate::curves::NurbsJoin {
+                    curve: nurbs,
+                    warnings: Diagnostics::new(),
+                })
+            }
             _ => Err(crate::curves::error(
                 offset,
                 "C2 child has no parameter-space representation",
@@ -5145,7 +5157,7 @@ fn commit_curve_tree(
             }
             parameters.push(end_parameter);
             (
-                CurveGeometry::Unknown { record },
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }),
                 Some(ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         parameters, components,
@@ -5238,7 +5250,10 @@ fn transform_decoded_curve(
             Ok(())
         }
         crate::curves::DecodedCurve::Leaf { geometry, warnings } => {
-            let source = std::mem::replace(geometry, CurveGeometry::Unknown { record: None });
+            let source = std::mem::replace(
+                geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            );
             let mut carrier = Curve {
                 id: "rhino:hatch:curve#placement"
                     .try_into()
@@ -5255,9 +5270,12 @@ fn transform_decoded_curve(
 }
 
 fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
-    let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
+    let geometry = std::mem::replace(
+        &mut curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+    );
     curve.geometry = match geometry {
-        CurveGeometry::Nurbs(mut nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
                 .edit_control_points(|points| {
                     for pole in points {
@@ -5265,11 +5283,11 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                     }
                 })
                 .map_err(|error| error.to_string())?;
-            CurveGeometry::Nurbs(nurbs)
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let decoded = crate::curves::DecodedCurve::leaf(
-                CurveGeometry::Circle(circle_curve),
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                 Diagnostics::new(),
             );
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
@@ -5281,9 +5299,9 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                     }
                 })
                 .map_err(|error| error.to_string())?;
-            CurveGeometry::Nurbs(nurbs)
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
             let transformed_origin = transform.apply_point(origin);
@@ -5301,19 +5319,21 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             if !norm.is_finite() || norm == 0.0 {
                 return Err("instance line transform collapsed its direction".to_string());
             }
-            CurveGeometry::Line(cadmpeg_ir::geometry::LineCurve::try_new(
-                transformed_origin,
-                cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm),
-            )?)
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    transformed_origin,
+                    cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm),
+                )?,
+            ))
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = *degenerate_curve.point();
-            CurveGeometry::Degenerate(cadmpeg_ir::geometry::DegenerateCurve::try_new(
-                transform.apply_point(point),
-            )?)
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(transform.apply_point(point))?,
+            ))
         }
-        CurveGeometry::Unknown { record } => {
-            curve.geometry = CurveGeometry::Unknown { record };
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }) => {
+            curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record });
             return Err("unknown free curve cannot be transformed exactly".to_string());
         }
         other => {
@@ -5329,10 +5349,10 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
 fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), String> {
     let geometry = std::mem::replace(
         &mut surface.geometry,
-        SurfaceGeometry::Unknown { record: None },
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
     );
     surface.geometry = match geometry {
-        SurfaceGeometry::Nurbs(mut nurbs) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
                 .edit_control_points(|rows| {
                     for pole in rows.iter_mut().flatten() {
@@ -5340,9 +5360,9 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                     }
                 })
                 .map_err(|error| error.to_string())?;
-            SurfaceGeometry::Nurbs(nurbs)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         }
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let source_origin = *plane_surface.origin();
             let normal = *plane_surface.normal();
             let u_axis = *plane_surface.u_axis();
@@ -5370,18 +5390,20 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             if !length.is_finite() || length == 0.0 {
                 return Err("instance plane transform collapsed its frame".to_string());
             }
-            SurfaceGeometry::Plane(cadmpeg_ir::geometry::PlaneSurface::try_new(
-                origin,
-                normal,
-                cadmpeg_ir::math::Vector3::new(
-                    value.x / length,
-                    value.y / length,
-                    value.z / length,
-                ),
-            )?)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    origin,
+                    normal,
+                    cadmpeg_ir::math::Vector3::new(
+                        value.x / length,
+                        value.y / length,
+                        value.z / length,
+                    ),
+                )?,
+            ))
         }
-        SurfaceGeometry::Unknown { record } => {
-            surface.geometry = SurfaceGeometry::Unknown { record };
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) => {
+            surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
             return Err("unknown free surface cannot be transformed exactly".to_string());
         }
         other => {

@@ -7,7 +7,8 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};
@@ -19,24 +20,18 @@ const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
-pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
+pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_is_supported(geometry),
-        SurfaceGeometry::Transformed { basis, transform } => {
+        SolvedSurfaceGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && surface_is_supported(basis)
         }
-        SurfaceGeometry::Plane(_)
-        | SurfaceGeometry::Cylinder(_)
-        | SurfaceGeometry::Cone(_)
-        | SurfaceGeometry::Sphere(_)
-        | SurfaceGeometry::Torus(_) => true,
-        SurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
-        SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => false,
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_)
+        | SolvedSurfaceGeometry::Torus(_) => true,
+        SolvedSurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
+        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => false,
     }
 }
 
@@ -52,29 +47,26 @@ fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     // A composite carrier is emitted from its child graph by the exporter, so it
     // is supported only in the outermost position.
-    matches!(curve, CurveGeometry::Composite { .. }) || leaf_curve_is_supported(curve)
+    matches!(
+        curve,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    ) || curve.solved().is_some_and(leaf_curve_is_supported)
 }
 
-fn leaf_curve_is_supported(curve: &CurveGeometry) -> bool {
+fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
     match curve {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => leaf_curve_is_supported(geometry),
-        CurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && leaf_curve_is_supported(basis)
         }
-        CurveGeometry::Line(_)
-        | CurveGeometry::Circle(_)
-        | CurveGeometry::Ellipse(_)
-        | CurveGeometry::Parabola(_)
-        | CurveGeometry::Hyperbola(_)
-        | CurveGeometry::Degenerate(_)
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_) => true,
-        CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => false,
+        SolvedCurveGeometry::Line(_)
+        | SolvedCurveGeometry::Circle(_)
+        | SolvedCurveGeometry::Ellipse(_)
+        | SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Nurbs(_)
+        | SolvedCurveGeometry::Polyline(_) => true,
+        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => false,
     }
 }
 
@@ -364,20 +356,16 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 }
 
 /// Emit an analytic or NURBS surface carrier.
-pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
+pub fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => return surface(e, geometry),
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let pl = placement(e, *origin, *normal, *u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -385,7 +373,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
             let pl = placement(e, *origin, *axis, *ref_direction);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(radius)))
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -397,7 +385,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
                 &format!("'',{pl},{},{}", real(radius), real(half_angle)),
             )
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -408,7 +396,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
                 &format!("'',{pl},{}", real(radius.abs())),
             )
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -424,28 +412,22 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
                 ),
             )
         }
-        SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
-        SurfaceGeometry::Transformed { basis, transform } => {
+        SolvedSurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
+        SolvedSurfaceGeometry::Transformed { basis, transform } => {
             let parent = surface(e, basis)?;
             let operator = transformation_operator(e, *transform);
             e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
         }
         // These carrier families have no direct STEP representation; callers
         // report the omitted carrier instead of fabricating a placeholder.
-        SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => return None,
+        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => return None,
     })
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.
-pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
+pub fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     Some(match g {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => return curve(e, geometry),
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let d = line_curve.direction();
             let p = point(e, *origin);
@@ -454,7 +436,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             let vec = e.emit("VECTOR", &format!("'',{dir},{}", real(1.0)));
             e.emit("LINE", &format!("'',{p},{vec}"))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -462,7 +444,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit("CIRCLE", &format!("'',{pl},{}", real(radius)))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -474,7 +456,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
                 &format!("'',{pl},{},{}", real(major_radius), real(minor_radius)),
             )
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -482,7 +464,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             let pl = placement(e, *vertex, *axis, *major_direction);
             e.emit("PARABOLA", &format!("'',{pl},{}", real(focal_distance)))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -494,13 +476,13 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
                 &format!("'',{pl},{},{}", real(major_radius), real(minor_radius)),
             )
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let collapsed = degenerate_curve.point();
             let point = point(e, *collapsed);
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
-        CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        SolvedCurveGeometry::Polyline(polyline) => {
             let points = polyline
                 .points()
                 .iter()
@@ -509,14 +491,12 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
                 .join(",");
             e.emit("POLYLINE", &format!("'',({points})"))
         }
-        CurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed { basis, transform } => {
             let parent = curve(e, basis)?;
             let operator = transformation_operator(e, *transform);
             e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
         }
-        CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => return None,
+        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => return None,
     })
 }
 

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
@@ -217,7 +217,7 @@ fn b5_planar_loop_points(
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)?;
-    let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         return None;
     };
     let origin = plane_surface.origin();
@@ -615,7 +615,9 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
 
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Pcurve, PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{PcurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::LoopBoundaryRole;
@@ -763,14 +765,14 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface%2310".to_string())
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid PlaneSurface fixture"),
-            ),
+            )),
             source_object: None,
         });
         ir.model.pcurves = pcurves;

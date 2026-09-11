@@ -304,7 +304,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     );
                 }
             }
-            SurfaceGeometry::Unknown { record: Some(u) } if !ids.contains(u.as_str()) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(u) })
+                if !ids.contains(u.as_str()) =>
+            {
                 ref_error(findings, s.id.as_str(), "unknown record", u.as_str());
             }
             _ => {}
@@ -322,9 +324,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     );
                 }
             }
-            CurveGeometry::Unknown {
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown),
-            } => {
+            }) => {
                 if !ids.contains(unknown.as_str()) {
                     ref_error(
                         findings,
@@ -334,7 +336,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     );
                 }
             }
-            CurveGeometry::Composite { segments, .. } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 for segment in segments {
                     if ids.curves(segment.curve.as_str()).is_none() {
                         ref_error(findings, curve.id.as_str(), "curve", segment.curve.as_str());
@@ -349,7 +351,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         .curves
         .iter()
         .filter_map(|curve| match &curve.geometry {
-            CurveGeometry::Composite { segments, .. } => Some((
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => Some((
                 curve.id.as_str(),
                 segments
                     .iter()

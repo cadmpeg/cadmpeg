@@ -204,7 +204,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
-            geometry: CurveGeometry::Nurbs(nurbs),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: None,
         });
         let plan = IgesCodec

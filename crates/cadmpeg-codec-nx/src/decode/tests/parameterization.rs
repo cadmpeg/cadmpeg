@@ -15,7 +15,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -49,7 +50,9 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
     let mut translated = result.ir().clone();
     for carrier in &mut translated.model.surfaces {
-        if let SurfaceGeometry::Plane(plane_surface) = &mut carrier.geometry {
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+            &mut carrier.geometry
+        {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -202,7 +205,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
-        geometry: SurfaceGeometry::Nurbs(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::new(
                 3,
                 1,
@@ -220,7 +223,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                 false,
             )
             .expect("valid wavy support"),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -380,18 +383,14 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
     fully_extend_common_header(&mut bspline, [0, 134, 0, 50]);
     let mut cur = Cursor::new(prt_with_partition(&bspline));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_))));
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_))));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+    )));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+    )));
 }
 
 #[test]
@@ -524,7 +523,7 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
         .expect("intersection carrier");
     assert!(matches!(
         carrier.geometry.solved_cache(),
-        Some(CurveGeometry::Nurbs(_))
+        Some(SolvedCurveGeometry::Nurbs(_))
     ));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -556,7 +555,7 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
         .expect("intersection carrier");
     assert!(matches!(
         carrier.geometry.solved_cache(),
-        Some(CurveGeometry::Nurbs(_))
+        Some(SolvedCurveGeometry::Nurbs(_))
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -605,7 +604,8 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
         result.ir().model.surfaces[0].id.clone(),
         result.ir().model.surfaces[1].id.clone(),
     ];
-    result.ir_mut().model.surfaces[1].geometry = SurfaceGeometry::Unknown { record: None };
+    result.ir_mut().model.surfaces[1].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let lanes = [
         crate::intersection::SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2),
         crate::intersection::SupportUvLane::new(vec![[0.0, 0.0], [0.0, 0.01]], 2),
@@ -806,7 +806,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -815,7 +815,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
                 false,
             )
             .expect("valid clamped witness curve"),
-        ),
+        )),
         source_object: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -825,7 +825,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         Some([first, last])
     );
 
-    ir.model.curves[0].geometry = CurveGeometry::Nurbs(
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::NurbsCurve::new(
             1,
             vec![0.0, 0.5, 1.0, 1.0],
@@ -834,7 +834,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
             false,
         )
         .expect("cardinality-valid unclamped witness curve"),
-    );
+    ));
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert!(
         crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id)
@@ -970,7 +970,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Nurbs(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::new(
                 1,
                 1,
@@ -986,18 +986,18 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 false,
             )
             .expect("valid serialized-seed surface"),
-        ),
+        )),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
@@ -1112,26 +1112,26 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     ir.model.surfaces.extend([
         Surface {
             id: base_surfaces[0].clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: base_surfaces[1].clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -1172,7 +1172,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         CurveId::mint("test:model:entity#synthetic:coupled-carrier").expect("identity grammar");
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: carrier.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
@@ -1273,7 +1273,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .iter()
             .find(|surface| surface.id == spine_surfaces[side])
             .unwrap();
-        let SurfaceGeometry::Plane(plane_surface) = support.geometry else {
+        let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = support.geometry.solved() else {
             panic!("plane support");
         };
         let origin = *plane_surface.origin();
@@ -1283,7 +1283,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .expect("identity grammar");
         result.ir_mut().model.surfaces.push(Surface {
             id: id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(
                         origin.x + radius * normal.x,
@@ -1294,7 +1294,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     u_axis,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         id
@@ -1699,14 +1699,14 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     for support in &supports {
         ir.model.surfaces.push(Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -1750,7 +1750,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: carrier.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(

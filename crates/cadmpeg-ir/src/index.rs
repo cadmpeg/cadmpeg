@@ -326,7 +326,7 @@ crate::document::arena_registry!(define_model_index);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
     use serde_json::Map;
 
@@ -440,14 +440,14 @@ mod tests {
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: cached_surface.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::PlaneSurface::try_new(
                     crate::math::Point3::new(0.0, 0.0, 0.0),
                     crate::math::Vector3::new(0.0, 0.0, 1.0),
                     crate::math::Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         ir.model

@@ -15,7 +15,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::BTreeSet;
 
@@ -852,7 +852,7 @@ pub(in super::super) fn round_placed_cylinder_radius(
         SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let radius = cylinder_surface.radius();
                 Some(radius)
             }
@@ -998,7 +998,7 @@ fn chamfer_cone_equation(
     let id =
         SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
-    let SurfaceGeometry::Cone(cone_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
         return None;
     };
     let origin = cone_surface.origin();
@@ -1064,7 +1064,10 @@ pub(in super::super) fn chamfer_constant_distance(
                     .collect::<Vec<_>>();
                 match model_surfaces.as_slice() {
                     [] => false,
-                    [surface] => matches!(&surface.geometry, SurfaceGeometry::Plane(_)),
+                    [surface] => matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Plane(_))
+                    ),
                     _ => return None,
                 }
             }

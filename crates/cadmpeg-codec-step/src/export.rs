@@ -9,7 +9,8 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
@@ -2111,7 +2112,7 @@ impl<'a> Builder<'a> {
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
         // loss rather than fabricate placeholder geometry.
         if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
-            if !geometry::surface_is_supported(&surf.geometry) {
+            if !geometry::surface_is_supported(surf.geometry.solved()?) {
                 self.unknown_surface_faces.insert(face_id.to_string());
                 return None;
             }
@@ -2555,20 +2556,21 @@ impl<'a> Builder<'a> {
                     procedural.definition().clone(),
                 )
             });
+            let solved = surf.geometry.solved_cache().map_or_else(
+                || surf.geometry.clone(),
+                |cache| SurfaceGeometry::Solved(cache.clone()),
+            );
             let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_surface(
-                    surf.geometry.solved_cache().unwrap_or(&surf.geometry),
-                    &definition,
-                )
-                .map(|reference| (id, reference))
+                self.emit_procedural_surface(&solved, &definition)
+                    .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_surfaces.insert(id);
                 reference
-            } else if !geometry::surface_is_supported(&surf.geometry) {
+            } else if !geometry::surface_is_supported(surf.geometry.solved()?) {
                 return None;
             } else {
-                geometry::surface(&mut self.emitter, &surf.geometry)?
+                geometry::surface(&mut self.emitter, surf.geometry.solved()?)?
             };
             Some(r)
         })();
@@ -2661,7 +2663,8 @@ impl<'a> Builder<'a> {
                 )
             }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
-                let SurfaceGeometry::Torus(torus_surface) = solved else {
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = solved
+                else {
                     return None;
                 };
                 let center = torus_surface.center();
@@ -2708,10 +2711,10 @@ impl<'a> Builder<'a> {
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_curves.insert(id);
                 reference
-            } else if let CurveGeometry::Composite {
+            } else if let CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments,
                 self_intersect,
-            } = &geometry
+            }) = &geometry
             {
                 let mut segment_refs = Vec::with_capacity(segments.len());
                 for segment in segments {
@@ -2751,7 +2754,7 @@ impl<'a> Builder<'a> {
             } else if !geometry::curve_is_supported(&geometry) {
                 return None;
             } else {
-                geometry::curve(&mut self.emitter, &geometry)?
+                geometry::curve(&mut self.emitter, geometry.solved()?)?
             };
             Some(r)
         })();
@@ -3734,11 +3737,11 @@ impl<'a> Builder<'a> {
             .surfaces
             .iter()
             .filter(|surface| match &surface.geometry {
-                SurfaceGeometry::Sphere(sphere_surface) => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                     let radius = sphere_surface.radius();
                     radius < 0.0
                 }
-                SurfaceGeometry::Torus(torus_surface) => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                     let major_radius = torus_surface.major_radius();
                     let minor_radius = torus_surface.minor_radius();
                     major_radius < 0.0
@@ -3774,7 +3777,7 @@ impl<'a> Builder<'a> {
             .surfaces
             .iter()
             .filter(|surface| {
-                matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+                matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let ratio = cone_surface.ratio();
                     ratio != 1.0

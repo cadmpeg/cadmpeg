@@ -8,7 +8,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
@@ -435,11 +435,11 @@ pub(super) fn project(
         sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(1, knots, points, None, false).map_err(|error| {
                     CodecError::malformed(format_args!("copious-data curve: {error}"))
                 })?,
-            ),
+            )),
             source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {

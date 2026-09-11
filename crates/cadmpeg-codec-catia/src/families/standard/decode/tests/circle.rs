@@ -18,7 +18,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
             source_object: None,
         }),
     );
-    let sphere_geometry = SurfaceGeometry::Sphere(
+    let sphere_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             center,
             Vector3::new(0.0, 0.0, 1.0),
@@ -26,7 +26,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
             radius,
         )
         .expect("valid SphereSurface fixture"),
-    );
+    ));
     let surface_ids = [
         SurfaceId::mint("catia:test:surface#sphere-0".to_string()).expect("identity grammar"),
         SurfaceId::mint("catia:test:surface#sphere-1".to_string()).expect("identity grammar"),
@@ -70,7 +70,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
             .iter()
             .find(|candidate| candidate.id == curve),
         Some(Curve {
-            geometry: CurveGeometry::Unknown { .. },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }),
             ..
         })
     ));
@@ -80,7 +80,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
 fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
     let center = Point3::new(0.0, 2.0, 3.0);
     let radius = 2.0;
-    let surface = SurfaceGeometry::Sphere(
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             center,
             Vector3::new(0.0, 0.0, 1.0),
@@ -88,14 +88,14 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
             radius,
         )
         .expect("valid SphereSurface fixture"),
-    );
+    ));
     let support = StandardCurveSupport {
         pos: 12,
         tag: 7,
         faces: [0, 1],
         geometry: StandardCurveGeometry::Circle { center, radius },
     };
-    let unknown = CurveGeometry::Unknown { record: None };
+    let unknown = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
 
     assert!(standard_pcurve_geometry(
         &surface,

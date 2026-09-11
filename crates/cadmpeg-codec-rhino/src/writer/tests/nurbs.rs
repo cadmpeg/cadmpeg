@@ -11,26 +11,28 @@ use cadmpeg_ir::math::Point3;
 
 use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];
     edge.set_param_range(Some([2.0, 5.0])).unwrap();
-    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
-            2,
-            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            vec![
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.25, 0.5, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            Some(vec![1.0, 0.75, 1.0]),
-            false,
-        )
-        .expect("valid shared edge"),
-    );
+    ir.model.curves[1].geometry =
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                vec![
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.25, 0.5, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                Some(vec![1.0, 0.75, 1.0]),
+                false,
+            )
+            .expect("valid shared edge"),
+        ));
     let expected = ir.model.curves[1].geometry.clone();
     for version in [
         RhinoArchiveVersion::V5,
@@ -94,20 +96,21 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     let mut ir = adjacent_quad_sheet();
     ir.model.edges[1].set_param_range(Some([2.0, 5.0])).unwrap();
-    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
-            2,
-            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            vec![
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.25, 0.5, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            Some(vec![1.0, 0.75, 1.0]),
-            false,
-        )
-        .expect("valid explicit edge"),
-    );
+    ir.model.curves[1].geometry =
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                vec![
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.25, 0.5, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                Some(vec![1.0, 0.75, 1.0]),
+                false,
+            )
+            .expect("valid explicit edge"),
+        ));
     for (coedge, reversed) in [(1_usize, false), (7, true)] {
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}")
             .try_into()
@@ -506,18 +509,19 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         Point3::new(2.0, 0.25, 0.0),
         Point3::new(3.5, 0.75, 0.0),
     ];
-    ir.model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
-            2,
-            vec![
-                domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
-            ],
-            poles.to_vec(),
-            Some(vec![1.0, 0.8, 1.0]),
-            false,
-        )
-        .expect("valid trimmed edge"),
-    );
+    ir.model.curves[0].geometry =
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![
+                    domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
+                ],
+                poles.to_vec(),
+                Some(vec![1.0, 0.8, 1.0]),
+                false,
+            )
+            .expect("valid trimmed edge"),
+        ));
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
             2,

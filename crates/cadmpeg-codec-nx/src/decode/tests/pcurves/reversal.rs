@@ -224,14 +224,14 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();

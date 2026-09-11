@@ -10,7 +10,7 @@ use crate::vecmath::dot;
 use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -229,8 +229,11 @@ fn cylinder_frame_agrees_with_model(
         [surface] => surface,
         _ => return false,
     };
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &surface.geometry else {
-        return matches!(surface.geometry, SurfaceGeometry::Unknown { .. });
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
+        return matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        );
     };
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();

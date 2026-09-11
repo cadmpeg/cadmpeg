@@ -721,13 +721,13 @@ mod tests {
     /// however small the change relative to it.
     #[test]
     fn an_integer_field_differing_by_one_is_always_reported() {
-        use crate::geometry::{Curve, CurveGeometry, NurbsCurve};
+        use crate::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
         use crate::ids::CurveId;
         use crate::math::Point3;
 
         let nurbs = |degree: u32| Curve {
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     degree,
                     if degree == 1 {
@@ -744,7 +744,7 @@ mod tests {
                     false,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         };
 

@@ -10,7 +10,8 @@ use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, CurveId, EdgeId,
@@ -5785,7 +5786,7 @@ fn block_placement(
     let mut bands = Vec::<PlaneBand>::new();
     for face in faces {
         let geometry = surface_geometry.get(&face.surface).copied()?;
-        let SurfaceGeometry::Plane(plane_surface) = geometry else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
             continue;
         };
         let origin = plane_surface.origin();
@@ -5926,7 +5927,10 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
                     };
                     let surface = ir.model.surfaces.iter().find(|surface| {
                         surface.id == face.surface
-                            && matches!(&surface.geometry, SurfaceGeometry::Sphere(_))
+                            && matches!(
+                                surface.geometry.solved(),
+                                Some(SolvedSurfaceGeometry::Sphere(_))
+                            )
                     })?;
                     Some((body.id.clone(), surface.id.clone()))
                 })
@@ -5947,7 +5951,7 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)?;
-    let SurfaceGeometry::Sphere(sphere_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         return None;
     };
     let center = sphere_surface.center();
@@ -7272,7 +7276,9 @@ fn circular_loop_geometry(
     let mut witness: Option<(Point3, Vector3, f64)> = None;
     for coedge in coedges {
         let curve_id = edges.get(&coedge.edge).copied().flatten()?;
-        let CurveGeometry::Circle(circle_curve) = curves.get(curve_id)? else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+            curves.get(curve_id)?
+        else {
             return None;
         };
         let center = circle_curve.center();
@@ -7355,7 +7361,9 @@ fn cylindrical_face_witnesses(
         .copied()
         .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
     {
-        let Some(SurfaceGeometry::Cylinder(cylinder_surface)) = surfaces.get(&face.surface) else {
+        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
+            surfaces.get(&face.surface)
+        else {
             continue;
         };
         let origin = cylinder_surface.origin();
@@ -7473,7 +7481,9 @@ fn plane_annulus_witness(
         if face.loops.len() != 2 {
             continue;
         }
-        let Some(SurfaceGeometry::Plane(plane_surface)) = surfaces.get(&face.surface) else {
+        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
+            surfaces.get(&face.surface)
+        else {
             continue;
         };
         let origin = plane_surface.origin();
@@ -7708,7 +7718,9 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             if loop_edge_ids(cap_loop, &coedges_by_loop) != Some(cylinder_edges.clone()) {
                 continue;
             }
-            let Some(SurfaceGeometry::Plane(plane_surface)) = surfaces.get(&face.surface) else {
+            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
+                surfaces.get(&face.surface)
+            else {
                 continue;
             };
             let origin = plane_surface.origin();
@@ -7924,7 +7936,8 @@ fn simple_hole_chamfers(
             .into_iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
         {
-            let Some(SurfaceGeometry::Cone(cone_surface)) = surfaces.get(&face.surface).copied()
+            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) =
+                surfaces.get(&face.surface).copied()
             else {
                 continue;
             };
@@ -7965,7 +7978,7 @@ fn simple_hole_chamfers(
                 .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
                 .filter_map(|coedge| edges.get(&coedge.edge).copied().flatten())
                 .filter_map(|curve_id| match curves.get(curve_id)? {
-                    CurveGeometry::Circle(circle_curve)
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                         if {
                             let radius = circle_curve.radius();
                             radius.is_finite() && radius > 0.0

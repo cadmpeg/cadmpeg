@@ -15,7 +15,8 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -3258,9 +3259,9 @@ fn implicit_face_plane(
         }
     }
     let u_axis = u_axis?;
-    Some(SurfaceGeometry::Plane(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).ok()?,
-    ))
+    )))
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
@@ -3881,14 +3882,20 @@ fn pcurve_selection_seeds(
         ]);
     }
     if let Some((origin, direction)) = geometry.line_parameters() {
-        if let Some(period) = surface_parameter_periods(surface)[0] {
+        if let Some(period) = surface
+            .solved()
+            .and_then(|surface| surface_parameter_periods(surface)[0])
+        {
             if direction.u != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     seeds.push((period * fraction - origin.u) / direction.u);
                 }
             }
         }
-        if let Some(period) = surface_parameter_periods(surface)[1] {
+        if let Some(period) = surface
+            .solved()
+            .and_then(|surface| surface_parameter_periods(surface)[1])
+        {
             if direction.v != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     seeds.push((period * fraction - origin.v) / direction.v);
@@ -4022,36 +4029,34 @@ fn surface_selection_parameter_domains(
             .map_or([None, None], |source_surface| {
                 surface_selection_parameter_domains(index, source, &source_surface.geometry)
             }),
-        _ => surface_selection_parameter_domains_from_geometry(surface),
+        _ => surface.solved().map_or(
+            [None, None],
+            surface_selection_parameter_domains_from_geometry,
+        ),
     }
 }
 
 fn surface_selection_parameter_domains_from_geometry(
-    surface: &SurfaceGeometry,
+    surface: &SolvedSurfaceGeometry,
 ) -> [Option<[f64; 2]>; 2] {
     match surface {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_selection_parameter_domains_from_geometry(geometry),
-        SurfaceGeometry::Nurbs(surface) => {
+        SolvedSurfaceGeometry::Nurbs(surface) => {
             let (u_count, v_count) = (surface.u_count() as usize, surface.v_count() as usize);
             [
                 selection_nurbs_parameter_domain(surface.u_degree(), surface.u_knots(), u_count),
                 selection_nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),
             ]
         }
-        SurfaceGeometry::Transformed { basis, .. } => {
+        SolvedSurfaceGeometry::Transformed { basis, .. } => {
             surface_selection_parameter_domains_from_geometry(basis)
         }
-        SurfaceGeometry::Plane(_)
-        | SurfaceGeometry::Cylinder(_)
-        | SurfaceGeometry::Cone(_)
-        | SurfaceGeometry::Sphere(_)
-        | SurfaceGeometry::Torus(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => [None, None],
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_)
+        | SolvedSurfaceGeometry::Torus(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
@@ -4065,29 +4070,32 @@ fn curve_selection_parameter_domain(
     curve_id: &CurveId,
 ) -> Option<[f64; 2]> {
     let curve = index.curves(curve_id.as_str())?;
-    curve_selection_parameter_domain_from_geometry(&curve.geometry)
+    curve_selection_parameter_domain_from_geometry(curve.geometry.solved()?)
 }
 
-fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> Option<[f64; 2]> {
+fn curve_selection_parameter_domain_from_geometry(
+    geometry: &SolvedCurveGeometry,
+) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
-        CurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+            Some([0.0, std::f64::consts::TAU])
+        }
+        SolvedCurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
+        SolvedCurveGeometry::Polyline(polyline) => {
             let parameters = polyline.parameters()?;
             let lower = *parameters.first()?;
             let upper = *parameters.last()?;
             (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
         }
-        CurveGeometry::Transformed { basis, .. } => {
+        SolvedCurveGeometry::Transformed { basis, .. } => {
             curve_selection_parameter_domain_from_geometry(basis)
         }
-        CurveGeometry::Line(_)
-        | CurveGeometry::Parabola(_)
-        | CurveGeometry::Hyperbola(_)
-        | CurveGeometry::Degenerate(_)
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Line(_)
+        | SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 

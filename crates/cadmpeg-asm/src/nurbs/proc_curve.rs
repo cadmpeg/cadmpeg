@@ -25,7 +25,7 @@ use crate::nurbs::subtypes::{
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
@@ -1904,7 +1904,8 @@ pub fn decode_par_int_cur_isoline(
     let [slot] = occupied.as_slice() else {
         return None;
     };
-    let (Some(SurfaceGeometry::Nurbs(support)), Some(pcurve)) = (&supports[*slot], &pcurves[*slot])
+    let (Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support))), Some(pcurve)) =
+        (&supports[*slot], &pcurves[*slot])
     else {
         return None;
     };
@@ -1946,7 +1947,8 @@ pub(crate) fn par_int_cur_isoline(
     let [slot] = occupied.as_slice() else {
         return None;
     };
-    let (Some(SurfaceGeometry::Nurbs(support)), Some(pcurve)) = (&supports[*slot], &pcurves[*slot])
+    let (Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support))), Some(pcurve)) =
+        (&supports[*slot], &pcurves[*slot])
     else {
         return None;
     };
@@ -2792,7 +2794,10 @@ fn embedded_surface_fields(
         } else {
             no_ranges
         };
-        return Some((SurfaceGeometry::Nurbs(decoded), ranges));
+        return Some((
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded)),
+            ranges,
+        ));
     }
     let point = cur.take_position()?;
     let point = Point3::new(
@@ -2811,9 +2816,9 @@ fn embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Plane(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(point, normal, u_axis).ok()?,
-                ),
+                )),
                 ranges,
             ))
         }
@@ -2839,7 +2844,7 @@ fn embedded_surface_fields(
                 no_ranges
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                SurfaceGeometry::Cylinder(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::CylinderSurface::try_new(
                         point,
                         native_axis,
@@ -2847,14 +2852,14 @@ fn embedded_surface_fields(
                         radius,
                     )
                     .ok()?,
-                )
+                ))
             } else {
                 let axis = if sine * cosine < 0.0 {
                     Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
                 } else {
                     native_axis
                 };
-                SurfaceGeometry::Cone(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                     cadmpeg_ir::geometry::ConeSurface::try_new(
                         point,
                         axis,
@@ -2864,7 +2869,7 @@ fn embedded_surface_fields(
                         sine.abs().atan2(cosine.abs()),
                     )
                     .ok()?,
-                )
+                ))
             };
             Some((surface, ranges))
         }
@@ -2882,7 +2887,7 @@ fn embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Sphere(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     cadmpeg_ir::geometry::SphereSurface::try_new(
                         point,
                         axis,
@@ -2890,7 +2895,7 @@ fn embedded_surface_fields(
                         radius,
                     )
                     .ok()?,
-                ),
+                )),
                 ranges,
             ))
         }
@@ -2909,7 +2914,7 @@ fn embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Torus(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     cadmpeg_ir::geometry::TorusSurface::try_new(
                         point,
                         axis,
@@ -2918,7 +2923,7 @@ fn embedded_surface_fields(
                         minor_radius,
                     )
                     .ok()?,
-                ),
+                )),
                 ranges,
             ))
         }
@@ -2950,7 +2955,10 @@ fn decode_embedded_surface_fields(
         } else {
             no_ranges
         };
-        return Some((SurfaceGeometry::Nurbs(decoded.surface), ranges));
+        return Some((
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded.surface)),
+            ranges,
+        ));
     }
     let point = take_native_vec3(bytes, position, 0x13)?;
     let point = Point3::new(
@@ -2969,9 +2977,9 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Plane(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(point, normal, u_axis).ok()?,
-                ),
+                )),
                 ranges,
             ))
         }
@@ -2997,7 +3005,7 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                SurfaceGeometry::Cylinder(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::CylinderSurface::try_new(
                         point,
                         native_axis,
@@ -3005,14 +3013,14 @@ fn decode_embedded_surface_fields(
                         radius,
                     )
                     .ok()?,
-                )
+                ))
             } else {
                 let axis = if sine * cosine < 0.0 {
                     Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
                 } else {
                     native_axis
                 };
-                SurfaceGeometry::Cone(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                     cadmpeg_ir::geometry::ConeSurface::try_new(
                         point,
                         axis,
@@ -3022,7 +3030,7 @@ fn decode_embedded_surface_fields(
                         sine.abs().atan2(cosine.abs()),
                     )
                     .ok()?,
-                )
+                ))
             };
             Some((surface, ranges))
         }
@@ -3040,7 +3048,7 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Sphere(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     cadmpeg_ir::geometry::SphereSurface::try_new(
                         point,
                         axis,
@@ -3048,7 +3056,7 @@ fn decode_embedded_surface_fields(
                         radius,
                     )
                     .ok()?,
-                ),
+                )),
                 ranges,
             ))
         }
@@ -3067,7 +3075,7 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Torus(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     cadmpeg_ir::geometry::TorusSurface::try_new(
                         point,
                         axis,
@@ -3076,7 +3084,7 @@ fn decode_embedded_surface_fields(
                         minor_radius,
                     )
                     .ok()?,
-                ),
+                )),
                 ranges,
             ))
         }
@@ -3114,7 +3122,8 @@ pub(crate) fn optional_embedded_surface_with_bounds(
             let surface = table
                 .span(index)
                 .and_then(|target| owned_surface_cache_resolving_refs(target, table))
-                .map(SurfaceGeometry::Nurbs);
+                .map(SolvedSurfaceGeometry::Nurbs)
+                .map(SurfaceGeometry::Solved);
             let mut bounds = [None; 4];
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
@@ -3146,7 +3155,9 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
             let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
             let surface = if let Some(surface) = owned_surface_cache_resolving_refs(scope, table) {
-                Some(SurfaceGeometry::Nurbs(surface))
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    surface,
+                )))
             } else if crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope, table)
                 .is_some()
             {

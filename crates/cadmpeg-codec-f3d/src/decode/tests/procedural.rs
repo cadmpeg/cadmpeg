@@ -19,6 +19,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
@@ -164,7 +165,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
         .iter_mut()
         .find(|curve| curve.id == member_curve)
         .expect("compound-loft member curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0)
@@ -172,7 +173,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
                 .unwrap(),
         )
         .unwrap(),
-    );
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -206,7 +207,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
             .iter()
             .find(|curve| curve.id == *member_curve)
             .map(|curve| &curve.geometry),
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
     ));
 }
@@ -269,7 +270,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
             id: line_curve.clone(),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Line(
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
@@ -277,7 +278,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
                         .unwrap(),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         source_less.model.procedural_surfaces[0]
@@ -334,7 +335,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
                         .iter()
                         .find(|candidate| candidate.id == *curve)
                         .map(|curve| &curve.geometry),
-                    Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                         if curve.degree() == 1
                             && curve.knots()
                                 == [
@@ -751,7 +752,9 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
 
 #[test]
 fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     for name in ["sub_spl_sur", "subsur"] {
         let decoded = F3dCodec
@@ -774,7 +777,7 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         .surfaces
         .iter()
         .find(|surface| surface.id == *support)
-        .map(|surface| &surface.geometry), Some(SurfaceGeometry::Plane(plane_surface))
+        .map(|surface| &surface.geometry), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
             if {
                 let origin = plane_surface.origin();
                 *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
@@ -947,7 +950,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
         .iter_mut()
         .find(|curve| curve.id == law_edge)
         .expect("law edge curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0)
@@ -955,7 +958,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
                 .unwrap(),
         )
         .unwrap(),
-    );
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -983,7 +986,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             .iter()
             .find(|candidate| candidate.id == curve.id)
             .map(|curve| &curve.geometry),
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
                 && curve.knots() == [-0.25, -0.25, 1.25, 1.25]
     ));
@@ -1026,7 +1029,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
         .iter_mut()
         .find(|curve| curve.id == profile_curve)
         .expect("skin profile curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(2.0, -1.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
@@ -1034,7 +1037,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
                 .unwrap(),
         )
         .unwrap(),
-    );
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1066,7 +1069,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
             .iter()
             .find(|curve| curve.id == profiles[0].curve)
             .map(|curve| &curve.geometry),
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
     ));
 }

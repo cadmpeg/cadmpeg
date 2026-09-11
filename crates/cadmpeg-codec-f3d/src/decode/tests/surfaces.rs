@@ -9,6 +9,7 @@
     clippy::semicolon_if_nothing_returned,
     clippy::trivially_copy_pass_by_ref
 )]
+use cadmpeg_ir::geometry::CurveGeometry;
 
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
@@ -19,10 +20,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
     let result = F3dCodec
@@ -32,7 +34,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     let native = f3d_native(result.ir());
     assert_eq!(native.mesh_surface_sentinels.len(), 1);
@@ -73,7 +75,8 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.model.surfaces[0].geometry = SurfaceGeometry::Unknown { record: None };
+    source_less.model.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -226,7 +229,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .iter_mut()
                 .find(|curve| curve.id == profile)
                 .expect("ruled profile")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
@@ -234,7 +237,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                         .unwrap(),
                 )
                 .unwrap(),
-            );
+            ));
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -258,7 +261,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                     .iter()
                     .find(|curve| curve.id == *profile)
                     .map(|curve| &curve.geometry),
-                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
@@ -311,7 +314,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .iter_mut()
                 .find(|curve| curve.id == source)
                 .expect("sum source curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
                     cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
@@ -319,7 +322,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                         .unwrap(),
                 )
                 .unwrap(),
-            );
+            ));
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -451,7 +454,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -463,7 +466,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 false,
             )
             .unwrap(),
-        );
+        ));
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -493,7 +496,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 .iter()
                 .find(|curve| curve.id == *directrix)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
                 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
                 && curve.control_points() == [
@@ -581,7 +584,9 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
 
 #[test]
 fn generated_compound_spline_surface_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let result = F3dCodec
         .decode(
@@ -612,7 +617,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
             result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
         })
         .expect("compound solved surface");
-    let Some(SurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {
+    let Some(SolvedSurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {
         panic!("expected solved NURBS surface")
     };
     assert!(solved.weights().is_none());
@@ -625,7 +630,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .expect("compound rational component");
     assert!(matches!(
         rational_component.geometry,
-                SurfaceGeometry::Nurbs(ref surface) if surface.weights().is_some()
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ref surface)) if surface.weights().is_some()
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -712,7 +717,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -724,7 +729,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 false,
             )
             .unwrap(),
-        );
+        ));
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -747,7 +752,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 .iter()
                 .find(|curve| curve.id == *reference)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
                 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
                 && curve.control_points() == [
@@ -830,7 +835,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter_mut()
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![-1.0, -1.0, 2.0, 2.0],
@@ -842,7 +847,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 false,
             )
             .unwrap(),
-        );
+        ));
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -893,7 +898,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 .iter()
                 .find(|curve| curve.id == profile.id)
                 .map(|curve| &curve.geometry),
-            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
                 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
                 && curve.control_points() == [

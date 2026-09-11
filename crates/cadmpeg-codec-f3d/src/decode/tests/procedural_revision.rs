@@ -9,6 +9,7 @@
     clippy::semicolon_if_nothing_returned,
     clippy::trivially_copy_pass_by_ref
 )]
+use cadmpeg_ir::geometry::CurveGeometry;
 
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
@@ -22,6 +23,7 @@ use zip::CompressionMethod;
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 #[test]
 fn generated_revision_exact_surface_round_trips() {
@@ -803,7 +805,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 .iter_mut()
                 .find(|candidate| candidate.id == *curve)
                 .expect("vertex-blend boundary curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
                     cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0)
@@ -811,7 +813,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                         .unwrap(),
                 )
                 .unwrap(),
-            );
+            ));
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -838,7 +840,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                     .iter()
                     .find(|candidate| candidate.id == curve)
                     .map(|curve| &curve.geometry),
-                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
                         && curve.knots() == [range[0], range[0], range[1], range[1]]
             ));
@@ -880,7 +882,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         .iter()
         .find(|curve| curve.id == *directrix)
         .expect("extrusion directrix carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = directrix.geometry.solved() else {
         panic!("expected NURBS directrix")
     };
     assert_eq!(directrix.control_points().len(), 3);
@@ -1032,7 +1034,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .find(|surface| {
             matches!(
                 surface.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_))
+                Some(SolvedSurfaceGeometry::Nurbs(_))
             )
         })
         .expect("generated NURBS surface");
@@ -1042,8 +1044,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone()
-    else {
+    let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
     nurbs
@@ -1059,10 +1060,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .edit_v_knots(|knots| knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]))
         .unwrap();
     nurbs.set_u_periodic(true);
-    *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
-    )
-    .unwrap();
+    *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1081,7 +1079,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .expect("round-trip NURBS surface");
     assert_eq!(
         *surface.geometry.solved_cache().expect("solved NURBS cache"),
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(expected)
+        SolvedSurfaceGeometry::Nurbs(expected)
     );
 }
 
@@ -1099,7 +1097,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .find(|surface| {
             matches!(
                 surface.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs))
+                Some(SolvedSurfaceGeometry::Nurbs(nurbs))
                     if nurbs.weights().is_some()
             )
         })
@@ -1110,15 +1108,11 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone()
-    else {
+    let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
     nurbs.edit_weights(|rows| rows[0][1] = 0.65).unwrap();
-    *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
-    )
-    .unwrap();
+    *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1137,7 +1131,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .expect("round-trip rational surface");
     assert_eq!(
         *surface.geometry.solved_cache().expect("solved NURBS cache"),
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(expected)
+        SolvedSurfaceGeometry::Nurbs(expected)
     );
 }
 
@@ -1163,7 +1157,9 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .iter_mut()
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =
+        &mut curve.geometry
+    else {
         panic!("expected NURBS directrix")
     };
     let mut control_points = nurbs.control_points().to_vec();
@@ -1194,7 +1190,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .expect("round-trip directrix");
     assert_eq!(
         curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(expected)
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(expected))
     );
 }
 
@@ -1266,7 +1262,7 @@ fn decode_retains_generated_rolling_ball_definition() {
         .iter()
         .find(|curve| Some(&curve.id) == spine.as_ref())
         .expect("blend spine carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(spine) = &spine.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(spine)) = spine.geometry.solved() else {
         panic!("expected NURBS blend spine")
     };
     assert_eq!(spine.control_points().len(), 3);
@@ -1282,7 +1278,8 @@ fn decode_retains_generated_rolling_ball_definition() {
 #[test]
 fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     use cadmpeg_ir::geometry::{
-        BlendRadiusLaw, CurveGeometry, NurbsCurve, ProceduralSurfaceDefinition, SurfaceGeometry,
+        BlendRadiusLaw, CurveGeometry, NurbsCurve, ProceduralSurfaceDefinition,
+        SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1334,22 +1331,22 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         })
         .unwrap();
     let support_geometry = [
-        SurfaceGeometry::Plane(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
             )
             .unwrap(),
-        ),
-        SurfaceGeometry::Plane(
+        )),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
     ];
     for (id, geometry) in support_ids.into_iter().zip(support_geometry) {
         source_less
@@ -1366,7 +1363,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .iter_mut()
         .find(|curve| curve.id == spine_id)
         .expect("rolling-ball spine")
-        .geometry = CurveGeometry::Nurbs(
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::new(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -1379,7 +1376,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             false,
         )
         .unwrap(),
-    );
+    ));
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1403,7 +1400,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .expect("rolling-ball carrier")
         .geometry
         .solved_cache()
-        .expect("solved rolling-ball cache"), SurfaceGeometry::Cylinder(cylinder_surface)
+        .expect("solved rolling-ball cache"), SolvedSurfaceGeometry::Cylinder(cylinder_surface)
             if {
                 let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
@@ -1529,7 +1526,9 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
         .iter_mut()
         .find(|curve| curve.id == spine_id)
         .expect("blend spine curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =
+        &mut curve.geometry
+    else {
         panic!("expected NURBS blend spine")
     };
     let mut control_points = nurbs.control_points().to_vec();
@@ -1586,7 +1585,9 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         .iter_mut()
         .find(|surface| surface.id == support_id)
         .expect("blend support surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+        &mut surface.geometry
+    else {
         panic!("expected NURBS blend support")
     };
     nurbs

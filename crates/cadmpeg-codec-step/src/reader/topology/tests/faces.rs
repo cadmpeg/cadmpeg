@@ -9,7 +9,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::ids;
@@ -43,7 +45,7 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
     let origin = plane_surface.origin();
@@ -70,7 +72,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
         .expect("base implicit plane");
-    let SurfaceGeometry::Plane(plane_surface) = base_surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = base_surface.geometry.solved() else {
         panic!("base face did not produce a plane");
     };
     let origin = *plane_surface.origin();
@@ -108,7 +110,8 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
         .expect("reversed implicit plane");
-    let SurfaceGeometry::Plane(plane_surface) = reversed_surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = reversed_surface.geometry.solved()
+    else {
         panic!("reversed face did not produce a plane");
     };
     let normal = *plane_surface.normal();
@@ -150,7 +153,10 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     );
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && matches!(surface.geometry, SurfaceGeometry::Plane(_))
+            && matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
     }));
 
     let reordered = source.replace(
@@ -173,7 +179,10 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     );
     assert!(reordered.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && matches!(surface.geometry, SurfaceGeometry::Plane(_))
+            && matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
     }));
     let validation =
         cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone());
@@ -257,7 +266,10 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#28")
         .expect("explicit face plane");
-    assert!(matches!(surface.geometry, SurfaceGeometry::Plane(_)));
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+    ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -285,7 +297,7 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
     let origin = *plane_surface.origin();
@@ -428,7 +440,7 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
     let normal = *plane_surface.normal();
@@ -533,7 +545,10 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Cylinder(_))
+            && matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+            )
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -836,7 +851,7 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
             .iter()
             .find(|curve| curve.id.as_str() == "step:data:curve#16")
             .map(|curve| &curve.geometry),
-        Some(CurveGeometry::Unknown { record: Some(record) })
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_curve#16"
     ));
     assert!(matches!(
@@ -847,7 +862,7 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#28")
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Unknown { record: Some(record) })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_surface#28"
     ));
     assert!(decoded
@@ -882,7 +897,7 @@ fn unsupported_surface_carrier_on_face_surface_preserves_topology_as_unknown() {
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#28")
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Unknown { record: Some(record) })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_surface#28"
     ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());

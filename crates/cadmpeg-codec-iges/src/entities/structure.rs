@@ -15,7 +15,7 @@ use crate::parameter::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1350,8 +1350,8 @@ fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> 
 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
     let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
-    match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-        SurfaceGeometry::Plane(plane_surface) => {
+    match surface.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             Some((*origin, *normal))
@@ -1474,11 +1474,11 @@ fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f
         return false;
     }
     match geometry {
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let radius = circle_curve.radius();
             radius.is_finite() && radius > 0.0
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             major_radius.is_finite()
@@ -1499,20 +1499,19 @@ struct PlaneBoundarySimplicity<'a> {
 }
 
 fn bounded_plane_curve_is_simple(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     context: PlaneBoundarySimplicity<'_>,
     source_is_certified_simple: bool,
     parameter_range: Option<[f64; 2]>,
     active: &mut BTreeSet<CurveId>,
 ) -> bool {
     match geometry {
-        CurveGeometry::Degenerate(_) => false,
-        CurveGeometry::Line(_) => false,
-        CurveGeometry::Parabola(_) => false,
-        CurveGeometry::Hyperbola(_) => false,
-        CurveGeometry::Procedural { .. } => false,
-        CurveGeometry::Unknown { .. } => false,
-        CurveGeometry::Composite {
+        SolvedCurveGeometry::Degenerate(_) => false,
+        SolvedCurveGeometry::Line(_) => false,
+        SolvedCurveGeometry::Parabola(_) => false,
+        SolvedCurveGeometry::Hyperbola(_) => false,
+        SolvedCurveGeometry::Unknown { .. } => false,
+        SolvedCurveGeometry::Composite {
             segments,
             self_intersect,
         } => {
@@ -1524,18 +1523,16 @@ fn bounded_plane_curve_is_simple(
                     if !active.insert(segment.curve.clone()) {
                         return false;
                     }
-                    let valid = bounded_plane_curve_is_simple(
-                        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                        context,
-                        false,
-                        None,
-                        active,
-                    );
+                    let Some(geometry) = curve.geometry.solved() else {
+                        return false;
+                    };
+                    let valid =
+                        bounded_plane_curve_is_simple(geometry, context, false, None, active);
                     active.remove(&segment.curve);
                     valid
                 })
         }
-        CurveGeometry::Transformed {
+        SolvedCurveGeometry::Transformed {
             basis,
             transform: map,
         } => context.transform.compose(*map).is_ok_and(|transform| {
@@ -1550,10 +1547,11 @@ fn bounded_plane_curve_is_simple(
                 active,
             )
         }),
-        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => {
-            parameter_range.is_some_and(|range| analytic_curve_is_simple_closed(geometry, range))
-        }
-        CurveGeometry::Nurbs(nurbs) => {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => parameter_range
+            .is_some_and(|range| {
+                analytic_curve_is_simple_closed(&CurveGeometry::Solved(geometry.clone()), range)
+            }),
+        SolvedCurveGeometry::Nurbs(nurbs) => {
             source_is_certified_simple
                 || parameter_range.is_some_and(|range| {
                     linear_nurbs_is_simple_closed(
@@ -1565,7 +1563,7 @@ fn bounded_plane_curve_is_simple(
                     )
                 })
         }
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Polyline(polyline) => {
             let active_range_matches = parameter_range.is_none_or(|range| {
                 polyline.parameters().is_some_and(|parameters| {
                     parameters.first().copied() == Some(range[0])
@@ -1654,7 +1652,9 @@ fn plane_boundary_edge(
     let curve = index
         .curves(curve_id.as_str())
         .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
-    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
+    let Some(geometry) = curve.geometry.solved() else {
+        return Err(PlaneBoundaryError::MissingCurveCarrier);
+    };
     let source_is_certified_simple = entries
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
