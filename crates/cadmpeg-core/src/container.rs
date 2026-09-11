@@ -489,6 +489,7 @@ impl EntryCompressionWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ContainerEntryWire {
     name: String,
     role: ContainerRole,
@@ -874,5 +875,22 @@ mod tests {
         assert_eq!(directory.stored_size(), None);
         assert_eq!(directory.expanded_size(), None);
         assert_eq!(directory.role, ContainerRole::Stream);
+    }
+
+    #[test]
+    fn a_container_entry_refuses_an_unknown_key_beside_its_name() {
+        let wire = serde_json::json!({
+            "name": "entry",
+            "role": "stream",
+            "compression": "none",
+        });
+        serde_json::from_value::<ContainerEntry>(wire.clone()).expect("a legal entry");
+
+        let mut stray = wire;
+        stray["zz_bogus"] = serde_json::json!(1);
+        let error = serde_json::from_value::<ContainerEntry>(stray)
+            .expect_err("an unknown key has no encoding")
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
     }
 }

@@ -863,8 +863,8 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::geometry::VectorOffsetRoles;
 
-    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/golden/decode/skin_surface.json");
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/decode/skin_surface.json");
     let whole: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&golden).expect("the skin golden")).expect("json");
     let document = whole["ir"].clone();
@@ -912,12 +912,11 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "first": {"variable_type": 4, "key": 1},
         "second": 2,
     });
-    let error =
-        serde_json::from_value::<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>(
-            solver_scalar_object,
-        )
-        .expect_err("a solver scalar slot is its key")
-        .to_string();
+    let error = serde_json::from_value::<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>(
+        solver_scalar_object,
+    )
+    .expect_err("a solver scalar slot is its key")
+    .to_string();
     assert!(error.contains("invalid type: map"), "{error}");
 
     let labelled = serde_json::json!({
