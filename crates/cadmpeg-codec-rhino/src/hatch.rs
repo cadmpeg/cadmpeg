@@ -533,6 +533,7 @@ fn parse_userdata(
 pub(crate) mod tests {
     use super::*;
     use crate::test_support::{class_wrapper, polyline_payload, POLYLINE_CLASS};
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
     fn plane_bytes() -> Vec<u8> {
         [
@@ -718,7 +719,7 @@ pub(crate) mod tests {
         assert_eq!(hatch.loops[0].kind, LoopKind::Outer);
         assert!(matches!(
             hatch.loops[0].curve.reported_geometry(),
-            cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
         ));
     }
 

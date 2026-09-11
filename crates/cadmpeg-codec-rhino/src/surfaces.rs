@@ -5,7 +5,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
@@ -71,8 +71,10 @@ impl TypedSurface {
 
     pub(crate) fn into_geometry(self) -> SurfaceGeometry {
         match self {
-            Self::Plane { plane, .. } => SurfaceGeometry::Plane(plane),
-            Self::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs),
+            Self::Plane { plane, .. } => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane))
+            }
+            Self::Nurbs(nurbs) => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
         }
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
@@ -72,7 +73,9 @@ fn scan_discovers_curve_halfedge_topology() {
         .expect("retained unresolved curve carrier");
     assert!(matches!(
         curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Unknown { record: Some(_) }
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+            record: Some(_)
+        })
     ));
     assert_eq!(
         result

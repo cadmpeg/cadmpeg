@@ -23,6 +23,7 @@ use zip::CompressionMethod;
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
@@ -317,7 +318,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             use_.parameter_range.endpoints() == [-2.0, 3.0]
                 && decoded.ir().model.curves.iter().any(|curve| {
                     curve.id == use_.curve
-                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree() == 2)
+                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref nurbs)) if nurbs.degree() == 2)
                 })
         })
     }));
@@ -333,7 +334,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
                 .find(|curve| curve.id == use_.curve)
         })
         .expect("first embedded use curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(first_use_curve) = &first_use_curve.geometry
+    let Some(SolvedCurveGeometry::Nurbs(first_use_curve)) = first_use_curve.geometry.solved()
     else {
         panic!("embedded use curve must be NURBS")
     };
@@ -362,7 +363,9 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .iter_mut()
         .find(|curve| curve.id == use_curve)
         .expect("embedded use-curve carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =
+        &mut curve.geometry
+    else {
         panic!("embedded use curve must be NURBS")
     };
     nurbs
@@ -377,7 +380,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .expect("embedded use-curve edit round trip");
     assert!(preserved.ir().model.curves.iter().any(|curve| {
         curve.id == use_curve
-            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
+            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
     }));
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
@@ -385,7 +388,9 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .expect("identity grammar");
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: generated_curve_id.clone(),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(expected.clone()),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            expected.clone(),
+        )),
         source_object: None,
     });
     let tolerant_coedge = source_less.model.coedges[0].id.clone();
@@ -427,7 +432,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         1
     );
     assert!(generated.ir().model.curves.iter().any(|curve| {
-        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
+        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
     }));
 }
 
@@ -461,7 +466,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
 #[test]
 fn stamped_law_intcurve_round_trips_byte_exactly() {
     use cadmpeg_ir::geometry::{
-        CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
+        LawExpression, LawFormula, ProceduralCurveDefinition, SolvedCurveGeometry,
     };
 
     // Formula names exceed 255 bytes to exercise the u16 (`0x08`) length prefix
@@ -523,7 +528,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         .iter()
         .find(|curve| decoded.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .and_then(|curve| match curve.geometry.solved_cache() {
-            Some(CurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
         })
         .expect("solved cache");
@@ -552,7 +557,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
 
 #[test]
 fn legacy_law_intcurve_round_trips_byte_exactly() {
-    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedCurveGeometry};
 
     let smbh = synthetic_geometry_with_law_curve_smbh();
     let decoded = F3dCodec
@@ -594,7 +599,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         .iter()
         .find(|curve| decoded.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .and_then(|curve| match curve.geometry.solved_cache() {
-            Some(CurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
         })
         .expect("solved cache");

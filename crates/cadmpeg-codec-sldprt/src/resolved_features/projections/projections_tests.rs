@@ -7,7 +7,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -28,7 +28,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
                 4.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let face = Face {
@@ -84,14 +84,14 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
 fn frame_only_plane_support_requires_one_coincident_face() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let face = Face {
@@ -140,14 +140,14 @@ fn frame_only_plane_support_requires_one_coincident_face() {
 fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let face = Face {
@@ -213,14 +213,14 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
 fn generic_native_offset_plane_support_stays_native() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let face = Face {
@@ -407,7 +407,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
 
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -415,7 +415,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
                 4.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let topology_face = Face {

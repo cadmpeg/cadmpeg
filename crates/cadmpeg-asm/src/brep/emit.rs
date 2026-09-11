@@ -39,9 +39,9 @@ use cadmpeg_ir::geometry::{
     NurbsCurve, Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs,
     ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
     RollingBallRadiusSelector, RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
-    RollingBallSupportSurface, RollingBallThirdSide, Surface, SurfaceGeometry,
-    VariableBlendConstruction, VertexBlendBoundary, VertexBlendBoundaryGeometry,
-    VertexBlendConstruction,
+    RollingBallSupportSurface, RollingBallThirdSide, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry, VariableBlendConstruction, VertexBlendBoundary,
+    VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -243,7 +243,7 @@ fn emit_carrier_surface(
                         .expect("identity grammar");
                 out.curves.push(Curve {
                     id: reference_id.clone(),
-                    geometry: CurveGeometry::Nurbs(reference),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reference)),
                     source_object: None,
                 });
                 let pcurve = pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs });
@@ -292,12 +292,12 @@ fn emit_carrier_surface(
                         .expect("identity grammar");
                 out.curves.push(Curve {
                     id: first_id.clone(),
-                    geometry: CurveGeometry::Nurbs(first),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
                     source_object: None,
                 });
                 out.curves.push(Curve {
                     id: second_id.clone(),
-                    geometry: CurveGeometry::Nurbs(second),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
                     source_object: None,
                 });
                 ProceduralSurfaceDefinition::Ruled {
@@ -414,7 +414,7 @@ fn emit_carrier_surface(
                         .expect("identity grammar");
                 out.curves.push(Curve {
                     id: directrix_id.clone(),
-                    geometry: CurveGeometry::Nurbs(directrix),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                     source_object: None,
                 });
                 ProceduralSurfaceDefinition::Extrusion(
@@ -562,7 +562,7 @@ fn emit_deformable_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve {
@@ -609,7 +609,7 @@ fn emit_deformable_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::DeformableSurfaceData::Full {
@@ -749,7 +749,7 @@ fn emit_loft_path_curve(
     let id = CurveId::mint(id).expect("identity grammar");
     out.curves.push(Curve {
         id: id.clone(),
-        geometry: CurveGeometry::Nurbs(geometry),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
         source_object: None,
     });
     Some(LoftPathCurve { id, endpoints })
@@ -776,7 +776,7 @@ fn emit_loft_surface(
                                                     )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: curve.clone(),
-                                                        geometry: CurveGeometry::Nurbs(member.curve),
+                                                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(member.curve)),
                                                         source_object: None,
                                                     });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
@@ -805,7 +805,7 @@ fn emit_loft_surface(
                                                     )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: id.clone(),
-                                                        geometry: CurveGeometry::Nurbs(geometry),
+                                                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                                         source_object: None,
                                                     });
                                                     id
@@ -876,7 +876,7 @@ fn emit_compound_loft_surface(
                                         )).expect("identity grammar");
                                         out.curves.push(Curve {
                                             id: curve.clone(),
-                                            geometry: CurveGeometry::Nurbs(member.curve),
+                                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(member.curve)),
                                             source_object: None,
                                         });
                                         let (type_code, data) = emit_classic_loft_data(out, member.data, format!(
@@ -891,7 +891,7 @@ fn emit_compound_loft_surface(
         .expect("identity grammar");
         out.curves.push(Curve {
             id: path.clone(),
-            geometry: CurveGeometry::Nurbs(scale.path),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
             source_object: None,
         });
         let auxiliaries = scale
@@ -905,7 +905,7 @@ fn emit_compound_loft_surface(
                 .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(geometry),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                     source_object: None,
                 });
                 id
@@ -942,7 +942,7 @@ fn emit_compound_loft_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::CompoundLoftTail::Six {
@@ -988,7 +988,7 @@ fn emit_compound_loft_surface(
                     .expect("identity grammar");
                     out.curves.push(Curve {
                         id: id.clone(),
-                        geometry: CurveGeometry::Nurbs(curve),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
                     });
                     cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
@@ -1037,7 +1037,7 @@ fn emit_scaled_compound_loft_surface(
                                         )).expect("identity grammar");
                                         out.curves.push(Curve {
                                             id: curve.clone(),
-                                            geometry: CurveGeometry::Nurbs(member.curve),
+                                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(member.curve)),
                                             source_object: None,
                                         });
                                         let (type_code, data) = emit_classic_loft_data(out, member.data, format!(
@@ -1052,7 +1052,7 @@ fn emit_scaled_compound_loft_surface(
         .expect("identity grammar");
         out.curves.push(Curve {
             id: path.clone(),
-            geometry: CurveGeometry::Nurbs(scale.path),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
             source_object: None,
         });
         let auxiliaries = scale
@@ -1066,7 +1066,7 @@ fn emit_scaled_compound_loft_surface(
                 .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(geometry),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                     source_object: None,
                 });
                 id
@@ -1096,7 +1096,7 @@ fn emit_scaled_compound_loft_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
@@ -1130,7 +1130,7 @@ fn emit_scaled_compound_loft_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
@@ -1153,7 +1153,7 @@ fn emit_scaled_compound_loft_surface(
     .expect("identity grammar");
     out.curves.push(Curve {
         id: tail_curve.clone(),
-        geometry: CurveGeometry::Nurbs(embedded.tail_curve),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.tail_curve)),
         source_object: None,
     });
     let shape = match embedded.shape {
@@ -1240,7 +1240,7 @@ fn map_law_expression(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::LawExpression::Edge {
@@ -1332,7 +1332,7 @@ fn emit_skin_surface(
                     .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             let secondary_id = CurveId::mint(format!(
@@ -1341,7 +1341,7 @@ fn emit_skin_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: secondary_id.clone(),
-                geometry: CurveGeometry::Nurbs(secondary_curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(secondary_curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::SkinSurfaceLayout::Compact {
@@ -1368,7 +1368,7 @@ fn emit_skin_surface(
                     .expect("identity grammar");
                     out.curves.push(Curve {
                         id: curve.clone(),
-                        geometry: CurveGeometry::Nurbs(profile.curve),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile.curve)),
                         source_object: None,
                     });
                     let (type_code, data) = emit_classic_loft_data(
@@ -1389,7 +1389,7 @@ fn emit_skin_surface(
                 .expect("identity grammar");
             out.curves.push(Curve {
                 id: path_id.clone(),
-                geometry: CurveGeometry::Nurbs(path),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(path)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles {
@@ -1405,7 +1405,7 @@ fn emit_skin_surface(
     .expect("identity grammar");
     out.curves.push(Curve {
         id: parameter_curve.clone(),
-        geometry: CurveGeometry::Nurbs(embedded.parameter_curve),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.parameter_curve)),
         source_object: None,
     });
     let formula = map_law_formula(embedded.formula, |variable_index, variable| {
@@ -1459,7 +1459,7 @@ fn emit_net_surface(
                                                     )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: curve.clone(),
-                                                        geometry: CurveGeometry::Nurbs(member.curve),
+                                                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(member.curve)),
                                                         source_object: None,
                                                     });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
@@ -1492,7 +1492,7 @@ fn emit_net_surface(
                                                     )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: id.clone(),
-                                                        geometry: CurveGeometry::Nurbs(geometry),
+                                                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                                         source_object: None,
                                                     });
                                                     id
@@ -1657,7 +1657,7 @@ fn emit_sweep_surface(
                             .expect("identity grammar");
                     out.curves.push(Curve {
                         id: guide_curve_id.clone(),
-                        geometry: CurveGeometry::Nurbs(guide_curve),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(guide_curve)),
                         source_object: None,
                     });
                     cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitGuide {
@@ -1701,7 +1701,7 @@ fn emit_sweep_surface(
                         .expect("identity grammar");
                         out.curves.push(Curve {
                             id: id.clone(),
-                            geometry: CurveGeometry::Nurbs(geometry),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                             source_object: None,
                         });
                         id
@@ -1777,14 +1777,14 @@ fn emit_sweep_surface(
     .expect("identity grammar");
     out.curves.push(Curve {
         id: profile.clone(),
-        geometry: CurveGeometry::Nurbs(profile_geometry),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile_geometry)),
         source_object: None,
     });
     let spine = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:sweep:spine"))
         .expect("identity grammar");
     out.curves.push(Curve {
         id: spine.clone(),
-        geometry: CurveGeometry::Nurbs(spine_geometry),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine_geometry)),
         source_object: None,
     });
     Ok(ProceduralSurfaceDefinition::Sweep(
@@ -1826,7 +1826,7 @@ fn emit_g2_blend_surface(
         .expect("identity grammar");
         out.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Nurbs(side.curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve)),
             source_object: None,
         });
         let pcurves = side
@@ -1851,7 +1851,7 @@ fn emit_g2_blend_surface(
                 .expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: id.clone(),
-                    geometry: SurfaceGeometry::Nurbs(geometry),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::G2BlendFullSupport {
@@ -1879,14 +1879,16 @@ fn emit_g2_blend_surface(
     .expect("identity grammar");
     out.surfaces.push(Surface {
         id: second_exact_surface.clone(),
-        geometry: SurfaceGeometry::Nurbs(embedded.second_exact_surface),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            embedded.second_exact_surface,
+        )),
         source_object: None,
     });
     let center_curve = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:g2:center"))
         .expect("identity grammar");
     out.curves.push(Curve {
         id: center_curve.clone(),
-        geometry: CurveGeometry::Nurbs(embedded.center_curve),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.center_curve)),
         source_object: None,
     });
     Ok(ProceduralSurfaceDefinition::G2Blend(
@@ -1988,9 +1990,12 @@ fn emit_variable_blend_surface(
             curve: add_curve("secondary", support.curve),
             parameter_range: support.parameter_range,
         });
-    let post_curve = construction
-        .post_curve
-        .map(|curve| add_curve("post", CurveGeometry::Nurbs(curve)));
+    let post_curve = construction.post_curve.map(|curve| {
+        add_curve(
+            "post",
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+        )
+    });
     Ok(ProceduralSurfaceDefinition::VariableBlend(
         cadmpeg_ir::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
             VariableBlendConstruction {
@@ -2043,7 +2048,7 @@ fn emit_revision_compound_loft_surface(
                     .expect("identity grammar");
                 out.curves.push(Curve {
                     id: curve.clone(),
-                    geometry: CurveGeometry::Nurbs(member.curve),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(member.curve)),
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LoftProfileMember {
@@ -2074,7 +2079,7 @@ fn emit_revision_compound_loft_surface(
                     .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(geometry),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                     source_object: None,
                 });
                 id
@@ -2113,7 +2118,7 @@ fn emit_revision_compound_loft_surface(
             .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Nurbs(curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
             cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
@@ -2129,7 +2134,7 @@ fn emit_revision_compound_loft_surface(
         .expect("identity grammar");
         out.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Nurbs(geometry),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             source_object: None,
         });
         id
@@ -2326,7 +2331,7 @@ fn emit_blend_surface(
             .expect("identity grammar");
         out.curves.push(Curve {
             id: spine_id.clone(),
-            geometry: CurveGeometry::Nurbs(spine),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine)),
             source_object: None,
         });
         spine_id
@@ -2364,7 +2369,7 @@ fn emit_blend_surface(
             let curve = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
             out.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Nurbs(side.curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve)),
                 source_object: None,
             });
             Box::new(RollingBallThirdSide {
@@ -2491,7 +2496,7 @@ fn emit_carrier_curve(
                                 .expect("identity grammar");
                         out.curves.push(Curve {
                             id: source_id.clone(),
-                            geometry: CurveGeometry::Nurbs(source),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                             source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(
@@ -2510,7 +2515,7 @@ fn emit_carrier_curve(
                                 .expect("identity grammar");
                         out.curves.push(Curve {
                             id: source_id.clone(),
-                            geometry: CurveGeometry::Nurbs(source),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                             source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(
@@ -2694,7 +2699,7 @@ fn emit_carrier_curve(
                             .expect("identity grammar");
                             out.curves.push(Curve {
                                 id: curve.clone(),
-                                geometry: CurveGeometry::Nurbs(geometry),
+                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                 source_object: None,
                             });
                             cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve }
@@ -2783,7 +2788,9 @@ fn emit_carrier_curve(
                                 .expect("identity grammar");
                                 out.curves.push(Curve {
                                     id: id.clone(),
-                                    geometry: CurveGeometry::Nurbs(curve.component),
+                                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                        curve.component,
+                                    )),
                                     source_object: None,
                                 });
                                 cadmpeg_ir::geometry::CompoundComponent {
@@ -3033,7 +3040,7 @@ fn emit_surface_offset_curve(
         .expect("identity grammar");
     out.curves.push(Curve {
         id: base.clone(),
-        geometry: CurveGeometry::Nurbs(embedded.base),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.base)),
         source_object: None,
     });
     Ok(
@@ -3192,7 +3199,7 @@ fn emit_projection_curve(
         .expect("identity grammar");
     out.curves.push(Curve {
         id: source.clone(),
-        geometry: CurveGeometry::Nurbs(embedded.source),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.source)),
         source_object: None,
     });
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(
@@ -3306,12 +3313,12 @@ pub(crate) fn emit_carrier_records(
                 // carrier linking to the preserved record bytes, marked Unknown.
                 out.surfaces.push(Surface {
                     id: SurfaceId::mint(id(format, i)).expect("identity grammar"),
-                    geometry: SurfaceGeometry::Unknown {
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: Some(
                             UnknownId::mint(unknown_record_id(r, format))
                                 .expect("identity grammar"),
                         ),
-                    },
+                    }),
                     source_object: None,
                 });
             }
@@ -3769,7 +3776,7 @@ pub(crate) fn emit_coedges(
                     .expect("identity grammar");
                 out.curves.push(Curve {
                     id: curve_id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
                 });
                 Some((curve_id, parameter_range.unwrap_or(*range)))

@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::math::Vector3;
 
 use super::{
@@ -549,7 +549,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a NURBS carrier");
     };
@@ -746,7 +746,8 @@ fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
 
     assert_eq!(result.ir().model.curves.len(), 1);
     assert!(result.report().losses.is_empty());
-    let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("expected a NURBS carrier");
     };
     assert!(!nurbs.periodic());
@@ -811,7 +812,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a NURBS carrier");
     };
@@ -847,7 +848,8 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         )
         .unwrap();
 
-    let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("expected a NURBS carrier");
     };
     assert_eq!(nurbs.degree(), 0);
@@ -892,8 +894,8 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
         );
         assert_eq!(result.report().losses.is_empty(), decoded, "{weights}");
         if decoded {
-            let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-                &result.ir().model.curves[0].geometry
+            let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
+                result.ir().model.curves[0].geometry.solved()
             else {
                 panic!("expected a NURBS carrier");
             };
@@ -947,8 +949,8 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         .unwrap();
 
     assert_eq!(result.ir().model.curves.len(), 1);
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
-        &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+        result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -990,8 +992,8 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
-        &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+        result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1057,8 +1059,8 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
-        &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+        result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1083,8 +1085,8 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
-        &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+        result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1127,8 +1129,7 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     assert_eq!(result.ir().model.curves.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.points.len(), 2);
-    let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) =
-        &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Line(line_curve)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a line carrier");
     };

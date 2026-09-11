@@ -27,7 +27,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 
 const EPS_RADIUS_NONZERO: f64 = 1.0e-10;
@@ -88,7 +88,7 @@ pub(in super::super) fn revolved_section_surface(
             let reference = normalize(radial).or_else(|| normalize(radial_rate))?;
             if radial_speed <= EPS_RADIAL_SPEED {
                 (radius > EPS_RADIUS_NONZERO).then_some(())?;
-                return Some(SurfaceGeometry::Cylinder(
+                return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::CylinderSurface::try_new(
                         point(on_axis),
                         vector(axis),
@@ -96,17 +96,17 @@ pub(in super::super) fn revolved_section_surface(
                         radius,
                     )
                     .ok()?,
-                ));
+                )));
             }
             if axial_rate.abs() <= EPS_AXIAL_RATE {
-                return Some(SurfaceGeometry::Plane(
+                return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         point(on_axis),
                         vector(axis),
                         vector(reference),
                     )
                     .ok()?,
-                ));
+                )));
             }
             let radial_rate = dot(radial_rate, reference);
             let cone_axis = if radial_rate / axial_rate < 0.0 {
@@ -114,7 +114,7 @@ pub(in super::super) fn revolved_section_surface(
             } else {
                 axis
             };
-            Some(SurfaceGeometry::Cone(
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     point(on_axis),
                     vector(cone_axis),
@@ -124,7 +124,7 @@ pub(in super::super) fn revolved_section_surface(
                     radial_rate.abs().atan2(axial_rate.abs()),
                 )
                 .ok()?,
-            ))
+            )))
         }
         SketchGeometryDefinition::Arc { center, radius, .. }
         | SketchGeometryDefinition::Circle { center, radius } => {
@@ -142,7 +142,7 @@ pub(in super::super) fn revolved_section_surface(
                     })
             })?;
             if major_radius <= EPS_MAJOR_RADIUS {
-                Some(SurfaceGeometry::Sphere(
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     cadmpeg_ir::geometry::SphereSurface::try_new(
                         point(center),
                         vector(axis),
@@ -150,9 +150,9 @@ pub(in super::super) fn revolved_section_surface(
                         radius.get(),
                     )
                     .ok()?,
-                ))
+                )))
             } else {
-                Some(SurfaceGeometry::Torus(
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     cadmpeg_ir::geometry::TorusSurface::try_new(
                         point(on_axis),
                         vector(axis),
@@ -161,7 +161,7 @@ pub(in super::super) fn revolved_section_surface(
                         radius.get(),
                     )
                     .ok()?,
-                ))
+                )))
             }
         }
         _ => None,
@@ -177,13 +177,13 @@ pub(in super::super) fn placed_section_geometry_curve(
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(start[0], start[1], start[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
                 .ok()?,
-            ))
+            )))
         }
         SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let origin = section_point_in_model(transform, [origin.u, origin.v]);
@@ -192,18 +192,18 @@ pub(in super::super) fn placed_section_geometry_curve(
                 direction.u * transform.u_axis()[1] + direction.v * transform.v_axis()[1],
                 direction.u * transform.u_axis()[2] + direction.v * transform.v_axis()[2],
             ])?;
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(origin[0], origin[1], origin[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
                 .ok()?,
-            ))
+            )))
         }
         SketchGeometryDefinition::Arc { center, radius, .. }
         | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(center[0], center[1], center[2]),
                     Vector3::new(
@@ -219,7 +219,7 @@ pub(in super::super) fn placed_section_geometry_curve(
                     radius.get(),
                 )
                 .ok()?,
-            ))
+            )))
         }
         _ => None,
     }
@@ -307,7 +307,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             );
             ir.model.curves.push(Curve {
                 id: curve_id,
-                geometry: CurveGeometry::Nurbs(placed),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -437,7 +437,7 @@ impl TryFrom<RevolvedSectionCircle> for CurveGeometry {
             circle.ref_direction,
             circle.radius,
         )
-        .map(Self::Circle)
+        .map(|curve| Self::Solved(SolvedCurveGeometry::Circle(curve)))
     }
 }
 
@@ -478,13 +478,13 @@ pub(in super::super) fn extruded_section_line(
 ) -> Option<CurveGeometry> {
     let direction = transform.normal();
     let origin = section_point_in_model(transform, point);
-    Some(CurveGeometry::Line(
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(direction[0], direction[1], direction[2]),
         )
         .ok()?,
-    ))
+    )))
 }
 
 pub(in super::super) fn transfer_feature_extrusion_surfaces(
@@ -707,7 +707,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 );
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
-                    geometry: CurveGeometry::Nurbs(directrix.clone()),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix.clone())),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -753,7 +753,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             );
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
-                geometry: SurfaceGeometry::Nurbs(surface),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

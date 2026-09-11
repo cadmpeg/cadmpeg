@@ -1307,7 +1307,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
 
 #[test]
 fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let f3d = f3d_with_smbh(&synthetic_mixed_smbh());
     let mut cur = Cursor::new(f3d);
@@ -1328,14 +1328,24 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .model
         .surfaces
         .iter()
-        .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane(_)))
+        .filter(|s| {
+            matches!(
+                s.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
+        })
         .count();
     let unknowns = result
         .ir()
         .model
         .surfaces
         .iter()
-        .filter(|s| matches!(s.geometry, SurfaceGeometry::Unknown { .. }))
+        .filter(|s| {
+            matches!(
+                s.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            )
+        })
         .count();
     assert_eq!((planes, unknowns), (1, 1));
 

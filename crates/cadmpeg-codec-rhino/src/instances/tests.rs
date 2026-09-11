@@ -12,6 +12,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const OBSOLETE_IDEF_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
     0x11, 0xee, 0x2c, 0x1f, 0xf9, 0x0d, 0x4c, 0x6a, 0xa7, 0xcd, 0xec, 0x85, 0x32, 0xe1, 0xe3, 0x2d,
@@ -919,7 +920,7 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
             .rows()[0][3],
         10.0
     );
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("free member curve must remain a transformed solved carrier");
     };
@@ -983,7 +984,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.curves.len(), 1);
     let curve = &result.ir().model.curves[0];
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         panic!("expected transformed NURBS");
     };
     assert_eq!(nurbs.control_points()[0].x, 12.0);
@@ -1218,7 +1219,7 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("nonuniform circle must become NURBS");
     };

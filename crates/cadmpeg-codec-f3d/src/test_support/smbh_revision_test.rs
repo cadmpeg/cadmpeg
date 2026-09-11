@@ -4,6 +4,7 @@
 use cadmpeg_asm::asm_header;
 
 use crate::test_support::*;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 pub(crate) fn push_revision_surface_tail(surface: &mut Vec<u8>) {
     surface.push(0x15);
@@ -174,8 +175,7 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         .iter()
         .find(|surface| ir.model.procedural_surface_owner(&procedural.id) == Some(&surface.id))
         .expect("solved surface");
-    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache()
-    else {
+    let Some(SolvedSurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache() else {
         panic!("expected a solved NURBS cache")
     };
     let mut bytes = Vec::new();

@@ -46,13 +46,15 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 panic!("expected legacy offset surface");
             };
 
-            assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
-            if {
-                let origin = plane_surface.origin();
-                (origin.x - 5.0).abs() < f64::EPSILON
-                    && (origin.y - 10.0).abs() < f64::EPSILON
-                    && (origin.z - 15.0).abs() < f64::EPSILON
-            }));
+            assert!(
+                matches!(support, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+                if {
+                    let origin = plane_surface.origin();
+                    (origin.x - 5.0).abs() < f64::EPSILON
+                        && (origin.y - 10.0).abs() < f64::EPSILON
+                        && (origin.z - 15.0).abs() < f64::EPSILON
+                })
+            );
             assert!((distance - -2.5).abs() < f64::EPSILON);
             assert_eq!(u_sense, 2);
             assert_eq!(v_sense, 3);
@@ -354,7 +356,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         assert!((components[1].parameter - 0.75).abs() < f64::EPSILON);
         assert_eq!(components.len(), 2);
         assert!(
-            matches!(components[0].component, SurfaceGeometry::Plane(plane_surface)
+            matches!(components[0].component, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
             if {
                 let origin = plane_surface.origin();
                 (origin.x - 10.0).abs() < f64::EPSILON
@@ -363,7 +365,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
             })
         );
         assert!(
-            matches!(components[1].component, SurfaceGeometry::Plane(plane_surface)
+            matches!(components[1].component, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
             if {
                 let origin = plane_surface.origin();
                 (origin.x - 40.0).abs() < f64::EPSILON
@@ -669,10 +671,10 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
         else {
             panic!("expected legacy sum surface");
         };
-        let CurveGeometry::Nurbs(first) = first else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)) = first else {
             panic!("expected first NURBS curve");
         };
-        let CurveGeometry::Nurbs(second) = second else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)) = second else {
             panic!("expected second NURBS curve");
         };
 
@@ -744,7 +746,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         else {
             panic!("expected legacy revolution surface");
         };
-        let CurveGeometry::Nurbs(directrix) = directrix else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)) = directrix else {
             panic!("expected NURBS profile");
         };
 
@@ -1078,11 +1080,15 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Plane(_)
+            ))
         ));
         assert!(matches!(
             context.surfaces[1],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+            ))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
@@ -1223,7 +1229,9 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+            ))
         ));
         assert!(matches!(
             context.surfaces[1],
@@ -1298,7 +1306,9 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         ));
         assert!(matches!(
             context.surfaces[1],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+            ))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());

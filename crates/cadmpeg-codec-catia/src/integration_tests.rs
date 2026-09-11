@@ -7,7 +7,9 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::report::{LossCategory, Severity};
 
 use crate::test_support::*;
@@ -175,12 +177,12 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Cylinder(_)) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+        )
+    }));
     assert!(result
         .ir()
         .model
@@ -205,12 +207,12 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| { matches!(curve.geometry, CurveGeometry::Circle(_)) }));
+    assert!(result.ir().model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+        )
+    }));
     assert!(result.report().notes.iter().any(|note| note.contains("E5")));
     assert_valid(&result);
 }
@@ -223,12 +225,12 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Nurbs { .. }) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs { .. })
+        )
+    }));
     assert_eq!(
         result.ir().model.surfaces[0]
             .source_object

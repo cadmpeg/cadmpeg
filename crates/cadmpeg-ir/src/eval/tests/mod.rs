@@ -9,9 +9,10 @@ use crate::geometry::{
     PolylineCurve, ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition,
     RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     RollingBallConstruction, RollingBallJetDerivative, RollingBallJetSite,
-    RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry, SurfaceParameterAxis,
-    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
-    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
+    RollingBallRadiusSelector, RollingBallSide, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction,
+    SweepSurfaceLayout, VariableBlendConstruction, VariableBlendConvexity,
+    VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
     VariableBlendSupportKind, VariableBlendSurfaceSubtype, VariableBlendValue,
     VariableBlendValuePayload,
 };
@@ -298,8 +299,8 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_some());
     assert_eq!(budget.consumed(), 28);
 
-    let transformed = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Nurbs(surface)),
+    let transformed = SolvedSurfaceGeometry::Transformed {
+        basis: Box::new(SolvedSurfaceGeometry::Nurbs(surface)),
         transform: Transform::from_rows([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -309,11 +310,22 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
         .expect("affine transform"),
     };
     let budget = WorkBudget::new(12);
-    assert!(surface_point_with_budget(&transformed, 0.25, 0.75, &budget).is_none());
+    assert!(surface_point_with_budget(
+        &SurfaceGeometry::Solved(transformed.clone()),
+        0.25,
+        0.75,
+        &budget
+    )
+    .is_none());
     assert!(budget.exhausted());
     let budget = WorkBudget::new(13);
     assert_eq!(
-        surface_point_with_budget(&transformed, 0.25, 0.75, &budget),
+        surface_point_with_budget(
+            &SurfaceGeometry::Solved(transformed.clone()),
+            0.25,
+            0.75,
+            &budget
+        ),
         Some(Point3::new(0.25, 0.75, 1.0))
     );
     assert_eq!(budget.consumed(), 13);
@@ -327,7 +339,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -336,12 +348,12 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 false,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model
@@ -546,14 +558,14 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
 #[test]
 fn direct_analytic_curve_inverses_preserve_native_parameters() {
     let geometries = [
-        CurveGeometry::Line(
+        SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
         ),
-        CurveGeometry::Circle(
+        SolvedCurveGeometry::Circle(
             crate::geometry::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -562,7 +574,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             )
             .unwrap(),
         ),
-        CurveGeometry::Ellipse(
+        SolvedCurveGeometry::Ellipse(
             crate::geometry::EllipseCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -572,7 +584,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             )
             .unwrap(),
         ),
-        CurveGeometry::Parabola(
+        SolvedCurveGeometry::Parabola(
             crate::geometry::ParabolaCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -581,7 +593,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             )
             .unwrap(),
         ),
-        CurveGeometry::Hyperbola(
+        SolvedCurveGeometry::Hyperbola(
             crate::geometry::HyperbolaCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -595,18 +607,19 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
     for (index, geometry) in geometries.into_iter().enumerate() {
         let parameter = if matches!(
             &geometry,
-            CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_)
+            SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
         ) {
             0.7 + std::f64::consts::TAU
         } else {
             0.7
         };
-        let point = curve_point(&geometry, parameter).expect("analytic curve evaluates");
+        let point = curve_point(&CurveGeometry::Solved(geometry.clone()), parameter)
+            .expect("analytic curve evaluates");
         let id = CurveId::mint(format!("test:inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry,
+            geometry: CurveGeometry::Solved(geometry.clone()),
             source_object: None,
         });
         let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
@@ -619,7 +632,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
 fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
     let cases = [
         (
-            CurveGeometry::Polyline(
+            SolvedCurveGeometry::Polyline(
                 PolylineCurve::new(
                     vec![
                         Point3::new(0.0, 0.0, 0.0),
@@ -636,7 +649,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             0.5,
         ),
         (
-            CurveGeometry::Polyline(
+            SolvedCurveGeometry::Polyline(
                 PolylineCurve::new(
                     vec![
                         Point3::new(0.0, 0.0, 0.0),
@@ -653,7 +666,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             1.0,
         ),
         (
-            CurveGeometry::Polyline(
+            SolvedCurveGeometry::Polyline(
                 PolylineCurve::new(
                     vec![
                         Point3::new(2.0, 3.0, 4.0),
@@ -676,7 +689,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry,
+            geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         });
         let inverse = super::model_curve_parameter_near_point(&ir, &id, point, seed)
@@ -691,13 +704,13 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let index = crate::index::ModelIndex::new(&ir);
@@ -712,7 +725,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
 
 #[test]
 fn transformed_curve_inverse_uses_the_basis_parameterization() {
-    let basis = CurveGeometry::Circle(
+    let basis = SolvedCurveGeometry::Circle(
         crate::geometry::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -728,24 +741,25 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    let geometry = CurveGeometry::Transformed {
+    let geometry = SolvedCurveGeometry::Transformed {
         basis: Box::new(basis.clone()),
         transform,
     };
     let parameter = 0.7 + std::f64::consts::TAU;
-    let point = curve_point(&geometry, parameter).expect("transformed curve evaluates");
+    let point = curve_point(&CurveGeometry::Solved(geometry.clone()), parameter)
+        .expect("transformed curve evaluates");
     let id = CurveId::mint("test:model:entity#test:transformed-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
-        geometry,
+        geometry: CurveGeometry::Solved(geometry.clone()),
         source_object: None,
     });
     let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
         .expect("transformed inverse");
     assert!((inverse - parameter).abs() < 1.0e-10);
 
-    ir.model.curves[0].geometry = CurveGeometry::Transformed {
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
         basis: Box::new(basis),
         transform: Transform::from_rows([
             [0.0, 0.0, 0.0, 0.0],
@@ -754,7 +768,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
             [0.0, 0.0, 0.0, 1.0],
         ])
         .expect("affine transform"),
-    };
+    });
     assert!(
         super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
             .is_none()
@@ -768,9 +782,9 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
-        geometry: CurveGeometry::Degenerate(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
             crate::geometry::DegenerateCurve::try_new(point).unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let seed = 123.5;
@@ -907,14 +921,14 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
@@ -983,7 +997,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::new(
                     1,
                     2,
@@ -1004,7 +1018,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                     false,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
@@ -1045,7 +1059,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(support),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
             source_object: None,
         },
         Surface {
@@ -1084,7 +1098,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         ProceduralSurfaceId::mint("test:model:entity#subset-construction").expect("valid identity");
     let offset_construction =
         ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
-    let plane = SurfaceGeometry::Plane(
+    let plane = SolvedSurfaceGeometry::Plane(
         crate::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1096,17 +1110,17 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     ir.model.surfaces = vec![
         Surface {
             id: base_id.clone(),
-            geometry: plane.clone(),
+            geometry: SurfaceGeometry::Solved(plane.clone()),
             source_object: None,
         },
         Surface {
             id: subset_id.clone(),
-            geometry: plane,
+            geometry: SurfaceGeometry::Solved(plane),
             source_object: None,
         },
         Surface {
             id: offset_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
     ];
@@ -1154,19 +1168,19 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::PlaneSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: bounded_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
     ];
@@ -1206,8 +1220,8 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Transformed {
-            basis: Box::new(CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+            basis: Box::new(SolvedCurveGeometry::Line(
                 crate::geometry::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1221,12 +1235,12 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
                 [0.0, 0.0, 0.0, 1.0],
             ])
             .unwrap(),
-        },
+        }),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model
@@ -1275,7 +1289,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
@@ -1284,7 +1298,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
                 false,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -1331,24 +1345,24 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Curve {
             id: spine_id.clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::LineCurve::try_new(
                     Point3::new(7.0, 11.0, 13.0),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
     ];
@@ -1435,8 +1449,8 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Transformed {
-            basis: Box::new(CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+            basis: Box::new(SolvedCurveGeometry::Line(
                 crate::geometry::LineCurve::try_new(
                     Point3::new(2.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1444,12 +1458,12 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
                 .unwrap(),
             )),
             transform: Transform::identity(),
-        },
+        }),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model
@@ -1499,18 +1513,18 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(2.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model
@@ -1556,13 +1570,13 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::LineCurve::try_new(
                 Point3::new(2.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
@@ -1599,7 +1613,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model
@@ -1625,7 +1639,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
 
 #[test]
 fn analytic_and_transformed_surface_partials_follow_parameterization() {
-    let cylinder = SurfaceGeometry::Cylinder(
+    let cylinder = SolvedSurfaceGeometry::Cylinder(
         crate::geometry::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1634,7 +1648,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         )
         .unwrap(),
     );
-    let cone = SurfaceGeometry::Cone(
+    let cone = SolvedSurfaceGeometry::Cone(
         crate::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1645,7 +1659,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         )
         .unwrap(),
     );
-    let sphere = SurfaceGeometry::Sphere(
+    let sphere = SolvedSurfaceGeometry::Sphere(
         crate::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1654,7 +1668,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         )
         .unwrap(),
     );
-    let torus = SurfaceGeometry::Torus(
+    let torus = SolvedSurfaceGeometry::Torus(
         crate::geometry::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1664,8 +1678,8 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         )
         .unwrap(),
     );
-    let transformed = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane(
+    let transformed = SolvedSurfaceGeometry::Transformed {
+        basis: Box::new(SolvedSurfaceGeometry::Plane(
             crate::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1683,29 +1697,34 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
     };
 
     let cylinder_second =
-        surface_second_partials(&cylinder, 0.0, 4.0).expect("cylinder second partials evaluate");
-    let cylinder = surface_partials(&cylinder, 0.0, 4.0).expect("cylinder partials evaluate");
+        surface_second_partials(&SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
+            .expect("cylinder second partials evaluate");
+    let cylinder = surface_partials(&SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
+        .expect("cylinder partials evaluate");
     assert_eq!(cylinder.point, Point3::new(2.0, 0.0, 4.0));
     assert_eq!(cylinder.du, Vector3::new(0.0, 2.0, 0.0));
     assert_eq!(cylinder.dv, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(cylinder_second.duu, Vector3::new(-2.0, 0.0, 0.0));
     assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
-    let cone = surface_partials(&cone, 0.0, 3.0).expect("cone partials evaluate");
+    let cone = surface_partials(&SurfaceGeometry::Solved(cone.clone()), 0.0, 3.0)
+        .expect("cone partials evaluate");
     assert!((cone.point.x - 5.0).abs() < 1.0e-12);
     assert!((cone.du.y - 5.0).abs() < 1.0e-12);
     assert!((cone.dv.x - 1.0).abs() < 1.0e-12);
     assert_eq!(cone.dv.z, 1.0);
-    let sphere = surface_partials(&sphere, 0.0, 0.0).expect("sphere partials evaluate");
+    let sphere = surface_partials(&SurfaceGeometry::Solved(sphere.clone()), 0.0, 0.0)
+        .expect("sphere partials evaluate");
     assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
     assert_eq!(sphere.du, Vector3::new(0.0, 3.0, 0.0));
     assert_eq!(sphere.dv, Vector3::new(0.0, 0.0, 3.0));
-    let torus = surface_partials(&torus, 0.0, 0.0).expect("torus partials evaluate");
+    let torus = surface_partials(&SurfaceGeometry::Solved(torus.clone()), 0.0, 0.0)
+        .expect("torus partials evaluate");
     assert_eq!(torus.point, Point3::new(7.0, 0.0, 0.0));
     assert_eq!(torus.du, Vector3::new(0.0, 7.0, 0.0));
     assert_eq!(torus.dv, Vector3::new(0.0, 0.0, 2.0));
-    let transformed =
-        surface_partials(&transformed, 2.0, 3.0).expect("transformed partials evaluate");
+    let transformed = surface_partials(&SurfaceGeometry::Solved(transformed.clone()), 2.0, 3.0)
+        .expect("transformed partials evaluate");
     assert_eq!(transformed.point, Point3::new(11.0, 20.0, 13.0));
     assert_eq!(transformed.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(transformed.dv, Vector3::new(0.0, 3.0, 0.0));
@@ -1714,7 +1733,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
 #[test]
 fn analytic_and_rational_curve_derivatives_are_exact() {
     let parameter = 1.0e16;
-    let circle = CurveGeometry::Circle(
+    let circle = SolvedCurveGeometry::Circle(
         crate::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1723,22 +1742,26 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         )
         .unwrap(),
     );
-    let tangent = curve_tangent(&circle, parameter).expect("analytic tangent");
+    let tangent =
+        curve_tangent(&CurveGeometry::Solved(circle.clone()), parameter).expect("analytic tangent");
     assert_eq!(
         tangent,
         Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
     );
     assert_eq!(
-        curve_second_derivative(&circle, parameter),
+        curve_second_derivative(&CurveGeometry::Solved(circle.clone()), parameter),
         Some(Vector3::new(
             -3.0 * parameter.cos(),
             -3.0 * parameter.sin(),
             0.0,
         ))
     );
-    assert_eq!(curve_tangent(&circle, f64::NAN), None);
+    assert_eq!(
+        curve_tangent(&CurveGeometry::Solved(circle.clone()), f64::NAN),
+        None
+    );
 
-    let arc = CurveGeometry::Nurbs(
+    let arc = SolvedCurveGeometry::Nurbs(
         NurbsCurve::new(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -1753,16 +1776,19 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .unwrap(),
     );
     for parameter in [0.0, 0.5, 1.0] {
-        let point = curve_point(&arc, parameter).expect("rational arc point");
-        let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
-        let second = curve_second_derivative(&arc, parameter).expect("rational arc acceleration");
+        let point = curve_point(&CurveGeometry::Solved(arc.clone()), parameter)
+            .expect("rational arc point");
+        let tangent = curve_tangent(&CurveGeometry::Solved(arc.clone()), parameter)
+            .expect("rational arc tangent");
+        let second = curve_second_derivative(&CurveGeometry::Solved(arc.clone()), parameter)
+            .expect("rational arc acceleration");
         let radial_dot = point.x * tangent.x + point.y * tangent.y;
         assert!(radial_dot.abs() < 1.0e-12);
         assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1.0e-11);
         assert!(tangent.norm() > 0.0);
     }
 
-    let corner = CurveGeometry::Polyline(
+    let corner = SolvedCurveGeometry::Polyline(
         PolylineCurve::new(
             vec![
                 Point3::new(0.0, 0.0, 0.0),
@@ -1775,10 +1801,13 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .unwrap(),
     );
     assert_eq!(
-        curve_tangent(&corner, 0.5),
+        curve_tangent(&CurveGeometry::Solved(corner.clone()), 0.5),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
-    assert_eq!(curve_tangent(&corner, 1.0), None);
+    assert_eq!(
+        curve_tangent(&CurveGeometry::Solved(corner.clone()), 1.0),
+        None
+    );
 }
 
 #[test]
@@ -1835,7 +1864,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         (SurfaceParameterAxis::V, 0.75),
     ] {
         let isocurve = nurbs_surface_isocurve(&surface, axis, fixed).expect("exact isocurve");
-        let geometry = CurveGeometry::Nurbs(isocurve);
+        let geometry = SolvedCurveGeometry::Nurbs(isocurve);
         for varying in [0.0, 0.2, 0.7, 1.0] {
             let expected = match axis {
                 SurfaceParameterAxis::U => {
@@ -1845,7 +1874,8 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
                     nurbs_surface_point(&surface, varying, fixed).expect("surface point")
                 }
             };
-            let actual = curve_point(&geometry, varying).expect("isocurve point");
+            let actual = curve_point(&CurveGeometry::Solved(geometry.clone()), varying)
+                .expect("isocurve point");
             assert!((actual.x - expected.x).abs() < 1.0e-12);
             assert!((actual.y - expected.y).abs() < 1.0e-12);
             assert!((actual.z - expected.z).abs() < 1.0e-12);

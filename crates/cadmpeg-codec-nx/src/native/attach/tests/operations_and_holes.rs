@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
 
 use super::*;
@@ -1135,7 +1135,9 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             .surfaces
             .iter_mut()
             .filter_map(|surface| {
-                let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry else {
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                    &mut surface.geometry
+                else {
                     return None;
                 };
                 let normal = plane_surface.normal();
@@ -1197,7 +1199,9 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .surfaces
         .iter_mut()
         .find_map(|surface| {
-            let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry else {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                &mut surface.geometry
+            else {
                 return None;
             };
             let origin = plane_surface.origin();
@@ -1222,7 +1226,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .surfaces
         .iter()
         .find(|surface| {
-            matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
+            matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
             if {
                 let normal = plane_surface.normal();
                 normal.x.abs() > 0.5
@@ -1233,7 +1237,9 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     intermediate_surface.id =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
             .expect("identity grammar");
-    let SurfaceGeometry::Plane(plane_surface) = &mut intermediate_surface.geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+        &mut intermediate_surface.geometry
+    else {
         unreachable!()
     };
     let origin = plane_surface.origin();
@@ -1258,7 +1264,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     );
 
     let mut nonplanar = ir.clone();
-    nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+    nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1266,7 +1272,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             1.0,
         )
         .unwrap(),
-    );
+    ));
     assert_eq!(
         placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
         None
@@ -1285,7 +1291,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let mut curved_surface = curved_feature.model.surfaces[0].clone();
     curved_surface.id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
         .expect("identity grammar");
-    curved_surface.geometry = SurfaceGeometry::Sphere(
+    curved_surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1293,7 +1299,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             1.0,
         )
         .unwrap(),
-    );
+    ));
     curved_feature.model.surfaces.push(curved_surface);
     let mut curved_face = curved_feature.model.faces[0].clone();
     curved_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#later-curved-face")
@@ -1348,7 +1354,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ir.model
         .surfaces
         .retain(|candidate| candidate.id == surface);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1356,7 +1362,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             f64::EPSILON,
         )
         .unwrap(),
-    );
+    ));
 
     assert_eq!(
         super::sphere_body_projection(&ir, &[]),

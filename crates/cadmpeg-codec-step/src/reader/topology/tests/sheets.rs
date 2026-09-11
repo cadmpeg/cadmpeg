@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
@@ -188,10 +188,10 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
         .expect("outer composite curve");
     assert!(matches!(
         &composite.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Composite {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments,
             self_intersect: Some(false)
-        } if segments.len() == 1
+        }) if segments.len() == 1
             && segments[0].curve.as_str() == "step:data:curve#36"
             && segments[0].same_sense
             && segments[0].transition
@@ -226,12 +226,10 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode written composite curve graph");
-    assert!(roundtrip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Composite { .. })));
+    assert!(roundtrip.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    )));
 }
 
 #[test]

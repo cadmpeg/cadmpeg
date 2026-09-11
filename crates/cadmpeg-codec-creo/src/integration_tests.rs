@@ -9,7 +9,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::features::FeatureDefinition;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
 use crate::test_support::*;
@@ -95,7 +95,7 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
     assert!(result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let radius = cylinder_surface.radius();
             radius == 1.0
@@ -153,12 +153,12 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         datum_feature.evaluation.definition(),
         FeatureDefinition::DatumPlane { .. }
     ));
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Plane(_)) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        )
+    }));
     assert_valid(&result);
 }
 

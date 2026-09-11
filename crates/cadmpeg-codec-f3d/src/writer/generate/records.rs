@@ -7,7 +7,7 @@ use crate::records::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
 
 use super::index::NativeGenerationIndex;
@@ -78,7 +78,7 @@ pub(crate) fn native_tolerant_coedge_extension(
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
                 })?;
-            let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+            let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));

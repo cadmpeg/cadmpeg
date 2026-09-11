@@ -4,7 +4,7 @@
 use crate::vecmath::normalize;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::decode::analytic::equations::{quadratic_real_roots, PlaneEquation};
@@ -160,7 +160,9 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
     let [boundary] = candidates.as_slice() else {
         return None;
     };
-    Some(CurveGeometry::Nurbs(boundary.curve.clone()))
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        boundary.curve.clone(),
+    )))
 }
 
 pub(in super::super) fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
@@ -384,7 +386,9 @@ pub(in super::super) fn shared_extrusion_generator_curve(
     let [curve] = candidates.as_slice() else {
         return None;
     };
-    Some(CurveGeometry::Nurbs(curve.clone()))
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        curve.clone(),
+    )))
 }
 
 pub(in super::super) fn cubic_unit_interval_roots(
@@ -621,7 +625,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             curve.periodic(),
         )
         .ok()?;
-        Some(Ok(CurveGeometry::Nurbs(curve)))
+        Some(Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
     }
     recognize(ctx, nurbs, plane).transpose()
 }

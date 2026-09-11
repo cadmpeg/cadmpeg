@@ -13,7 +13,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::Exactness;
@@ -330,7 +332,7 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
             .expect("intersection curve")
             .geometry
             .solved_cache(),
-        Some(CurveGeometry::Nurbs(_))
+        Some(SolvedCurveGeometry::Nurbs(_))
     ));
 }
 
@@ -421,7 +423,7 @@ fn decode_transfers_bspline_surface_and_curve() {
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(surface) => Some(surface),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => Some(surface),
             _ => None,
         })
         .expect("B-spline surface");
@@ -434,7 +436,7 @@ fn decode_transfers_bspline_surface_and_curve() {
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(curve) => Some(curve),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve),
             _ => None,
         })
         .expect("B-spline curve");
@@ -453,7 +455,7 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
 
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
-        SurfaceGeometry::Nurbs(nurbs)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             if nurbs.poles().any(|point| point.y == 30.0)
     )));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -469,7 +471,7 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
 
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
-        CurveGeometry::Nurbs(nurbs)
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.control_points().iter().any(|point| point.y == 10.0)
     )));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -517,7 +519,10 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
                 .find(|curve| curve.id == *id)
         })
         .expect("edge carrier");
-    assert!(matches!(carrier.geometry, CurveGeometry::Line(_)));
+    assert!(matches!(
+        carrier.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    ));
     assert_eq!(edge.param_range(), None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -623,13 +628,13 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
         graph
             .get(NodeKind::Plane, 6)
             .and_then(crate::topology::Node::surface_geometry),
-        Some(SurfaceGeometry::Plane(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
     assert!(matches!(
         graph
             .get(NodeKind::Line, 9)
             .and_then(crate::topology::Node::curve_geometry),
-        Some(CurveGeometry::Line(_))
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -639,11 +644,11 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     assert_eq!(result.ir().model.edges.len(), 1);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line(_)
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
 }
 
@@ -656,11 +661,11 @@ fn decode_tracks_geometry_envelope_escape_shift() {
 
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line(_)
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

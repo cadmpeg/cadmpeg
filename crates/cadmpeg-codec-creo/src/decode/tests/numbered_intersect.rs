@@ -30,7 +30,8 @@ use crate::decode::sweep::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1343,17 +1344,17 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
         [[-0.3125, 1.3125], [0.3125, 1.625]],
         [[-0.3125, 1.625], [0.3125, 1.9375]],
     ];
-    let plane = SurfaceGeometry::Plane(
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("valid PlaneSurface fixture"),
-    );
+    ));
     assert_eq!(
         cylinder_from_complementary_outline_bounds(&plane, bounds),
-        Some(SurfaceGeometry::Cylinder(
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(0.0, 1.625, -1.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1361,20 +1362,20 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
                 0.3125
             )
             .expect("valid CylinderSurface fixture")
-        ))
+        )))
     );
 }
 
 #[test]
 fn split_outline_carrier_requires_complementary_square_bounds() {
-    let plane = SurfaceGeometry::Plane(
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("valid PlaneSurface fixture"),
-    );
+    ));
     assert!(cylinder_from_complementary_outline_bounds(
         &plane,
         [[[-1.0, 0.0], [1.0, 0.5]], [[-1.0, 0.6], [1.0, 1.0]]],
@@ -1681,12 +1682,12 @@ fn geometry_signal_excludes_opaque_carriers() {
         SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
 
@@ -1777,7 +1778,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     };
 
     assert!(
-        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Circle(circle_curve))
+        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
                 if {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
@@ -1791,7 +1792,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     );
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
     assert!(
-        matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Line(line_curve))
+        matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
                 if {
                     let origin = line_curve.origin();
         let direction = line_curve.direction();
@@ -1800,21 +1801,21 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     );
 
     assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Cylinder(cylinder_surface))
+        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
         if {
             let radius = cylinder_surface.radius();
             radius == 2.0
         })
     );
     assert!(
-        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Plane(plane_surface))
+        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
         if {
             let origin = plane_surface.origin();
             origin.y == 3.0
         })
     );
     assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Cone(cone_surface))
+        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
                     let radius = cone_surface.radius();
         let half_angle = cone_surface.half_angle();
@@ -1822,7 +1823,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
                 })
     );
     assert!(
-        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Cone(cone_surface))
+        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
                     let axis = cone_surface.axis();
         let radius = cone_surface.radius();
@@ -1840,7 +1841,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     })
     .expect("valid sketch fixture");
     assert!(
-        matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Sphere(sphere_surface))
+        matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)))
         if {
             let radius = sphere_surface.radius();
             radius == 2.0
@@ -1854,7 +1855,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     })
     .expect("valid sketch fixture");
     assert!(
-        matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Torus(torus_surface))
+        matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
                     let major_radius = torus_surface.major_radius();
         let minor_radius = torus_surface.minor_radius();
@@ -1867,7 +1868,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     })
     .expect("valid sketch fixture");
     assert!(
-        matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Torus(torus_surface))
+        matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
                     let major_radius = torus_surface.major_radius();
         let minor_radius = torus_surface.minor_radius();

@@ -7,7 +7,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
@@ -154,10 +154,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#70"
-            && matches!(
-                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                CurveGeometry::Line(_)
-            )
+            && matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(_)))
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
         decoded
@@ -959,8 +956,8 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             .find(|curve| curve.id.as_str() == "step:data:curve#9")
             .expect("boundary curve carrier");
         assert!(matches!(
-            boundary.geometry.solved_cache().unwrap_or(&boundary.geometry),
-            CurveGeometry::Composite { segments, .. }
+            &boundary.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. })
                 if segments.len() == 1 && segments[0].curve.as_str() == "step:data:curve#7"
         ));
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use crate::directory::UseFlag;
 
@@ -112,7 +113,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
@@ -209,7 +210,7 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
@@ -232,7 +233,7 @@ fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };

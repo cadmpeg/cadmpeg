@@ -2,11 +2,12 @@
 //! Zero-entity dump tests over synthetic CATPart streams.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::*;
 use crate::variant::Variant;
@@ -106,7 +107,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     assert!(result.ir().model.bodies.is_empty());
     assert!(result.ir().model.shells.is_empty());
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -211,7 +212,7 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     assert!(matches!(
         result.ir().model.curves.as_slice(),
         [cadmpeg_ir::geometry::Curve {
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(_),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)),
             ..
         }]
     ));
@@ -229,7 +230,7 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
         .unwrap();
     assert_eq!(result.ir().model.surfaces.len(), 1);
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
             assert_eq!((surface.u_count(), surface.v_count()), (7, 7));
             assert_eq!(
@@ -290,7 +291,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     ));
     assert!(matches!(
         support.model_curve,
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref nurbs)))
             if nurbs.degree() == 1
                 && nurbs.control_points().len() == 2
                 && nurbs.weights().is_none()
@@ -442,7 +443,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
 
     let mut invalid_model_curve = native.clone();
-    let Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve)) =
+    let Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(model_curve))) =
         invalid_model_curve.zero_entity_support_runs[0].supports[0]
             .model_curve
             .as_mut()

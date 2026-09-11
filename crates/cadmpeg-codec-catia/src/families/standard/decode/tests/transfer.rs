@@ -7,7 +7,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -143,7 +145,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .links
         .contains(&"catia:standard:circle#0".to_string()));
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius();
             assert!((radius - 5.0).abs() < 1.0e-6);
@@ -152,7 +154,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         other => panic!("expected cylinder, got {other:?}"),
     }
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
         let normal = plane_surface.normal();
@@ -310,7 +312,7 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
     assert!(decoded.ir().model.faces.is_empty());
     assert!(matches!(
         decoded.ir().model.surfaces[1].geometry,
-        SurfaceGeometry::Unknown { record: Some(_) }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(_) })
     ));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
@@ -528,7 +530,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
         .expect("refined standard cylinder");
     assert!(
-        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface)
+        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
@@ -684,7 +686,10 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                 .iter()
                 .find(|surface| &surface.id == surface_id)
                 .expect("direct NURBS carrier");
-            assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+            assert!(matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            ));
         } else {
             let construction = decoded
                 .ir()
@@ -704,7 +709,11 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             let distance = definition_payload.distance();
             assert!((*distance - offset).abs() < 1.0e-12);
             assert!(decoded.ir().model.surfaces.iter().any(|surface| {
-                surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
+                surface.id == *support
+                    && matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                    )
             }));
         }
     }
@@ -879,7 +888,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
         .iter()
         .find(|curve| curve.id.as_str().starts_with("catia:guide:curve#"))
         .expect("typed guide curve");
-    let CurveGeometry::Nurbs(nurbs) = &guide.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = guide.geometry.solved() else {
         panic!("guide curve must be NURBS");
     };
     assert_eq!(nurbs.degree(), 5);

@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -155,13 +155,13 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: source_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
@@ -239,7 +239,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
         super::source_parameter_range(
             &ir,
             &source_id,
-            source.geometry.solved_cache().unwrap_or(&source.geometry),
+            source.geometry.solved().expect("solved carrier"),
             EPS_OFFSET_ENDPOINT_MATCH,
         ),
         Some([0.0, 2.0])
@@ -262,7 +262,7 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = *offset
+    let SolvedCurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
@@ -303,7 +303,7 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = *offset
+    let SolvedCurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
@@ -354,7 +354,7 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed line offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) = *offset
+    let SolvedCurveGeometry::Line(line_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
@@ -396,7 +396,7 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("reflected offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = *offset
+    let SolvedCurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
@@ -538,9 +538,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
             .iter()
             .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-            offset.geometry.solved_cache().unwrap_or(&offset.geometry)
-        else {
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
             panic!("expected an exact degree-one offset carrier");
         };
         assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
@@ -593,9 +591,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-        offset.geometry.solved_cache().unwrap_or(&offset.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
         panic!("expected an exact function-offset carrier");
     };
     assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);

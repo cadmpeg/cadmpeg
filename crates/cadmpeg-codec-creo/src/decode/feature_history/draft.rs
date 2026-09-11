@@ -44,7 +44,7 @@ use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -850,7 +850,7 @@ fn reconciled_datum_plane_definition(
                 return None;
             };
             match &surface.geometry {
-                SurfaceGeometry::Plane(plane_surface) => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                     let u_axis = plane_surface.u_axis();
                     Some(*u_axis)
                 }

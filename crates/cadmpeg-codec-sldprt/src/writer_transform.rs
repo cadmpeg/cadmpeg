@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -204,7 +206,7 @@ fn transform_surface(
     transform: Transform,
 ) -> Result<(), CodecError> {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -215,7 +217,7 @@ fn transform_surface(
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -228,7 +230,7 @@ fn transform_surface(
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -245,7 +247,7 @@ fn transform_surface(
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -258,7 +260,7 @@ fn transform_surface(
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -273,7 +275,7 @@ fn transform_surface(
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Nurbs(nurbs) => nurbs
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs
             .edit_control_points(|rows| {
                 for point in rows.iter_mut().flatten() {
                     *point = transform.apply_point(*point);
@@ -282,21 +284,22 @@ fn transform_surface(
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
-        SurfaceGeometry::Polygonal(surface) => surface
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => surface
             .edit_vertices(|points| {
                 for point in points {
                     *point = transform.apply_point(*point);
                 }
             })
             .map_err(|error| CodecError::malformed(error.to_string()))?,
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform a non-explicit surface".into(),
             ))
         }
-        SurfaceGeometry::Transformed {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
             transform: carrier, ..
-        } => {
+        }) => {
             *carrier = transform.compose(*carrier).map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
             })?;
@@ -307,7 +310,7 @@ fn transform_surface(
 
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
@@ -316,7 +319,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -329,7 +332,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -344,7 +347,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Nurbs(nurbs) => nurbs
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => nurbs
             .edit_control_points(|points| {
                 for point in points {
                     *point = transform.apply_point(*point);
@@ -353,14 +356,14 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
-        CurveGeometry::Polyline(polyline) => polyline
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => polyline
             .edit_points(|points| {
                 for point in points {
                     *point = transform.apply_point(*point);
                 }
             })
             .map_err(|error| CodecError::malformed(error.to_string()))?,
-        CurveGeometry::Parabola(parabola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -373,7 +376,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -388,21 +391,22 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point();
             *degenerate_curve =
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(transform.apply_point(*point))
                     .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Composite { .. } => {}
-        CurveGeometry::Transformed {
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
             transform: carrier, ..
-        } => {
+        }) => {
             *carrier = transform.compose(*carrier).map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
             })?;
         }
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
+        CurveGeometry::Procedural { .. }
+        | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
             return Err(CodecError::NotImplemented(
                 "cannot bake a transform into a non-explicit curve".into(),
             ));
@@ -417,7 +421,7 @@ mod tests {
 
     #[test]
     fn transform_curve_rejects_non_explicit_geometry() {
-        let mut geometry = CurveGeometry::Unknown { record: None };
+        let mut geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
         assert!(matches!(
             transform_curve(&mut geometry, Transform::identity()),
             Err(CodecError::NotImplemented(_))
@@ -429,7 +433,7 @@ mod tests {
         use cadmpeg_ir::geometry::CircleCurve;
         use cadmpeg_ir::math::{Point3, Vector3};
 
-        let mut geometry = CurveGeometry::Circle(
+        let mut geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -437,7 +441,7 @@ mod tests {
                 2.0,
             )
             .unwrap(),
-        );
+        ));
         let rotation = Transform::from_rows([
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],

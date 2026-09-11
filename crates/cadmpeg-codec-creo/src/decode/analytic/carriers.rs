@@ -7,7 +7,9 @@ use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -37,7 +39,7 @@ fn existing_plane_agrees_with_topology(
     topology: PlaneEquation,
 ) -> Option<bool> {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             Some(
@@ -51,7 +53,7 @@ fn existing_plane_agrees_with_topology(
                 .is_some(),
             )
         }
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
         _ => Some(false),
     }
 }
@@ -138,9 +140,9 @@ pub fn transfer_topology_bound_planes(
                 .iter_mut()
                 .filter(|surface| surface.id == id)
             {
-                surface.geometry = SurfaceGeometry::Unknown {
+                surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: geometry_section_record(scan, row.offset),
-                };
+                });
             }
             annotate(
                 annotations,
@@ -174,7 +176,7 @@ pub fn transfer_topology_bound_planes(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Plane(plane_surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -232,9 +234,9 @@ pub fn retain_unresolved_surface_carriers(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: SurfaceGeometry::Unknown {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: geometry_section_record(scan, row.offset),
-                },
+                }),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -274,9 +276,9 @@ pub fn retain_unresolved_surface_carriers(
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Unknown {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: geometry_section_record(scan, row.offset),
-            },
+            }),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -343,7 +345,9 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
                     continue;
                 }
             };
-            if let SurfaceGeometry::Plane(plane_surface) = &surface.geometry {
+            if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                &surface.geometry
+            {
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 let plane = PlaneEquation {
@@ -456,7 +460,7 @@ fn positional_cylinder_carrier(
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             Some(CarrierEquation::Plane(PlaneEquation {
@@ -464,7 +468,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
                 normal: [normal.x, normal.y, normal.z],
             }))
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -476,7 +480,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
                 radius,
             }))
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
@@ -486,7 +490,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
                 radius,
             }))
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -502,7 +506,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
                 half_angle,
             )?))
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();

@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -120,7 +121,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: SurfaceGeometry::Sphere(sphere_surface),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -205,7 +206,7 @@ pub(in super::super) fn transfer_positional_tori(
             continue;
         };
         let geometry = if frame.major_radius() == 0.0 {
-            SurfaceGeometry::Sphere(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 match cadmpeg_ir::geometry::SphereSurface::try_new(
                     Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
                     Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
@@ -219,9 +220,9 @@ pub(in super::super) fn transfer_positional_tori(
                     Ok(payload) => payload,
                     Err(_) => continue,
                 },
-            )
+            ))
         } else {
-            SurfaceGeometry::Torus(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 match cadmpeg_ir::geometry::TorusSurface::try_new(
                     Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
                     Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
@@ -236,7 +237,7 @@ pub(in super::super) fn transfer_positional_tori(
                     Ok(payload) => payload,
                     Err(_) => continue,
                 },
-            )
+            ))
         };
         annotate(
             annotations,
@@ -374,7 +375,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         );
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Line(line_curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -393,7 +394,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         });
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane(plane_surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -543,7 +544,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         );
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Nurbs(directrix),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -562,7 +563,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         });
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

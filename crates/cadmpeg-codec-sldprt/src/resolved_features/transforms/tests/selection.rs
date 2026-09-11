@@ -7,7 +7,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -816,7 +816,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .map(|(index, (y, z))| Surface {
             id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(19.5, y, z),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -824,7 +824,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
                     3.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         })
         .collect::<Vec<_>>();

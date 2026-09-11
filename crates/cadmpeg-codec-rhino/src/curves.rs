@@ -6,7 +6,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
@@ -146,7 +146,9 @@ impl DecodedCurve {
     pub(crate) fn reported_geometry(&self) -> CurveGeometry {
         match self {
             Self::Leaf { geometry, .. } => geometry.clone(),
-            Self::Compound { .. } => CurveGeometry::Unknown { record: None },
+            Self::Compound { .. } => {
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
+            }
         }
     }
 }
@@ -418,7 +420,11 @@ pub(crate) fn decode_inner(
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
+                    &mut reader,
+                    scale,
+                    None,
+                )?)),
                 Diagnostics::new(),
             ),
         },
@@ -430,7 +436,11 @@ pub(crate) fn decode_inner(
         }
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+                    &mut reader,
+                    scale,
+                    None,
+                )?)),
                 Diagnostics::new(),
             ),
         },
@@ -440,7 +450,9 @@ pub(crate) fn decode_inner(
         }
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(&mut reader, scale)?),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    crate::surfaces::read_nurbs_curve(&mut reader, scale)?,
+                )),
                 Diagnostics::new(),
             ),
         },
@@ -574,7 +586,7 @@ fn scale_decoded_curve(
             return Ok(());
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Nurbs(nurbs) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let scaled = nurbs
                     .control_points()
                     .iter()
@@ -589,7 +601,7 @@ fn scale_decoded_curve(
                     .edit_control_points(|points| points.copy_from_slice(&scaled))
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
@@ -607,7 +619,7 @@ fn scale_decoded_curve(
                 )
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
-            CurveGeometry::Line(line_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = line_curve.origin();
                 let direction = line_curve.direction();
                 *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
@@ -621,7 +633,7 @@ fn scale_decoded_curve(
                 )
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
-            CurveGeometry::Degenerate(degenerate_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = degenerate_curve.point();
                 *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(
                     scale_ir_point(*point, scale).ok_or_else(|| {
@@ -633,7 +645,7 @@ fn scale_decoded_curve(
                 )
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
-            CurveGeometry::Unknown { .. } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
                 return Err(GeometryError::malformed(
                     offset,
                     "plane-space curve has unknown geometry",
@@ -662,8 +674,8 @@ pub(crate) fn exact_nurbs(
 ) -> Result<NurbsCurve, GeometryError> {
     match curve {
         DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Nurbs(nurbs) => Ok(nurbs.clone()),
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
@@ -1078,19 +1090,29 @@ pub(crate) fn decode_inner_2d(
     let result = match class_uuid {
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    crate::surfaces::read_nurbs_curve_2d(&mut reader)?,
+                )),
                 Diagnostics::new(),
             ),
         },
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_line(&mut reader, 1.0, Some(2))?),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
+                    &mut reader,
+                    1.0,
+                    Some(2),
+                )?)),
                 Diagnostics::new(),
             ),
         },
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_polyline(&mut reader, 1.0, Some(2))?),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+                    &mut reader,
+                    1.0,
+                    Some(2),
+                )?)),
                 Diagnostics::new(),
             ),
         },
@@ -1376,7 +1398,7 @@ fn read_arc(
     }
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
-            CurveGeometry::Circle(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     circle.center,
                     circle.axis,
@@ -1384,12 +1406,18 @@ fn read_arc(
                     circle.radius,
                 )
                 .map_err(|message| error(reader.position(), message))?,
-            ),
+            )),
             warnings,
         ));
     }
     Ok((
-        CurveGeometry::Nurbs(arc_nurbs(&circle, angle, domain, delta, reader.position())?),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(arc_nurbs(
+            &circle,
+            angle,
+            domain,
+            delta,
+            reader.position(),
+        )?)),
         warnings,
     ))
 }
@@ -1913,14 +1941,17 @@ mod tests {
             false,
         )
         .expect("valid test curve");
-        let mut decoded = DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Diagnostics::new());
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            Diagnostics::new(),
+        );
         let error = scale_decoded_curve(&mut decoded, f64::MAX, 17)
             .expect_err("scaling overflow must reject the NURBS curve");
         assert!(error
             .to_string()
             .contains("scaled plane-space curve is invalid"));
         let DecodedCurve::Leaf {
-            geometry: CurveGeometry::Nurbs(curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             ..
         } = decoded
         else {
@@ -1965,7 +1996,7 @@ mod tests {
     fn analytic_full_circle_converts_to_exact_quadratic_nurbs() {
         let circle = unit_circle();
         let decoded = DecodedCurve::leaf(
-            CurveGeometry::Circle(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     circle.center,
                     circle.axis,
@@ -1973,7 +2004,7 @@ mod tests {
                     circle.radius,
                 )
                 .unwrap(),
-            ),
+            )),
             Diagnostics::new(),
         );
         let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
@@ -1992,7 +2023,7 @@ mod tests {
     fn recursive_compound_conversion_preserves_parent_domain_when_exact() {
         let line = |start: f64, end: f64| {
             DecodedCurve::leaf(
-                CurveGeometry::Nurbs(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     NurbsCurve::new(
                         1,
                         vec![start, start, end, end],
@@ -2001,7 +2032,7 @@ mod tests {
                         false,
                     )
                     .expect("valid test line"),
-                ),
+                )),
                 Diagnostics::new(),
             )
         };

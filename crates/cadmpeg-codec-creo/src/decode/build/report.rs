@@ -7,7 +7,8 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
@@ -34,14 +35,18 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.shells.is_empty()
         || !model.regions.is_empty()
         || !model.bodies.is_empty()
-        || model
-            .surfaces
-            .iter()
-            .any(|surface| !matches!(&surface.geometry, SurfaceGeometry::Unknown { .. }))
-        || model
-            .curves
-            .iter()
-            .any(|curve| !matches!(&curve.geometry, CurveGeometry::Unknown { .. }))
+        || model.surfaces.iter().any(|surface| {
+            !matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+        })
+        || model.curves.iter().any(|curve| {
+            !matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
         || !model.subds.is_empty()
         || !model.pcurves.is_empty()
         || model.procedural_surfaces.iter().any(|surface| {

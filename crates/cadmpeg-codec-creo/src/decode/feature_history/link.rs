@@ -8,7 +8,7 @@ use super::super::uniqueness::{
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,18 +60,19 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
 pub(in super::super) fn surface_kind_for_geometry(
     geometry: &SurfaceGeometry,
 ) -> Option<crate::surface::SurfaceKind> {
+    solved_surface_kind(geometry.solved()?)
+}
+
+fn solved_surface_kind(geometry: &SolvedSurfaceGeometry) -> Option<crate::surface::SurfaceKind> {
     match geometry {
-        SurfaceGeometry::Plane(_) => Some(crate::surface::SurfaceKind::Plane),
-        SurfaceGeometry::Cylinder(_) => Some(crate::surface::SurfaceKind::Cylinder),
-        SurfaceGeometry::Cone(_) => Some(crate::surface::SurfaceKind::Cone),
-        SurfaceGeometry::Sphere(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
-        SurfaceGeometry::Torus(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
-        SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
-        SurfaceGeometry::Transformed { basis, .. } => surface_kind_for_geometry(basis),
-        SurfaceGeometry::Procedural { cache, .. } => cache
-            .as_ref()
-            .and_then(|cache| surface_kind_for_geometry(cache.as_geometry())),
-        SurfaceGeometry::Polygonal(_) | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Plane(_) => Some(crate::surface::SurfaceKind::Plane),
+        SolvedSurfaceGeometry::Cylinder(_) => Some(crate::surface::SurfaceKind::Cylinder),
+        SolvedSurfaceGeometry::Cone(_) => Some(crate::surface::SurfaceKind::Cone),
+        SolvedSurfaceGeometry::Sphere(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
+        SolvedSurfaceGeometry::Torus(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
+        SolvedSurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
+        SolvedSurfaceGeometry::Transformed { basis, .. } => solved_surface_kind(basis),
+        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
 

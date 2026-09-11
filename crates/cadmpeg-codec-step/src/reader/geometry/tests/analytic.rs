@@ -11,7 +11,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{
     model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id,
 };
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -26,9 +26,7 @@ const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
-    let CurveGeometry::Polyline(polyline) =
-        curve.geometry.solved_cache().unwrap_or(&curve.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Polyline(polyline)) = curve.geometry.solved() else {
         panic!("expected tessellated curve to transfer as a polyline");
     };
     assert!(polyline.parameters().is_none());
@@ -410,7 +408,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
 
 #[test]
 fn reversed_step_ellipse_axes_are_canonicalized() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap242_geometry.p21").to_vec())
@@ -430,7 +428,7 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ellipse carrier");
     assert!(
-        matches!(*ellipse.geometry.solved_cache().unwrap_or(&ellipse.geometry), CurveGeometry::Ellipse(ellipse_curve)
+        matches!(ellipse.geometry.solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
                     let major_radius = ellipse_curve.major_radius();
         let minor_radius = ellipse_curve.minor_radius();
@@ -491,10 +489,9 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#9")
         .expect("reversed ellipse");
-    assert!(matches!(*reversed
+    assert!(matches!(reversed
         .geometry
-        .solved_cache()
-        .unwrap_or(&reversed.geometry), CurveGeometry::Ellipse(ellipse_curve)
+        .solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
             if {
                 let major_direction = ellipse_curve.major_direction();
     let major_radius = ellipse_curve.major_radius();
@@ -512,7 +509,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ordered ellipse");
     assert!(
-        matches!(*ordered.geometry.solved_cache().unwrap_or(&ordered.geometry), CurveGeometry::Ellipse(ellipse_curve)
+        matches!(ordered.geometry.solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
                     let major_direction = ellipse_curve.major_direction();
         let major_radius = ellipse_curve.major_radius();
@@ -626,11 +623,11 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
     );
 
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface)
-                if {
-                    let half_angle = cone_surface.half_angle();
-                    half_angle == 0.0
-                })
+        matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Cone(cone_surface))
+        if {
+            let half_angle = cone_surface.half_angle();
+            half_angle == 0.0
+        })
     }));
     assert!(result.report().losses.iter().all(|loss| !loss
         .message
@@ -662,16 +659,13 @@ fn complex_geometry_instances_decode_named_partials() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#16"
-            && matches!(
-                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                CurveGeometry::Line(_)
-            )
+            && matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(_)))
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(
-                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-                SurfaceGeometry::Plane(_)
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_))
             )
     }));
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
@@ -704,8 +698,8 @@ fn complex_points_and_directions_decode_named_partials() {
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(
-                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-                SurfaceGeometry::Plane(_)
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_))
             )
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());

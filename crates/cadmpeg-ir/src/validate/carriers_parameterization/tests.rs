@@ -3,7 +3,7 @@
 
 use super::parameter_in_domain;
 use crate::examples::unit_cube;
-use crate::geometry::{CurveGeometry, SurfaceGeometry};
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::ids::{CurveId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::report::Check;
@@ -31,7 +31,7 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
     let surface_id = face.surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
         if s.id.as_str() == surface_id {
-            s.geometry = SurfaceGeometry::Unknown { record };
+            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
             break;
         }
     }
@@ -122,7 +122,7 @@ fn periodic_curve_parameter_domain_is_checked() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Circle(
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         crate::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -130,7 +130,7 @@ fn periodic_curve_parameter_domain_is_checked() {
             1.0,
         )
         .unwrap(),
-    );
+    ));
     ir.model.edges[0].set_param_range(Some([0.0, 7.0])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings

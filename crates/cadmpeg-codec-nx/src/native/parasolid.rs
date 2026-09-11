@@ -4265,7 +4265,7 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
+        BlendCrossSection, BlendRadiusLaw, ProceduralSurfaceDefinition, SolvedCurveGeometry,
         SurfaceGeometry,
     };
 

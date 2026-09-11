@@ -9,6 +9,7 @@ use cadmpeg_ir::Exactness;
 
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
 /// `(header_name, payload)` sections joined by the `#\n` terminator rule.
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 pub(crate) fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let sections = sections
         .iter()
@@ -243,7 +244,9 @@ pub(crate) fn assert_unknown_visible_surface(surfaces: &[cadmpeg_ir::geometry::S
         .expect("retained unresolved visible surface");
     assert!(matches!(
         surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(_)
+        })
     ));
 }
 

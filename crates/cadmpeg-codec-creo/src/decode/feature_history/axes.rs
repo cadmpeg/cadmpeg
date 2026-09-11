@@ -10,7 +10,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,
 };
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
@@ -103,26 +103,26 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return None;
         };
         match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = *cylinder_surface.origin();
                 let axis = *cylinder_surface.axis();
                 axes.push((origin, axis));
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = *cone_surface.origin();
                 let axis = *cone_surface.axis();
                 axes.push((origin, axis));
             }
-            SurfaceGeometry::Torus(torus_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = *torus_surface.center();
                 let axis = *torus_surface.axis();
                 axes.push((center, axis));
             }
-            SurfaceGeometry::Plane(plane_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let normal = *plane_surface.normal();
                 plane_normals.push(normal);
             }
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = *sphere_surface.center();
                 sphere_centers.push(center);
             }

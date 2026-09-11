@@ -78,9 +78,9 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(center, axis, reference, radius).unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.points.extend([

@@ -3,8 +3,9 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::CadIr;
 
@@ -34,12 +35,10 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(
-                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                    CurveGeometry::Nurbs(nurbs) => Some(nurbs),
-                    _ => None,
-                },
-            )
+            .and_then(|curve| match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
+                _ => None,
+            })
             .unwrap_or_else(|| panic!("missing NURBS curve {id}"))
     };
     assert_eq!(
@@ -85,11 +84,9 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == id)
-            .and_then(|surface| {
-                match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                    SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
-                    _ => None,
-                }
+            .and_then(|surface| match surface.geometry.solved() {
+                Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
+                _ => None,
             })
             .unwrap_or_else(|| panic!("missing NURBS surface {id}"))
     };
@@ -142,9 +139,7 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#7")
         .expect("complex rational surface");
-    let SurfaceGeometry::Nurbs(nurbs) =
-        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
-    else {
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface.geometry.solved() else {
         panic!("complex rational surface is not NURBS")
     };
     assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
@@ -237,18 +232,18 @@ fn deferred_surface_dependencies_resolve_independent_of_record_order() {
 #[test]
 fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     use cadmpeg_ir::geometry::{
-        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
     };
 
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
-        geometry: CurveGeometry::Composite {
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
                 CompositeCurveSegment {
                     curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
@@ -258,7 +253,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
             ])
             .unwrap(),
             self_intersect: Some(false),
-        },
+        }),
         source_object: None,
     });
     let output = export(&ir);

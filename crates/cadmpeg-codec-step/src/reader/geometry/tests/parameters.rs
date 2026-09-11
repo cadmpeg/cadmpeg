@@ -4,21 +4,30 @@ use cadmpeg_ir::eval::nurbs_curve_point;
 
 #[test]
 fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
-    let line = CurveGeometry::Line(
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
+    ));
+    assert_eq!(
+        edge_parameter_range(line.solved().expect("solved carrier"), 2.0, 5.0),
+        Some([2.0, 5.0])
     );
-    assert_eq!(edge_parameter_range(&line, 2.0, 5.0), Some([2.0, 5.0]));
-    assert_eq!(edge_parameter_range(&line, 5.0, 2.0), None);
-    assert_eq!(edge_parameter_range(&line, 2.0, 2.0), None);
+    assert_eq!(
+        edge_parameter_range(line.solved().expect("solved carrier"), 5.0, 2.0),
+        None
+    );
+    assert_eq!(
+        edge_parameter_range(line.solved().expect("solved carrier"), 2.0, 2.0),
+        None
+    );
 }
 
 #[test]
 fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
-    let circle = CurveGeometry::Circle(
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -26,10 +35,11 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
             1.0,
         )
         .unwrap(),
-    );
+    ));
     let start = 1.5 + 20_000.0 * std::f64::consts::TAU;
     let end = 0.5 - 20_000.0 * std::f64::consts::TAU;
-    let range = edge_parameter_range(&circle, start, end).expect("periodic interval");
+    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end)
+        .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
     assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
 }
@@ -52,7 +62,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         false,
     )
     .unwrap();
-    let geometry = CurveGeometry::Nurbs(nurbs.clone());
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let start_point = nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
@@ -69,13 +79,13 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         1.0,
     )
     .expect("end point");
-    let start_seed = curve_endpoint_seed(&geometry, false, 0.0);
+    let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
     let start = nurbs_curve_parameter_near_point(&nurbs, start_point, 1.0e-6, start_seed)
         .expect("start witness");
     let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, start)
         .expect("unanchored end witness");
     assert!((start_seed_end - 1.0).abs() > 0.1);
-    let end_seed = curve_endpoint_seed(&geometry, true, start);
+    let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
     let end =
         nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, end_seed).expect("end witness");
 
@@ -86,15 +96,15 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
 #[test]
 fn surface_parameter_units_follow_the_surface_chart() {
     let ir = CadIr::empty();
-    let plane = SurfaceGeometry::Plane(
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-    );
-    let cylinder = SurfaceGeometry::Cylinder(
+    ));
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -102,8 +112,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             2.0,
         )
         .unwrap(),
-    );
-    let sphere = SurfaceGeometry::Sphere(
+    ));
+    let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -111,11 +121,11 @@ fn surface_parameter_units_follow_the_surface_chart() {
             2.0,
         )
         .unwrap(),
-    );
-    let transformed = SurfaceGeometry::Transformed {
-        basis: Box::new(cylinder.clone()),
+    ));
+    let transformed = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
+        basis: Box::new(cylinder.clone().solved().expect("solved carrier").clone()),
         transform: Transform::identity(),
-    };
+    });
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
@@ -164,7 +174,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
         surface_parameter_scales_for_step(
             &ir,
             &SurfaceId::mint("test:model:surface#unknown").expect("identity grammar"),
-            &SurfaceGeometry::Unknown { record: None },
+            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             10.0,
             0.25,
             &BTreeMap::new(),
@@ -179,13 +189,13 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let sweep = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
@@ -193,12 +203,12 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     ir.model.surfaces.extend([
         Surface {
             id: sweep.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
         Surface {
             id: revolution.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
     ]);
@@ -242,10 +252,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &sweep,
-            ir.model.surfaces[0]
-                .geometry
-                .solved_cache()
-                .unwrap_or(&ir.model.surfaces[0].geometry),
+            &ir.model.surfaces[0].geometry,
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -256,10 +263,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &revolution,
-            ir.model.surfaces[1]
-                .geometry
-                .solved_cache()
-                .unwrap_or(&ir.model.surfaces[1].geometry),
+            &ir.model.surfaces[1].geometry,
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -272,7 +276,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
 fn directrix_parameter_units_follow_step_curve_equations() {
     let ir = CadIr::empty();
     let angle_scale = std::f64::consts::PI / 180.0;
-    let parabola = CurveGeometry::Parabola(
+    let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -280,8 +284,8 @@ fn directrix_parameter_units_follow_step_curve_equations() {
             2.0,
         )
         .unwrap(),
-    );
-    let hyperbola = CurveGeometry::Hyperbola(
+    ));
+    let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         cadmpeg_ir::geometry::HyperbolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -290,27 +294,45 @@ fn directrix_parameter_units_follow_step_curve_equations() {
             1.0,
         )
         .unwrap(),
-    );
-    let polyline = CurveGeometry::Polyline(
+    ));
+    let polyline = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
         cadmpeg_ir::geometry::PolylineCurve::new(
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             0.0,
         )
         .unwrap(),
-    );
+    ));
     let mut active = BTreeSet::new();
 
     assert_eq!(
-        directrix_geometry_parameter_scale(&ir, &parabola, 0.001, angle_scale, &mut active),
+        directrix_geometry_parameter_scale(
+            &ir,
+            parabola.solved().expect("solved carrier"),
+            0.001,
+            angle_scale,
+            &mut active
+        ),
         Some(1.0)
     );
     assert_eq!(
-        directrix_geometry_parameter_scale(&ir, &hyperbola, 0.001, angle_scale, &mut active),
+        directrix_geometry_parameter_scale(
+            &ir,
+            hyperbola.solved().expect("solved carrier"),
+            0.001,
+            angle_scale,
+            &mut active
+        ),
         Some(1.0)
     );
     assert_eq!(
-        directrix_geometry_parameter_scale(&ir, &polyline, 0.001, angle_scale, &mut active),
+        directrix_geometry_parameter_scale(
+            &ir,
+            polyline.solved().expect("solved carrier"),
+            0.001,
+            angle_scale,
+            &mut active
+        ),
         Some(1.0)
     );
 }
@@ -321,13 +343,13 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: child.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
-        geometry: CurveGeometry::Composite {
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
                 cadmpeg_ir::geometry::CompositeCurveSegment {
                     curve: child,
@@ -337,13 +359,13 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             ])
             .unwrap(),
             self_intersect: None,
-        },
+        }),
         source_object: None,
     });
     let surface = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
@@ -367,10 +389,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         surface_parameter_scales_for_step(
             &ir,
             &surface,
-            ir.model.surfaces[0]
-                .geometry
-                .solved_cache()
-                .unwrap_or(&ir.model.surfaces[0].geometry),
+            &ir.model.surfaces[0].geometry,
             0.001,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
@@ -386,18 +405,18 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
@@ -422,10 +441,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         surface_parameter_scales_for_step(
             &ir,
             &surface_id,
-            ir.model.surfaces[0]
-                .geometry
-                .solved_cache()
-                .unwrap_or(&ir.model.surfaces[0].geometry),
+            &ir.model.surfaces[0].geometry,
             10.0,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),

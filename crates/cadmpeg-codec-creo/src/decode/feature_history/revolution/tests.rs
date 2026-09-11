@@ -2,7 +2,7 @@
 
 use super::super::transfer_resolved_revolution_surfaces;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;
@@ -110,7 +110,7 @@ fn saved_spline_curve() -> Curve {
     Curve {
         id: CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
             .expect("identity grammar"),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -119,7 +119,7 @@ fn saved_spline_curve() -> Curve {
                 false,
             )
             .expect("valid saved-spline curve"),
-        ),
+        )),
         source_object: None,
     }
 }

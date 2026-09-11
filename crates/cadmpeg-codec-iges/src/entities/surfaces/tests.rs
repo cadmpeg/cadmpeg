@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
 
@@ -146,10 +147,8 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         .unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact NURBS ruled cache");
     };
@@ -186,12 +185,10 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
-        .and_then(
-            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                SurfaceGeometry::Nurbs(surface) => Some(surface),
-                _ => None,
-            },
-        )
+        .and_then(|surface| match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Nurbs(surface)) => Some(surface),
+            _ => None,
+        })
         .expect("linear Bezier ruled surface");
     let midpoint = cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
         .expect("linear Bezier ruled midpoint");
@@ -210,10 +207,8 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational ruled cache");
     };
@@ -231,11 +226,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             .iter()
             .find(|curve| curve.id.as_str() == format!("iges:model:curve#D{sequence}"))
             .expect("rail curve");
-        cadmpeg_ir::eval::curve_point(
-            curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-            parameter,
-        )
-        .expect("rail point")
+        cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).expect("rail point")
     };
     for (u, v) in [(0.2, 0.25), (0.5, 0.5), (0.8, 0.75)] {
         let first = curve_point(1, u);
@@ -371,10 +362,8 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact circular ruled cache");
     };
@@ -453,10 +442,8 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
         .unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational revolution cache");
     };
@@ -488,10 +475,8 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
         "{:#?}",
         result.report().losses
     );
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational ellipse revolution cache");
     };
@@ -523,8 +508,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .expect("line revolution surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
-        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
     else {
         panic!("expected an exact construction-backed revolution");
     };
@@ -554,7 +538,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
             .find(|curve| curve.id == *directrix)
             .expect("line generatrix")
             .geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Line(_)
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert_eq!(
@@ -640,7 +624,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("hyperbola revolution surface");
         let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
-            surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+            &surface.geometry
         else {
             panic!("expected a construction-backed revolution surface");
         };
@@ -673,7 +657,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .geometry;
         assert!(matches!(
             directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_)
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let source_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
@@ -730,7 +714,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         .expect("trimmed revolution support");
     assert!(matches!(
         surface.geometry.solved_cache(),
-        Some(SurfaceGeometry::Nurbs(_))
+        Some(SolvedSurfaceGeometry::Nurbs(_))
     ));
     let procedural = result
         .ir()
@@ -772,10 +756,8 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational revolution cache");
     };
@@ -807,10 +789,8 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         .unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact NURBS extrusion cache");
     };
@@ -923,7 +903,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .expect("hyperbola tabulated surface");
         let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
-            surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+            &surface.geometry
         else {
             panic!("expected a construction-backed tabulated surface");
         };
@@ -962,7 +942,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .geometry;
         assert!(matches!(
             directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_)
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
@@ -1022,7 +1002,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("placed tabulated surface");
         let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
-            surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+            &surface.geometry
         else {
             panic!("expected a construction-backed placed tabulated surface");
         };
@@ -1064,7 +1044,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .geometry;
         assert!(matches!(
             directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Transformed { .. }
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. })
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
@@ -1117,7 +1097,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .expect("placed NURBS tabulated surface");
         assert!(matches!(
             surface.geometry.solved_cache(),
-            Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_))
+            Some(SolvedSurfaceGeometry::Nurbs(_))
         ));
         let procedural = result
             .ir()
@@ -1151,18 +1131,14 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .geometry;
         assert!(matches!(
             directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
         ));
         assert_eq!(
             cadmpeg_ir::eval::curve_point(directrix_geometry, 0.5),
             Some(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
-            cadmpeg_ir::eval::surface_point(
-                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-                0.5,
-                0.5
-            ),
+            cadmpeg_ir::eval::surface_point(&surface.geometry, 0.5, 0.5),
             Some(Point3::new(10.5, 20.0, 31.0))
         );
         assert!(
@@ -1185,10 +1161,8 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected a plane carrier");
     };
@@ -1199,14 +1173,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(
-        cadmpeg_ir::eval::surface_point(
-            result.ir().model.surfaces[0]
-                .geometry
-                .solved_cache()
-                .unwrap_or(&result.ir().model.surfaces[0].geometry),
-            1.0,
-            3.0
-        ),
+        cadmpeg_ir::eval::surface_point(&result.ir().model.surfaces[0].geometry, 1.0, 3.0),
         Some(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1311,7 +1278,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = *offset
+        let SolvedSurfaceGeometry::Plane(plane_surface) = *offset
             .geometry
             .solved_cache()
             .expect("solved offset carrier")
@@ -1350,7 +1317,7 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D7")
             .expect("offset cylinder");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface) = *surface
+        let SolvedSurfaceGeometry::Cylinder(cylinder_surface) = *surface
             .geometry
             .solved_cache()
             .expect("solved offset cylinder")
@@ -1436,10 +1403,7 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };
@@ -1472,10 +1436,8 @@ fn decode_projects_a_degree_zero_bspline_surface() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };
@@ -1501,10 +1463,8 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };
@@ -1631,8 +1591,8 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
 
             assert_eq!(result.ir().model.surfaces.len(), usize::from(projected));
             if projected {
-                let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-                    result.ir().model.surfaces[0].geometry.solved_cache().unwrap_or(&result.ir().model.surfaces[0].geometry)
+                let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+                    result.ir().model.surfaces[0].geometry.solved()
                 else {
                     panic!("expected a NURBS surface carrier");
                 };

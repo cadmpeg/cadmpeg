@@ -68,7 +68,9 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
 }
 
 pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::*;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
@@ -154,14 +156,14 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     });
     ir.model.surfaces.push(Surface {
         id: surface,
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 points[0],
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     for index in 0..points.len() {
@@ -185,9 +187,9 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
         });
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(points[index], direction).unwrap(),
-            ),
+            )),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -216,7 +218,7 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
 }
 
 pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::*;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
@@ -285,13 +287,13 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         });
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     points[index],
                     Vector3::new(delta.x / length, delta.y / length, delta.z / length),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -319,7 +321,9 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
 }
 
 pub(crate) fn adjacent_quad_sheet() -> CadIr {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::*;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
@@ -418,14 +422,14 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         });
         ir.model.surfaces.push(Surface {
             id: surface_ids[index].clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     positions[0],
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -466,7 +470,7 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         );
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(
                         positions[start].x - 2.0 * delta.x,
@@ -476,7 +480,7 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
                     delta,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -524,7 +528,9 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
 }
 
 pub(crate) fn planar_tetrahedron() -> CadIr {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::*;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
@@ -637,7 +643,7 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(
                         positions[start].x - 2.0 * direction.x,
@@ -647,7 +653,7 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
                     direction,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -720,14 +726,14 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         });
         ir.model.surfaces.push(Surface {
             id: surface_ids[face].clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     positions[face_uses[face][0].0],
                     planes[face].0,
                     planes[face].1,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
         for offset in 0..3 {
@@ -761,7 +767,8 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
 
 pub(crate) fn rectangular_nurbs_patch() -> CadIr {
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry,
+        CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
     let points = [
@@ -771,7 +778,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         Point3::new(0.0, 2.0, 0.0),
     ];
     let mut ir = polygon_sheet(&points);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             1,
             1,
@@ -785,7 +792,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
             false,
         )
         .expect("valid patch surface"),
-    );
+    ));
     let edge_data = [
         (
             [20.0, 23.0],
@@ -820,7 +827,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         edge_data.into_iter().enumerate()
     {
         ir.model.edges[index].set_param_range(Some(domain)).unwrap();
-        ir.model.curves[index].geometry = CurveGeometry::Nurbs(
+        ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
@@ -829,7 +836,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
                 false,
             )
             .expect("valid patch edge"),
-        );
+        ));
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}")
             .try_into()
             .expect("valid identity");
@@ -857,7 +864,8 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
 
 pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry,
+        CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
     let mut ir = adjacent_quad_sheet();
@@ -867,7 +875,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         Point3::new(1.0, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
     ];
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             1,
             1,
@@ -881,7 +889,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
             false,
         )
         .expect("valid mixed surface"),
-    );
+    ));
     let edge_data = [
         (
             [20.0, 23.0],
@@ -916,7 +924,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         edge_data.into_iter().enumerate()
     {
         ir.model.edges[index].set_param_range(Some(domain)).unwrap();
-        ir.model.curves[index].geometry = CurveGeometry::Nurbs(
+        ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
@@ -925,7 +933,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
                 false,
             )
             .expect("valid mixed edge"),
-        );
+        ));
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}")
             .try_into()
             .expect("valid identity");
@@ -952,9 +960,11 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
 }
 
 pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
-    use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        NurbsSurface, Pcurve, PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             1,
             1,
@@ -970,7 +980,7 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             false,
         )
         .expect("valid planar patch"),
-    );
+    ));
     for index in 0..ir.model.coedges.len() {
         let coedge = &ir.model.coedges[index];
         let edge = ir

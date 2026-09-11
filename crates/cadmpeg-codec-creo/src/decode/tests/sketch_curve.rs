@@ -15,7 +15,9 @@ use crate::decode::sketch_transfer::constraints::{
 use crate::decode::sketch_transfer::loci::section_skamp_active;
 use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -88,7 +90,7 @@ fn placed_extrusion_arc_defines_cylinder() {
     let points = BTreeMap::from([(1, [2.0, 0.0]), (2, [-2.0, 0.0]), (3, [0.0, 0.0])]);
     assert_eq!(
         extruded_segment_surface(&transform, &points, &segment),
-        Some(SurfaceGeometry::Cylinder(
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(10.0, 20.0, 30.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -96,11 +98,11 @@ fn placed_extrusion_arc_defines_cylinder() {
                 2.0
             )
             .expect("valid CylinderSurface fixture")
-        ))
+        )))
     );
     assert_eq!(
         placed_section_curve_geometry(&transform, &points, &segment),
-        Some(CurveGeometry::Circle(
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(10.0, 20.0, 30.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -108,7 +110,7 @@ fn placed_extrusion_arc_defines_cylinder() {
                 2.0
             )
             .expect("valid CircleCurve fixture")
-        ))
+        )))
     );
     assert_eq!(
         placed_section_geometry_curve(
@@ -119,7 +121,7 @@ fn placed_extrusion_arc_defines_cylinder() {
             })
             .expect("valid test fixture"),
         ),
-        Some(CurveGeometry::Circle(
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(10.0, 23.0, 26.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -127,7 +129,7 @@ fn placed_extrusion_arc_defines_cylinder() {
                 2.0
             )
             .expect("valid CircleCurve fixture")
-        ))
+        )))
     );
 }
 

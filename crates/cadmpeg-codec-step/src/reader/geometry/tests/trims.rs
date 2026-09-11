@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{model_surface_partials_by_id, model_surface_point_by_id};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -38,8 +38,8 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .find(|surface| surface.id.as_str() == "step:data:surface#8")
         .expect("trimmed surface carrier");
     assert!(matches!(
-        *trimmed.geometry.solved_cache().unwrap_or(&trimmed.geometry),
-        SurfaceGeometry::Plane(_)
+        trimmed.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Plane(_))
     ));
     let procedural = decoded
         .ir()

@@ -30,7 +30,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
@@ -667,14 +667,14 @@ pub(crate) fn bind_pattern_inputs(
     Ok(())
 }
 
-fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
+fn mirror_plane_from_surface(geometry: &SolvedSurfaceGeometry) -> Option<(Point3, Vector3)> {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             Some((*origin, normal.unit()?))
         }
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             let (origin, normal) = mirror_plane_from_surface(basis)?;
             Some((
                 transform.apply_point(origin),
@@ -764,7 +764,13 @@ pub(crate) fn bind_mirror_surface_planes(
                 else {
                     continue;
                 };
-                let Some(plane) = mirror_plane_from_surface(&surface.geometry) else {
+                let Some(plane) =
+                    mirror_plane_from_surface(surface.geometry.solved().ok_or_else(|| {
+                        cadmpeg_core::CodecError::NotImplemented(
+                            "carrier has no solved geometry".into(),
+                        )
+                    })?)
+                else {
                     continue;
                 };
                 if !candidates.contains(&plane) {

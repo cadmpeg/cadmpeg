@@ -28,7 +28,9 @@ pub(super) use transfer_curves::*;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, OccurrenceId, ProductDefinitionId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
@@ -398,7 +400,7 @@ pub(super) fn transfer_fc05_cap_circles(
             );
             ir.model.curves.push(Curve {
                 id,
-                geometry: CurveGeometry::Circle(circle_curve),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -444,7 +446,7 @@ pub(super) fn transfer_fc05_cap_circles(
         );
         ir.model.surfaces.push(Surface {
             id: surface_id,
-            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

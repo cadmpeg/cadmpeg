@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::document::{CadIr, CensusKey};
 use crate::features::Feature;
 use crate::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;

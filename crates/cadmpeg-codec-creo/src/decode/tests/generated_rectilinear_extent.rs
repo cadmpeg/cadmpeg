@@ -7,7 +7,7 @@ use crate::decode::sweep::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -84,14 +84,14 @@ fn generated_fixture(
     };
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
@@ -269,14 +269,14 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
     };
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
@@ -293,7 +293,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#37".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
         plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
@@ -339,7 +339,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
                     .expect("identity grammar")
         })
         .expect("plane surface")
-        .geometry = SurfaceGeometry::Unknown { record: None };
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert_eq!(
         generated_rectilinear_plane_extent(&scan, &local_only, 7, Some(&section())),
         Some(expected_extent())

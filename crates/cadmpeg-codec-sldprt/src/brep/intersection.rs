@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 
 use super::{CurveCarrier, LEN_TO_MM};
@@ -358,7 +358,11 @@ fn solved_curve(
         false,
     )
     .ok()?;
-    Some((CurveGeometry::Nurbs(nurbs), parameters, reversed))
+    Some((
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        parameters,
+        reversed,
+    ))
 }
 
 fn solved_support_uv(
@@ -658,7 +662,7 @@ mod tests {
     fn consistent_composite_yields_polyline() {
         let carriers = scan_intersection_carriers(&stream());
         let carrier = carriers.get(&9).expect("composite decoded");
-        let CurveGeometry::Nurbs(curve) = &carrier.carrier.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(curve.degree(), 1);
@@ -696,7 +700,7 @@ mod tests {
             .remove(&9)
             .expect("intersection-data entity decoded");
         assert_eq!(carrier.carrier.offset, 0);
-        let CurveGeometry::Nurbs(curve) = carrier.carrier.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(curve.control_points().len(), POINTS.len());
@@ -714,7 +718,7 @@ mod tests {
 
         let carriers = scan_intersection_carriers(&bytes);
         let carrier = carriers.get(&9).expect("decreasing chart decoded");
-        let CurveGeometry::Nurbs(curve) = &carrier.carrier.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
@@ -754,7 +758,7 @@ mod tests {
         bytes.extend(term(6, end));
         bytes.extend(uv(7, POINTS.len()));
         let carriers = scan_intersection_carriers(&bytes);
-        let CurveGeometry::Nurbs(curve) = &carriers
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("composite decoded")
             .carrier
@@ -800,7 +804,7 @@ mod tests {
         }
         bytes.extend(term);
         let carriers = scan_intersection_carriers(&bytes);
-        let CurveGeometry::Nurbs(curve) = &carriers
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("ring composite decoded")
             .carrier
@@ -837,7 +841,7 @@ mod tests {
         bytes.extend(uv(7, POINTS.len()));
 
         let carriers = scan_intersection_carriers(&bytes);
-        let CurveGeometry::Nurbs(curve) = &carriers
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("extended chart decoded")
             .carrier

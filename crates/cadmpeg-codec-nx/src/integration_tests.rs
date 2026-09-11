@@ -5,7 +5,9 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
 use super::*;
 use crate::test_support::*;
@@ -180,18 +182,17 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     let mut saw_procedural_curve = false;
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        saw_nurbs |= result
-            .ir()
-            .model
-            .curves
-            .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_)))
-            || result
-                .ir()
-                .model
-                .surfaces
-                .iter()
-                .any(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+            )
+        }) || result.ir().model.surfaces.iter().any(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            )
+        });
         saw_pcurve |= !result.ir().model.pcurves.is_empty();
         saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
         saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();

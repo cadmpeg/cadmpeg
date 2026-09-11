@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
@@ -268,7 +268,7 @@ pub(crate) fn decode(
             version_offset,
         )?;
         let start_curve = DecodedCurve::leaf(
-            CurveGeometry::Nurbs(start_nurbs.clone()),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(start_nurbs.clone())),
             source.warnings().clone(),
         );
         let start_frame = cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?;
@@ -912,7 +912,7 @@ pub(crate) mod tests {
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
     use crate::objects::ClassUserdata;
-    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     fn decode(
@@ -1223,7 +1223,7 @@ pub(crate) mod tests {
         }
         let count = points.len();
         DecodedCurve::leaf(
-            CurveGeometry::Nurbs(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     (0..count + 2).map(|value| value as f64).collect(),
@@ -1232,7 +1232,7 @@ pub(crate) mod tests {
                     false,
                 )
                 .expect("valid polygon curve"),
-            ),
+            )),
             Diagnostics::new(),
         )
     }
@@ -1266,7 +1266,7 @@ pub(crate) mod tests {
             weights.reverse();
         }
         DecodedCurve::leaf(
-            CurveGeometry::Nurbs(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
@@ -1275,7 +1275,7 @@ pub(crate) mod tests {
                     false,
                 )
                 .expect("valid circle curve"),
-            ),
+            )),
             Diagnostics::new(),
         )
     }
@@ -1395,7 +1395,7 @@ pub(crate) mod tests {
         );
         let mut off_plane = decoded_polygon(false, true);
         let crate::curves::DecodedCurve::Leaf {
-            geometry: CurveGeometry::Nurbs(curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             ..
         } = &mut off_plane
         else {

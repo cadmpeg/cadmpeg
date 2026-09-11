@@ -1,7 +1,7 @@
 //! Sketch entity projection from B-rep edges.
 
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
@@ -119,7 +119,7 @@ pub(super) fn project_edge(
         )
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {
-        Some(CurveGeometry::Circle(circle_curve)) => {
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             let center = circle_curve.center();
             let radius = circle_curve.radius();
             let center = project_point(*center, origin, u_axis, v_axis);
@@ -155,7 +155,7 @@ pub(super) fn project_edge(
                 )
             }
         }
-        Some(CurveGeometry::Ellipse(ellipse_curve)) => {
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
             let center = ellipse_curve.center();
             let major_direction = ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius();
@@ -212,24 +212,26 @@ pub(super) fn project_edge(
                 .ok()?,
             )
         }
-        Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::PcurveNurbs::new(
-                nurbs.degree(),
-                nurbs.knots().to_vec(),
-                nurbs
-                    .control_points()
-                    .iter()
-                    .map(|point| project_point(*point, origin, u_axis, v_axis))
-                    .collect(),
-                nurbs.weights().map(<[f64]>::to_vec),
-                nurbs.periodic(),
-            )
-            .ok()?,
-        )),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) => {
+            Some(SketchGeometry::nurbs(
+                cadmpeg_ir::geometry::PcurveNurbs::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
+                    nurbs
+                        .control_points()
+                        .iter()
+                        .map(|point| project_point(*point, origin, u_axis, v_axis))
+                        .collect(),
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                )
+                .ok()?,
+            ))
+        }
         None if edge.start == edge.end => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
-        Some(CurveGeometry::Line(_)) | None => line(),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => line(),
         Some(other) => Some(SketchGeometry::native(
             cadmpeg_ir::products::NonEmptyString::new(format!("{other:?}"))?,
         )),

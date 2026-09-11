@@ -5,7 +5,8 @@ use crate::examples::unit_cube;
 use crate::geometry::{
     CircleCurve, CirclePcurve, ConeSurface, CurveGeometry, CylinderSurface, EllipseCurve,
     EllipsePcurve, HarmonicPcurve, LinePcurve, OffsetPcurve, PcurveGeometry, PlaneSurface,
-    SphereSurface, SphericalGreatCirclePcurve, SurfaceGeometry, TorusSurface, TrimmedPcurve,
+    SolvedSurfaceGeometry, SphereSurface, SphericalGreatCirclePcurve, SurfaceGeometry,
+    TorusSurface, TrimmedPcurve,
 };
 use crate::ids::UnknownId;
 use crate::math::{Point2, Point3, Vector3};
@@ -19,7 +20,7 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
     let surface_id = face.surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
         if s.id.as_str() == surface_id {
-            s.geometry = SurfaceGeometry::Unknown { record };
+            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
             break;
         }
     }
@@ -666,19 +667,16 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
         construction: "test:model:procedural_curve#0"
             .try_into()
             .expect("valid identity"),
-        cache: Some(
-            SolvedCurveGeometry::new(CurveGeometry::Degenerate(
-                crate::geometry::DegenerateCurve::try_new(crate::math::Point3::new(1.0, 2.0, 3.0))
-                    .unwrap(),
-            ))
-            .unwrap(),
-        ),
+        cache: Some(SolvedCurveGeometry::Degenerate(
+            crate::geometry::DegenerateCurve::try_new(crate::math::Point3::new(1.0, 2.0, 3.0))
+                .unwrap(),
+        )),
     };
     let surface = SurfaceGeometry::Procedural {
         construction: "test:model:procedural_surface#0"
             .try_into()
             .expect("valid identity"),
-        cache: Some(SolvedSurfaceGeometry::new(SurfaceGeometry::Unknown { record: None }).unwrap()),
+        cache: Some(SolvedSurfaceGeometry::Unknown { record: None }),
     };
     let curve_wire = serde_json::to_value(&curve).unwrap();
     let surface_wire = serde_json::to_value(&surface).unwrap();
@@ -694,63 +692,58 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
     assert!(serde_json::from_value::<SolvedSurfaceGeometry>(surface_wire).is_err());
 }
 
+/// A solved cache holds `Solved*Geometry`, which has no procedural variant, so
+/// a procedural carrier below a transform chain is refused as an unknown
+/// variant rather than by a custom message.
 #[test]
-fn solved_caches_reject_procedural_carriers_below_transform_chains() {
+fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
     use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
-    let mut curve = CurveGeometry::Procedural {
-        construction: "test:model:procedural_curve#0"
-            .try_into()
-            .expect("valid identity"),
-        cache: None,
-    };
-    let mut surface = SurfaceGeometry::Procedural {
-        construction: "test:model:procedural_surface#0"
-            .try_into()
-            .expect("valid identity"),
-        cache: None,
-    };
+
+    let mut curve = serde_json::json!({
+        "kind": "procedural",
+        "construction": "test:model:procedural_curve#0"
+    });
+    let mut surface = serde_json::json!({
+        "kind": "procedural",
+        "construction": "test:model:procedural_surface#0"
+    });
     for _ in 0..3 {
-        curve = CurveGeometry::Transformed {
-            basis: Box::new(curve),
-            transform: crate::transform::Transform::default(),
-        };
-        surface = SurfaceGeometry::Transformed {
-            basis: Box::new(surface),
-            transform: crate::transform::Transform::default(),
-        };
-        assert_eq!(SolvedCurveGeometry::new(curve.clone()), Err(curve.clone()));
-        assert_eq!(
-            SolvedSurfaceGeometry::new(surface.clone()),
-            Err(surface.clone())
-        );
-        assert!(serde_json::from_value::<SolvedCurveGeometry>(
-            serde_json::to_value(&curve).unwrap()
-        )
-        .is_err());
-        assert!(serde_json::from_value::<SolvedSurfaceGeometry>(
-            serde_json::to_value(&surface).unwrap()
-        )
-        .is_err());
+        let error = serde_json::from_value::<SolvedCurveGeometry>(curve.clone())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unknown variant `procedural`"), "{error}");
+        let error = serde_json::from_value::<SolvedSurfaceGeometry>(surface.clone())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unknown variant `procedural`"), "{error}");
+
+        curve = serde_json::json!({
+            "kind": "transformed",
+            "basis": curve,
+            "transform": serde_json::to_value(crate::transform::Transform::default()).unwrap()
+        });
+        surface = serde_json::json!({
+            "kind": "transformed",
+            "basis": surface,
+            "transform": serde_json::to_value(crate::transform::Transform::default()).unwrap()
+        });
     }
-    let curve = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Unknown { record: None }),
+
+    let solved = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+        basis: Box::new(SolvedCurveGeometry::Unknown { record: None }),
         transform: crate::transform::Transform::default(),
-    };
-    let surface = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Unknown { record: None }),
-        transform: crate::transform::Transform::default(),
-    };
+    });
     assert_eq!(
-        SolvedCurveGeometry::new(curve.clone())
-            .unwrap()
-            .as_geometry(),
-        &curve
+        serde_json::from_value::<CurveGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
+        solved
     );
+    let solved = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
+        basis: Box::new(SolvedSurfaceGeometry::Unknown { record: None }),
+        transform: crate::transform::Transform::default(),
+    });
     assert_eq!(
-        SolvedSurfaceGeometry::new(surface.clone())
-            .unwrap()
-            .as_geometry(),
-        &surface
+        serde_json::from_value::<SurfaceGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
+        solved
     );
 }
 
@@ -839,16 +832,22 @@ fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
     assert_eq!(serde_json::to_value(curve).unwrap(), wire);
     let mut invalid = wire.clone();
     invalid["radius"] = serde_json::json!(-1.0);
-    assert!(serde_json::from_value::<CurveGeometry>(invalid)
+    let error = serde_json::from_value::<CurveGeometry>(invalid)
         .unwrap_err()
-        .to_string()
-        .contains("radius"));
+        .to_string();
+    assert!(
+        error.contains("radius") || error.contains("did not match"),
+        "{error}"
+    );
     let mut invalid = wire;
     invalid["ref_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-    assert!(serde_json::from_value::<CurveGeometry>(invalid)
+    let error = serde_json::from_value::<CurveGeometry>(invalid)
         .unwrap_err()
-        .to_string()
-        .contains("frame"));
+        .to_string();
+    assert!(
+        error.contains("frame") || error.contains("did not match"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -858,9 +857,9 @@ fn analytic_surface_admission_preserves_signed_and_zero_radius_contracts() {
     let reference = Vector3::new(1.0, 0.0, 0.0);
     let tiny = 1e-200;
     for radius in [tiny, -tiny] {
-        let sphere = SurfaceGeometry::Sphere(
+        let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             SphereSurface::try_new(center, axis, reference, radius).unwrap(),
-        );
+        ));
         let wire = serde_json::to_value(&sphere).unwrap();
         assert_eq!(
             serde_json::from_value::<SurfaceGeometry>(wire).unwrap(),
@@ -1032,6 +1031,7 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
 fn composite_curve_requires_a_segment_on_construction_and_serde() {
     use super::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry,
+        SolvedCurveGeometry,
     };
     assert!(CompositeCurveSegments::try_from(Vec::new()).is_err());
     let segment = CompositeCurveSegment {
@@ -1041,10 +1041,10 @@ fn composite_curve_requires_a_segment_on_construction_and_serde() {
     };
     let mut segments = CompositeCurveSegments::try_from(vec![segment]).unwrap();
     segments[0].same_sense = false;
-    let curve = CurveGeometry::Composite {
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
         segments,
         self_intersect: None,
-    };
+    });
     let wire = serde_json::json!({
         "kind": "composite",
         "segments": [{"curve": "synthetic:test:curve#child", "same_sense": false, "transition": "continuous"}],

@@ -12,7 +12,9 @@ use std::collections::BTreeMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, WrapMode};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -43,10 +45,14 @@ pub(super) fn normalize_model_lengths(
     }
 
     for surface in &mut ir.model.surfaces {
-        scale_surface_geometry(&mut surface.geometry, length_scale_mm)?;
+        if let SurfaceGeometry::Solved(geometry) = &mut surface.geometry {
+            scale_surface_geometry(geometry, length_scale_mm)?;
+        }
     }
     for curve in &mut ir.model.curves {
-        scale_curve_geometry(&mut curve.geometry, length_scale_mm)?;
+        if let CurveGeometry::Solved(geometry) = &mut curve.geometry {
+            scale_curve_geometry(geometry, length_scale_mm)?;
+        }
     }
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
@@ -81,7 +87,7 @@ pub(super) fn normalize_model_lengths(
         .curves
         .iter()
         .filter_map(|curve| {
-            curve_parameter_scale(&curve.geometry, length_scale_mm)
+            curve_parameter_scale(curve.geometry.solved()?, length_scale_mm)
                 .map(|scale| (curve.id.clone(), scale))
         })
         .collect::<BTreeMap<_, _>>();
@@ -1335,9 +1341,12 @@ fn scale_pattern_kind(
     Ok(())
 }
 
-fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<(), CodecError> {
+fn scale_surface_geometry(
+    geometry: &mut SolvedSurfaceGeometry,
+    scale: f64,
+) -> Result<(), CodecError> {
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -1348,7 +1357,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -1361,7 +1370,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -1378,7 +1387,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -1391,7 +1400,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -1406,7 +1415,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Nurbs(surface) => {
+        SolvedSurfaceGeometry::Nurbs(surface) => {
             surface
                 .edit_control_points(|rows| {
                     for point in rows.iter_mut().flatten() {
@@ -1419,7 +1428,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
                     ))
                 })?;
         }
-        SurfaceGeometry::Polygonal(surface) => {
+        SolvedSurfaceGeometry::Polygonal(surface) => {
             let mut scaled = surface.clone();
             scaled
                 .edit_vertices(|points| {
@@ -1433,20 +1442,20 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             *surface = scaled;
         }
-        SurfaceGeometry::Transformed {
+        SolvedSurfaceGeometry::Transformed {
             basis, transform, ..
         } => {
             scale_surface_geometry(basis, scale)?;
             scale_transform_translation(transform, scale);
         }
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {}
+        SolvedSurfaceGeometry::Unknown { .. } => {}
     }
     Ok(())
 }
 
-fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), CodecError> {
+fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
@@ -1455,7 +1464,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -1468,7 +1477,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -1483,7 +1492,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -1496,7 +1505,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -1511,7 +1520,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let point = degenerate_curve.point();
             *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
                 point.x * scale,
@@ -1520,7 +1529,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             ))
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Nurbs(curve) => {
+        SolvedCurveGeometry::Nurbs(curve) => {
             curve
                 .edit_control_points(|points| {
                     for point in points {
@@ -1533,7 +1542,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
                     ))
                 })?;
         }
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Polyline(polyline) => {
             let mut scaled = polyline.clone();
             scaled
                 .edit_points(|points| {
@@ -1547,15 +1556,13 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             *polyline = scaled;
         }
-        CurveGeometry::Transformed {
+        SolvedCurveGeometry::Transformed {
             basis, transform, ..
         } => {
             scale_curve_geometry(basis, scale)?;
             scale_transform_translation(transform, scale);
         }
-        CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => {}
+        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {}
     }
     Ok(())
 }
@@ -1653,37 +1660,37 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition 
     }
 }
 
-fn curve_parameter_scale(geometry: &CurveGeometry, length_scale_mm: f64) -> Option<f64> {
+fn curve_parameter_scale(geometry: &SolvedCurveGeometry, length_scale_mm: f64) -> Option<f64> {
     match geometry {
-        CurveGeometry::Line(_) => Some(length_scale_mm),
-        CurveGeometry::Circle(_) => Some(1.0),
-        CurveGeometry::Ellipse(_) => Some(1.0),
-        CurveGeometry::Parabola(_) => Some(1.0),
-        CurveGeometry::Hyperbola(_) => Some(1.0),
-        CurveGeometry::Transformed { basis, .. } => curve_parameter_scale(basis, length_scale_mm),
-        CurveGeometry::Nurbs { .. } => None,
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Procedural { .. } => None,
-        CurveGeometry::Polyline(_) => None,
-        CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Line(_) => Some(length_scale_mm),
+        SolvedCurveGeometry::Circle(_) => Some(1.0),
+        SolvedCurveGeometry::Ellipse(_) => Some(1.0),
+        SolvedCurveGeometry::Parabola(_) => Some(1.0),
+        SolvedCurveGeometry::Hyperbola(_) => Some(1.0),
+        SolvedCurveGeometry::Transformed { basis, .. } => {
+            curve_parameter_scale(basis, length_scale_mm)
+        }
+        SolvedCurveGeometry::Nurbs { .. } => None,
+        SolvedCurveGeometry::Degenerate(_) => None,
+        SolvedCurveGeometry::Composite { .. } => None,
+        SolvedCurveGeometry::Polyline(_) => None,
+        SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
-fn surface_parameter_scales(geometry: &SurfaceGeometry, length_scale_mm: f64) -> [f64; 2] {
+fn surface_parameter_scales(geometry: &SolvedSurfaceGeometry, length_scale_mm: f64) -> [f64; 2] {
     match geometry {
-        SurfaceGeometry::Plane(_) => [length_scale_mm, length_scale_mm],
-        SurfaceGeometry::Cylinder(_) => [1.0, length_scale_mm],
-        SurfaceGeometry::Cone(_) => [1.0, length_scale_mm],
-        SurfaceGeometry::Sphere(_) => [1.0, 1.0],
-        SurfaceGeometry::Torus(_) => [1.0, 1.0],
-        SurfaceGeometry::Transformed { basis, .. } => {
+        SolvedSurfaceGeometry::Plane(_) => [length_scale_mm, length_scale_mm],
+        SolvedSurfaceGeometry::Cylinder(_) => [1.0, length_scale_mm],
+        SolvedSurfaceGeometry::Cone(_) => [1.0, length_scale_mm],
+        SolvedSurfaceGeometry::Sphere(_) => [1.0, 1.0],
+        SolvedSurfaceGeometry::Torus(_) => [1.0, 1.0],
+        SolvedSurfaceGeometry::Transformed { basis, .. } => {
             surface_parameter_scales(basis, length_scale_mm)
         }
-        SurfaceGeometry::Nurbs { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => [1.0, 1.0],
+        SolvedSurfaceGeometry::Nurbs { .. }
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => [1.0, 1.0],
     }
 }
 
@@ -1714,7 +1721,10 @@ fn pcurve_scales(ir: &CadIr, length_scale_mm: f64) -> BTreeMap<PcurveId, [f64; 2
         else {
             continue;
         };
-        let scales = surface_parameter_scales(&surface.geometry, length_scale_mm);
+        let Some(geometry) = surface.geometry.solved() else {
+            continue;
+        };
+        let scales = surface_parameter_scales(geometry, length_scale_mm);
         for use_record in &coedge.pcurves {
             observe_pcurve_scale(&mut candidates, &use_record.pcurve, scales);
         }
@@ -1736,7 +1746,10 @@ fn pcurve_scales(ir: &CadIr, length_scale_mm: f64) -> BTreeMap<PcurveId, [f64; 2
         else {
             continue;
         };
-        let scales = surface_parameter_scales(&surface.geometry, length_scale_mm);
+        let Some(geometry) = surface.geometry.solved() else {
+            continue;
+        };
+        let scales = surface_parameter_scales(geometry, length_scale_mm);
         for use_record in loop_record.vertex_pcurves() {
             observe_pcurve_scale(&mut candidates, &use_record.pcurve, scales);
         }
@@ -2032,13 +2045,13 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
             id: curve_id,
-            geometry: CurveGeometry::Nurbs(curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             source_object: None,
         });
 
         let error = normalize_model_lengths(&mut ir, 25.4).expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::Malformed(_)));
-        let CurveGeometry::Nurbs(curve) = &ir.model.curves[0].geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = ir.model.curves[0].geometry.solved() else {
             panic!("test curve changed family");
         };
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
@@ -2150,7 +2163,9 @@ mod tests {
             .expect("identity grammar");
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Unknown { record: None },
+            ),
             source_object: None,
         });
         let surface = cadmpeg_ir::geometry::ProceduralSurface::try_new(
@@ -2178,7 +2193,9 @@ mod tests {
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
             id: curve_id.clone(),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None },
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                record: None,
+            }),
             source_object: None,
         });
         let curve = cadmpeg_ir::geometry::ProceduralCurve::try_new(
@@ -2273,7 +2290,7 @@ mod tests {
 
     #[test]
     fn scales_analytic_surface_and_curve_without_scaling_directions() {
-        let mut surface = SurfaceGeometry::Cylinder(
+        let mut surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -2281,8 +2298,8 @@ mod tests {
                 4.0,
             )
             .expect("valid CylinderSurface fixture"),
-        );
-        let mut curve = CurveGeometry::Circle(
+        ));
+        let mut curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(2.0, 3.0, 4.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -2290,12 +2307,19 @@ mod tests {
                 5.0,
             )
             .expect("valid CircleCurve fixture"),
-        );
+        ));
 
-        scale_surface_geometry(&mut surface, 25.4).expect("finite surface scaling");
-        scale_curve_geometry(&mut curve, 25.4).expect("finite curve scaling");
+        let SurfaceGeometry::Solved(surface_solved) = &mut surface else {
+            panic!("test surface changed family");
+        };
+        scale_surface_geometry(surface_solved, 25.4).expect("finite surface scaling");
+        let CurveGeometry::Solved(curve_solved) = &mut curve else {
+            panic!("test curve changed family");
+        };
+        scale_curve_geometry(curve_solved, 25.4).expect("finite curve scaling");
 
-        let SurfaceGeometry::Cylinder(cylinder_surface) = surface else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface
+        else {
             panic!("test surface changed family");
         };
         let origin = cylinder_surface.origin();
@@ -2304,7 +2328,7 @@ mod tests {
         assert_point3(*origin, [25.4, 50.8, 76.2]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
         assert_close(radius, 101.6);
-        let CurveGeometry::Circle(circle_curve) = curve else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = curve else {
             panic!("test curve changed family");
         };
         let center = circle_curve.center();

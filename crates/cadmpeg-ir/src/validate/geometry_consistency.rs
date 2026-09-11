@@ -8,7 +8,7 @@ use crate::eval::{
     curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
     model_surface_point_by_id, pcurve_tangent, pcurve_uv,
 };
-use crate::geometry::{PcurveGeometry, SurfaceGeometry};
+use crate::geometry::{PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 use crate::topology::Sense;
 
@@ -718,10 +718,10 @@ fn edge_pcurve_parameter_ranges(
     let curve_geometry = curve_geometry?;
     if !matches!(
         curve_geometry,
-        crate::geometry::CurveGeometry::Circle(_)
-            | crate::geometry::CurveGeometry::Ellipse(_)
-            | crate::geometry::CurveGeometry::Parabola(_)
-            | crate::geometry::CurveGeometry::Hyperbola(_)
+        crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+            | crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
+            | crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
+            | crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
     ) {
         return None;
     }
@@ -853,32 +853,12 @@ fn pcurve_parameter_seeds_on_surface(
 }
 
 fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[[f64; 2]; 2]> {
-    if let Some(crate::geometry::ProceduralSurfaceDefinition::Subset(definition_payload)) = context
-        .index
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| {
-            context
-                .index
-                .ir()
-                .model
-                .procedural_surface_owner(&procedural.id)
-                == Some(context.surface_id)
-        })
-        .map(crate::geometry::ProceduralSurface::definition)
-    {
-        let parameter_ranges = definition_payload.parameter_ranges();
-        let [[u_start, u_end], [v_start, v_end]] = parameter_ranges;
-        let u_span = (u_end - u_start).abs();
-        let v_span = (v_end - v_start).abs();
-        if u_span.is_finite() && u_span > 0.0 && v_span.is_finite() && v_span > 0.0 {
-            return Some([[0.0, u_span], [0.0, v_span]]);
-        }
-    }
-    match context.geometry {
-        SurfaceGeometry::Nurbs(surface) => {
+    solved_surface_parameter_domains(context.geometry.solved()?)
+}
+
+fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<[[f64; 2]; 2]> {
+    match geometry {
+        SolvedSurfaceGeometry::Nurbs(surface) => {
             let u_count = usize::try_from(surface.u_count()).ok()?;
             let v_count = usize::try_from(surface.v_count()).ok()?;
             Some([
@@ -886,29 +866,14 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
                 nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,
             ])
         }
-        SurfaceGeometry::Transformed { basis, .. } => {
-            surface_parameter_domains(&SurfacePcurveContext {
-                index: context.index,
-                surface_id: context.surface_id,
-                geometry: basis,
-            })
-        }
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_parameter_domains(&SurfacePcurveContext {
-            index: context.index,
-            surface_id: context.surface_id,
-            geometry,
-        }),
-        SurfaceGeometry::Plane(_) => None,
-        SurfaceGeometry::Cylinder(_) => None,
-        SurfaceGeometry::Cone(_) => None,
-        SurfaceGeometry::Sphere(_) => None,
-        SurfaceGeometry::Torus(_) => None,
-        SurfaceGeometry::Procedural { .. } => None,
-        SurfaceGeometry::Polygonal(_) => None,
-        SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Transformed { basis, .. } => solved_surface_parameter_domains(basis),
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_)
+        | SolvedSurfaceGeometry::Torus(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
 

@@ -186,7 +186,8 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let CurveGeometry::Line(line_curve) = result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Line(line_curve)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("line");
     };
     let origin = *line_curve.origin();
@@ -205,7 +206,7 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(
-        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Plane(plane_surface)
+        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
         let normal = plane_surface.normal();
@@ -350,7 +351,7 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve)
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
@@ -374,7 +375,7 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
                     let center = ellipse_curve.center();
         let axis = ellipse_curve.axis();
@@ -400,7 +401,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
@@ -424,7 +425,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let origin = cone_surface.origin();
         let axis = cone_surface.axis();
@@ -452,7 +453,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Sphere(sphere_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
@@ -476,7 +477,7 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Torus(torus_surface)
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
@@ -512,7 +513,7 @@ fn decode_emits_ext11_deltas_intersection_chart() {
         .iter()
         .find(|curve| &curve.id == curve_id)
         .expect("intersection cache");
-    let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("NURBS chart cache");
     };
     assert_eq!(nurbs.control_points()[1].x, 10.0);

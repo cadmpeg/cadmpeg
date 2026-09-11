@@ -26,7 +26,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
     Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -116,7 +117,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ir.model.surfaces.extend([
         Surface {
             id: cone.clone(),
-            geometry: SurfaceGeometry::Cone(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -126,12 +127,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     0.25_f64.atan(),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: sphere.clone(),
-            geometry: SurfaceGeometry::Sphere(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -139,12 +140,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     2.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
             id: torus.clone(),
-            geometry: SurfaceGeometry::Torus(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -153,21 +154,21 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     1.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
     ]);
     let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: plane.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let cone_ellipse =
@@ -179,7 +180,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ir.model.curves.extend([
         Curve {
             id: cone_ellipse.clone(),
-            geometry: CurveGeometry::Ellipse(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
                     Point3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -188,12 +189,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     1.125,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Curve {
             id: sphere_circle.clone(),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -201,12 +202,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     3.0_f64.sqrt(),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Curve {
             id: torus_circle.clone(),
-            geometry: CurveGeometry::Circle(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     Point3::new(3.0, 0.0, 0.0),
                     Vector3::new(0.0, -1.0, 0.0),
@@ -214,7 +215,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     1.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -426,7 +427,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         SurfaceId::mint("test:model:entity#nx:test:boundary-plane").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -439,19 +440,19 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
                 false,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
 
@@ -465,7 +466,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     )
     .is_none());
 
-    ir.model.curves[0].geometry = CurveGeometry::Nurbs(
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::NurbsCurve::new(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -474,7 +475,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
             false,
         )
         .unwrap(),
-    );
+    ));
     assert!(matches!(
         exact_boundary_pcurve(
             &ir,
@@ -497,7 +498,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -506,7 +507,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
                 false,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -531,7 +532,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             1,
             1,
@@ -547,11 +548,11 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
             false,
         )
         .unwrap(),
-    )
+    ))
 }
 
 fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             2,
             2,
@@ -572,11 +573,11 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
             false,
         )
         .unwrap(),
-    )
+    ))
 }
 
 fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             2,
             2,
@@ -597,13 +598,13 @@ fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
             false,
         )
         .unwrap(),
-    )
+    ))
 }
 
 fn quadratic_paraboloid_surface() -> SurfaceGeometry {
     let coordinates = [0.0, 0.5, 1.0];
     let square_controls = [0.0, 0.0, 1.0];
-    SurfaceGeometry::Nurbs(
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             2,
             2,
@@ -628,14 +629,14 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
             false,
         )
         .unwrap(),
-    )
+    ))
 }
 
 #[test]
 fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let support = affine_nurbs_surface(0.0);
     let mut candidate = affine_nurbs_surface(4.0);
-    let SurfaceGeometry::Nurbs(candidate) = &mut candidate else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate else {
         unreachable!();
     };
     candidate
@@ -644,7 +645,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
 
     let fit = certified_offset_cache_fit(
         &support,
-        &SurfaceGeometry::Nurbs(candidate.clone()),
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
         4.0,
         0.001,
     )
@@ -652,7 +653,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     assert!((fit - 0.000_5).abs() < 1.0e-12);
     assert!(certified_offset_cache_fit(
         &support,
-        &SurfaceGeometry::Nurbs(candidate.clone()),
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
         4.0,
         0.000_4
     )
@@ -662,7 +663,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
 #[test]
 fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
     let support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Nurbs(support) = &support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) = &support else {
         unreachable!();
     };
     let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
@@ -704,14 +705,14 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
@@ -783,10 +784,12 @@ fn offset_cache_fit_accepts_higher_degree_translation_nets() {
 fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     let mut support = quadratic_paraboloid_surface();
     let mut candidate = support.clone();
-    let SurfaceGeometry::Nurbs(support_surface) = &mut support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support_surface)) = &mut support
+    else {
         unreachable!();
     };
-    let SurfaceGeometry::Nurbs(candidate_surface) = &mut candidate else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate_surface)) = &mut candidate
+    else {
         unreachable!();
     };
     support_surface.set_u_periodic(true);
@@ -826,7 +829,7 @@ fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
 fn offset_cache_fit_decouples_distant_knot_span_scale() {
     let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
     let z = [0.0, 0.0, 0.1, 0.2];
-    let support = SurfaceGeometry::Nurbs(
+    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             2,
             1,
@@ -844,7 +847,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
             false,
         )
         .unwrap(),
-    );
+    ));
 
     let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("each regular knot span certifies independently");
@@ -855,7 +858,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
 fn offset_cache_fit_certifies_regular_c0_knot_spans() {
     let x = [0.0, 0.25, 0.5, 1.0, 1.5];
     let z = [0.0, 0.0, 0.1, 0.1, 0.2];
-    let support = SurfaceGeometry::Nurbs(
+    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             2,
             1,
@@ -873,7 +876,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
             false,
         )
         .unwrap(),
-    );
+    ));
 
     let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("regular spans certify across the C0 knot break");
@@ -883,7 +886,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
 #[test]
 fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Nurbs(surface) = &mut support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
     let replacement = (0..3)
@@ -900,7 +903,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
 #[test]
 fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Nurbs(surface) = &mut support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
     surface
@@ -921,7 +924,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
     let epsilon = 2.0_f64.powi(-100);
     let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
     let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
-    let support = SurfaceGeometry::Nurbs(
+    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::new(
             3,
             1,
@@ -939,8 +942,8 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             false,
         )
         .unwrap(),
-    );
-    let SurfaceGeometry::Nurbs(surface) = &support else {
+    ));
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &support else {
         unreachable!();
     };
 
@@ -970,7 +973,7 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
 #[test]
 fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Nurbs(surface) = &mut support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
     let axis_weights = [1.0, 1.01, 1.02];
@@ -992,7 +995,7 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
 #[test]
 fn rational_offset_cache_bounds_are_translation_invariant() {
     let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Nurbs(surface) = &mut support else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
     surface
@@ -1020,7 +1023,9 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
 
 #[test]
 fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
-    let SurfaceGeometry::Nurbs(surface) = quadratic_paraboloid_surface() else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+        quadratic_paraboloid_surface()
+    else {
         unreachable!();
     };
     let mut point = cadmpeg_ir::eval::nurbs_surface_point(&surface, 0.4, 0.6).unwrap();
@@ -1106,14 +1111,14 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for surface in &surfaces {
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -1477,7 +1482,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Circle(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1485,19 +1490,19 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: support.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let pcurve = PcurveGeometry::Circle(
@@ -1532,7 +1537,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1541,7 +1546,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                 false,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let procedural = ProceduralCurve::try_new(
@@ -1614,14 +1619,14 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Surface {
@@ -1715,12 +1720,12 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     ir.model.surfaces.extend([
         Surface {
             id: surfaces[0].clone(),
-            geometry: SurfaceGeometry::Nurbs(surface()),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface())),
             source_object: None,
         },
         Surface {
             id: surfaces[1].clone(),
-            geometry: SurfaceGeometry::Nurbs(surface()),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface())),
             source_object: None,
         },
     ]);
@@ -1736,7 +1741,9 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         0.1,
     ));
 
-    let SurfaceGeometry::Nurbs(second) = &mut ir.model.surfaces[1].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)) =
+        &mut ir.model.surfaces[1].geometry
+    else {
         unreachable!()
     };
     second

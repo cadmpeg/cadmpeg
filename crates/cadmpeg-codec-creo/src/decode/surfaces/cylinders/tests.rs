@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use super::{unique_support_tangent_cylinder_frame, unique_tangent_axial_interval_corner_frame};
 use crate::decode::analytic::equations::PlaneEquation;
@@ -164,7 +164,7 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
     cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin.into(),
                 normal.into(),
@@ -175,7 +175,7 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
                 },
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     }
 }
@@ -184,7 +184,7 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 [0.0, 0.0, 0.0].into(),
                 [0.0, 0.0, 1.0].into(),
@@ -192,7 +192,7 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
                 radius,
             )
             .expect("valid CylinderSurface fixture"),
-        ),
+        )),
         source_object: None,
     }
 }
@@ -292,7 +292,7 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
     let [surface] = ir.model.surfaces.as_slice() else {
         panic!("one generated cylinder");
     };
-    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("generated cylinder: {:?}", surface.geometry);
     };
     let origin = *cylinder_surface.origin();
@@ -318,7 +318,7 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
         2
     );
     assert!(ir.model.surfaces.iter().all(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
@@ -606,7 +606,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     let [surface] = ir.model.surfaces.as_slice() else {
         panic!("one reconciled cylinder");
     };
-    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("reconciled cylinder: {:?}", surface.geometry);
     };
     let origin = *cylinder_surface.origin();

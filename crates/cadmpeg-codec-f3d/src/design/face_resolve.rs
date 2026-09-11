@@ -14,6 +14,7 @@ use crate::records::topology::{
 use crate::records::{
     DesignParameter, DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
 };
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -2046,7 +2047,7 @@ fn extrude_target_plane_candidate(
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)?;
-            let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = &surface.geometry
+            let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved()
             else {
                 return None;
             };
@@ -2125,7 +2126,7 @@ pub(crate) fn face_coincident_with_sketch(
     linear_tolerance: f64,
     angular_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let Some(face) = faces.iter().find(|face| face.id == *candidate) else {
         return false;
@@ -2133,7 +2134,7 @@ pub(crate) fn face_coincident_with_sketch(
     let Some(surface) = surfaces.iter().find(|surface| surface.id == face.surface) else {
         return false;
     };
-    let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         return false;
     };
     let origin = plane_surface.origin();
@@ -2227,7 +2228,7 @@ mod tests {
     };
     use crate::records::DesignRecipeReference;
 
-    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::ids::{ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -3101,14 +3102,14 @@ mod tests {
         };
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
             id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     origin,
                     normal.unit().unwrap(),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         };
         let faces = [
@@ -3248,14 +3249,14 @@ mod tests {
         };
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
             id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     origin,
                     normal,
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         };
         let faces = [

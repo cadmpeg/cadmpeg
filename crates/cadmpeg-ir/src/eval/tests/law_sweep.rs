@@ -77,7 +77,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -86,12 +86,12 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                     false,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
         Curve {
             id: spine_id.clone(),
-            geometry: CurveGeometry::Nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -100,7 +100,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                     false,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
     ];
@@ -192,10 +192,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
         panic!("fixture surface must retain its construction");
     };
-    *cache = Some(
-        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
-            .unwrap(),
-    );
+    *cache = Some(SolvedSurfaceGeometry::Nurbs(bilinear_surface()));
     ir.model.procedural_surfaces[0]
         .edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {

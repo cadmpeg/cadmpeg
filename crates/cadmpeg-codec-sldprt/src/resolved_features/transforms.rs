@@ -339,7 +339,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
     circles: &[((i64, i64), i64)],
     quantum: f64,
 ) -> Vec<MarkerTransform> {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     if circles.is_empty() {
         return Vec::new();
@@ -354,7 +354,8 @@ pub(super) fn dimensioned_circle_surface_transforms(
     );
     let mut targets_by_radius = HashMap::<i64, HashSet<(i64, i64)>>::new();
     for surface in surfaces {
-        let SurfaceGeometry::Cylinder(cylinder_surface) = &surface.geometry else {
+        let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
+        else {
             continue;
         };
         let origin = cylinder_surface.origin();

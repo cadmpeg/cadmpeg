@@ -5,7 +5,7 @@ use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -72,7 +72,10 @@ fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
 }
 
 pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
-    let (CurveGeometry::Line(line_curve), CurveGeometry::Line(line_curve_2)) = (first, second)
+    let (
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve_2)),
+    ) = (first, second)
     else {
         return None;
     };
@@ -117,7 +120,7 @@ pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> 
 }
 
 pub fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
-    let CurveGeometry::Line(line_curve) = line else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Vec::new();
     };
     let origin = line_curve.origin();
@@ -288,7 +291,7 @@ pub fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) 
         ) else {
             return Vec::new();
         };
-        let line = CurveGeometry::Line(line);
+        let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(line));
         let mut points = line_conic_intersections(&line, first);
         points.retain(|point| curve_contains_points(second, [*point, *point]));
         return points;
@@ -598,11 +601,11 @@ pub fn solve_topological_vertices(
             let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,
-                CurveGeometry::Line(_)
-                    | CurveGeometry::Circle(_)
-                    | CurveGeometry::Ellipse(_)
-                    | CurveGeometry::Parabola(_)
-                    | CurveGeometry::Hyperbola(_)
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                    | CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                    | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
+                    | CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
+                    | CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
             );
             evaluable.then_some((row.id, geometry))
         })
@@ -662,24 +665,24 @@ mod tests {
         ir.model.curves.extend([
             Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Line(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid LineCurve fixture"),
-                ),
+                )),
                 source_object: None,
             },
             Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Line(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(
                         Point3::new(0.0, 1.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
                     .expect("valid LineCurve fixture"),
-                ),
+                )),
                 source_object: None,
             },
         ]);

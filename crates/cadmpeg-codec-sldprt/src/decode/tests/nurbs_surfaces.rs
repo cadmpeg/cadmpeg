@@ -12,7 +12,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn faces_decode_nurbs_surface() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     body.extend(nurbs_surface_carrier(180, 181, 10));
@@ -34,7 +34,7 @@ fn faces_decode_nurbs_surface() {
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS surface");
@@ -45,7 +45,7 @@ fn faces_decode_nurbs_surface() {
 
 #[test]
 fn faces_decode_compact_counted_nurbs_surface_arrays() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut body = triangle_body();
     body.extend(compact_counted_nurbs_surface_carrier(180, 181, 10));
@@ -62,7 +62,9 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("compact counted NURBS surface");
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
@@ -77,7 +79,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
 
 #[test]
 fn conflicting_compact_counted_surface_array_is_rejected() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     body.extend(compact_counted_nurbs_surface_carrier(180, 181, 10));
@@ -97,7 +99,7 @@ fn conflicting_compact_counted_surface_array_is_rejected() {
 
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
 
@@ -116,7 +118,9 @@ fn short_compact_surface_knot_array_is_rejected_without_panicking() {
 
 #[test]
 fn faces_decode_nested_offset_surface_with_hidden_support() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge = body
@@ -140,8 +144,10 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
         match surface.definition() { ProceduralSurfaceDefinition::Offset(matched_payload) => matches!((matched_payload.distance(),), (distance,) if (distance - 2.0).abs() < f64::EPSILON), _ => false }
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Plane(_))
-            && surface.id.as_str().contains("hidden-support-surf#100")
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        ) && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
     let face_surface = &result.ir().model.faces[0].surface;
@@ -159,7 +165,9 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
 
 #[test]
 fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let result = SldprtCodec
         .decode(
@@ -192,11 +200,11 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         .collect();
     assert!(matches!(
         support_surfaces[0].geometry,
-        SurfaceGeometry::Plane(_)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         support_surfaces[1].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     for surface in support_surfaces {
         assert!(surface.id.as_str().contains("hidden-support-surf#"));
@@ -258,7 +266,7 @@ fn merged_sites_retain_procedural_surface_constructions() {
 
 #[test]
 fn cyclic_offset_surface_graph_remains_unknown() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     let bridge = body
@@ -279,7 +287,7 @@ fn cyclic_offset_surface_graph_remains_unknown() {
     assert!(result.ir().model.procedural_surfaces.is_empty());
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
 
@@ -292,7 +300,7 @@ fn surface_rejects_nonzero_terminal_multiplicity() {
 
 #[test]
 fn surface_descriptor_uses_terminal_array_references() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut bytes = nurbs_surface_carrier(180, 181, 10);
     let descriptor = bytes
@@ -322,7 +330,7 @@ fn surface_descriptor_uses_terminal_array_references() {
     let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("surface carrier");
-    let SurfaceGeometry::Nurbs(surface) = carrier.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carrier.geometry.solved() else {
         panic!("expected NURBS surface");
     };
     assert_eq!(surface.poles().nth(0).copied().unwrap().x, 10_000.0);
@@ -331,7 +339,7 @@ fn surface_descriptor_uses_terminal_array_references() {
 
 #[test]
 fn faces_decode_markerless_nurbs_surface_arrays() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     body.extend(markerless_nurbs_surface_carrier(180, 181, 10));
@@ -354,7 +362,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS surface");
@@ -363,7 +371,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
 
 #[test]
 fn face_on_untyped_surface_keeps_topology() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let f = sldprt_with_body(&untyped_triangle(0.0));
     let mut cur = Cursor::new(f);
@@ -372,9 +380,9 @@ fn face_on_untyped_surface_keeps_topology() {
         .unwrap();
 
     assert_eq!(result.ir().model.faces.len(), 1);
-    let SurfaceGeometry::Unknown {
+    let Some(SolvedSurfaceGeometry::Unknown {
         record: Some(record),
-    } = &result.ir().model.surfaces[0].geometry
+    }) = result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("opaque surface has no replay record");
     };
@@ -445,7 +453,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
 #[test]
 fn compact_carrier_shapes_decode() {
     use crate::brep::{parse_carrier, Carrier, CurveCarrier, SurfaceCarrier};
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     // Cylinder (tag 00 33, 10 f64): origin, axis, radius, refdir.
     let mut cyl = vec![0x00, 0x33];
@@ -460,7 +470,7 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&cyl, 0).unwrap() {
         Carrier::Surface(SurfaceCarrier {
-            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             ..
         }) => {
             let axis = cylinder_surface.axis();
@@ -484,7 +494,7 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&circ, 0).unwrap() {
         Carrier::Curve(CurveCarrier {
-            geometry: CurveGeometry::Circle(circle_curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
         }) => {
             let radius = circle_curve.radius();

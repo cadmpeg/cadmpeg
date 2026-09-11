@@ -24,8 +24,7 @@ use crate::features::{
 };
 use crate::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,
-    ProceduralSurfaceReadWire, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    ProceduralSurfaceReadWire, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::native::Native;
@@ -104,7 +103,10 @@ impl Serialize for SurfaceWire<'_> {
     {
         let mut state = serializer.serialize_struct("Surface", 3)?;
         state.serialize_field("id", &self.0.id)?;
-        state.serialize_field("geometry", self.0.geometry.wire_geometry())?;
+        match self.0.geometry.solved_cache() {
+            Some(cache) => state.serialize_field("geometry", cache)?,
+            None => state.serialize_field("geometry", &self.0.geometry)?,
+        }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
         }
@@ -121,7 +123,10 @@ impl Serialize for CurveWire<'_> {
     {
         let mut state = serializer.serialize_struct("Curve", 3)?;
         state.serialize_field("id", &self.0.id)?;
-        state.serialize_field("geometry", self.0.geometry.wire_geometry())?;
+        match self.0.geometry.solved_cache() {
+            Some(cache) => state.serialize_field("geometry", cache)?,
+            None => state.serialize_field("geometry", &self.0.geometry)?,
+        }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
         }
@@ -968,15 +973,10 @@ impl Model {
                     "surface {owner} is already owned by procedural construction {construction}"
                 )));
             }
-            geometry => {
-                let cache = SolvedSurfaceGeometry::new(geometry.clone()).map_err(|_| {
-                    ProceduralCarrierError::new(format!(
-                        "surface {owner} already has a procedural construction"
-                    ))
-                })?;
+            SurfaceGeometry::Solved(geometry) => {
                 surface.geometry = SurfaceGeometry::Procedural {
                     construction: procedural.id.clone(),
-                    cache: Some(cache),
+                    cache: Some(geometry.clone()),
                 };
             }
         }
@@ -1036,15 +1036,10 @@ impl Model {
                     "curve {owner} is already owned by procedural construction {construction}"
                 )));
             }
-            geometry => {
-                let cache = SolvedCurveGeometry::new(geometry.clone()).map_err(|_| {
-                    ProceduralCarrierError::new(format!(
-                        "curve {owner} already has a procedural construction"
-                    ))
-                })?;
+            CurveGeometry::Solved(geometry) => {
                 curve.geometry = CurveGeometry::Procedural {
                     construction: procedural.id.clone(),
-                    cache: Some(cache),
+                    cache: Some(geometry.clone()),
                 };
             }
         }
@@ -1336,7 +1331,7 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
             .filter(|surface| {
                 matches!(
                     surface.geometry,
-                    crate::geometry::SurfaceGeometry::Unknown { .. }
+                    crate::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
                 )
             })
             .count(),

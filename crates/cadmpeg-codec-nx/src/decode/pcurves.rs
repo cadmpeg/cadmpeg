@@ -38,8 +38,8 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs,
-    ProceduralCurve, ProceduralCurveDefinition, SurfaceGeometry, SurfaceParameterAxis,
-    TolerantIntersectionParameterization,
+    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry, SurfaceParameterAxis, TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
@@ -666,7 +666,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             let reversed = reverse_pcurve_over_range(pcurve, range)?;
             let curve = index.curves(curve.as_str())?;
             let curve_tangent = unit_vector(curve_tangent_with_budget(
-                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                &curve.geometry,
                 range[0],
                 geometry_budget,
             )?)?;
@@ -1281,17 +1281,16 @@ fn opposite_chart_transfer_priority(
     let Some(surface) = index.surfaces(target_surface.as_str()) else {
         return 3;
     };
-    match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-        SurfaceGeometry::Plane(_) => 0,
-        SurfaceGeometry::Cylinder(_) => 0,
-        SurfaceGeometry::Cone(_) => 0,
-        SurfaceGeometry::Sphere(_) => 0,
-        SurfaceGeometry::Torus(_) => 0,
-        SurfaceGeometry::Nurbs(_) => 0,
-        SurfaceGeometry::Transformed { .. } => 1,
-        SurfaceGeometry::Procedural { .. }
-            if blend_boundary_transfer_available(index, source_surface, target_surface)
-                && blend_transfer_contact(index, source_surface, target_surface).is_some() =>
+    match surface.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Plane(_)) => 0,
+        Some(SolvedSurfaceGeometry::Cylinder(_)) => 0,
+        Some(SolvedSurfaceGeometry::Cone(_)) => 0,
+        Some(SolvedSurfaceGeometry::Sphere(_)) => 0,
+        Some(SolvedSurfaceGeometry::Torus(_)) => 0,
+        Some(SolvedSurfaceGeometry::Nurbs(_)) => 0,
+        Some(SolvedSurfaceGeometry::Transformed { .. }) => 1,
+        None if blend_boundary_transfer_available(index, source_surface, target_surface)
+            && blend_transfer_contact(index, source_surface, target_surface).is_some() =>
         {
             1
         }
@@ -1299,13 +1298,11 @@ fn opposite_chart_transfer_priority(
         // parameterization fallback even when its serialized contact chart is
         // absent. Try those targets before generic procedural carriers that
         // can consume a chart-transfer slice without producing a pcurve.
-        SurfaceGeometry::Procedural { .. }
-            if blend_boundary_transfer_available(index, source_surface, target_surface) =>
-        {
-            2
+        None if blend_boundary_transfer_available(index, source_surface, target_surface) => 2,
+        None => 3,
+        Some(SolvedSurfaceGeometry::Polygonal(_)) | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
+            4
         }
-        SurfaceGeometry::Procedural { .. } => 3,
-        SurfaceGeometry::Polygonal(_) | SurfaceGeometry::Unknown { .. } => 4,
     }
 }
 
@@ -1420,8 +1417,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     let range = if edge.start == edge.end
                         && model_index.curves(owner.as_str()).is_some_and(|curve| {
                             matches!(
-                                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                                CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_)
+                                curve.geometry.solved(),
+                                Some(
+                                    SolvedCurveGeometry::Circle(_)
+                                        | SolvedCurveGeometry::Ellipse(_)
+                                )
                             )
                         }) {
                         [0.0, std::f64::consts::TAU]
@@ -1654,23 +1654,13 @@ fn exact_boundary_pcurve_with_index(
         return Some(candidate);
     }
     let curve_carrier = index.curves(curve.as_str())?;
-    let curve_breaks = exact_boundary_curve_breaks(
-        curve_carrier
-            .geometry
-            .solved_cache()
-            .unwrap_or(&curve_carrier.geometry),
-        range,
-    )?;
+    let curve_breaks = exact_boundary_curve_breaks(curve_carrier.geometry.solved()?, range)?;
     if matches!(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        SurfaceGeometry::Plane(_)
+        carrier.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Plane(_))
     ) {
-        let [first, second] = endpoints.map(|endpoint| {
-            analytic_surface_parameters(
-                carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-                endpoint,
-            )
-        });
+        let [first, second] =
+            endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
         let [first, second] = [first?, second?];
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
             if !parameter.u.is_finite() || !parameter.v.is_finite() {
@@ -1724,18 +1714,16 @@ fn exact_boundary_pcurve_with_index(
         .then_some(candidate);
     }
     if matches!(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        SurfaceGeometry::Cylinder(_)
-            | SurfaceGeometry::Cone(_)
-            | SurfaceGeometry::Sphere(_)
-            | SurfaceGeometry::Torus(_)
+        carrier.geometry.solved(),
+        Some(
+            SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)
+        )
     ) {
-        let [first, second] = endpoints.map(|endpoint| {
-            analytic_surface_parameters(
-                carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-                endpoint,
-            )
-        });
+        let [first, second] =
+            endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
         let [first, second] = [first?, second?];
         if [first.u, first.v, second.u, second.v]
             .into_iter()
@@ -1783,9 +1771,7 @@ fn exact_boundary_pcurve_with_index(
         )
         .then_some(candidate);
     }
-    let SurfaceGeometry::Nurbs(nurbs) =
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry)
-    else {
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
         return None;
     };
     let domain = surface_parameter_domain_with_index(index, surface)?;
@@ -1931,12 +1917,12 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
 }
 
 pub(crate) fn exact_boundary_curve_breaks(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
     let mut breaks = match geometry {
-        CurveGeometry::Line(_) => range.to_vec(),
-        CurveGeometry::Nurbs(nurbs)
+        SolvedCurveGeometry::Line(_) => range.to_vec(),
+        SolvedCurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
                 && !nurbs.weights().is_some_and(|weights| {
@@ -1994,16 +1980,12 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     const SAMPLE_INTERVALS: usize = 8;
 
     let curve_carrier = index.curves(curve.as_str())?;
-    let curve_speed = match curve_carrier
-        .geometry
-        .solved_cache()
-        .unwrap_or(&curve_carrier.geometry)
-    {
-        CurveGeometry::Circle(circle_curve) => {
+    let curve_speed = match curve_carrier.geometry.solved()? {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let radius = circle_curve.radius();
             radius.abs()
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             major_radius.abs().max(minor_radius.abs())
@@ -2012,32 +1994,21 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     };
     let surface_carrier = index.surfaces(surface.as_str())?;
     matches!(
-        surface_carrier.geometry,
-        SurfaceGeometry::Cylinder(_)
-            | SurfaceGeometry::Cone(_)
-            | SurfaceGeometry::Sphere(_)
-            | SurfaceGeometry::Torus(_)
+        surface_carrier.geometry.solved(),
+        Some(
+            SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)
+        )
     )
     .then_some(())?;
     let periods = surface_parameter_periods_with_index(index, surface);
     let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
     for index in 0..=SAMPLE_INTERVALS {
         let parameter = range[0] + (range[1] - range[0]) * index as f64 / SAMPLE_INTERVALS as f64;
-        let point = curve_point_with_budget(
-            curve_carrier
-                .geometry
-                .solved_cache()
-                .unwrap_or(&curve_carrier.geometry),
-            parameter,
-            geometry_budget,
-        )?;
-        let mut uv = analytic_surface_parameters(
-            surface_carrier
-                .geometry
-                .solved_cache()
-                .unwrap_or(&surface_carrier.geometry),
-            point,
-        )?;
+        let point = curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+        let mut uv = analytic_surface_parameters(&surface_carrier.geometry, point)?;
         if let Some(previous) = samples.last().map(|(_, uv): &(f64, Point2)| *uv) {
             if let Some(period) = periods[0] {
                 uv.u = lift_periodic_parameter(uv.u, previous.u, period);
@@ -2088,38 +2059,13 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     let parameter = range[0];
     let uv = pcurve_uv(&candidate, parameter)?;
     geometry_budget.charge().then_some(())?;
-    let surface_jet = surface_second_partials(
-        surface_carrier
-            .geometry
-            .solved_cache()
-            .unwrap_or(&surface_carrier.geometry),
-        uv.u,
-        uv.v,
-    )?;
-    let curve_position = curve_point_with_budget(
-        curve_carrier
-            .geometry
-            .solved_cache()
-            .unwrap_or(&curve_carrier.geometry),
-        parameter,
-        geometry_budget,
-    )?;
-    let curve_tangent = curve_tangent_with_budget(
-        curve_carrier
-            .geometry
-            .solved_cache()
-            .unwrap_or(&curve_carrier.geometry),
-        parameter,
-        geometry_budget,
-    )?;
-    let curve_acceleration = curve_second_derivative_with_budget(
-        curve_carrier
-            .geometry
-            .solved_cache()
-            .unwrap_or(&curve_carrier.geometry),
-        parameter,
-        geometry_budget,
-    )?;
+    let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)?;
+    let curve_position =
+        curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+    let curve_tangent =
+        curve_tangent_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+    let curve_acceleration =
+        curve_second_derivative_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
     let surface_tangent = Vector3::new(
         direction.u * surface_jet.du.x + direction.v * surface_jet.dv.x,
         direction.u * surface_jet.du.y + direction.v * surface_jet.dv.y,
@@ -2274,15 +2220,17 @@ fn boundary_curve_affine_breaks_with_index(
     };
     let origin = line_pcurve.origin();
     let direction = line_pcurve.direction();
-    match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        SurfaceGeometry::Plane(_) => Some(range.to_vec()),
-        SurfaceGeometry::Cylinder(_) if { direction.u == 0.0 && direction.v != 0.0 } => {
+    match carrier.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Plane(_)) => Some(range.to_vec()),
+        Some(SolvedSurfaceGeometry::Cylinder(_))
+            if { direction.u == 0.0 && direction.v != 0.0 } =>
+        {
             Some(range.to_vec())
         }
-        SurfaceGeometry::Cone(_) if { direction.u == 0.0 && direction.v != 0.0 } => {
+        Some(SolvedSurfaceGeometry::Cone(_)) if { direction.u == 0.0 && direction.v != 0.0 } => {
             Some(range.to_vec())
         }
-        SurfaceGeometry::Nurbs(nurbs) => {
+        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
                 if direction.u == 0.0 && direction.v != 0.0 {
                     (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
@@ -2356,20 +2304,26 @@ fn boundary_curve_speed_bound_with_index(
         let speed = point_distance(first, second);
         speed.is_finite().then_some(speed)
     };
-    match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        SurfaceGeometry::Plane(_) => affine_speed(),
-        SurfaceGeometry::Cylinder(_) if { direction.u == 0.0 && direction.v != 0.0 } => {
+    match carrier.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Plane(_)) => affine_speed(),
+        Some(SolvedSurfaceGeometry::Cylinder(_))
+            if { direction.u == 0.0 && direction.v != 0.0 } =>
+        {
             affine_speed()
         }
-        SurfaceGeometry::Cone(_) if { direction.u == 0.0 && direction.v != 0.0 } => affine_speed(),
-        SurfaceGeometry::Cylinder(cylinder_surface)
+        Some(SolvedSurfaceGeometry::Cone(_)) if { direction.u == 0.0 && direction.v != 0.0 } => {
+            affine_speed()
+        }
+        Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
         {
             let radius = cylinder_surface.radius();
             let speed = radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Cone(cone_surface) if { direction.v == 0.0 && direction.u != 0.0 } => {
+        Some(SolvedSurfaceGeometry::Cone(cone_surface))
+            if { direction.v == 0.0 && direction.u != 0.0 } =>
+        {
             let radius = cone_surface.radius();
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
@@ -2377,29 +2331,37 @@ fn boundary_curve_speed_bound_with_index(
             let speed = local_radius.abs() * ratio.abs().max(1.0) * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Sphere(sphere_surface) if { direction.v == 0.0 && direction.u != 0.0 } => {
+        Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
+            if { direction.v == 0.0 && direction.u != 0.0 } =>
+        {
             let radius = sphere_surface.radius();
             let speed = radius.abs() * origin.v.cos().abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Sphere(sphere_surface) if { direction.u == 0.0 && direction.v != 0.0 } => {
+        Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
+            if { direction.u == 0.0 && direction.v != 0.0 } =>
+        {
             let radius = sphere_surface.radius();
             let speed = radius.abs() * direction.v.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Torus(torus_surface) if { direction.v == 0.0 && direction.u != 0.0 } => {
+        Some(SolvedSurfaceGeometry::Torus(torus_surface))
+            if { direction.v == 0.0 && direction.u != 0.0 } =>
+        {
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
             let ring_radius = major_radius + minor_radius * origin.v.cos();
             let speed = ring_radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Torus(torus_surface) if { direction.u == 0.0 && direction.v != 0.0 } => {
+        Some(SolvedSurfaceGeometry::Torus(torus_surface))
+            if { direction.u == 0.0 && direction.v != 0.0 } =>
+        {
             let minor_radius = torus_surface.minor_radius();
             let speed = minor_radius.abs() * direction.v.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Nurbs(nurbs) => {
+        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let (fixed_axis, fixed_parameter, varying_scale) =
                 if direction.u == 0.0 && direction.v != 0.0 {
                     (SurfaceParameterAxis::U, origin.u, direction.v)
@@ -2550,10 +2512,10 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
 ) -> Option<PcurveGeometry> {
     let source_geometry = index
         .surfaces(source_surface.as_str())
-        .map(|surface| surface.geometry.solved_cache().unwrap_or(&surface.geometry));
+        .and_then(|surface| surface.geometry.solved());
     let target_geometry = index
         .surfaces(target_surface.as_str())
-        .map(|surface| surface.geometry.solved_cache().unwrap_or(&surface.geometry));
+        .and_then(|surface| surface.geometry.solved());
     transfer_intersection_pcurve_with_budget(
         index,
         curve,
@@ -2578,8 +2540,8 @@ fn transfer_intersection_pcurve_with_budget(
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
     target_surface: &SurfaceId,
-    source_geometry: Option<&SurfaceGeometry>,
-    target_geometry: Option<&SurfaceGeometry>,
+    source_geometry: Option<&SolvedSurfaceGeometry>,
+    target_geometry: Option<&SolvedSurfaceGeometry>,
     parameter_range: [f64; 2],
     tolerance: f64,
     blend_contact: Option<BlendTransferContact<'_>>,
@@ -2695,8 +2657,8 @@ fn transferred_pcurve_sample_with_budget(
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
     target_surface: &SurfaceId,
-    source_geometry: Option<&SurfaceGeometry>,
-    target_geometry: Option<&SurfaceGeometry>,
+    source_geometry: Option<&SolvedSurfaceGeometry>,
+    target_geometry: Option<&SolvedSurfaceGeometry>,
     parameter: f64,
     seed: Option<Point2>,
     tolerance: f64,
@@ -2715,7 +2677,7 @@ fn transferred_pcurve_sample_with_budget(
             decoded_surface_point_with_geometry_and_budget(
                 index,
                 source_surface,
-                geometry,
+                &SurfaceGeometry::Solved(geometry.clone()),
                 source_uv.u,
                 source_uv.v,
                 0,
@@ -2814,7 +2776,7 @@ fn transferred_pcurve_sample_with_budget(
                 decoded_surface_point_with_geometry_and_budget(
                     index,
                     target_surface,
-                    geometry,
+                    &SurfaceGeometry::Solved(geometry.clone()),
                     target_uv.u,
                     target_uv.v,
                     0,
@@ -2982,12 +2944,9 @@ pub(crate) fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     let Some(curve) = index.curves(spine.as_str()) else {
         return false;
     };
-    let Some(tangent) = curve_tangent_with_budget(
-        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-        parameters.u,
-        geometry_budget,
-    )
-    .and_then(unit_vector) else {
+    let Some(tangent) = curve_tangent_with_budget(&curve.geometry, parameters.u, geometry_budget)
+        .and_then(unit_vector)
+    else {
         return false;
     };
     let angular_tolerance =
@@ -3002,8 +2961,8 @@ fn append_transferred_pcurve_segment_with_budget(
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
     target_surface: &SurfaceId,
-    source_geometry: Option<&SurfaceGeometry>,
-    target_geometry: Option<&SurfaceGeometry>,
+    source_geometry: Option<&SolvedSurfaceGeometry>,
+    target_geometry: Option<&SolvedSurfaceGeometry>,
     first: TransferredPcurveSample,
     last: TransferredPcurveSample,
     tolerance: f64,
@@ -3058,7 +3017,7 @@ fn append_transferred_pcurve_segment_with_budget(
                     decoded_surface_point_with_geometry_and_budget(
                         index,
                         source_surface,
-                        geometry,
+                        &SurfaceGeometry::Solved(geometry.clone()),
                         source_uv.u,
                         source_uv.v,
                         0,
@@ -3101,7 +3060,7 @@ fn append_transferred_pcurve_segment_with_budget(
                 decoded_surface_point_with_geometry_and_budget(
                     index,
                     target_surface,
-                    geometry,
+                    &SurfaceGeometry::Solved(geometry.clone()),
                     uv.u,
                     uv.v,
                     0,
@@ -3195,15 +3154,17 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
     blend_parameter_grids: &mut BlendParameterGridCache,
 ) -> Option<Point2> {
     let carrier = index.surfaces(surface.as_str())?;
-    match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
-            nurbs,
-            point,
-            seed,
-            tolerance,
-            geometry_budget,
-        ),
-        SurfaceGeometry::Procedural { .. } => {
+    match carrier.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+            nurbs_surface_parameter_within_tolerance_with_budget(
+                nurbs,
+                point,
+                seed,
+                tolerance,
+                geometry_budget,
+            )
+        }
+        None => {
             let offset = match seed {
                 // Continuation samples start with the previous branch-local
                 // parameter. Retain the established global admission fallback
@@ -3261,7 +3222,9 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
                 geometry_budget,
             )
         }
-        geometry => analytic_surface_parameters(geometry, point),
+        geometry => geometry.and_then(|geometry| {
+            cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, point)
+        }),
     }
 }
 
@@ -3428,8 +3391,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
                         model_index
                             .surfaces(surface.as_str())
                             .is_some_and(|carrier| {
-                                let SurfaceGeometry::Nurbs(nurbs) =
-                                    carrier.geometry.solved_cache().unwrap_or(&carrier.geometry)
+                                let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+                                    carrier.geometry.solved()
                                 else {
                                     return false;
                                 };
@@ -3693,8 +3656,7 @@ pub(crate) fn linear_nurbs_curve_endpoint_witness_with_index(
     curve_id: &CurveId,
 ) -> Option<[Point3; 2]> {
     let curve = index.curves(curve_id.as_str())?;
-    let CurveGeometry::Nurbs(curve) = curve.geometry.solved_cache().unwrap_or(&curve.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
         return None;
     };
     if curve.degree() != 1

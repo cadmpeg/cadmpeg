@@ -133,7 +133,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             assert_eq!(out.surfaces.len(), 1);
             assert!(matches!(
                 out.surfaces[0].geometry,
-                SurfaceGeometry::Nurbs(_)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             ));
         }
     }

@@ -8,7 +8,7 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
@@ -1534,7 +1534,7 @@ fn legacy_decoded_curve_endpoints(
         crate::curves::DecodedCurve::Leaf { geometry, .. } => geometry,
     };
     match geometry {
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let first = nurbs
                 .control_points()
                 .first()
@@ -1548,7 +1548,7 @@ fn legacy_decoded_curve_endpoints(
                 Point3([last.x, last.y, last.z]),
             ])
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
@@ -1559,7 +1559,7 @@ fn legacy_decoded_curve_endpoints(
             ]);
             Ok([endpoint, endpoint])
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point();
             let point = Point3([point.x, point.y, point.z]);
             Ok([point, point])
@@ -3406,7 +3406,7 @@ mod tests {
     #[test]
     fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
         let circle = crate::curves::DecodedCurve::leaf(
-            CurveGeometry::Circle(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -3414,7 +3414,7 @@ mod tests {
                     2.0,
                 )
                 .unwrap(),
-            ),
+            )),
             Diagnostics::new(),
         );
         assert_eq!(
@@ -3423,9 +3423,9 @@ mod tests {
         );
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
         let degenerate = crate::curves::DecodedCurve::leaf(
-            CurveGeometry::Degenerate(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap(),
-            ),
+            )),
             Diagnostics::new(),
         );
         assert_eq!(

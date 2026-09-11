@@ -4,7 +4,7 @@
 use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::{
@@ -478,7 +478,8 @@ pub(crate) fn resolve_planar_face_selection(
     let matching = faces
         .iter()
         .filter_map(|face| {
-            let SurfaceGeometry::Plane(plane_surface) = &surfaces.get(&face.surface)?.geometry
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                &surfaces.get(&face.surface)?.geometry
             else {
                 return None;
             };

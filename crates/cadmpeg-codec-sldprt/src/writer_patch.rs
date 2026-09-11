@@ -5,7 +5,9 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
@@ -25,16 +27,17 @@ fn patch_partition_inner(
     retained_records: &[SourceRecord<'_>],
     scale: f64,
 ) -> Option<Result<(String, Vec<u8>), CodecError>> {
-    let requires_native_carrier_patch = ir
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-        || ir
-            .model
-            .curves
-            .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    let requires_native_carrier_patch = ir.model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )
+    }) || ir.model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )
+    });
     if !requires_native_carrier_patch {
         return None;
     }
@@ -329,33 +332,33 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
 
 fn surface_class(value: &SurfaceGeometry) -> u8 {
     match value {
-        SurfaceGeometry::Plane(_) => 0,
-        SurfaceGeometry::Cylinder(_) => 1,
-        SurfaceGeometry::Cone(_) => 2,
-        SurfaceGeometry::Sphere(_) => 3,
-        SurfaceGeometry::Torus(_) => 4,
-        SurfaceGeometry::Nurbs(_) => 5,
-        SurfaceGeometry::Unknown { .. } => 6,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => 0,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => 1,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => 2,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => 3,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => 4,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => 5,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => 6,
         SurfaceGeometry::Procedural { .. } => 7,
-        SurfaceGeometry::Transformed { .. } => 7,
-        SurfaceGeometry::Polygonal(_) => 8,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => 7,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => 8,
     }
 }
 
 fn curve_class(value: &CurveGeometry) -> u8 {
     match value {
-        CurveGeometry::Line(_) => 0,
-        CurveGeometry::Circle(_) => 1,
-        CurveGeometry::Ellipse(_) => 2,
-        CurveGeometry::Nurbs(_) => 3,
-        CurveGeometry::Parabola(_) => 4,
-        CurveGeometry::Hyperbola(_) => 5,
-        CurveGeometry::Degenerate(_) => 6,
-        CurveGeometry::Unknown { .. } => 7,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => 0,
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => 1,
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => 2,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => 3,
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => 4,
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => 5,
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => 6,
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => 7,
         CurveGeometry::Procedural { .. } => 8,
-        CurveGeometry::Transformed { .. } => 8,
-        CurveGeometry::Polyline(_) => 9,
-        CurveGeometry::Composite { .. } => 10,
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => 8,
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => 9,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => 10,
     }
 }
 
@@ -418,9 +421,18 @@ fn patch_surfaces(
     for surface in &ir.model.surfaces {
         let baseline = old[&surface.id];
         match (&surface.geometry, &baseline.geometry) {
-            (SurfaceGeometry::Unknown { .. }, SurfaceGeometry::Unknown { .. }) => continue,
-            (SurfaceGeometry::Nurbs(new), SurfaceGeometry::Nurbs(old)) if new == old => continue,
-            (SurfaceGeometry::Nurbs(new), SurfaceGeometry::Nurbs(old)) => {
+            (
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
+            ) => continue,
+            (
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(new)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(old)),
+            ) if new == old => continue,
+            (
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(new)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(old)),
+            ) => {
                 crate::brep::patch_nurbs_surface(
                     payload.get_mut(body_start..)?,
                     raw_annotation_offset(annotations, &surface.id).ok()?,
@@ -433,7 +445,7 @@ fn patch_surfaces(
             _ if surface.geometry == baseline.geometry => continue,
             _ => {}
         }
-        let reference = super::writer::surface_reference(&surface.geometry);
+        let reference = super::writer::surface_reference(surface.geometry.solved()?);
         let (_, values) =
             super::writer::surface_values(&surface.geometry, reference, scale).ok()?;
         patch_compact(
@@ -462,9 +474,18 @@ fn patch_curves(
     for curve in &ir.model.curves {
         let baseline = old[&curve.id];
         match (&curve.geometry, &baseline.geometry) {
-            (CurveGeometry::Unknown { .. }, CurveGeometry::Unknown { .. }) => continue,
-            (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) if new == old => continue,
-            (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) => {
+            (
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }),
+            ) => continue,
+            (
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(new)),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(old)),
+            ) if new == old => continue,
+            (
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(new)),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(old)),
+            ) => {
                 crate::brep::patch_nurbs_curve(
                     payload.get_mut(body_start..)?,
                     raw_annotation_offset(annotations, &curve.id).ok()?,

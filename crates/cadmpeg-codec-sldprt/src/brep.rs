@@ -19,7 +19,9 @@
 use self::index::scan_carriers;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::layout::compact_analytic_header as analytic;
@@ -183,27 +185,27 @@ pub(crate) struct SurfaceCarrier {
 impl SurfaceCarrier {
     pub(crate) fn frame(&self) -> Option<(Vector3, Vector3)> {
         match &self.geometry {
-            SurfaceGeometry::Plane(plane_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let normal = plane_surface.normal();
                 let u_axis = plane_surface.u_axis();
                 Some((*u_axis, cross(*normal, *u_axis)))
             }
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let axis = sphere_surface.axis();
                 let ref_direction = sphere_surface.ref_direction();
                 Some((*ref_direction, *axis))
             }
-            SurfaceGeometry::Torus(torus_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
                 Some((*ref_direction, *axis))
@@ -319,10 +321,10 @@ fn decode_carrier_values(
         })
     };
     let g = match tt {
-        tag::LINE => curve(CurveGeometry::Line(
+        tag::LINE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(scale_point(&v[0..3]), unit(&v[3..6])).ok()?,
-        )),
-        tag::CIRCLE => curve(CurveGeometry::Circle(
+        ))),
+        tag::CIRCLE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
@@ -330,8 +332,8 @@ fn decode_carrier_values(
                 v[9] * LEN_TO_MM,
             )
             .ok()?,
-        )),
-        tag::ELLIPSE => curve(CurveGeometry::Ellipse(
+        ))),
+        tag::ELLIPSE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
             cadmpeg_ir::geometry::EllipseCurve::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
@@ -340,16 +342,16 @@ fn decode_carrier_values(
                 v[10] * LEN_TO_MM,
             )
             .ok()?,
-        )),
-        tag::PLANE => surface(SurfaceGeometry::Plane(
+        ))),
+        tag::PLANE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
                 unit(&v[6..9]),
             )
             .ok()?,
-        )),
-        tag::CYLINDER => surface(SurfaceGeometry::Cylinder(
+        ))),
+        tag::CYLINDER => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
@@ -357,24 +359,26 @@ fn decode_carrier_values(
                 v[6] * LEN_TO_MM,
             )
             .ok()?,
-        )),
+        ))),
         tag::CONE => {
             // origin(3) axis(3) radius sin cos refdir(3): half-angle from the
             // stored sine, which satisfies sin^2+cos^2=1 in the observed sample.
             let sin = v[7];
-            return Some(surface(SurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
-                    scale_point(&v[0..3]),
-                    unit(&v[3..6]),
-                    unit(&v[9..12]),
-                    v[6] * LEN_TO_MM,
-                    1.0,
-                    sin.abs().clamp(0.0, 1.0).asin(),
-                )
-                .ok()?,
+            return Some(surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cone(
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                        scale_point(&v[0..3]),
+                        unit(&v[3..6]),
+                        unit(&v[9..12]),
+                        v[6] * LEN_TO_MM,
+                        1.0,
+                        sin.abs().clamp(0.0, 1.0).asin(),
+                    )
+                    .ok()?,
+                ),
             )));
         }
-        tag::SPHERE => surface(SurfaceGeometry::Sphere(
+        tag::SPHERE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::SphereSurface::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[4..7]),
@@ -382,17 +386,19 @@ fn decode_carrier_values(
                 v[3] * LEN_TO_MM,
             )
             .ok()?,
-        )),
+        ))),
         tag::TORUS => {
-            return Some(surface(SurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
-                    scale_point(&v[0..3]),
-                    unit(&v[3..6]),
-                    unit(&v[8..11]),
-                    v[6].abs() * LEN_TO_MM,
-                    v[7] * LEN_TO_MM,
-                )
-                .ok()?,
+            return Some(surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                        scale_point(&v[0..3]),
+                        unit(&v[3..6]),
+                        unit(&v[8..11]),
+                        v[6].abs() * LEN_TO_MM,
+                        v[7] * LEN_TO_MM,
+                    )
+                    .ok()?,
+                ),
             )));
         }
         _ => return None,
@@ -435,7 +441,7 @@ pub(crate) fn patch_nurbs_by_attr(
         return false;
     };
     let carrier = indexed.carrier();
-    let CurveGeometry::Nurbs(old) = &carrier.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else {
         return false;
     };
     patch_nurbs_curve(body, carrier.offset, old, new, 0.001).is_some()
@@ -548,7 +554,7 @@ mod tests {
             };
             assert_eq!(carrier.attr, 7);
             assert_eq!(carrier.end, bytes.len());
-            let CurveGeometry::Line(line_curve) = carrier.geometry else {
+            let Some(SolvedCurveGeometry::Line(line_curve)) = carrier.geometry.solved() else {
                 panic!("expected line");
             };
             let origin = *line_curve.origin();
@@ -591,7 +597,7 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Cone(cone_surface) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
             panic!("expected cone");
         };
         let origin = *cone_surface.origin();
@@ -621,7 +627,7 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
         let center = *torus_surface.center();
@@ -677,7 +683,7 @@ mod tests {
         let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("spindle torus") else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
         let major_radius = torus_surface.major_radius();
@@ -699,7 +705,7 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
         let major_radius = torus_surface.major_radius();

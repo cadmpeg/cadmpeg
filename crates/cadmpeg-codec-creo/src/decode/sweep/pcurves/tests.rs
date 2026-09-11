@@ -2,12 +2,12 @@
 
 use super::revolution_boundary_pcurve;
 use cadmpeg_ir::features::RevolutionAxis;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
 fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
-    let surface = SurfaceGeometry::Torus(
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -16,7 +16,7 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
             5.0,
         )
         .expect("valid TorusSurface fixture"),
-    );
+    ));
     let axis = RevolutionAxis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite point fixture"),

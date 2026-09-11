@@ -19,6 +19,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
@@ -170,9 +171,7 @@ fn decode_retains_generated_helix_construction() {
     else {
         panic!("expected procedural helix carrier")
     };
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut edited_cache) =
-        solved_cache.as_geometry().clone()
-    else {
+    let SolvedCurveGeometry::Nurbs(mut edited_cache) = solved_cache.clone() else {
         panic!("expected helix NURBS cache")
     };
     edited_cache
@@ -181,10 +180,7 @@ fn decode_retains_generated_helix_construction() {
             points[1].z = -2.0;
         })
         .unwrap();
-    *solved_cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(edited_cache),
-    )
-    .unwrap();
+    *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
     let edited_definition = edited.model.procedural_curves[0].definition().clone();
     let edited_cache = solved_curve.geometry.clone();
     let mut regenerated = Vec::new();
@@ -459,7 +455,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::NurbsCurve::new(
             1,
             vec![-2.0, -2.0, 5.0, 5.0],
@@ -471,7 +467,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             false,
         )
         .unwrap(),
-    );
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -510,7 +506,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             .iter()
             .find(|curve| curve.id == *source)
             .map(|curve| &curve.geometry),
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
                 && curve.knots() == [-2.0, -2.0, 5.0, 5.0]
                 && curve.control_points() == [
@@ -602,7 +598,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::NurbsCurve::new(
             1,
             vec![-1.5, -1.5, 3.5, 3.5],
@@ -614,7 +610,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
             false,
         )
         .unwrap(),
-    );
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -647,7 +643,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .expect("round-trip subset source");
     assert_eq!(
         source_curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![-1.5, -1.5, 3.5, 3.5],
@@ -659,7 +655,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 false,
             )
             .expect("valid subset source curve")
-        )
+        ))
     );
 }
 
@@ -1010,7 +1006,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == component.component)
             .expect("compound component curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
                 cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
@@ -1018,7 +1014,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
                     .unwrap(),
             )
             .unwrap(),
-        );
+        ));
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -1053,7 +1049,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .iter()
             .find(|curve| curve.id == component.component)
             .expect("round-trip compound component");
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &curve.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
             panic!("compound line component was not lowered to NURBS")
         };
         assert_eq!(curve.degree(), 1);
@@ -1154,7 +1150,9 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_embedded_offset_supports_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let result = F3dCodec
         .decode(
@@ -1175,7 +1173,11 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     for side in context.sides() {
         let surface_id = side.surface.as_ref().expect("embedded support surface");
         assert!(result.ir().model.surfaces.iter().any(|surface| {
-            surface.id == *surface_id && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
+            surface.id == *surface_id
+                && matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                )
         }));
         assert!(matches!(
             side.pcurve.as_ref().map(|binding| &binding.geometry),
@@ -1398,7 +1400,7 @@ fn generated_mixed_offset_supports_write_source_less() {
 
 #[test]
 fn generated_analytic_offset_supports_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = F3dCodec
         .decode(
@@ -1427,17 +1429,19 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             .geometry
             .clone()
     });
-    assert!(matches!(supports[0], SurfaceGeometry::Cone(cone_surface)
-        if {
-            let axis = cone_surface.axis();
-    let half_angle = cone_surface.half_angle();
-            (cone_surface.radius() == 10.0)
-                && (cone_surface.ratio() == 0.4)
-                && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
-                    && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
-        }));
     assert!(
-        matches!(supports[1], SurfaceGeometry::Torus(torus_surface) if { torus_surface.minor_radius() == -7.5 })
+        matches!(supports[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+            if {
+                let axis = cone_surface.axis();
+        let half_angle = cone_surface.half_angle();
+                (cone_surface.radius() == 10.0)
+                    && (cone_surface.ratio() == 0.4)
+                    && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+                        && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
+            })
+    );
+    assert!(
+        matches!(supports[1], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) if { torus_surface.minor_radius() == -7.5 })
     );
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1474,7 +1478,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 
 #[test]
 fn generated_surface_intersection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = F3dCodec
         .decode(
@@ -1504,13 +1508,16 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             .clone()
     });
     assert!(
-        matches!(expected_geometries[0], SurfaceGeometry::Cone(cone_surface)
+        matches!(expected_geometries[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
             let half_angle = cone_surface.half_angle();
             (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
         })
     );
-    assert!(matches!(expected_geometries[1], SurfaceGeometry::Torus(_)));
+    assert!(matches!(
+        expected_geometries[1],
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+    ));
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]

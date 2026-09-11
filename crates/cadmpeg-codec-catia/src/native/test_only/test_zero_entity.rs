@@ -378,7 +378,7 @@ fn validate_zero_entity_model_curve(
     carrier_tag: Option<[u8; 2]>,
     curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
 ) -> bool {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let finite_point = |point: &cadmpeg_ir::math::Point3| {
         [point.x, point.y, point.z].into_iter().all(f64::is_finite)
@@ -390,7 +390,10 @@ fn validate_zero_entity_model_curve(
             && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
     };
     match (carrier_tag, curve) {
-        (Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]), Some(CurveGeometry::Nurbs(curve))) => {
+        (
+            Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]),
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))),
+        ) => {
             curve.knots().iter().all(|knot| knot.is_finite())
                 && knots_nondecreasing(curve.knots())
                 && curve.control_points().iter().all(finite_point)
@@ -401,14 +404,17 @@ fn validate_zero_entity_model_curve(
                 })
                 && !curve.periodic()
         }
-        (Some([0x28, 0x8a] | [0x29, 0xb8]), Some(CurveGeometry::Line(line_curve))) => {
+        (
+            Some([0x28, 0x8a] | [0x29, 0xb8]),
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))),
+        ) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             finite_point(origin) && finite_vector(direction)
         }
         (
             Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),
-            Some(CurveGeometry::Circle(circle_curve)),
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))),
         ) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();

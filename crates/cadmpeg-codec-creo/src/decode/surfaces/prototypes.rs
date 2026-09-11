@@ -5,7 +5,7 @@ use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -269,33 +269,33 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     let mut transferred = 0;
     for (prototype, row, section) in unique_surface_prototype_associations(scan) {
         let record = prototype.record();
-        let geometry =
-            match prototype {
-                SupportedPrototype::Plane(_) => {
-                    let Some((origin, axis, reference)) = prototype_local_frame(record) else {
-                        continue;
-                    };
-                    SurfaceGeometry::Plane(
-                        match cadmpeg_ir::geometry::PlaneSurface::try_new(
-                            Point3::new(origin[0], origin[1], origin[2]),
-                            Vector3::new(axis[0], axis[1], axis[2]),
-                            Vector3::new(reference[0], reference[1], reference[2]),
-                        ) {
-                            Ok(payload) => payload,
-                            Err(_) => continue,
-                        },
-                    )
-                }
-                SupportedPrototype::Cylinder(_) => {
-                    let Some((origin, axis, reference)) = prototype_local_frame(record) else {
-                        continue;
-                    };
-                    let Some(radius) = prototype_scalar(record, "radius")
-                        .filter(|radius| radius.is_finite() && *radius > 0.0)
-                    else {
-                        continue;
-                    };
-                    SurfaceGeometry::Cylinder(match cadmpeg_ir::geometry::CylinderSurface::try_new(
+        let geometry = match prototype {
+            SupportedPrototype::Plane(_) => {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                    continue;
+                };
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
+            SupportedPrototype::Cylinder(_) => {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                    continue;
+                };
+                let Some(radius) = prototype_scalar(record, "radius")
+                    .filter(|radius| radius.is_finite() && *radius > 0.0)
+                else {
+                    continue;
+                };
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -303,80 +303,83 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     ) {
                         Ok(payload) => payload,
                         Err(_) => continue,
-                    })
-                }
-                SupportedPrototype::Torus(_) => {
-                    let Some((origin, axis, reference)) = prototype_local_frame(record) else {
-                        continue;
-                    };
-                    let point = Point3::new(origin[0], origin[1], origin[2]);
-                    let axis = Vector3::new(axis[0], axis[1], axis[2]);
-                    let reference = Vector3::new(reference[0], reference[1], reference[2]);
-                    let prototype_radii = match (
-                        prototype_scalar(record, "radius1")
-                            .filter(|radius| radius.is_finite() && *radius >= 0.0),
-                        prototype_scalar(record, "radius2")
-                            .filter(|radius| radius.is_finite() && *radius > 0.0),
-                    ) {
-                        (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
-                        _ => None,
-                    };
-                    let radii =
-                        crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
-                            .filter(|parameter| parameter.offset == row.offset)
-                            .and_then(SurfaceParameterRecord::torus_radius_overrides)
-                            .map(|overrides| [overrides.radius1, overrides.radius2])
-                            .or(prototype_radii);
-                    let Some([radius1, radius2]) = radii else {
-                        continue;
-                    };
-                    if radius1 == 0.0 {
-                        SurfaceGeometry::Sphere(match cadmpeg_ir::geometry::SphereSurface::try_new(
+                    },
+                ))
+            }
+            SupportedPrototype::Torus(_) => {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                    continue;
+                };
+                let point = Point3::new(origin[0], origin[1], origin[2]);
+                let axis = Vector3::new(axis[0], axis[1], axis[2]);
+                let reference = Vector3::new(reference[0], reference[1], reference[2]);
+                let prototype_radii = match (
+                    prototype_scalar(record, "radius1")
+                        .filter(|radius| radius.is_finite() && *radius >= 0.0),
+                    prototype_scalar(record, "radius2")
+                        .filter(|radius| radius.is_finite() && *radius > 0.0),
+                ) {
+                    (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
+                    _ => None,
+                };
+                let radii =
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                        .filter(|parameter| parameter.offset == row.offset)
+                        .and_then(SurfaceParameterRecord::torus_radius_overrides)
+                        .map(|overrides| [overrides.radius1, overrides.radius2])
+                        .or(prototype_radii);
+                let Some([radius1, radius2]) = radii else {
+                    continue;
+                };
+                if radius1 == 0.0 {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                        match cadmpeg_ir::geometry::SphereSurface::try_new(
                             point, axis, reference, radius2,
                         ) {
                             Ok(payload) => payload,
                             Err(_) => continue,
-                        })
-                    } else {
-                        SurfaceGeometry::Torus(
-                            match cadmpeg_ir::geometry::TorusSurface::try_new(
-                                point, axis, reference, radius1, radius2,
-                            ) {
-                                Ok(payload) => payload,
-                                Err(_) => continue,
-                            },
-                        )
-                    }
-                }
-                SupportedPrototype::Cone(_) => {
-                    let Some(frame) = crate::surface::prototype_cone_frame(record) else {
-                        continue;
-                    };
-                    SurfaceGeometry::Cone(
-                        match cadmpeg_ir::geometry::ConeSurface::try_new(
-                            Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
-                            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                            Vector3::new(
-                                frame.ref_direction()[0],
-                                frame.ref_direction()[1],
-                                frame.ref_direction()[2],
-                            ),
-                            0.0,
-                            1.0,
-                            frame.half_angle(),
+                        },
+                    ))
+                } else {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                        match cadmpeg_ir::geometry::TorusSurface::try_new(
+                            point, axis, reference, radius1, radius2,
                         ) {
                             Ok(payload) => payload,
                             Err(_) => continue,
                         },
-                    )
+                    ))
                 }
-                SupportedPrototype::Spline(_) => {
-                    let Some(nurbs) = prototype_spline_nurbs(record) else {
-                        continue;
-                    };
-                    SurfaceGeometry::Nurbs(nurbs)
-                }
-            };
+            }
+            SupportedPrototype::Cone(_) => {
+                let Some(frame) = crate::surface::prototype_cone_frame(record) else {
+                    continue;
+                };
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                        Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
+                        Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+                        Vector3::new(
+                            frame.ref_direction()[0],
+                            frame.ref_direction()[1],
+                            frame.ref_direction()[2],
+                        ),
+                        0.0,
+                        1.0,
+                        frame.half_angle(),
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
+            SupportedPrototype::Spline(_) => {
+                let Some(nurbs) = prototype_spline_nurbs(record) else {
+                    continue;
+                };
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+            }
+        };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
             .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -508,7 +511,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Nurbs(nurbs),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -564,92 +567,102 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 origin,
                 normal,
                 u_axis,
-            } if row.kind == crate::surface::SurfaceKind::Plane => SurfaceGeometry::Plane(
-                match cadmpeg_ir::geometry::PlaneSurface::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(normal[0], normal[1], normal[2]),
-                    Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            ),
+            } if row.kind == crate::surface::SurfaceKind::Plane => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(normal[0], normal[1], normal[2]),
+                        Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
             crate::legacy_geometry::LegacySurfaceGeometry::Cylinder {
                 origin,
                 axis,
                 ref_direction,
                 radius,
-            } if row.kind == crate::surface::SurfaceKind::Cylinder => SurfaceGeometry::Cylinder(
-                match cadmpeg_ir::geometry::CylinderSurface::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(axis[0], axis[1], axis[2]),
-                    Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                    *radius,
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            ),
+            } if row.kind == crate::surface::SurfaceKind::Cylinder => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        *radius,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
             crate::legacy_geometry::LegacySurfaceGeometry::Cone {
                 apex,
                 axis,
                 ref_direction,
                 half_angle,
                 ..
-            } if row.kind == crate::surface::SurfaceKind::Cone => SurfaceGeometry::Cone(
-                match cadmpeg_ir::geometry::ConeSurface::try_new(
-                    Point3::new(apex[0], apex[1], apex[2]),
-                    Vector3::new(axis[0], axis[1], axis[2]),
-                    Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                    0.0,
-                    1.0,
-                    *half_angle,
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            ),
+            } if row.kind == crate::surface::SurfaceKind::Cone => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                        Point3::new(apex[0], apex[1], apex[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        0.0,
+                        1.0,
+                        *half_angle,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
             crate::legacy_geometry::LegacySurfaceGeometry::Torus {
                 center,
                 axis,
                 ref_direction,
                 major_radius,
                 minor_radius,
-            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => SurfaceGeometry::Torus(
-                match cadmpeg_ir::geometry::TorusSurface::try_new(
-                    Point3::new(center[0], center[1], center[2]),
-                    Vector3::new(axis[0], axis[1], axis[2]),
-                    Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                    *major_radius,
-                    *minor_radius,
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            ),
+            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                    match cadmpeg_ir::geometry::TorusSurface::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        *major_radius,
+                        *minor_radius,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
             crate::legacy_geometry::LegacySurfaceGeometry::Sphere {
                 center,
                 axis,
                 ref_direction,
                 radius,
-            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => SurfaceGeometry::Sphere(
-                match cadmpeg_ir::geometry::SphereSurface::try_new(
-                    Point3::new(center[0], center[1], center[2]),
-                    Vector3::new(axis[0], axis[1], axis[2]),
-                    Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                    *radius,
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            ),
+            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                    match cadmpeg_ir::geometry::SphereSurface::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        *radius,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                ))
+            }
             crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
                 if row.kind == crate::surface::SurfaceKind::Spline =>
             {
                 let Some(nurbs) = interpolation_spline_surface(spline) else {
                     continue;
                 };
-                SurfaceGeometry::Nurbs(nurbs)
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             }
             _ => continue,
         };

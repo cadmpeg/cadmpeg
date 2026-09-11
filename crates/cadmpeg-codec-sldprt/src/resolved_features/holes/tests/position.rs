@@ -4,7 +4,7 @@ use super::{cylinder, lane, lane_with_position_reference, model_hole, native_his
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HolePlacement};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -94,7 +94,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         .collect();
     let surface = |id, x| Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(x, 7.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -102,7 +102,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 2.1,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
@@ -158,7 +158,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
 
     let opposite_side = |id, x| Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(x, 30.0, 10.0),
                 Vector3::new(0.0, 0.0, -1.0),
@@ -166,7 +166,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 2.1,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
@@ -185,7 +185,9 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     );
 
     let mut opposite = surface(5, -9.0);
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut opposite.geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut opposite.geometry
+    else {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
@@ -242,7 +244,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         .map(|(id, x)| Surface {
             id: SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(x, 11.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -250,7 +252,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
                     3.0,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         })
         .collect::<Vec<_>>();
@@ -364,7 +366,9 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .map(|(index, mut surface)| {
             surface.id = SurfaceId::mint(format!("test:model:entity#opposite-{index}"))
                 .expect("identity grammar");
-            let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surface.geometry else {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                &mut surface.geometry
+            else {
                 unreachable!();
             };
             let origin = cylinder_surface.origin();
@@ -394,7 +398,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
 
     surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(1000.0, 1000.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -402,7 +406,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     assert_eq!(
@@ -1077,7 +1081,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     .with_native_ref(Some("construction-point".into()));
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(12.0, 23.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1085,7 +1089,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let mut features = vec![hole, sketch_feature];
@@ -1303,7 +1307,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(12.0, 23.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1311,7 +1315,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
                 2.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let mut features = vec![hole, sketch_feature];

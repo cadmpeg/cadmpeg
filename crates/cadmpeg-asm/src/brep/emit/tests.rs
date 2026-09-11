@@ -310,7 +310,8 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             super::super::DecodePurpose::Model,
             IdFormat("f3d"),
         );
-        let CurveGeometry::Nurbs(normalized) = &carriers.curve_geo[&4] else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(normalized)) = &carriers.curve_geo[&4]
+        else {
             panic!("solved curve")
         };
         assert_eq!(
@@ -502,9 +503,10 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
     ] {
         let mut out = AsmBrep::default();
         let mut carriers = Carriers::default();
-        carriers
-            .curve_geo
-            .insert(4, CurveGeometry::Unknown { record: None });
+        carriers.curve_geo.insert(
+            4,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        );
         carriers.procedural_curve_defs.insert(4, source);
         emit_carrier_curve(
             &mut out,
@@ -569,18 +571,19 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
         let mut out = AsmBrep::default();
         out.surfaces.push(Surface {
             id: SurfaceId::mint("f3d:brep:entity#existing-surface").unwrap(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
         out.curves.push(Curve {
             id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
-            geometry: CurveGeometry::Unknown { record: None },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
         let mut carriers = Carriers::default();
-        carriers
-            .curve_geo
-            .insert(4, CurveGeometry::Unknown { record: None });
+        carriers.curve_geo.insert(
+            4,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        );
         carriers.procedural_curve_defs.insert(
             4,
             ProceduralCurveSource::Cached {
@@ -589,7 +592,9 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
                         layout: EmbeddedSurfaceOffsetLayout::ContextFirst {
                             context: Box::new(EmbeddedIntersection {
                                 surfaces: std::array::from_fn(|_| {
-                                    SupportSlot::Surface(SurfaceGeometry::Unknown { record: None })
+                                    SupportSlot::Surface(SurfaceGeometry::Solved(
+                                        SolvedSurfaceGeometry::Unknown { record: None },
+                                    ))
                                 }),
                                 pcurves: [None, None],
                                 parameter_range,

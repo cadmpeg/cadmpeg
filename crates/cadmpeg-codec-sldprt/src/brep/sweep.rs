@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::LEN_TO_MM;
@@ -139,15 +139,15 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
 /// `sqrt(2) / 2`.
 pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
     let (center, axis, major, major_radius, minor_radius) = match geometry {
-        CurveGeometry::Nurbs(curve) => return Some(curve.clone()),
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(curve.clone()),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
             (*center, *axis, *ref_direction, radius, radius)
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn analytic_ellipse_profile_has_exact_rational_form() {
-        let geometry = CurveGeometry::Ellipse(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
             cadmpeg_ir::geometry::EllipseCurve::try_new(
                 Point3::new(3.0, -2.0, 7.0),
                 Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
@@ -448,7 +448,7 @@ mod tests {
                 2.0,
             )
             .unwrap(),
-        );
+        ));
         let curve = profile_nurbs(&geometry).expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn analytic_circle_profile_has_exact_rational_form() {
-        let geometry = CurveGeometry::Circle(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(-1.0, 2.0, 3.0),
                 Vector3::new(0.0, 2.0, 0.0).unit().unwrap(),
@@ -478,7 +478,7 @@ mod tests {
                 6.0,
             )
             .unwrap(),
-        );
+        ));
         let curve = profile_nurbs(&geometry).expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {

@@ -4,7 +4,7 @@
 use crate::decode::sweep::generated_nurbs_translation_extent;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
-use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -55,14 +55,14 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
     };
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid PlaneSurface fixture"),
-        ),
+        )),
         source_object: None,
     };
     let local_plane =
@@ -97,19 +97,19 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Nurbs(translated_surface()),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(translated_surface())),
             source_object: None,
         },
         plane(32, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
         plane(33, Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 0.0, -1.0)),
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         },
     ]);
@@ -139,7 +139,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
                         .expect("identity grammar")
             })
             .expect("plane surface")
-            .geometry = SurfaceGeometry::Unknown { record: None };
+            .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     }
     assert_eq!(
         generated_nurbs_translation_extent(&scan, &local_only, 7, None),

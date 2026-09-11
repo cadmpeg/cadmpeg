@@ -12,8 +12,9 @@ use crate::records::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
-    PcurveGeometry, ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    knots_nondecreasing, BlendRadiusLaw, Curve, NurbsCurve, NurbsSurface, PcurveGeometry,
+    ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
@@ -3034,21 +3035,11 @@ pub(crate) fn validate_curve_edits(
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|curve| {
-            (
-                curve.id.as_str(),
-                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-            )
-        })
+        .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|curve| {
-            (
-                curve.id.as_str(),
-                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-            )
-        })
+        .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3063,15 +3054,17 @@ pub(crate) fn validate_curve_edits(
         }
         edited.insert(id.to_owned());
         let valid = match after {
-            CurveGeometry::Line(line_curve) if { matches!(before, CurveGeometry::Line(_)) } => {
+            Some(SolvedCurveGeometry::Line(line_curve))
+                if { matches!(before, Some(SolvedCurveGeometry::Line(_))) } =>
+            {
                 let origin = line_curve.origin();
                 let direction = line_curve.direction();
                 finite_point(*origin)
                     && finite_vector(*direction)
                     && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
             }
-            CurveGeometry::Circle(circle_curve)
-                if { matches!(before, CurveGeometry::Circle(_)) } =>
+            Some(SolvedCurveGeometry::Circle(circle_curve))
+                if { matches!(before, Some(SolvedCurveGeometry::Circle(_))) } =>
             {
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
@@ -3082,8 +3075,8 @@ pub(crate) fn validate_curve_edits(
                     && radius.is_finite()
                     && radius > 0.0
             }
-            CurveGeometry::Ellipse(ellipse_curve)
-                if { matches!(before, CurveGeometry::Ellipse(_)) } =>
+            Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
+                if { matches!(before, Some(SolvedCurveGeometry::Ellipse(_))) } =>
             {
                 let center = ellipse_curve.center();
                 let axis = ellipse_curve.axis();
@@ -3098,14 +3091,14 @@ pub(crate) fn validate_curve_edits(
                     && minor_radius > 0.0
                     && minor_radius <= major_radius
             }
-            CurveGeometry::Degenerate(degenerate_curve)
-                if { matches!(before, CurveGeometry::Degenerate(_)) } =>
+            Some(SolvedCurveGeometry::Degenerate(degenerate_curve))
+                if { matches!(before, Some(SolvedCurveGeometry::Degenerate(_))) } =>
             {
                 let point = degenerate_curve.point();
                 finite_point(*point)
             }
-            CurveGeometry::Nurbs(after) => {
-                let CurveGeometry::Nurbs(before) = before else {
+            Some(SolvedCurveGeometry::Nurbs(after)) => {
+                let Some(SolvedCurveGeometry::Nurbs(before)) = before else {
                     return Err(CodecError::NotImplemented(format!(
                         "F3D regeneration cannot change curve {id} into a NURBS carrier"
                     )));
@@ -3256,21 +3249,11 @@ pub(crate) fn validate_surface_edits(
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|surface| {
-            (
-                surface.id.as_str(),
-                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-            )
-        })
+        .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|surface| {
-            (
-                surface.id.as_str(),
-                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-            )
-        })
+        .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3284,16 +3267,16 @@ pub(crate) fn validate_surface_edits(
             continue;
         }
         let valid = match after {
-            SurfaceGeometry::Plane(plane_surface)
-                if { matches!(before, SurfaceGeometry::Plane(_)) } =>
+            Some(SolvedSurfaceGeometry::Plane(plane_surface))
+                if { matches!(before, Some(SolvedSurfaceGeometry::Plane(_))) } =>
             {
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 let u_axis = plane_surface.u_axis();
                 finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
             }
-            SurfaceGeometry::Sphere(sphere_surface)
-                if { matches!(before, SurfaceGeometry::Sphere(_)) } =>
+            Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
+                if { matches!(before, Some(SolvedSurfaceGeometry::Sphere(_))) } =>
             {
                 let center = sphere_surface.center();
                 let axis = sphere_surface.axis();
@@ -3304,8 +3287,8 @@ pub(crate) fn validate_surface_edits(
                     && radius.is_finite()
                     && radius != 0.0
             }
-            SurfaceGeometry::Torus(torus_surface)
-                if { matches!(before, SurfaceGeometry::Torus(_)) } =>
+            Some(SolvedSurfaceGeometry::Torus(torus_surface))
+                if { matches!(before, Some(SolvedSurfaceGeometry::Torus(_))) } =>
             {
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
@@ -3319,8 +3302,8 @@ pub(crate) fn validate_surface_edits(
                     && major_radius != 0.0
                     && minor_radius != 0.0
             }
-            SurfaceGeometry::Cylinder(cylinder_surface)
-                if { matches!(before, SurfaceGeometry::Cylinder(_)) } =>
+            Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                if { matches!(before, Some(SolvedSurfaceGeometry::Cylinder(_))) } =>
             {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
@@ -3331,8 +3314,8 @@ pub(crate) fn validate_surface_edits(
                     && radius.is_finite()
                     && radius != 0.0
             }
-            SurfaceGeometry::Cone(cone_surface)
-                if { matches!(before, SurfaceGeometry::Cone(_)) } =>
+            Some(SolvedSurfaceGeometry::Cone(cone_surface))
+                if { matches!(before, Some(SolvedSurfaceGeometry::Cone(_))) } =>
             {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
@@ -3349,8 +3332,8 @@ pub(crate) fn validate_surface_edits(
                     && half_angle.is_finite()
                     && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
-            SurfaceGeometry::Nurbs(after) => {
-                let SurfaceGeometry::Nurbs(before) = before else {
+            Some(SolvedSurfaceGeometry::Nurbs(after)) => {
+                let Some(SolvedSurfaceGeometry::Nurbs(before)) = before else {
                     return Err(CodecError::NotImplemented(format!(
                         "F3D regeneration cannot change surface {id} into a NURBS carrier"
                     )));

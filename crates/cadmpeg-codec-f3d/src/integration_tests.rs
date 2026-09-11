@@ -13,6 +13,7 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     F3dCodec
@@ -102,12 +103,12 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
         saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
-                cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )
         }) || result.ir().model.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
         });
         saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();

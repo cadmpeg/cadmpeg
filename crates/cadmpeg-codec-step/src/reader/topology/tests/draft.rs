@@ -1,3 +1,4 @@
+use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
 use super::super::*;
 use cadmpeg_core::decode::DecodeMode;
@@ -5,7 +6,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::pcurve_uv;
-use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -20,14 +21,14 @@ fn surface_draft(id: &str) -> ModelDraft {
     draft
         .insert(Surface {
             id: SurfaceId::mint(id).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         })
         .expect("insert surface into draft");
@@ -71,14 +72,14 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 fn trimmed_pcurve_fit_uses_declared_endpoints() {
     let surface_id =
         SurfaceId::mint("step:data:surface#trimmed-endpoints").expect("identity grammar");
-    let surface_geometry = SurfaceGeometry::Plane(
+    let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-    );
+    ));
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -125,14 +126,14 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
 fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     let surface_id =
         SurfaceId::mint("step:data:surface#bounded-search-witness").expect("identity grammar");
-    let surface_geometry = SurfaceGeometry::Plane(
+    let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-    );
+    ));
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -246,7 +247,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         .curves
         .iter()
         .find_map(|curve| match curve.geometry {
-            CurveGeometry::Circle(circle_curve) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = *circle_curve.center();
                 let radius = circle_curve.radius();
                 Some((center, radius))
@@ -666,14 +667,14 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 fn shared_surface_carrier_is_staged_once() {
     let surface = Surface {
         id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");

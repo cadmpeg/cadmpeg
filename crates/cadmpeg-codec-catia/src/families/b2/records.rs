@@ -6,7 +6,7 @@
 //! pcurves.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
@@ -1742,13 +1742,15 @@ pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeome
         && direction.iter().all(|value| value.is_finite());
     let valid_tail =
         tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
-    (valid_direction && valid_tail).then_some(SurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
-            Point3::new(point[0], point[1], 0.0),
-            normal,
-            u_axis,
-        )
-        .ok()?,
+    (valid_direction && valid_tail).then_some(SurfaceGeometry::Solved(
+        SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(point[0], point[1], 0.0),
+                normal,
+                u_axis,
+            )
+            .ok()?,
+        ),
     ))
 }
 
@@ -2115,7 +2117,7 @@ impl B2Cylinder {
     }
 
     pub(crate) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
-        Some(SurfaceGeometry::Cylinder(
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::from(self.origin),
                 Vector3::from(self.axis.get()),
@@ -2123,7 +2125,7 @@ impl B2Cylinder {
                 self.radius.get(),
             )
             .ok()?,
-        ))
+        )))
     }
 }
 
@@ -2870,7 +2872,7 @@ pub fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
     let slant = cone.slant_range.lower();
     let axial = slant * cone.half_angle.cos();
     let axis = cone.axis.get();
-    Some(SurfaceGeometry::Cone(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(
                 cone.apex[0] + axial * axis[0],
@@ -2884,13 +2886,13 @@ pub fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
             cone.half_angle,
         )
         .ok()?,
-    ))
+    )))
 }
 
 /// Build the exact neutral carrier of a validated radius-scaled sphere chart.
 #[must_use]
 pub fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
-    Some(SurfaceGeometry::Sphere(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
             Vector3::from(sphere.axis.get()),
@@ -2898,13 +2900,13 @@ pub fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
             sphere.radius.get(),
         )
         .ok()?,
-    ))
+    )))
 }
 
 /// Build the exact neutral carrier of a validated doubly periodic torus chart.
 #[must_use]
 pub fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
-    Some(SurfaceGeometry::Torus(
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             Point3::new(torus.center[0], torus.center[1], torus.center[2]),
             Vector3::from(torus.axis.get()),
@@ -2913,7 +2915,7 @@ pub fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
             torus.minor_radius.get(),
         )
         .ok()?,
-    ))
+    )))
 }
 
 /// Decode standalone `b2 03 28` analytic cylinder supports.

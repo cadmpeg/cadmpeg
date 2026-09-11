@@ -2,11 +2,12 @@
 //! Record-decoder tests for the `e5` family over synthetic byte fixtures.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::*;
 use crate::variant::Variant;
@@ -18,7 +19,7 @@ fn e5_circle_parser_reads_framed_carrier() {
     let circles = crate::families::e5::records::e5_circles(&stream);
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) => {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let radius = circle_curve.radius();
@@ -30,7 +31,7 @@ fn e5_circle_parser_reads_framed_carrier() {
     }
     let surfaces = crate::families::e5::records::e5_surfaces(&stream);
     assert!(
-        matches!(surfaces[0].geometry, SurfaceGeometry::Cylinder(cylinder_surface) if { cylinder_surface.radius() == 2.5 })
+        matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius() == 2.5 })
     );
 
     let mut small = e5_circle_stream();
@@ -274,7 +275,7 @@ fn e5_surface_parser_reads_framed_torus() {
     let surfaces = crate::families::e5::records::e5_surfaces(&e5_torus_stream());
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
-        SurfaceGeometry::Torus(torus_surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -295,7 +296,7 @@ fn e5_surface_parser_reads_framed_torus() {
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
     assert!(
-        matches!(crate::families::e5::records::e5_surfaces(&large)[0].geometry, SurfaceGeometry::Torus(torus_surface)
+        matches!(crate::families::e5::records::e5_surfaces(&large)[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
         if {
             (torus_surface.major_radius() == 2_000_000.0)
                 && (torus_surface.minor_radius() == 1_500_000.0)
@@ -400,7 +401,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     }));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle(_)
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
     ));
     assert!(result.ir().native_unknowns("catia").unwrap()[0]
         .links

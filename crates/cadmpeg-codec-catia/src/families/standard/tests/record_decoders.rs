@@ -1,5 +1,5 @@
 use crate::families::standard::records::AnalyticSurfaceKind;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -29,7 +29,7 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
         },
     )
     .expect("signed torus carrier");
-    let SurfaceGeometry::Torus(torus_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = surface else {
         panic!("torus geometry");
     };
     let axis = torus_surface.axis();
@@ -65,11 +65,11 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         )
         .expect("large analytic carrier");
         let (radius,) = match surface {
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let radius = sphere_surface.radius();
                 (radius,)
             }
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let radius = cylinder_surface.radius();
                 (radius,)
             }
@@ -91,7 +91,7 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
             target: 0,
             kind: AnalyticSurfaceKind::Torus,
         },
-    ), Some(SurfaceGeometry::Torus(torus_surface))
+    ), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
             if {
                 (torus_surface.major_radius() == 2_000_000.0)
                     && (torus_surface.minor_radius() == 1_500_000.0)
@@ -114,7 +114,7 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
         },
     )
     .expect("near-unit cylinder carrier");
-    let SurfaceGeometry::Cylinder(cylinder_surface) = surface else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         panic!("cylinder geometry");
     };
     let axis = cylinder_surface.axis();
@@ -131,7 +131,7 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
         },
     )
     .expect("near-unit plane carrier");
-    let SurfaceGeometry::Plane(plane_surface) = plane else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = plane else {
         panic!("plane geometry");
     };
     let normal = plane_surface.normal();
@@ -1159,11 +1159,11 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
     );
     assert!(matches!(
         evidence.surface_geometries.get(&100),
-        Some(SurfaceGeometry::Plane(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
     assert!(matches!(
         evidence.surface_geometries.get(&501),
-        Some(SurfaceGeometry::Plane(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
 }
 
@@ -1180,7 +1180,7 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
     for tag in [100, 501] {
         assert!(matches!(
             evidence.surface_geometries.get(&tag),
-            Some(SurfaceGeometry::Nurbs(surface))
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
                 if surface.u_degree() == 2
                     && surface.v_degree() == 2
                     && surface.u_count() == 3
@@ -1218,7 +1218,7 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
     );
     assert!(matches!(
         evidence.surface_geometries.get(&100),
-        Some(SurfaceGeometry::Nurbs(_))
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
     ));
 }
 

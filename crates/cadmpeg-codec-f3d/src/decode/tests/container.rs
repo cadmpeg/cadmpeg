@@ -21,6 +21,7 @@ use zip::CompressionMethod;
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause
@@ -175,7 +176,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.surfaces.len(), 1);
     let surface = &decoded.ir().model.surfaces[0];
-    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
     let radius = sphere_surface.radius();

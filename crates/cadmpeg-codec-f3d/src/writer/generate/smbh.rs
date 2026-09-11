@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{ShellId, VertexId};
 use cadmpeg_ir::topology::Sense;
 
@@ -469,8 +469,8 @@ fn encode_wire_body_smbh(
 fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
     let model = &target.model;
     for carrier in &model.curves {
-        match *carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-            CurveGeometry::Line(line_curve) => {
+        match carrier.geometry.solved() {
+            Some(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = *line_curve.origin();
                 let direction = *line_curve.direction();
                 native_curve_base(records, "straight")?;
@@ -484,7 +484,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 );
                 native_vector(records, [direction.x, direction.y, direction.z]);
             }
-            CurveGeometry::Circle(circle_curve) => {
+            Some(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = *circle_curve.center();
                 let axis = *circle_curve.axis();
                 let ref_direction = *circle_curve.ref_direction();
@@ -509,7 +509,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 );
                 native_f64(records, 1.0);
             }
-            CurveGeometry::Ellipse(ellipse_curve) => {
+            Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = *ellipse_curve.center();
                 let axis = *ellipse_curve.axis();
                 let major_direction = *ellipse_curve.major_direction();
@@ -540,13 +540,13 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 );
                 native_f64(records, minor_radius / major_radius);
             }
-            CurveGeometry::Nurbs(ref curve) => {
+            Some(SolvedCurveGeometry::Nurbs(ref curve)) => {
                 if !native_procedural_curve(records, target, &carrier.id, curve)? {
                     native_curve_base(records, "intcurve")?;
                     native_nurbs_curve(records, curve)?;
                 }
             }
-            CurveGeometry::Procedural { .. } => {
+            None => {
                 if !native_cacheless_procedural_curve(records, target, &carrier.id)? {
                     return Err(CodecError::malformed(format_args!(
                         "procedural curve carrier {} has no construction",
@@ -554,7 +554,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                     )));
                 }
             }
-            CurveGeometry::Degenerate(degenerate_curve) => {
+            Some(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = *degenerate_curve.point();
                 native_curve_base(records, "degenerate_curve")?;
                 native_point(
@@ -585,7 +585,7 @@ fn encode_face_topology_smbh(
     topology: &NativeGenerationIndex<'_>,
     wire_vertices: WireVerticesValidated<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let model = &target.model;
     let region_ordinals: HashMap<_, _> = model
@@ -1005,8 +1005,8 @@ fn encode_face_topology_smbh(
     }
 
     for surface in &model.surfaces {
-        match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-            SurfaceGeometry::Plane(plane_surface) => {
+        match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = *plane_surface.origin();
                 let normal = *plane_surface.normal();
                 let u_axis = *plane_surface.u_axis();
@@ -1023,7 +1023,7 @@ fn encode_face_topology_smbh(
                 native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
                 records.push(0x0b);
             }
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = *cylinder_surface.origin();
                 let axis = *cylinder_surface.axis();
                 let ref_direction = *cylinder_surface.ref_direction();
@@ -1053,7 +1053,7 @@ fn encode_face_topology_smbh(
                 native_f64(&mut records, radius / LEN_TO_MM);
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            Some(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = *cone_surface.origin();
                 let axis = *cone_surface.axis();
                 let ref_direction = *cone_surface.ref_direction();
@@ -1085,7 +1085,7 @@ fn encode_face_topology_smbh(
                 native_f64(&mut records, radius / LEN_TO_MM);
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Sphere(sphere_surface) => {
+            Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = *sphere_surface.center();
                 let axis = *sphere_surface.axis();
                 let ref_direction = *sphere_surface.ref_direction();
@@ -1107,13 +1107,13 @@ fn encode_face_topology_smbh(
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Nurbs(ref nurbs) => {
+            Some(SolvedSurfaceGeometry::Nurbs(ref nurbs)) => {
                 if !native_procedural_surface(&mut records, target, surface, nurbs)? {
                     native_surface_base(&mut records, "spline")?;
                     native_nurbs_surface(&mut records, nurbs)?;
                 }
             }
-            SurfaceGeometry::Torus(torus_surface) => {
+            Some(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = *torus_surface.center();
                 let axis = *torus_surface.axis();
                 let ref_direction = *torus_surface.ref_direction();
@@ -1137,19 +1137,19 @@ fn encode_face_topology_smbh(
                 );
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Polygonal(_) => {
+            Some(SolvedSurfaceGeometry::Polygonal(_)) => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id
                 )));
             }
-            SurfaceGeometry::Transformed { .. } => {
+            Some(SolvedSurfaceGeometry::Transformed { .. }) => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support transformed surface carrier {}",
                     surface.id
                 )));
             }
-            SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
+            None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
                 if !native_cacheless_procedural_surface(&mut records, target, surface)? {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D face generation does not support surface carrier {}",
@@ -1428,7 +1428,10 @@ fn encode_source_less_edges_vertices_points(
         // and centimeters natively.
         if edge.curve().as_ref().is_some_and(|curve_id| {
             curve_ordinals.get(curve_id).is_some_and(|ordinal| {
-                matches!(model.curves[*ordinal].geometry, CurveGeometry::Line(_))
+                matches!(
+                    model.curves[*ordinal].geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                )
             })
         }) {
             range[0] /= LEN_TO_MM;

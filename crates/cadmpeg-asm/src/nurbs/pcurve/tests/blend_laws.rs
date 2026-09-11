@@ -272,11 +272,13 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
                 panic!("expected sub-surface")
             };
             assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
-            assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
-            if {
-                let origin = plane_surface.origin();
-                *origin == Point3::new(1.0, -2.0, 3.0)
-            }));
+            assert!(
+                matches!(support, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+                if {
+                    let origin = plane_surface.origin();
+                    *origin == Point3::new(1.0, -2.0, 3.0)
+                })
+            );
             assert_eq!(cache_fit_tolerance, None);
         }
     }
@@ -339,7 +341,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         assert!(
             matches!(decode_rolling_ball_curve(&straight, &mut position, int_width, None),
                             Some(RollingBallSupportCurve {
-                                curve: CurveGeometry::Line(line_curve),
+                                curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                                 parameter_range: [Some(-2.0), Some(3.0)],
                             }) if {
                                 let origin = line_curve.origin();
@@ -363,7 +365,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         assert!(matches!(
             decode_rolling_ball_curve(&intcurve, &mut position, int_width, None),
             Some(RollingBallSupportCurve {
-                curve: CurveGeometry::Nurbs(curve),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
         }) if curve.degree() == 1
         ));
@@ -396,7 +398,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
                 Some((&active, &tables)),
             ),
             Some(RollingBallSupportCurve {
-                curve: CurveGeometry::Nurbs(curve),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
         }) if curve.degree() == 1
         ));
@@ -422,7 +424,7 @@ fn rolling_ball_surfaces_decode_framed_spline_supports() {
         assert!(matches!(
             decode_rolling_ball_surface(&bytes, &mut position, int_width, None),
             Some((
-                SurfaceGeometry::Nurbs(surface),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],
             ))
         if surface.u_degree() == 1 && surface.v_degree() == 1

@@ -2,6 +2,7 @@
 //! Record-decoder tests for the `consolidated` family over synthetic byte fixtures.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
@@ -1042,7 +1043,7 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         1
     );
     assert!(decoded.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Line(line_curve)
+        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
                 if {
                     let origin = line_curve.origin();
         let direction = line_curve.direction();

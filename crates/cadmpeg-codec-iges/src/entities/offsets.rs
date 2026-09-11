@@ -12,7 +12,7 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
-    ProceduralCurveDefinition,
+    ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -44,23 +44,23 @@ fn placed_offset_source(
 ) -> Option<CurveGeometry> {
     let orientation = transform_orientation(transform)?;
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     transform.apply_point(*origin),
                     unit_vector(transform.apply_vector(*direction))?,
                 )
                 .ok()?,
-            ))
+            )))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     transform.apply_point(*center),
                     unit_vector(transform.apply_vector(*axis))?.scale(orientation),
@@ -68,7 +68,7 @@ fn placed_offset_source(
                     radius,
                 )
                 .ok()?,
-            ))
+            )))
         }
         _ => None,
     }
@@ -168,7 +168,7 @@ fn source_parameter_map(
 fn source_parameter_range(
     ir: &CadIr,
     source_id: &CurveId,
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     tolerance: f64,
 ) -> Option<[f64; 2]> {
     let point_position = |vertex: &VertexId| {
@@ -194,8 +194,8 @@ fn source_parameter_range(
             let range = edge.param_range()?;
             let start = point_position(&edge.start)?;
             let end = point_position(&edge.end)?;
-            let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
-            let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
+            let evaluated_start = cadmpeg_ir::eval::curve_point_solved(geometry, range[0])?;
+            let evaluated_end = cadmpeg_ir::eval::curve_point_solved(geometry, range[1])?;
             (evaluated_start.distance(start) <= tolerance
                 && evaluated_end.distance(end) <= tolerance)
                 .then_some(range)
@@ -297,13 +297,7 @@ pub(super) fn project(
             .curves
             .iter()
             .find(|curve| curve.id == source_id)
-            .map(|curve| {
-                curve
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&curve.geometry)
-                    .clone()
-            })
+            .and_then(|curve| curve.geometry.solved().cloned())
         else {
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
@@ -369,9 +363,10 @@ pub(super) fn project(
                 }
             };
             let body_transform = transform.body_transform();
-            let Some(placed_source_geometry) =
-                placed_offset_source(&source_geometry, body_transform)
-            else {
+            let Some(placed_source_geometry) = placed_offset_source(
+                &CurveGeometry::Solved(source_geometry.clone()),
+                body_transform,
+            ) else {
                 losses.push(entity_loss(
                     entry,
                     "placed offset source has no exact line or circle carrier",
@@ -389,7 +384,14 @@ pub(super) fn project(
             offset_source_id = crate::ids::curve(
                 &crate::ids::Stem::directory(entry.sequence).tail(crate::ids::Word::PlacedSource),
             );
-            offset_source_geometry = placed_source_geometry.clone();
+            let Some(placed_solved) = placed_source_geometry.solved() else {
+                losses.push(entity_loss(
+                    entry,
+                    "placed offset source has no solved carrier",
+                ));
+                continue;
+            };
+            offset_source_geometry = placed_solved.clone();
         }
         let start = parameter_map.to_neutral(native_start);
         let end = parameter_map.to_neutral(native_end);
@@ -420,7 +422,7 @@ pub(super) fn project(
                 };
                 let distance = distance * factor;
                 let geometry = match &offset_source_geometry {
-                    CurveGeometry::Line(line_curve)
+                    SolvedCurveGeometry::Line(line_curve)
                         if {
                             let direction = line_curve.direction();
                             normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
@@ -438,9 +440,9 @@ pub(super) fn project(
                         ) else {
                             continue;
                         };
-                        CurveGeometry::Line(payload)
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(payload))
                     }
-                    CurveGeometry::Circle(circle_curve)
+                    SolvedCurveGeometry::Circle(circle_curve)
                         if {
                             let axis = circle_curve.axis();
                             normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
@@ -470,7 +472,7 @@ pub(super) fn project(
                         ) else {
                             continue;
                         };
-                        CurveGeometry::Circle(payload)
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload))
                     }
                     _ => {
                         losses.push(entity_loss(
@@ -535,7 +537,7 @@ pub(super) fn project(
                     control_origin + td1 * control_factor,
                     control_origin + td2 * control_factor,
                 ];
-                let CurveGeometry::Line(line_curve) = &offset_source_geometry else {
+                let SolvedCurveGeometry::Line(line_curve) = &offset_source_geometry else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source has no exact neutral carrier",
@@ -560,17 +562,20 @@ pub(super) fn project(
                     distances[0] + alpha * (distances[1] - distances[0])
                 };
                 let offset_direction = normal.cross(*direction);
-                let Some(source_start) =
-                    cadmpeg_ir::eval::curve_point(&offset_source_geometry, start)
-                else {
+                let Some(source_start) = cadmpeg_ir::eval::curve_point(
+                    &CurveGeometry::Solved(offset_source_geometry.clone()),
+                    start,
+                ) else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source start cannot be evaluated",
                     ));
                     continue;
                 };
-                let Some(source_end) = cadmpeg_ir::eval::curve_point(&offset_source_geometry, end)
-                else {
+                let Some(source_end) = cadmpeg_ir::eval::curve_point(
+                    &CurveGeometry::Solved(offset_source_geometry.clone()),
+                    end,
+                ) else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source end cannot be evaluated",
@@ -592,7 +597,11 @@ pub(super) fn project(
                     losses.push(entity_loss(entry, "linear offset carrier is inconsistent"));
                     continue;
                 };
-                (distances[0], Some(law), CurveGeometry::Nurbs(offset_nurbs))
+                (
+                    distances[0],
+                    Some(law),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(offset_nurbs)),
+                )
             }
             3 => {
                 let Some(function_sequence) = record
@@ -637,10 +646,7 @@ pub(super) fn project(
                     losses.push(entity_loss(entry, "offset function curve is missing"));
                     continue;
                 };
-                let CurveGeometry::Nurbs(function_nurbs) = function
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&function.geometry)
+                let Some(SolvedCurveGeometry::Nurbs(function_nurbs)) = function.geometry.solved()
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -655,7 +661,7 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let CurveGeometry::Line(line_curve) = &offset_source_geometry else {
+                let SolvedCurveGeometry::Line(line_curve) = &offset_source_geometry else {
                     losses.push(entity_loss(
                         entry,
                         "function offset source has no exact neutral carrier",
@@ -724,7 +730,7 @@ pub(super) fn project(
                     };
                     let independent = inverse_parameter(function_parameter);
                     let Some(base) = cadmpeg_ir::eval::curve_point(
-                        &offset_source_geometry,
+                        &CurveGeometry::Solved(offset_source_geometry.clone()),
                         source_parameter(independent),
                     ) else {
                         controls.clear();
@@ -749,13 +755,9 @@ pub(super) fn project(
                     .iter()
                     .map(|value| source_parameter(inverse_parameter(*value)))
                     .collect();
-                let Some(function_start) = cadmpeg_ir::eval::curve_point(
-                    function
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&function.geometry),
-                    function_range[0],
-                ) else {
+                let Some(function_start) =
+                    cadmpeg_ir::eval::curve_point(&function.geometry, function_range[0])
+                else {
                     losses.push(entity_loss(
                         entry,
                         "offset function start cannot be evaluated",
@@ -782,7 +784,11 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                (distance, Some(law), CurveGeometry::Nurbs(offset_nurbs))
+                (
+                    distance,
+                    Some(law),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(offset_nurbs)),
+                )
             }
             _ => {
                 losses.push(entity_loss(entry, "offset curve form is unsupported"));
@@ -850,7 +856,7 @@ pub(super) fn project(
             sequences.record_curve(&offset_source_id, entry.sequence);
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
-                geometry: offset_source_geometry.clone(),
+                geometry: CurveGeometry::Solved(offset_source_geometry.clone()),
                 source_object: Some(match source_object(entry) {
                     Ok(source) => source,
                     Err(error) => {

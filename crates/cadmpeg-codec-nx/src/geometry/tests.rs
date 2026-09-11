@@ -5,7 +5,7 @@
 use crate::decode::emit::decoded_tolerance;
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::*;
 
@@ -107,7 +107,8 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     assert_eq!(crate::geometry::surfaces(&cylinder).len(), 1);
     let geometry = crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0)
         .expect("graph-owned cylinder");
-    let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = geometry
+    else {
         panic!("cylinder")
     };
     let origin = cylinder_surface.origin();

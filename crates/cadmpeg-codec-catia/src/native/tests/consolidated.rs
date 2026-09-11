@@ -2,6 +2,7 @@
 //! Native-namespace tests for consolidated family layouts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use std::io::Cursor;
 
@@ -642,7 +643,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         })
         .expect("transferred revolution directrix");
     assert!(
-        matches!(directrix.geometry, cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
+        matches!(directrix.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
@@ -667,7 +668,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .expect("transferred revolution construction");
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         decoded.ir().model.procedural_surface_owner(&revolution.id) == Some(&surface.id)
-            && matches!(surface.geometry.solved_cache(), Some(cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
+            && matches!(surface.geometry.solved_cache(), Some(SolvedSurfaceGeometry::Torus(torus_surface))
                     if {
                         let center = torus_surface.center();
                         let axis = torus_surface.axis();

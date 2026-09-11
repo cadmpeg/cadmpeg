@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document.xml persistence-graph unit tests.
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use crate::test_support::*;
 use crate::FcstdCodec;
@@ -296,7 +297,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) => {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
@@ -305,7 +306,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         other => panic!("unexpected curve {other:?}"),
     }
     match &result.ir().model.curves[1].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) => {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             assert_eq!(nurbs.degree(), 2);
             assert_eq!(nurbs.control_points().len(), 3);
             assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
@@ -338,7 +339,9 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     assert_eq!(result.ir().model.surfaces.len(), 7);
     match &result.ir().model.surfaces[0].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            plane_surface,
+        )) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -374,7 +377,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
     ));
     match &result.ir().model.surfaces[1].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
             assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
             assert_eq!(nurbs.poles().count(), 4);

@@ -34,7 +34,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, LinearTermination,
 };
-use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -111,7 +111,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         row(42, crate::surface::SurfaceKind::Cone),
         row(43, crate::surface::SurfaceKind::TorusOrSphere),
     ];
-    let cylinder = SurfaceGeometry::Cylinder(
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -119,8 +119,8 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             2.0,
         )
         .expect("valid CylinderSurface fixture"),
-    );
-    let cone = SurfaceGeometry::Cone(
+    ));
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -130,7 +130,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             0.5,
         )
         .expect("valid ConeSurface fixture"),
-    );
+    ));
     assert_eq!(
         analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cone,),
         Some(42)
@@ -195,7 +195,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         generated_surface_id_for_feature(&[wrong_class], 17, 9),
         None
     );
-    let torus = SurfaceGeometry::Torus(
+    let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -204,7 +204,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             1.0,
         )
         .expect("valid TorusSurface fixture"),
-    );
+    ));
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
             &rows,
@@ -1096,7 +1096,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
 
 #[test]
 fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
-    let carrier = SurfaceGeometry::Cylinder(
+    let carrier = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1104,7 +1104,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
             0.3125,
         )
         .expect("valid CylinderSurface fixture"),
-    );
+    ));
     let mut existing = BTreeMap::from([(30, carrier.clone()), (31, carrier.clone())]);
     let sources = vec![vec![10, 11], vec![30, 31]];
 
@@ -1132,7 +1132,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         })
     );
     let mut conflicting_patch = existing.clone();
-    let SurfaceGeometry::Cylinder(cylinder_surface) =
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
         conflicting_patch.get_mut(&31).expect("second patch")
     else {
         unreachable!()

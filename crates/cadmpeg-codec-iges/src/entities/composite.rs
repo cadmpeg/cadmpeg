@@ -11,7 +11,7 @@ use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
-    NurbsCurve, ProceduralCurve, ProceduralCurveDefinition,
+    NurbsCurve, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -318,7 +318,7 @@ fn composite_edge_endpoints_agree(
 fn select_composite_edge(
     ir: &CadIr,
     index: Option<&CompositeIndex>,
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     candidates: &[CompositeEdge],
     tolerance: f64,
 ) -> Option<CompositeEdge> {
@@ -328,7 +328,7 @@ fn select_composite_edge(
             let Some(range) = edge.param_range else {
                 return false;
             };
-            if !matches!(geometry, CurveGeometry::Line(_)) {
+            if !matches!(geometry, SolvedCurveGeometry::Line(_)) {
                 return true;
             }
             let (Some(start), Some(end)) = (
@@ -338,8 +338,8 @@ fn select_composite_edge(
                 return false;
             };
             let (Some(evaluated_start), Some(evaluated_end)) = (
-                cadmpeg_ir::eval::curve_point(geometry, range[0]),
-                cadmpeg_ir::eval::curve_point(geometry, range[1]),
+                cadmpeg_ir::eval::curve_point_solved(geometry, range[0]),
+                cadmpeg_ir::eval::curve_point_solved(geometry, range[1]),
             ) else {
                 return false;
             };
@@ -985,7 +985,7 @@ fn bounded_edge_for_curve(
     select_composite_edge(
         ir,
         index,
-        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        curve.geometry.solved()?,
         &edge_candidates,
         tolerance,
     )
@@ -1025,8 +1025,7 @@ fn bounded_nurbs_for_id(
             .and_then(|position| ir.model.curves.get(*position))?,
         None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
     };
-    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
-    if let CurveGeometry::Composite { segments, .. } = geometry {
+    if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
         let children = segments
             .iter()
             .map(|segment| {
@@ -1055,9 +1054,11 @@ fn bounded_nurbs_for_id(
     }
     let edge = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?;
     let interval = edge.param_range?;
-    match geometry {
-        CurveGeometry::Nurbs(nurbs) => Some((trim_nurbs_to_interval(nurbs, interval)?, interval)),
-        CurveGeometry::Line(_) => Some((
+    match curve.geometry.solved()? {
+        SolvedCurveGeometry::Nurbs(nurbs) => {
+            Some((trim_nurbs_to_interval(nurbs, interval)?, interval))
+        }
+        SolvedCurveGeometry::Line(_) => Some((
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1071,7 +1072,7 @@ fn bounded_nurbs_for_id(
             .ok()?,
             [0.0, 1.0],
         )),
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -1087,7 +1088,7 @@ fn bounded_nurbs_for_id(
             )?;
             Some((nurbs, interval))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -1111,7 +1112,7 @@ fn bounded_nurbs_for_id(
             )?;
             Some((nurbs, interval))
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -1219,7 +1220,7 @@ fn curve_endpoints(
     let edge = select_composite_edge(
         ir,
         Some(index),
-        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        curve.geometry.solved()?,
         candidates,
         tolerance,
     )?;
@@ -1345,10 +1346,10 @@ fn project_native_composite(
     sequences.record_curve(&curve_id, entry.sequence);
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Composite {
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()?,
             self_intersect: None,
-        },
+        }),
         source_object: Some(source_object(entry).ok()?),
     });
     ir.model.edges.push(Edge {
@@ -1761,7 +1762,7 @@ fn project_with_type_130_policy(
         sequences.record_curve(&curve_id, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Nurbs(nurbs),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {

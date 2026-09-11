@@ -8,7 +8,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
@@ -59,14 +61,14 @@ fn edgeless_doc() -> CadIr {
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.coedges.push(Coedge {
@@ -1254,13 +1256,13 @@ fn edge_without_curve_is_reported_and_omitted() {
     .unwrap();
     let curve = Curve {
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     };
     let _ = curve; // silence unused import path
@@ -1343,7 +1345,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     let target = ir.model.faces[0].surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
         if s.id.as_str() == target {
-            s.geometry = SurfaceGeometry::Unknown { record: None };
+            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         }
     }
     let mut buf = Vec::new();
@@ -1389,7 +1391,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         .iter_mut()
         .find(|surface| surface.id == surface_id)
         .unwrap()
-        .geometry = SurfaceGeometry::Polygonal(
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
         cadmpeg_ir::geometry::PolygonalSurface::new(
             vec![
                 Point3::new(0.0, 0.0, 0.0),
@@ -1400,7 +1402,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
             0.1,
         )
         .expect("valid polygonal surface"),
-    );
+    ));
     let report = write_step(
         &polygonal,
         &mut Vec::new(),
@@ -1421,10 +1423,10 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Unknown { record: None }),
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+        basis: Box::new(SolvedCurveGeometry::Unknown { record: None }),
         transform: cadmpeg_ir::transform::Transform::identity(),
-    };
+    });
     let report = write_step(
         &nested_unknown,
         &mut Vec::new(),
@@ -1518,7 +1520,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
 #[test]
 fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1526,7 +1528,7 @@ fn signed_analytic_radius_normalization_is_reported() {
             -2.0,
         )
         .unwrap(),
-    );
+    ));
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1546,7 +1548,7 @@ fn signed_analytic_radius_normalization_is_reported() {
 #[test]
 fn elliptical_cone_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cone(
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1556,7 +1558,7 @@ fn elliptical_cone_reduction_is_reported() {
             0.5,
         )
         .unwrap(),
-    );
+    ));
 
     let mut buf = Vec::new();
     let report = write_step(

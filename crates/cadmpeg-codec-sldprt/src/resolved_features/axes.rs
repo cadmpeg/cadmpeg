@@ -15,7 +15,7 @@ use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{features::FeatureDefinition, scalar::Length};
@@ -1342,28 +1342,28 @@ pub(super) fn common_generated_surface_axis(
     let axes = surfaces
         .iter()
         .filter_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
                 Some((*origin, *axis))
             }
-            SurfaceGeometry::Cone(cone_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 Some((*origin, *axis))
             }
-            SurfaceGeometry::Torus(torus_surface) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
                 Some((*center, *axis))
             }
-            SurfaceGeometry::Plane(_) => None,
-            SurfaceGeometry::Sphere(_) => None,
-            SurfaceGeometry::Nurbs(_) => None,
-            SurfaceGeometry::Polygonal(_) => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => None,
             SurfaceGeometry::Procedural { .. } => None,
-            SurfaceGeometry::Transformed { .. } => None,
-            SurfaceGeometry::Unknown { .. } => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
         })
         .collect::<Vec<_>>();
     let [(origin, direction), ..] = axes.as_slice() else {

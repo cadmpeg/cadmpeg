@@ -12,7 +12,7 @@
 //! decoded by `crate::families::standard::records::decode_curved` has a different layout, endianness,
 //! and axis reconstruction, and keeps its own reader.
 
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::wire::cursor::Cursor;
@@ -65,10 +65,10 @@ pub(crate) fn cylinder_uvr(c: &mut Cursor, origin: Point3) -> Option<(SurfaceGeo
     let axis = u.cross(v).unit()?;
     let ref_direction = u.unit()?;
     Some((
-        SurfaceGeometry::Cylinder(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(origin, axis, ref_direction, radius)
                 .ok()?,
-        ),
+        )),
         radius,
     ))
 }
@@ -80,7 +80,7 @@ pub(crate) fn cylinder_uvr(c: &mut Cursor, origin: Point3) -> Option<(SurfaceGeo
 /// follows the origin; a 24-byte block separates it from the axis. The stored
 /// angle is the complement of the half-angle: `half_angle = π/2 − stored`.
 ///
-/// Returns the built [`SurfaceGeometry::Cone`] together with the radius and
+/// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone)`] together with the radius and
 /// derived half-angle so callers can apply their own guard. Both are finite.
 pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> {
     let origin = c.point3()?;
@@ -91,7 +91,7 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> {
     let radius = c.f64()?;
     let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle;
     Some((
-        SurfaceGeometry::Cone(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::ConeSurface::try_new(
                 origin,
                 axis,
@@ -101,7 +101,7 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> {
                 half_angle,
             )
             .ok()?,
-        ),
+        )),
         radius,
         half_angle,
     ))
@@ -114,7 +114,7 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> {
 /// the reference direction follows the center, a 24-byte block separates it
 /// from the axis, and the two radii follow the axis.
 ///
-/// Returns the built [`SurfaceGeometry::Torus`] together with the major and
+/// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus)`] together with the major and
 /// minor radii so callers can apply their own guard. Both are finite.
 pub(crate) fn torus_ozrr(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> {
     let center = c.point3()?;
@@ -124,7 +124,7 @@ pub(crate) fn torus_ozrr(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> 
     let major_radius = c.f64()?;
     let minor_radius = c.f64()?;
     Some((
-        SurfaceGeometry::Torus(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
             cadmpeg_ir::geometry::TorusSurface::try_new(
                 center,
                 axis,
@@ -133,7 +133,7 @@ pub(crate) fn torus_ozrr(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> 
                 minor_radius,
             )
             .ok()?,
-        ),
+        )),
         major_radius,
         minor_radius,
     ))

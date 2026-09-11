@@ -8,6 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
+    SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Vector3};
@@ -58,7 +59,7 @@ pub(super) fn sphere_great_circle_geometry(
         scale(*direction_x, -phase.sin()),
         scale(*direction_y, phase.cos()),
     );
-    Some(CurveGeometry::Circle(
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             point3(*center),
             vector(plane_axis),
@@ -66,7 +67,7 @@ pub(super) fn sphere_great_circle_geometry(
             radius.abs(),
         )
         .ok()?,
-    ))
+    )))
 }
 
 pub(super) fn sphere_great_circle_pcurve(
@@ -101,7 +102,7 @@ pub(super) fn oriented_line_plan(
     edge_start: [f64; 3],
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
-    let CurveGeometry::Line(line_curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
     let origin = line_curve.origin();
@@ -128,9 +129,9 @@ pub(super) fn oriented_line_plan(
         range = [-range[0], -range[1]];
     }
     Some(CurvePlan {
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(point3(origin), vector(direction)).ok()?,
-        ),
+        )),
         parameter_range: Some(range),
         edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
             Some(cadmpeg_ir::units::PositiveScalar::new(
@@ -183,7 +184,7 @@ pub(super) fn oriented_circle_plan(
         return None;
     }
 
-    let CurveGeometry::Circle(circle_curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
     let center = circle_curve.center();
@@ -199,9 +200,9 @@ pub(super) fn oriented_circle_plan(
         angles
     };
     let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
-    let geometry = CurveGeometry::Circle(
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(*center, axis, ref_direction, radius).ok()?,
-    );
+    ));
     let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));
     let [Some(start), Some(end)] = evaluated else {
         return None;
@@ -260,7 +261,7 @@ pub(super) fn oriented_nurbs_range(
     edge_start: [f64; 3],
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
-    let CurveGeometry::Nurbs(mut curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) = geometry else {
         return None;
     };
     let degree = usize::try_from(curve.degree()).ok()?;
@@ -291,7 +292,7 @@ pub(super) fn oriented_nurbs_range(
     {
         return None;
     }
-    let geometry = CurveGeometry::Nurbs(curve);
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
     let start = curve_point(&geometry, range[0])?;
     let end = curve_point(&geometry, range[1])?;
     let residual = distance([start.x, start.y, start.z], edge_start)
@@ -398,7 +399,7 @@ pub(super) fn lifted_curve_geometry(
             direction_u,
             direction_v,
             ..
-        } => Some(CurveGeometry::Nurbs(
+        } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 pcurve.degree,
                 knots,
@@ -416,7 +417,7 @@ pub(super) fn lifted_curve_geometry(
                 false,
             )
             .ok()?,
-        )),
+        ))),
         B5Surface::Cylinder {
             origin,
             reference_x,
@@ -434,10 +435,10 @@ pub(super) fn lifted_curve_geometry(
                 *angular_scale,
                 *first,
             );
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(point3(line_origin), vector(*axis))
                     .ok()?,
-            ))
+            )))
         }
         B5Surface::Cone {
             apex,
@@ -454,7 +455,7 @@ pub(super) fn lifted_curve_geometry(
                 scale(*direction_x, angle.cos()),
                 scale(*direction_y, angle.sin()),
             );
-            Some(CurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     point3(*apex),
                     vector(add(
@@ -463,7 +464,7 @@ pub(super) fn lifted_curve_geometry(
                     )),
                 )
                 .ok()?,
-            ))
+            )))
         }
         B5Surface::Torus {
             center,
@@ -482,7 +483,7 @@ pub(super) fn lifted_curve_geometry(
                 scale(*direction_x, angle.cos()),
                 scale(*direction_y, angle.sin()),
             );
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*center, scale(radial, *major_radius))),
                     vector(cross(radial, *axis)),
@@ -490,7 +491,7 @@ pub(super) fn lifted_curve_geometry(
                     minor_radius.abs(),
                 )
                 .ok()?,
-            ))
+            )))
         }
         B5Surface::Torus {
             center,
@@ -504,7 +505,7 @@ pub(super) fn lifted_curve_geometry(
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale;
             let signed_radius = major_radius + minor_radius * angle.cos();
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
                     vector(*axis),
@@ -512,7 +513,7 @@ pub(super) fn lifted_curve_geometry(
                     signed_radius.abs(),
                 )
                 .ok()?,
-            ))
+            )))
         }
         B5Surface::Cone {
             apex,
@@ -523,7 +524,7 @@ pub(super) fn lifted_curve_geometry(
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
             let radius = slant * half_angle.sin();
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                     vector(*axis),
@@ -531,7 +532,7 @@ pub(super) fn lifted_curve_geometry(
                     radius.abs(),
                 )
                 .ok()?,
-            ))
+            )))
         }
         B5Surface::Cylinder {
             origin,
@@ -541,7 +542,7 @@ pub(super) fn lifted_curve_geometry(
             ..
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
-            Some(CurveGeometry::Circle(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*origin, scale(*axis, v))),
                     vector(*axis),
@@ -549,9 +550,11 @@ pub(super) fn lifted_curve_geometry(
                     radius.abs(),
                 )
                 .ok()?,
-            ))
+            )))
         }
-        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface).map(CurveGeometry::Nurbs),
+        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface)
+            .map(SolvedCurveGeometry::Nurbs)
+            .map(CurveGeometry::Solved),
         B5Surface::Revolution { .. } => None,
     }
 }

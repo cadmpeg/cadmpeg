@@ -13,7 +13,7 @@ use cadmpeg_ir::codec::write::{ExportBody, WritePath};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -206,7 +206,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                         edge.id, curve_id
                     ))
                 })?;
-            let geometry = flatten_curve(&curve.geometry)?;
+            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+            })?)?;
             let span = edge_span(ir, edge, &geometry)?;
             append_curve_entity(
                 &mut entities,
@@ -232,7 +234,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_curves.contains(curve.id.as_str()) {
                 continue;
             }
-            let geometry = flatten_curve(&curve.geometry)?;
+            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+            })?)?;
             append_curve_entity(
                 &mut entities,
                 ir,
@@ -285,10 +289,10 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
         (matches!(
             surface.geometry,
-            SurfaceGeometry::Cylinder(_)
-                | SurfaceGeometry::Cone(_)
-                | SurfaceGeometry::Sphere(_)
-                | SurfaceGeometry::Torus(_)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
         )) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
     }) {
         return Err(CodecError::NotImplemented(format!(
@@ -485,15 +489,16 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         ) {
             continue;
         }
-        let geometry = surface.geometry.solved_cache().unwrap_or(&surface.geometry);
         if !matches!(
-            geometry,
-            SurfaceGeometry::Plane(_)
-                | SurfaceGeometry::Nurbs(_)
-                | SurfaceGeometry::Cylinder(_)
-                | SurfaceGeometry::Cone(_)
-                | SurfaceGeometry::Sphere(_)
-                | SurfaceGeometry::Torus(_)
+            surface.geometry.solved(),
+            Some(
+                SolvedSurfaceGeometry::Plane(_)
+                    | SolvedSurfaceGeometry::Nurbs(_)
+                    | SolvedSurfaceGeometry::Cylinder(_)
+                    | SolvedSurfaceGeometry::Cone(_)
+                    | SolvedSurfaceGeometry::Sphere(_)
+                    | SolvedSurfaceGeometry::Torus(_)
+            )
         ) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES procedural surface {} has no writable solved carrier",
@@ -522,16 +527,18 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                     procedural.id, owner
                 ))
             })?;
-        let geometry = flatten_curve(&curve.geometry)?;
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        })?)?;
         if !matches!(
             geometry,
-            CurveGeometry::Line(_)
-                | CurveGeometry::Circle(_)
-                | CurveGeometry::Ellipse(_)
-                | CurveGeometry::Parabola(_)
-                | CurveGeometry::Hyperbola(_)
-                | CurveGeometry::Nurbs(_)
-                | CurveGeometry::Polyline(_)
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+                | CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_))
         ) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES procedural curve {} has no writable solved carrier",
@@ -804,26 +811,27 @@ fn validate_brep_topology(
                         ))
                     })?;
                 surface_entities_for_ir(ir, &surface.geometry, 0, version)?;
-                if matches!(surface.geometry, SurfaceGeometry::Cylinder(_))
-                    && face.loops.iter().any(|loop_id| {
-                        let Some(loop_) = loops.get(loop_id.as_str()).copied() else {
-                            return false;
-                        };
-                        loop_.coedges().len() == 2
-                            && loop_
-                                .coedges()
-                                .iter()
-                                .filter_map(|coedge_id| {
-                                    coedges
-                                        .get(coedge_id.as_str())
-                                        .copied()
-                                        .map(|coedge| coedge.edge.as_str())
-                                })
-                                .collect::<std::collections::BTreeSet<_>>()
-                                .len()
-                                == 1
-                    })
-                {
+                if matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                ) && face.loops.iter().any(|loop_id| {
+                    let Some(loop_) = loops.get(loop_id.as_str()).copied() else {
+                        return false;
+                    };
+                    loop_.coedges().len() == 2
+                        && loop_
+                            .coedges()
+                            .iter()
+                            .filter_map(|coedge_id| {
+                                coedges
+                                    .get(coedge_id.as_str())
+                                    .copied()
+                                    .map(|coedge| coedge.edge.as_str())
+                            })
+                            .collect::<std::collections::BTreeSet<_>>()
+                            .len()
+                            == 1
+                }) {
                     return Err(CodecError::NotImplemented(format!(
                         "IGES B-rep writer refuses cylindrical face {} with a boundary loop that repeats one seam edge without axial bounds",
                         face.id
@@ -913,7 +921,12 @@ fn validate_brep_topology(
                                     edge.id, curve_id
                                 ))
                             })?;
-                        let geometry = flatten_curve(&curve.geometry)?;
+                        let geometry =
+                            flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                                CodecError::NotImplemented(
+                                    "IGES curve carrier has no solved geometry".into(),
+                                )
+                            })?)?;
                         let span = edge_span(ir, edge, &geometry)?;
                         for vertex_id in [&edge.start, &edge.end] {
                             let vertex = ir
@@ -1209,7 +1222,9 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                     edge.id, curve_id
                 ))
             })?;
-        let geometry = flatten_curve(&curve.geometry)?;
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        })?)?;
         let span = edge_span(ir, edge, &geometry)?;
         let index = append_curve_entity(
             &mut entities,
@@ -1236,7 +1251,9 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         {
             continue;
         }
-        let geometry = flatten_curve(&curve.geometry)?;
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        })?)?;
         append_curve_entity(
             &mut entities,
             ir,
@@ -1524,7 +1541,9 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                             edge.id, curve_id
                         ))
                     })?;
-                let geometry = flatten_curve(&curve.geometry)?;
+                let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                    CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+                })?)?;
                 let span = edge_span(ir, edge, &geometry)?;
                 let pcurve_entities = pcurve_orientation_context(
                     ir,
@@ -1888,7 +1907,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
 }
 
 fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve) -> bool {
-    let CurveGeometry::Nurbs(curve) = curve else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = curve else {
         return false;
     };
     let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
@@ -1974,7 +1993,9 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
                     edge.id, curve_id
                 ))
             })?;
-        let geometry = flatten_curve(&curve.geometry)?;
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        })?)?;
         let span = edge_span(ir, edge, &geometry)?;
         let index = append_curve_entity(
             &mut entities,
@@ -2003,7 +2024,9 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         {
             continue;
         }
-        let geometry = flatten_curve(&curve.geometry)?;
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        })?)?;
         append_curve_entity(
             &mut entities,
             ir,
@@ -2469,7 +2492,15 @@ fn validate_trimmed_sheet_topology(
                             edge.id, curve_id
                         ))
                     })?;
-                let span = edge_span(ir, edge, &flatten_curve(&curve.geometry)?)?;
+                let span = edge_span(
+                    ir,
+                    edge,
+                    &flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                        CodecError::NotImplemented(
+                            "IGES curve carrier has no solved geometry".into(),
+                        )
+                    })?)?,
+                )?;
                 let start_vertex = ir
                     .model
                     .vertices
@@ -2738,7 +2769,9 @@ fn boundary_entity(
                         edge.id, curve_id
                     ))
                 })?;
-            let geometry = flatten_curve(&curve.geometry)?;
+            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+            })?)?;
             let span = edge_span(ir, edge, &geometry)?;
             pcurve_orientation_context(
                 ir,
@@ -2832,7 +2865,9 @@ fn curve_on_surface_entity(
                     edge.id, curve_id
                 ))
             })?;
-        let geometry = flatten_curve(&curve.geometry)?;
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        })?)?;
         let span = edge_span(ir, edge, &geometry)?;
         let model_index = if coedge.sense == Sense::Forward {
             *edge_indices.get(edge.id.as_str()).ok_or_else(|| {
@@ -3049,7 +3084,13 @@ fn oriented_curve_entity(
     version: crate::IgesVersion,
 ) -> Result<Entity, CodecError> {
     if sense == Sense::Forward {
-        let mut entity = curve_entity(geometry, Some(span), version)?;
+        let mut entity = curve_entity(
+            geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+            })?,
+            Some(span),
+            version,
+        )?;
         entity.status = EntityStatus::PhysicallyDependent;
         return Ok(entity);
     }
@@ -3059,20 +3100,26 @@ fn oriented_curve_entity(
         end: span.start,
     };
     let mut entity = match geometry {
-        CurveGeometry::Line(_) => curve_entity(geometry, Some(&reversed_span), version)?,
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => curve_entity(
+            geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+            })?,
+            Some(&reversed_span),
+            version,
+        )?,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
             };
             curve_entity(
-                &CurveGeometry::Nurbs(reversed),
+                &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
             )?
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -3095,12 +3142,12 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
-                &CurveGeometry::Nurbs(reversed),
+                &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
             )?
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -3125,12 +3172,12 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
-                &CurveGeometry::Nurbs(reversed),
+                &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
             )?
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -3153,12 +3200,12 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
-                &CurveGeometry::Nurbs(reversed),
+                &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
             )?
         }
-        CurveGeometry::Polyline(polyline) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
             let original = NurbsCurve::new(
                 1,
@@ -3174,12 +3221,12 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
-                &CurveGeometry::Nurbs(reversed),
+                &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
             )?
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -3189,7 +3236,7 @@ fn oriented_curve_entity(
             // transverse axis reversed. Emit that equivalent frame with the
             // reflected interval so the Type 104 endpoints follow the
             // reversed coedge without introducing an approximation.
-            let reversed_geometry = CurveGeometry::Hyperbola(
+            let reversed_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                     *center,
                     axis.scale(-1.0),
@@ -3198,7 +3245,7 @@ fn oriented_curve_entity(
                     minor_radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            ));
             let reversed_range = [-span.range[1], -span.range[0]];
             if reversed_range.iter().any(|value| !value.is_finite()) {
                 return Err(CodecError::Malformed(
@@ -3210,7 +3257,13 @@ fn oriented_curve_entity(
                 start: span.end,
                 end: span.start,
             };
-            curve_entity(&reversed_geometry, Some(&reversed_span), version)?
+            curve_entity(
+                reversed_geometry.solved().ok_or_else(|| {
+                    CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+                })?,
+                Some(&reversed_span),
+                version,
+            )?
         }
         _ => {
             return Err(CodecError::NotImplemented(format!(
@@ -3223,13 +3276,13 @@ fn oriented_curve_entity(
 }
 
 fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
-    fn is_line(geometry: &CurveGeometry, depth: usize) -> bool {
+    fn is_line(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
         if depth > 256 {
             return false;
         }
         match geometry {
-            CurveGeometry::Line(_) => true,
-            CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
+            SolvedCurveGeometry::Line(_) => true,
+            SolvedCurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
             _ => false,
         }
     }
@@ -3238,7 +3291,12 @@ fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| is_line(&curve.geometry, 0))
+        .is_some_and(|curve| {
+            curve
+                .geometry
+                .solved()
+                .is_some_and(|geometry| is_line(geometry, 0))
+        })
 }
 
 fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
@@ -3292,7 +3350,9 @@ fn procedural_pcurve_source_map(
                 "IGES procedural surface directrix {directrix} is missing"
             ))
         })?;
-    let geometry = flatten_curve(&source_curve.geometry)?;
+    let geometry = flatten_curve(source_curve.geometry.solved().ok_or_else(|| {
+        CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+    })?)?;
     let carrier_interval =
         construction_carrier_interval(ir, directrix, &geometry, procedural, fallback_interval)?;
     let mut u_map;
@@ -4284,12 +4344,14 @@ fn construction_carrier_interval(
 ) -> Result<[f64; 2], CodecError> {
     match procedural.record_bounds {
         None => {
-            if matches!(geometry, CurveGeometry::Line(_))
-                && ir
-                    .model
-                    .edges
-                    .iter()
-                    .any(|edge| edge.curve().as_ref() == Some(directrix))
+            if matches!(
+                geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+            ) && ir
+                .model
+                .edges
+                .iter()
+                .any(|edge| edge.curve().as_ref() == Some(directrix))
             {
                 curve_reference_span(ir, directrix, geometry).map(|span| span.range)
             } else {
@@ -4398,14 +4460,14 @@ impl AnalyticSurfaceFamily {
     }
 }
 
-fn analytic_surface_family(geometry: &SurfaceGeometry) -> Option<AnalyticSurfaceFamily> {
+fn analytic_surface_family(geometry: &SolvedSurfaceGeometry) -> Option<AnalyticSurfaceFamily> {
     match geometry {
-        SurfaceGeometry::Plane(_) => Some(AnalyticSurfaceFamily::Plane),
-        SurfaceGeometry::Cylinder(_) => Some(AnalyticSurfaceFamily::Cylinder),
-        SurfaceGeometry::Cone(_) => Some(AnalyticSurfaceFamily::Cone),
-        SurfaceGeometry::Sphere(_) => Some(AnalyticSurfaceFamily::Sphere),
-        SurfaceGeometry::Torus(_) => Some(AnalyticSurfaceFamily::Torus),
-        SurfaceGeometry::Nurbs(_) => None,
+        SolvedSurfaceGeometry::Plane(_) => Some(AnalyticSurfaceFamily::Plane),
+        SolvedSurfaceGeometry::Cylinder(_) => Some(AnalyticSurfaceFamily::Cylinder),
+        SolvedSurfaceGeometry::Cone(_) => Some(AnalyticSurfaceFamily::Cone),
+        SolvedSurfaceGeometry::Sphere(_) => Some(AnalyticSurfaceFamily::Sphere),
+        SolvedSurfaceGeometry::Torus(_) => Some(AnalyticSurfaceFamily::Torus),
+        SolvedSurfaceGeometry::Nurbs(_) => None,
         _ => None,
     }
 }
@@ -4435,7 +4497,9 @@ fn surface_entities_for_ir(
     base_index: usize,
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
-    let geometry = geometry.solved_cache().unwrap_or(geometry);
+    if let Some(geometry) = geometry.solved() {
+        return surface_entities(geometry, base_index, version);
+    }
     match geometry {
         SurfaceGeometry::Procedural { construction, .. } => {
             let procedural = ir
@@ -4460,7 +4524,7 @@ fn surface_entities_for_ir(
                 )),
             }
         }
-        _ => surface_entities(geometry, base_index, version),
+        SurfaceGeometry::Solved(geometry) => surface_entities(geometry, base_index, version),
     }
 }
 
@@ -4527,7 +4591,9 @@ fn extrusion_surface_entities(
                 "IGES Type 122 directrix {directrix} is missing"
             ))
         })?;
-    let geometry = flatten_curve(&source_curve.geometry)?;
+    let geometry = flatten_curve(source_curve.geometry.solved().ok_or_else(|| {
+        CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+    })?)?;
     let carrier_interval = construction_carrier_interval(
         ir,
         directrix,
@@ -4535,7 +4601,10 @@ fn extrusion_surface_entities(
         procedural,
         [start_parameter, terminate_parameter],
     )?;
-    let (start, end) = if matches!(&geometry, CurveGeometry::Composite { .. }) {
+    let (start, end) = if matches!(
+        &geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    ) {
         let span = curve_reference_span(ir, directrix, &geometry)?;
         if !same_range(span.range, [start_parameter, terminate_parameter]) {
             return Err(CodecError::NotImplemented(
@@ -4545,7 +4614,10 @@ fn extrusion_surface_entities(
         }
         (span.start, span.end)
     } else {
-        let evaluation_interval = if matches!(&geometry, CurveGeometry::Line(_)) {
+        let evaluation_interval = if matches!(
+            &geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        ) {
             carrier_interval
         } else {
             [start_parameter, terminate_parameter]
@@ -4681,7 +4753,9 @@ fn revolution_surface_entities(
                 "IGES Type 120 generatrix {directrix} is missing"
             ))
         })?;
-    let geometry = flatten_curve(&source_curve.geometry)?;
+    let geometry = flatten_curve(source_curve.geometry.solved().ok_or_else(|| {
+        CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+    })?)?;
     let carrier_interval = construction_carrier_interval(
         ir,
         directrix,
@@ -4689,7 +4763,10 @@ fn revolution_surface_entities(
         procedural,
         [start_parameter, terminate_parameter],
     )?;
-    let evaluation_interval = if matches!(&geometry, CurveGeometry::Line(_)) {
+    let evaluation_interval = if matches!(
+        &geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    ) {
         carrier_interval
     } else {
         [start_parameter, terminate_parameter]
@@ -4704,10 +4781,10 @@ fn revolution_surface_entities(
     ensure_finite_point(end, "Type 120 generatrix terminate")?;
     let axis_direction = unit(*axis_direction, "Type 120 axis direction")?;
     let axis_end = axis_origin.translated(axis_direction, 1.0);
-    let axis_geometry = CurveGeometry::Line(
+    let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(*axis_origin, axis_direction)
             .map_err(cadmpeg_core::CodecError::malformed)?,
-    );
+    ));
     let axis_span = CurveSpan {
         range: [0.0, 1.0],
         start: *axis_origin,
@@ -4722,8 +4799,20 @@ fn revolution_surface_entities(
         .checked_add(1)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok(vec![
-        curve_entity(&axis_geometry, Some(&axis_span), version)?,
-        curve_entity(&geometry, Some(&generatrix_span), version)?,
+        curve_entity(
+            axis_geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+            })?,
+            Some(&axis_span),
+            version,
+        )?,
+        curve_entity(
+            geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+            })?,
+            Some(&generatrix_span),
+            version,
+        )?,
         Entity {
             type_code: 120,
             form: 0,
@@ -4743,14 +4832,14 @@ fn revolution_surface_entities(
 }
 
 fn surface_entities(
-    geometry: &SurfaceGeometry,
+    geometry: &SolvedSurfaceGeometry,
     base_index: usize,
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let analytic_type_code =
         analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
     match geometry {
-        SurfaceGeometry::Plane(plane_surface) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
@@ -4790,8 +4879,8 @@ fn surface_entities(
             });
             Ok(entities)
         }
-        SurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
@@ -4823,7 +4912,7 @@ fn surface_entities(
             entities.push(surface);
             Ok(entities)
         }
-        SurfaceGeometry::Cone(cone_surface) => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -4871,7 +4960,7 @@ fn surface_entities(
             entities.push(surface);
             Ok(entities)
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
@@ -4903,7 +4992,7 @@ fn surface_entities(
             entities.push(surface);
             Ok(entities)
         }
-        SurfaceGeometry::Torus(torus_surface) => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
@@ -5172,7 +5261,7 @@ impl CurveEntityEmitter<'_> {
             )));
         }
         let result = match geometry {
-            CurveGeometry::Composite { segments, .. } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let children = self.append_composite_constituents(segments, sense)?;
                 push_composite_entity_with_reference_offset(
                     self.entities,
@@ -5184,7 +5273,13 @@ impl CurveEntityEmitter<'_> {
             }
             _ => {
                 let mut entity = match sense {
-                    Sense::Forward => curve_entity(geometry, span, self.version)?,
+                    Sense::Forward => curve_entity(
+                        geometry.solved().ok_or_else(|| {
+                            CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+                        })?,
+                        span,
+                        self.version,
+                    )?,
                     Sense::Reversed => {
                         let span = span.ok_or_else(|| {
                             CodecError::NotImplemented(format!(
@@ -5228,14 +5323,16 @@ impl CurveEntityEmitter<'_> {
                         segment.curve
                     ))
                 })?;
-            let child_geometry = flatten_curve(&child.geometry)?;
+            let child_geometry = flatten_curve(child.geometry.solved().ok_or_else(|| {
+                CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+            })?)?;
             let child_sense = match (sense, segment.same_sense) {
                 (Sense::Forward, true) | (Sense::Reversed, false) => Sense::Forward,
                 (Sense::Forward, false) | (Sense::Reversed, true) => Sense::Reversed,
             };
-            if let CurveGeometry::Composite {
+            if let CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: nested, ..
-            } = &child_geometry
+            }) = &child_geometry
             {
                 if !self.active.insert(segment.curve.clone()) {
                     return Err(CodecError::malformed(format_args!(
@@ -5291,7 +5388,7 @@ fn curve_reference_span_inner(
         )));
     }
     let result = match geometry {
-        CurveGeometry::Composite { segments, .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
             let mut child_spans = Vec::with_capacity(segments.len());
             let mut total = 0.0;
             for segment in segments {
@@ -5306,7 +5403,9 @@ fn curve_reference_span_inner(
                             segment.curve
                         ))
                     })?;
-                let child_geometry = flatten_curve(&child.geometry)?;
+                let child_geometry = flatten_curve(child.geometry.solved().ok_or_else(|| {
+                    CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+                })?)?;
                 let child_span =
                     curve_reference_span_inner(ir, &segment.curve, &child_geometry, active)?;
                 let width = child_span.range[1] - child_span.range[0];
@@ -5398,7 +5497,9 @@ fn curve_reference_span_inner(
                 .collect::<Vec<_>>();
             match matching_edges.split_first() {
                 None => {
-                    let range = default_range(geometry)?;
+                    let range = default_range(geometry.solved().ok_or_else(|| {
+                        CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+                    })?)?;
                     let start = curve_point(geometry, range[0]).ok_or_else(|| {
                         CodecError::NotImplemented(format!(
                             "IGES composite child curve {curve_id} has no evaluable start"
@@ -5478,7 +5579,7 @@ fn mark_curve_descendants(
                 "IGES curve reference points to missing curve {curve_id}"
             ))
         })?;
-    if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
+    if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
         for segment in segments {
             mark_curve_descendants(ir, &segment.curve, consumed, active)?;
         }
@@ -5488,7 +5589,10 @@ fn mark_curve_descendants(
 }
 
 fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveSpan, CodecError> {
-    if matches!(geometry, CurveGeometry::Composite { .. }) {
+    if matches!(
+        geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    ) {
         let curve_id = edge.curve().as_ref().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "IGES composite edge {} has no curve reference",
@@ -5515,12 +5619,12 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
     ensure_finite_point(end, &format!("edge {} end", edge.id))?;
     if matches!(
         geometry,
-        CurveGeometry::Circle(_)
-            | CurveGeometry::Ellipse(_)
-            | CurveGeometry::Parabola(_)
-            | CurveGeometry::Hyperbola(_)
-            | CurveGeometry::Nurbs(_)
-            | CurveGeometry::Polyline(_)
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+            | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
+            | CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
+            | CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
+            | CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+            | CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_))
     ) {
         let evaluated_start = curve_point(geometry, range[0]).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -5572,48 +5676,41 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
     Ok(tolerance)
 }
 
-fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
+fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError> {
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => default_range(geometry),
-        CurveGeometry::Circle(_) => Ok([0.0, TAU]),
-        CurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
-        CurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Circle(_) => Ok([0.0, TAU]),
+        SolvedCurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
+        SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
+        SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
             Ok([values.first, values.last])
         }
-        CurveGeometry::Line(_) => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Line(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        CurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        CurveGeometry::Hyperbola(_) => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Hyperbola(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        CurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        CurveGeometry::Composite { .. } => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Composite { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        CurveGeometry::Procedural { .. } => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        CurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
-            "IGES semantic writer requires a finite curve parameter range".into(),
-        )),
-        CurveGeometry::Transformed { .. } => Err(CodecError::Malformed(
+        SolvedCurveGeometry::Transformed { .. } => Err(CodecError::Malformed(
             "IGES transformed curve was not flattened before encoding".into(),
         )),
     }
 }
 
 fn curve_entity(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     span: Option<&CurveSpan>,
     version: crate::IgesVersion,
 ) -> Result<Entity, CodecError> {
@@ -5624,11 +5721,7 @@ fn curve_entity(
         ));
     }
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_entity(geometry, span, version),
-        CurveGeometry::Line(_) => {
+        SolvedCurveGeometry::Line(_) => {
             let span = span.ok_or_else(|| {
                 CodecError::NotImplemented(
                     "IGES semantic writer cannot bound an unreferenced line".into(),
@@ -5652,7 +5745,7 @@ fn curve_entity(
                 transform: None,
             })
         }
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -5687,7 +5780,7 @@ fn curve_entity(
                 transform: Some(placement(*center, reference, y_axis, axis)?),
             })
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -5733,7 +5826,7 @@ fn curve_entity(
                 transform: Some(placement(*center, major, y_axis, axis)?),
             })
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -5764,7 +5857,7 @@ fn curve_entity(
                 transform: Some(placement(*vertex, x_axis, major, axis)?),
             })
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -5802,8 +5895,8 @@ fn curve_entity(
                 transform: Some(placement(*center, major, y_axis, axis)?),
             })
         }
-        CurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
+        SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
             let nurbs = NurbsCurve::new(
                 1,
@@ -5815,19 +5908,16 @@ fn curve_entity(
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(&nurbs, range, "POLYLINE")
         }
-        CurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        CurveGeometry::Composite { .. } => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Composite { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        CurveGeometry::Procedural { .. } => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        CurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
-            "IGES semantic writer does not encode this curve geometry".into(),
-        )),
-        CurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
     }
@@ -6010,13 +6100,9 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
     start.distance(end) <= NURBS_CLOSEDNESS_TOLERANCE * scale
 }
 
-fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
+fn flatten_curve(geometry: &SolvedCurveGeometry) -> Result<CurveGeometry, CodecError> {
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => flatten_curve(geometry),
-        CurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed { basis, transform } => {
             if !transform.is_proper_rigid() {
                 return Err(CodecError::NotImplemented(
                     "IGES semantic writer only applies proper-rigid curve transforms".into(),
@@ -6025,7 +6111,7 @@ fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> 
             let basis = flatten_curve(basis)?;
             apply_rigid_transform(basis, *transform)
         }
-        _ => Ok(geometry.clone()),
+        _ => Ok(CurveGeometry::Solved(geometry.clone())),
     }
 }
 
@@ -6036,23 +6122,23 @@ fn apply_rigid_transform(
     let point = |value: Point3| transform.apply_point(value);
     let vector = |value: Vector3, label: &str| unit(transform.apply_vector(value), label);
     Ok(match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
-            CurveGeometry::Line(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     point(origin),
                     vector(direction, "transformed line direction")?,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            )
+            ))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = *circle_curve.center();
             let axis = *circle_curve.axis();
             let ref_direction = *circle_curve.ref_direction();
             let radius = circle_curve.radius();
-            CurveGeometry::Circle(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point(center),
                     vector(axis, "transformed circle axis")?,
@@ -6060,15 +6146,15 @@ fn apply_rigid_transform(
                     radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            )
+            ))
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = *ellipse_curve.center();
             let axis = *ellipse_curve.axis();
             let major_direction = *ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
-            CurveGeometry::Ellipse(
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
                     point(center),
                     vector(axis, "transformed ellipse axis")?,
@@ -6077,14 +6163,14 @@ fn apply_rigid_transform(
                     minor_radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            )
+            ))
         }
-        CurveGeometry::Parabola(parabola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = *parabola_curve.vertex();
             let axis = *parabola_curve.axis();
             let major_direction = *parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
-            CurveGeometry::Parabola(
+            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaCurve::try_new(
                     point(vertex),
                     vector(axis, "transformed parabola axis")?,
@@ -6092,15 +6178,15 @@ fn apply_rigid_transform(
                     focal_distance,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            )
+            ))
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = *hyperbola_curve.center();
             let axis = *hyperbola_curve.axis();
             let major_direction = *hyperbola_curve.major_direction();
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
-            CurveGeometry::Hyperbola(
+            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                     point(center),
                     vector(axis, "transformed hyperbola axis")?,
@@ -6109,16 +6195,16 @@ fn apply_rigid_transform(
                     minor_radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            )
+            ))
         }
-        CurveGeometry::Degenerate(degenerate_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let value = *degenerate_curve.point();
-            CurveGeometry::Degenerate(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::DegenerateCurve::try_new(point(value))
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-            )
+            ))
         }
-        CurveGeometry::Nurbs(mut nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
                 .edit_control_points(|points| {
                     for control_point in points {
@@ -6128,16 +6214,18 @@ fn apply_rigid_transform(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("transformed NURBS curve: {error}"))
                 })?;
-            CurveGeometry::Nurbs(nurbs)
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
-        CurveGeometry::Polyline(polyline) => CurveGeometry::Polyline(
-            cadmpeg_ir::geometry::PolylineCurve::new(
-                polyline.points().iter().copied().map(point).collect(),
-                polyline.parameters().map(<[f64]>::to_vec),
-                polyline.chordal_deflection(),
-            )
-            .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?,
-        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+                cadmpeg_ir::geometry::PolylineCurve::new(
+                    polyline.points().iter().copied().map(point).collect(),
+                    polyline.parameters().map(<[f64]>::to_vec),
+                    polyline.chordal_deflection(),
+                )
+                .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?,
+            ))
+        }
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "IGES semantic writer cannot flatten curve geometry {other:?}"

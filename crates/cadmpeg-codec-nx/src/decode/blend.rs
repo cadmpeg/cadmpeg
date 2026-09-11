@@ -16,14 +16,14 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point_with_budget, curve_second_derivative_with_budget,
-    curve_tangent_with_budget, model_surface_partials_by_id_with_budget,
-    model_surface_point_by_id_with_budget, pcurve_tangent, pcurve_uv, surface_point_with_budget,
+    curve_point_with_budget, curve_second_derivative_with_budget, curve_tangent_with_budget,
+    model_surface_partials_by_id_with_budget, model_surface_point_by_id_with_budget,
+    pcurve_tangent, pcurve_uv, surface_point_with_budget,
 };
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve,
-    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, NurbsCurve, PcurveGeometry,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -384,24 +384,22 @@ fn blend_surface_parameters_inner(
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
         let seed_u_is_valid = index
             .curves(spine.as_str())
-            .and_then(
-                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                    CurveGeometry::Nurbs(nurbs) => {
-                        let degree = usize::try_from(nurbs.degree()).ok()?;
-                        let count = nurbs.control_points().len();
-                        let lower = *nurbs.knots().get(degree)?;
-                        let upper = *nurbs.knots().get(count)?;
-                        Some(
-                            lower.is_finite()
-                                && upper.is_finite()
-                                && lower < upper
-                                && seed.u >= lower
-                                && seed.u <= upper,
-                        )
-                    }
-                    _ => Some(seed.u.is_finite()),
-                },
-            )
+            .and_then(|curve| match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                    let degree = usize::try_from(nurbs.degree()).ok()?;
+                    let count = nurbs.control_points().len();
+                    let lower = *nurbs.knots().get(degree)?;
+                    let upper = *nurbs.knots().get(count)?;
+                    Some(
+                        lower.is_finite()
+                            && upper.is_finite()
+                            && lower < upper
+                            && seed.u >= lower
+                            && seed.u <= upper,
+                    )
+                }
+                _ => Some(seed.u.is_finite()),
+            })
             .unwrap_or(false);
         if seed_u_is_valid
             && section_domain.contains(seed.v)
@@ -631,8 +629,7 @@ pub(crate) fn blend_surface_parameter_grid_with_index_and_budget(
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     let curve = index.curves(spine.as_str())?;
-    let CurveGeometry::Nurbs(nurbs) = curve.geometry.solved_cache().unwrap_or(&curve.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         return None;
     };
     let degree = usize::try_from(nurbs.degree()).ok()?;
@@ -796,16 +793,16 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let u_domain = index.curves(spine.as_str()).and_then(|curve| {
-        match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-            CurveGeometry::Nurbs(nurbs) => {
+    let u_domain = index
+        .curves(spine.as_str())
+        .and_then(|curve| match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let degree = usize::try_from(nurbs.degree()).ok()?;
                 let count = nurbs.control_points().len();
                 Some([*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?])
             }
             _ => None,
-        }
-    });
+        });
     if let Some(domain) = u_domain {
         parameters.u = parameters.u.clamp(domain[0], domain[1]);
     }
@@ -1261,21 +1258,9 @@ pub(crate) fn blend_surface_u_derivative_with_index_and_budget(
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let carrier = index.curves(spine.as_str())?;
-    let center = curve_point_with_budget(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        u,
-        geometry_budget,
-    )?;
-    let velocity = curve_tangent_with_budget(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        u,
-        geometry_budget,
-    )?;
-    let acceleration = curve_second_derivative_with_budget(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        u,
-        geometry_budget,
-    )?;
+    let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget)?;
+    let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget)?;
+    let acceleration = curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget)?;
     let speed = velocity.norm();
     if !speed.is_finite() || speed == 0.0 {
         return None;
@@ -2763,7 +2748,12 @@ fn spine_contact_point_with_index_and_budget_and_options(
     let support_has_nurbs_parameterization =
         surface_offset_lineage_with_index(index, support, depth + 1)
             .and_then(|(base, _)| index.surfaces(base.as_str()))
-            .is_some_and(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+            .is_some_and(|surface| {
+                matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                )
+            });
     if !support_has_nurbs_parameterization {
         return None;
     }
@@ -3041,14 +3031,16 @@ pub(crate) fn analytic_surface_offset(
     offset: &SurfaceGeometry,
 ) -> Option<f64> {
     match (support, offset) {
-        (SurfaceGeometry::Plane(plane_surface), SurfaceGeometry::Plane(plane_surface_2))
-            if {
-                let support_normal = plane_surface.normal();
-                let support_u = plane_surface.u_axis();
-                let offset_normal = plane_surface_2.normal();
-                let offset_u = plane_surface_2.u_axis();
-                support_normal == offset_normal && support_u == offset_u
-            } =>
+        (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
+        ) if {
+            let support_normal = plane_surface.normal();
+            let support_u = plane_surface.u_axis();
+            let offset_normal = plane_surface_2.normal();
+            let offset_u = plane_surface_2.u_axis();
+            support_normal == offset_normal && support_u == offset_u
+        } =>
         {
             let support_origin = plane_surface.origin();
             let support_normal = plane_surface.normal();
@@ -3079,8 +3071,8 @@ pub(crate) fn analytic_surface_offset(
             (dot_vector(residual, residual) <= tolerance * tolerance).then_some(distance)
         }
         (
-            SurfaceGeometry::Cylinder(cylinder_surface),
-            SurfaceGeometry::Cylinder(cylinder_surface_2),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
         ) if {
             let support_origin = cylinder_surface.origin();
             let support_axis = cylinder_surface.axis();
@@ -3097,22 +3089,24 @@ pub(crate) fn analytic_surface_offset(
             let offset_radius = cylinder_surface_2.radius();
             Some(offset_radius - support_radius)
         }
-        (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2))
-            if {
-                let support_axis = cone_surface.axis();
-                let support_ref = cone_surface.ref_direction();
-                let support_ratio = cone_surface.ratio();
-                let support_angle = cone_surface.half_angle();
-                let offset_axis = cone_surface_2.axis();
-                let offset_ref = cone_surface_2.ref_direction();
-                let offset_ratio = cone_surface_2.ratio();
-                let offset_angle = cone_surface_2.half_angle();
-                support_axis == offset_axis
-                    && support_ref == offset_ref
-                    && support_ratio.to_bits() == 1.0_f64.to_bits()
-                    && offset_ratio.to_bits() == 1.0_f64.to_bits()
-                    && support_angle.to_bits() == offset_angle.to_bits()
-            } =>
+        (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface_2)),
+        ) if {
+            let support_axis = cone_surface.axis();
+            let support_ref = cone_surface.ref_direction();
+            let support_ratio = cone_surface.ratio();
+            let support_angle = cone_surface.half_angle();
+            let offset_axis = cone_surface_2.axis();
+            let offset_ref = cone_surface_2.ref_direction();
+            let offset_ratio = cone_surface_2.ratio();
+            let offset_angle = cone_surface_2.half_angle();
+            support_axis == offset_axis
+                && support_ref == offset_ref
+                && support_ratio.to_bits() == 1.0_f64.to_bits()
+                && offset_ratio.to_bits() == 1.0_f64.to_bits()
+                && support_angle.to_bits() == offset_angle.to_bits()
+        } =>
         {
             let support_origin = cone_surface.origin();
             let support_axis = cone_surface.axis();
@@ -3156,46 +3150,50 @@ pub(crate) fn analytic_surface_offset(
                 && tangent_residual.abs() <= tolerance)
                 .then_some(distance)
         }
-        (SurfaceGeometry::Sphere(sphere_surface), SurfaceGeometry::Sphere(sphere_surface_2))
-            if {
-                let support_center = sphere_surface.center();
-                let support_axis = sphere_surface.axis();
-                let support_ref = sphere_surface.ref_direction();
-                let support_radius = sphere_surface.radius();
-                let offset_center = sphere_surface_2.center();
-                let offset_axis = sphere_surface_2.axis();
-                let offset_ref = sphere_surface_2.ref_direction();
-                let offset_radius = sphere_surface_2.radius();
-                support_center == offset_center
-                    && support_axis == offset_axis
-                    && support_ref == offset_ref
-                    && support_radius.signum().to_bits() == offset_radius.signum().to_bits()
-            } =>
+        (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface_2)),
+        ) if {
+            let support_center = sphere_surface.center();
+            let support_axis = sphere_surface.axis();
+            let support_ref = sphere_surface.ref_direction();
+            let support_radius = sphere_surface.radius();
+            let offset_center = sphere_surface_2.center();
+            let offset_axis = sphere_surface_2.axis();
+            let offset_ref = sphere_surface_2.ref_direction();
+            let offset_radius = sphere_surface_2.radius();
+            support_center == offset_center
+                && support_axis == offset_axis
+                && support_ref == offset_ref
+                && support_radius.signum().to_bits() == offset_radius.signum().to_bits()
+        } =>
         {
             let support_radius = sphere_surface.radius();
             let offset_radius = sphere_surface_2.radius();
             Some((offset_radius - support_radius) * support_radius.signum())
         }
-        (SurfaceGeometry::Torus(torus_surface), SurfaceGeometry::Torus(torus_surface_2))
-            if {
-                let support_center = torus_surface.center();
-                let support_axis = torus_surface.axis();
-                let support_ref = torus_surface.ref_direction();
-                let support_major = torus_surface.major_radius();
-                let support_minor = torus_surface.minor_radius();
-                let offset_center = torus_surface_2.center();
-                let offset_axis = torus_surface_2.axis();
-                let offset_ref = torus_surface_2.ref_direction();
-                let offset_major = torus_surface_2.major_radius();
-                let offset_minor = torus_surface_2.minor_radius();
-                support_center == offset_center
-                    && support_axis == offset_axis
-                    && support_ref == offset_ref
-                    && support_major.to_bits() == offset_major.to_bits()
-                    && support_minor.signum().to_bits() == offset_minor.signum().to_bits()
-                    && support_major > support_minor.abs()
-                    && offset_major > offset_minor.abs()
-            } =>
+        (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface_2)),
+        ) if {
+            let support_center = torus_surface.center();
+            let support_axis = torus_surface.axis();
+            let support_ref = torus_surface.ref_direction();
+            let support_major = torus_surface.major_radius();
+            let support_minor = torus_surface.minor_radius();
+            let offset_center = torus_surface_2.center();
+            let offset_axis = torus_surface_2.axis();
+            let offset_ref = torus_surface_2.ref_direction();
+            let offset_major = torus_surface_2.major_radius();
+            let offset_minor = torus_surface_2.minor_radius();
+            support_center == offset_center
+                && support_axis == offset_axis
+                && support_ref == offset_ref
+                && support_major.to_bits() == offset_major.to_bits()
+                && support_minor.signum().to_bits() == offset_minor.signum().to_bits()
+                && support_major > support_minor.abs()
+                && offset_major > offset_minor.abs()
+        } =>
         {
             let support_minor = torus_surface.minor_radius();
             let offset_minor = torus_surface_2.minor_radius();
@@ -3351,41 +3349,44 @@ fn surface_contact_direction_with_index_and_budget(
         return None;
     }
     let requires_radius_certificate = matches!(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Procedural { .. }
+        &carrier.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            | SurfaceGeometry::Procedural { .. }
     );
-    let parameters = match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
-            nurbs,
+    let parameters = match carrier.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+            nurbs_surface_parameter_within_tolerance_with_budget(
+                nurbs,
+                center,
+                None,
+                radius + tolerance,
+                geometry_budget,
+            )
+        }
+        None => offset_surface_parameters_with_tolerance_with_index_and_budget(
+            index,
+            surface,
             center,
             None,
-            radius + tolerance,
+            Some(radius + tolerance),
             geometry_budget,
-        ),
-        SurfaceGeometry::Procedural { .. } => {
-            offset_surface_parameters_with_tolerance_with_index_and_budget(
+        )
+        .or_else(|| {
+            blend_surface_parameters_inner(
                 index,
                 surface,
                 center,
                 None,
-                Some(radius + tolerance),
+                None,
+                BlendParameterGrid::Disabled,
+                BlendSectionDomain::Canonical,
+                depth + 1,
                 geometry_budget,
             )
-            .or_else(|| {
-                blend_surface_parameters_inner(
-                    index,
-                    surface,
-                    center,
-                    None,
-                    None,
-                    BlendParameterGrid::Disabled,
-                    BlendSectionDomain::Canonical,
-                    depth + 1,
-                    geometry_budget,
-                )
-            })
-        }
-        geometry => analytic_surface_parameters(geometry, center),
+        }),
+        geometry => geometry.and_then(|geometry| {
+            cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, center)
+        }),
     }?;
     let contact = decoded_surface_point_inner_with_budget(
         index,
@@ -3453,11 +3454,7 @@ pub(crate) fn model_curve_point_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     let carrier = index.curves(curve.as_str())?;
-    curve_point_with_budget(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        parameter,
-        geometry_budget,
-    )
+    curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
 }
 
 pub(crate) fn model_curve_tangent_with_index_and_budget(
@@ -3468,7 +3465,7 @@ pub(crate) fn model_curve_tangent_with_index_and_budget(
 ) -> Option<Vector3> {
     let carrier = index.curves(curve.as_str())?;
     unit_vector(curve_tangent_with_budget(
-        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        &carrier.geometry,
         parameter,
         geometry_budget,
     )?)
@@ -3494,8 +3491,8 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
     let carrier = index.curves(curve.as_str())?;
-    match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        CurveGeometry::Line(line_curve) => {
+    match carrier.geometry.solved() {
+        Some(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             Some(
@@ -3504,19 +3501,23 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
                     + (point.z - origin.z) * direction.z,
             )
         }
-        CurveGeometry::Circle(_) => closest_periodic_analytic_curve_parameter_with_budget(
-            carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-            point,
-            seed,
-            geometry_budget,
-        ),
-        CurveGeometry::Ellipse(_) => closest_periodic_analytic_curve_parameter_with_budget(
-            carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-            point,
-            seed,
-            geometry_budget,
-        ),
-        CurveGeometry::Nurbs(nurbs) => {
+        Some(SolvedCurveGeometry::Circle(_)) => {
+            closest_periodic_analytic_curve_parameter_with_budget(
+                carrier.geometry.solved()?,
+                point,
+                seed,
+                geometry_budget,
+            )
+        }
+        Some(SolvedCurveGeometry::Ellipse(_)) => {
+            closest_periodic_analytic_curve_parameter_with_budget(
+                carrier.geometry.solved()?,
+                point,
+                seed,
+                geometry_budget,
+            )
+        }
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
         }
         _ => None,
@@ -3524,19 +3525,19 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
 }
 
 pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
     let (center, axis, reference, ellipse) = match geometry {
-        CurveGeometry::Circle(circle_curve) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             (*center, *axis, *ref_direction, None)
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
@@ -3579,7 +3580,8 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
                 + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         });
     let squared_distance = |parameter| {
-        let position = curve_point_with_budget(geometry, parameter, geometry_budget)?;
+        let position =
+            cadmpeg_ir::eval::curve_point_with_budget_solved(geometry, parameter, geometry_budget)?;
         Some(
             (position.x - point.x).powi(2)
                 + (position.y - point.y).powi(2)

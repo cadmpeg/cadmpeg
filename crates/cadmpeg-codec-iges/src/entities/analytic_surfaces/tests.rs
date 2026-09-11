@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 use std::io::Cursor;
 
@@ -36,32 +37,53 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 .find(|surface| surface.id.as_str() == surface_id)
                 .unwrap();
             match (entity_type, &surface.geometry) {
-                (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface)) => {
+                (
+                    190,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                        plane_surface,
+                    )),
+                ) => {
                     let origin = plane_surface.origin();
                     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
                 }
-                (192, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface))
-                    if {
-                        let radius = cylinder_surface.radius();
-                        radius == 2.0
-                    } => {}
-                (194, cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface))
-                    if {
-                        let radius = cone_surface.radius();
-                        let half_angle = cone_surface.half_angle();
-                        radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15
-                    } => {}
-                (196, cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface))
-                    if {
-                        let radius = sphere_surface.radius();
-                        radius == 2.0
-                    } => {}
-                (198, cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
-                    if {
-                        let major_radius = torus_surface.major_radius();
-                        let minor_radius = torus_surface.minor_radius();
-                        major_radius == 4.0 && minor_radius == 1.0
-                    } => {}
+                (
+                    192,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                        cylinder_surface,
+                    )),
+                ) if {
+                    let radius = cylinder_surface.radius();
+                    radius == 2.0
+                } => {}
+                (
+                    194,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                        cone_surface,
+                    )),
+                ) if {
+                    let radius = cone_surface.radius();
+                    let half_angle = cone_surface.half_angle();
+                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15
+                } => {}
+                (
+                    196,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                        sphere_surface,
+                    )),
+                ) if {
+                    let radius = sphere_surface.radius();
+                    radius == 2.0
+                } => {}
+                (
+                    198,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                        torus_surface,
+                    )),
+                ) if {
+                    let major_radius = torus_surface.major_radius();
+                    let minor_radius = torus_surface.minor_radius();
+                    major_radius == 4.0 && minor_radius == 1.0
+                } => {}
                 _ => panic!(
                     "unexpected type {entity_type} form {form} projection: {:?}",
                     surface.geometry

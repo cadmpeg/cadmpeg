@@ -24,6 +24,7 @@ use crate::records::topology::{
 use crate::records::{DesignBodyBinding, DesignComponentNamingSpace};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1.0e-7;
@@ -8723,11 +8724,17 @@ pub(crate) fn historical_topology(
         .surfaces
         .iter()
         .filter_map(|surface| {
-            use cadmpeg_ir::geometry::SurfaceGeometry;
+            use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
             let radius = match &surface.geometry {
-                SurfaceGeometry::Cylinder(cylinder_surface) => cylinder_surface.radius(),
-                SurfaceGeometry::Sphere(sphere_surface) => sphere_surface.radius(),
-                SurfaceGeometry::Torus(torus_surface) => torus_surface.minor_radius(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+                    cylinder_surface.radius()
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
+                    sphere_surface.radius()
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+                    torus_surface.minor_radius()
+                }
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceRadius {
@@ -8761,8 +8768,7 @@ pub(crate) fn historical_topology(
         .surfaces
         .iter()
         .filter_map(|surface| {
-            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface) =
-                surface.geometry
+            let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
             else {
                 return None;
             };
@@ -8782,7 +8788,7 @@ pub(crate) fn historical_topology(
         .surfaces
         .iter()
         .filter_map(|surface| {
-            let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = surface.geometry
+            let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved()
             else {
                 return None;
             };
@@ -8800,19 +8806,19 @@ pub(crate) fn historical_topology(
         .surfaces
         .iter()
         .filter_map(|surface| {
-            use cadmpeg_ir::geometry::SurfaceGeometry;
+            use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
             let (origin, direction) = match surface.geometry {
-                SurfaceGeometry::Cylinder(cylinder_surface) => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                     let origin = *cylinder_surface.origin();
                     let axis = *cylinder_surface.axis();
                     (origin, axis)
                 }
-                SurfaceGeometry::Cone(cone_surface) => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                     let origin = *cone_surface.origin();
                     let axis = *cone_surface.axis();
                     (origin, axis)
                 }
-                SurfaceGeometry::Torus(torus_surface) => {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                     let center = *torus_surface.center();
                     let axis = *torus_surface.axis();
                     (center, axis)
@@ -8848,19 +8854,19 @@ pub(crate) fn historical_topology(
             .curves
             .iter()
             .filter_map(|curve| {
-                use cadmpeg_ir::geometry::CurveGeometry;
+                use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
                 let (origin, direction) = match curve.geometry {
-                    CurveGeometry::Line(line_curve) => {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                         let origin = *line_curve.origin();
                         let direction = *line_curve.direction();
                         (origin, direction)
                     }
-                    CurveGeometry::Circle(circle_curve) => {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                         let center = *circle_curve.center();
                         let axis = *circle_curve.axis();
                         (center, axis)
                     }
-                    CurveGeometry::Ellipse(ellipse_curve) => {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                         let center = *ellipse_curve.center();
                         let axis = *ellipse_curve.axis();
                         (center, axis)

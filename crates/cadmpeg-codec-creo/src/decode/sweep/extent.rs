@@ -12,7 +12,7 @@ use crate::vecmath::dot;
 use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
-use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
 const EPS_SWEEP_EXTENT_GEOMETRY: f64 = 1.0e-9;
@@ -228,14 +228,14 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     }
                 }
                 [Surface {
-                    geometry: SurfaceGeometry::Plane(_),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)),
                     ..
                 }] => {
                     let plane = reconciled_model_plane(&local_planes, ir, row.id)?;
                     planes.push((plane.origin, plane.normal));
                 }
                 [Surface {
-                    geometry: SurfaceGeometry::Unknown { .. },
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
                     ..
                 }] => {
                     if let Some(plane) = local_planes.get(&row.id) {
@@ -247,11 +247,12 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             CylinderExtentSurface::Carrier => {
                 match surfaces.as_slice() {
                     [Surface {
-                        geometry: SurfaceGeometry::Unknown { .. },
+                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
                         ..
                     }] => {}
                     [Surface {
-                        geometry: SurfaceGeometry::Cylinder(cylinder_surface),
+                        geometry:
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
                         ..
                     }] => {
                         let origin = cylinder_surface.origin();
@@ -481,11 +482,11 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                 let plane = match surfaces.as_slice() {
                     []
                     | [Surface {
-                        geometry: SurfaceGeometry::Unknown { .. },
+                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
                         ..
                     }] => local_planes.get(&row.id).copied(),
                     [Surface {
-                        geometry: SurfaceGeometry::Plane(_),
+                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)),
                         ..
                     }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
                     _ => return None,
@@ -497,11 +498,11 @@ pub(in super::super) fn generated_nurbs_translation_extent(
             TranslationExtentSurface::Carrier => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
-                    geometry: SurfaceGeometry::Nurbs(nurbs),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                     ..
                 }] => carriers.push(nurbs_translation_span(nurbs)?),
                 [Surface {
-                    geometry: SurfaceGeometry::Unknown { .. },
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
                     ..
                 }] => {}
                 _ => return None,
@@ -714,11 +715,11 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         let plane = match surfaces.as_slice() {
             [] => return None,
             [Surface {
-                geometry: SurfaceGeometry::Unknown { .. },
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
                 ..
             }] => local_planes.get(&row.id).copied(),
             [Surface {
-                geometry: SurfaceGeometry::Plane(_),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)),
                 ..
             }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
             _ => return None,

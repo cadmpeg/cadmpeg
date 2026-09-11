@@ -124,6 +124,7 @@ mod tests {
     use crate::test_support::{
         class_wrapper, line_payload, polyline_payload, LINE_CLASS, POLYLINE_CLASS,
     };
+    use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
     const PLANE_SURFACE: [u8; 16] = [
         0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
@@ -165,7 +166,7 @@ mod tests {
             .expect("required invariant");
         assert!(decoded.model_curve.is_some());
         let crate::curves::DecodedCurve::Leaf {
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(c2),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(c2)),
             ..
         } = decoded.parameter_curve
         else {
@@ -173,7 +174,8 @@ mod tests {
         };
         assert_eq!(c2.control_points()[1].x, 1.0);
         let Some(crate::curves::DecodedCurve::Leaf {
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve),
+            geometry:
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(model_curve)),
             ..
         }) = decoded.model_curve
         else {
@@ -183,7 +185,9 @@ mod tests {
         let DecodedSurface::Typed { geometry, .. } = decoded.surface else {
             panic!("expected typed support surface");
         };
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = geometry.into_geometry()
+        let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            plane_surface,
+        )) = geometry.into_geometry()
         else {
             panic!("expected plane support surface");
         };

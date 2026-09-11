@@ -6,7 +6,7 @@ use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
@@ -43,7 +43,7 @@ pub(in super::super) fn sketch_geometry_endpoints(
         SketchGeometryDefinition::Nurbs { .. } => {
             let nurbs = sketch_nurbs_curve(geometry)?;
             let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
-            let carrier = CurveGeometry::Nurbs(nurbs);
+            let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
             let last = cadmpeg_ir::eval::curve_point(&carrier, upper)?;
             [first.x, first.y]
@@ -790,7 +790,7 @@ pub(in super::super) fn nurbs_profile_polyline(
     tolerance: f64,
 ) -> Option<Vec<[f64; 2]>> {
     let [lower, upper] = nurbs_intrinsic_parameter_range(nurbs)?;
-    let carrier = CurveGeometry::Nurbs(nurbs.clone());
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
     let first = [first.x, first.y];
     let mut points = vec![first];
@@ -837,7 +837,7 @@ pub(in super::super) fn nurbs_profile_signed_area_twice(
 ) -> Option<f64> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
     let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
-    let carrier = CurveGeometry::Nurbs(nurbs.clone());
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let mut area_twice = 0.0;
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);

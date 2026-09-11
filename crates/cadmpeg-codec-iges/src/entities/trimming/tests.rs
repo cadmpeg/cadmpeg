@@ -6,8 +6,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -338,25 +338,25 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     let candidates = vec![
@@ -701,14 +701,14 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
         [0.0, 0.0],
     ]))];
     let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter).unwrap();
-    let plane = SurfaceGeometry::Plane(
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-    );
+    ));
 
     assert_eq!(
         linear_boundary_relationship_is_valid(
@@ -1567,9 +1567,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .unwrap();
-    let SurfaceGeometry::Procedural { construction, .. } =
-        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
-    else {
+    let SurfaceGeometry::Procedural { construction, .. } = &surface.geometry else {
         panic!("expected a procedural revolution surface");
     };
     let procedural = result

@@ -289,7 +289,8 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
 fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface,
-        ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+        ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Vector3};
@@ -314,7 +315,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::new(
                     3,
                     1,
@@ -332,7 +333,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     false,
                 )
                 .expect("valid seeded offset support"),
-            ),
+            )),
             source_object: None,
         },
         Surface {
@@ -345,14 +346,14 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         },
         Surface {
             id: plane.clone(),
-            geometry: SurfaceGeometry::Plane(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.45),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         },
     ]);
@@ -378,7 +379,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     );
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(

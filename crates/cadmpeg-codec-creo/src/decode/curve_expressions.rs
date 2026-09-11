@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -539,7 +541,7 @@ pub(crate) fn transfer_curve_expression_features(
             );
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Unknown { record: None },
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_curve(

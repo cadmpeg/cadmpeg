@@ -12,7 +12,9 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -545,13 +547,13 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
@@ -628,12 +630,12 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: base_id.clone(),
-        geometry: CurveGeometry::Nurbs(test_nurbs(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
-        )),
+        ))),
         source_object: None,
     });
     ir.model.points.extend([
@@ -675,7 +677,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
             CurveId::mint(format!("test:model:curve#composite-{level}")).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: composite_id.clone(),
-            geometry: CurveGeometry::Composite {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
                     CompositeCurveSegment {
                         curve: child_id,
@@ -685,7 +687,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
                 ])
                 .unwrap(),
                 self_intersect: None,
-            },
+            }),
             source_object: None,
         });
         child_id = composite_id;
@@ -710,13 +712,13 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
@@ -804,13 +806,13 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     for (index, end) in [(0, 1.0), (1, 2.0)] {
@@ -871,13 +873,13 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     for id in [bounded.clone(), edgeless.clone()] {
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Line(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None,
         });
     }
@@ -1341,27 +1343,27 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
     ir.model.curves.extend([
         Curve {
             id: first_id.clone(),
-            geometry: CurveGeometry::Nurbs(test_nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), first_end],
                 None,
-            )),
+            ))),
             source_object: None,
         },
         Curve {
             id: second_id.clone(),
-            geometry: CurveGeometry::Nurbs(test_nurbs(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                 None,
-            )),
+            ))),
             source_object: None,
         },
         Curve {
             id: composite_id.clone(),
-            geometry: CurveGeometry::Composite {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
                     CompositeCurveSegment {
                         curve: first_id.clone(),
@@ -1376,7 +1378,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                 ])
                 .unwrap(),
                 self_intersect: None,
-            },
+            }),
             source_object: None,
         },
     ]);
@@ -1460,11 +1462,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) = composite
-        .geometry
-        .solved_cache()
-        .unwrap_or(&composite.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = composite.geometry.solved() else {
         panic!("expected a concatenated NURBS cache");
     };
     assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
@@ -1494,11 +1492,8 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("Type 102 curve within the Global resolution");
     assert!(matches!(
-        *within_curve
-            .geometry
-            .solved_cache()
-            .unwrap_or(&within_curve.geometry),
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+        within_curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Nurbs(_))
     ));
     assert!(within_resolution.report().losses.is_empty());
 
@@ -1515,10 +1510,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("degraded Type 102 curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = outside_curve
-        .geometry
-        .solved_cache()
-        .unwrap_or(&outside_curve.geometry)
+    let Some(SolvedCurveGeometry::Composite { segments, .. }) = outside_curve.geometry.solved()
     else {
         panic!("expected retained native Type 102 carrier")
     };
@@ -1550,11 +1542,8 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("Type 102 curve at the Global resolution");
     assert!(matches!(
-        *at_or_beyond_resolution_curve
-            .geometry
-            .solved_cache()
-            .unwrap_or(&at_or_beyond_resolution_curve.geometry),
-        cadmpeg_ir::geometry::CurveGeometry::Composite { .. }
+        at_or_beyond_resolution_curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Composite { .. })
     ));
     assert_eq!(
         at_or_beyond_resolution
@@ -1606,11 +1595,7 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) = composite
-        .geometry
-        .solved_cache()
-        .unwrap_or(&composite.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = composite.geometry.solved() else {
         panic!("expected an exact quadratic composite cache");
     };
     assert_eq!(nurbs.degree(), 2);
@@ -1637,11 +1622,7 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) = composite
-        .geometry
-        .solved_cache()
-        .unwrap_or(&composite.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = composite.geometry.solved() else {
         panic!("expected an exact heterogeneous composite carrier");
     };
     assert_eq!(nurbs.degree(), 2);
@@ -1671,9 +1652,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D7")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-        curve.geometry.solved_cache().unwrap_or(&curve.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         panic!("expected an elevated cubic composite cache");
     };
     assert_eq!(nurbs.degree(), 3);
@@ -1732,11 +1711,8 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("composite curve should be projected after its spline child");
     assert!(matches!(
-        *composite
-            .geometry
-            .solved_cache()
-            .unwrap_or(&composite.geometry),
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+        composite.geometry.solved(),
+        Some(SolvedCurveGeometry::Nurbs(_))
     ));
     assert_eq!(result.report().losses.len(), 2);
     assert!(result.report().losses.iter().any(|loss| {

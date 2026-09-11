@@ -8,7 +8,7 @@
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition,
+    ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -142,7 +142,7 @@ pub(crate) fn reverse_curve_geometry(
         return None;
     }
     match geometry {
-        CurveGeometry::Line(line_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             if !finite_point3(*origin)
@@ -163,13 +163,13 @@ pub(crate) fn reverse_curve_geometry(
                 return None;
             }
             Some((
-                CurveGeometry::Line(
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(origin, direction).ok()?,
-                ),
+                )),
                 [0.0, length],
             ))
         }
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -200,7 +200,7 @@ pub(crate) fn reverse_curve_geometry(
                 return None;
             }
             Some((
-                CurveGeometry::Circle(
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         *center,
                         (*axis).scale(-1.0),
@@ -208,11 +208,11 @@ pub(crate) fn reverse_curve_geometry(
                         radius,
                     )
                     .ok()?,
-                ),
+                )),
                 [0.0, sweep],
             ))
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             if !valid_nurbs_curve(nurbs) {
                 return None;
             }
@@ -230,7 +230,7 @@ pub(crate) fn reverse_curve_geometry(
                 return None;
             }
             Some((
-                CurveGeometry::Nurbs(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     NurbsCurve::new(
                         nurbs.degree(),
                         knots,
@@ -241,7 +241,7 @@ pub(crate) fn reverse_curve_geometry(
                         nurbs.periodic(),
                     )
                     .ok()?,
-                ),
+                )),
                 range,
             ))
         }
@@ -258,9 +258,9 @@ pub(crate) fn canonical_model_curve_range(
         return None;
     }
     match geometry {
-        CurveGeometry::Circle(_) => canonical_periodic_range(range),
-        CurveGeometry::Ellipse(_) => canonical_periodic_range(range),
-        CurveGeometry::Nurbs(nurbs) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => canonical_periodic_range(range),
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => canonical_periodic_range(range),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
             let tolerance = 1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
             if nurbs.periodic() {
@@ -779,6 +779,7 @@ mod tests {
     use cadmpeg_ir::eval::{curve_point, pcurve_uv};
     use cadmpeg_ir::geometry::{
         CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+        SolvedCurveGeometry,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -788,7 +789,7 @@ mod tests {
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
-        let geometry = CurveGeometry::Nurbs(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -797,7 +798,7 @@ mod tests {
                 false,
             )
             .unwrap(),
-        );
+        ));
 
         assert_eq!(
             canonical_model_curve_range(&geometry, [-1.0e-12, 1.0 + 1.0e-12]),
@@ -827,7 +828,7 @@ mod tests {
 
     #[test]
     fn reversed_model_carriers_preserve_endpoint_geometry() {
-        let line = CurveGeometry::Line(
+        let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(2.0, -1.0, 4.0),
                 Vector3::new(3.0, 4.0, -2.0)
@@ -835,8 +836,8 @@ mod tests {
                     .expect("nonzero fixture direction"),
             )
             .expect("valid LineCurve fixture"),
-        );
-        let circle = CurveGeometry::Circle(
+        ));
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(2.0, -1.0, 4.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -844,7 +845,7 @@ mod tests {
                 3.0,
             )
             .expect("valid CircleCurve fixture"),
-        );
+        ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
             let (reversed, reversed_range) =
                 reverse_curve_geometry(&geometry, range).expect("reversible model curve");
@@ -862,7 +863,7 @@ mod tests {
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn reversed_nurbs_preserves_active_subrange() {
-        let geometry = CurveGeometry::Nurbs(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -871,7 +872,7 @@ mod tests {
                 false,
             )
             .unwrap(),
-        );
+        ));
         let range = [0.2, 0.8];
         let (reversed, reversed_range) =
             reverse_curve_geometry(&geometry, range).expect("reversible NURBS");
@@ -1125,13 +1126,13 @@ mod tests {
         );
         assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX]).is_none());
 
-        let model_line = CurveGeometry::Line(
+        let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-        );
+        ));
         assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {

@@ -129,7 +129,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::HolePlacement;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
@@ -176,7 +176,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .expect("identity grammar");
         model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: SurfaceGeometry::Cylinder(
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     Point3::new(ordinal as f64, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -184,7 +184,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     2.55,
                 )
                 .unwrap(),
-            ),
+            )),
             source_object: None::<SourceObjectAssociation>,
         });
         model.faces.push(Face {
@@ -217,7 +217,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .expect("identity grammar");
             model.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Circle(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         Point3::new(ordinal as f64, boundary as f64, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -225,7 +225,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                         2.55,
                     )
                     .unwrap(),
-                ),
+                )),
                 source_object: None,
             });
             model.edges.push(Edge {
@@ -359,7 +359,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             },
         )])
     );
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut single_hole.model.surfaces[1].geometry
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut single_hole.model.surfaces[1].geometry
     else {
         unreachable!()
     };
@@ -389,7 +390,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         )])
     );
     let mut opposite_axis = single_hole.clone();
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut opposite_axis.model.surfaces[1].geometry
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut opposite_axis.model.surfaces[1].geometry
     else {
         unreachable!()
     };
@@ -407,7 +409,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .as_str()
             .starts_with("test:model:entity#bore-curve-1-")
     }) {
-        let CurveGeometry::Circle(circle_curve) = &mut curve.geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut curve.geometry
+        else {
             unreachable!()
         };
         let center = circle_curve.center();
@@ -436,7 +439,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         )])
     );
     let mut different_radii = ir.clone();
-    let SurfaceGeometry::Cylinder(cylinder_surface) =
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
         &mut different_radii.model.surfaces[1].geometry
     else {
         unreachable!()
@@ -455,7 +458,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .as_str()
             .starts_with("test:model:entity#bore-curve-1-")
     }) {
-        let CurveGeometry::Circle(circle_curve) = &mut curve.geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut curve.geometry
+        else {
             unreachable!()
         };
         let center = circle_curve.center();
@@ -507,7 +511,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     )
     .is_empty());
     let mut invalid_boundary = ir.clone();
-    let CurveGeometry::Circle(circle_curve) = &mut invalid_boundary.model.curves[0].geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+        &mut invalid_boundary.model.curves[0].geometry
+    else {
         unreachable!()
     };
     let center = circle_curve.center();
@@ -520,7 +526,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius).unwrap();
     assert!(hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty());
     let mut coincident_boundaries = ir.clone();
-    let CurveGeometry::Circle(circle_curve) = &mut coincident_boundaries.model.curves[1].geometry
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+        &mut coincident_boundaries.model.curves[1].geometry
     else {
         unreachable!()
     };
@@ -536,7 +543,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,).is_empty()
     );
     let mut nonparallel = single_hole.clone();
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut nonparallel.model.surfaces[1].geometry
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut nonparallel.model.surfaces[1].geometry
     else {
         unreachable!()
     };
@@ -613,7 +621,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     ));
     distinct.model.faces[1].shell =
         ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut distinct.model.surfaces[1].geometry
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut distinct.model.surfaces[1].geometry
     else {
         unreachable!()
     };
@@ -631,7 +640,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .as_str()
             .starts_with("test:model:entity#bore-curve-1-")
     }) {
-        let CurveGeometry::Circle(circle_curve) = &mut curve.geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut curve.geometry
+        else {
             unreachable!()
         };
         let center = circle_curve.center();
@@ -715,7 +725,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             ];
             chamfered.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Cone(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                     cadmpeg_ir::geometry::ConeSurface::try_new(
                         Point3::new(bore as f64, end as f64, 0.0),
                         Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
@@ -725,7 +735,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                         std::f64::consts::FRAC_PI_4,
                     )
                     .unwrap(),
-                ),
+                )),
                 source_object: None,
             });
             chamfered.model.shells[0].add_face(face.clone());
@@ -754,7 +764,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 .expect("identity grammar");
                 chamfered.model.curves.push(Curve {
                     id: curve.clone(),
-                    geometry: CurveGeometry::Circle(
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::CircleCurve::try_new(
                             Point3::new(bore as f64, end as f64, 0.0),
                             Vector3::new(0.0, 1.0, 0.0),
@@ -762,7 +772,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                             radius,
                         )
                         .unwrap(),
-                    ),
+                    )),
                     source_object: None,
                 });
                 chamfered.model.edges.push(Edge {
@@ -819,7 +829,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cone(
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::ConeSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -829,7 +839,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 0.0,
             )
             .unwrap(),
-        ),
+        )),
         source_object: None,
     });
     unrelated.model.faces.push(Face {
@@ -851,7 +861,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         super::super::simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut unequal_chamfers = chamfered;
-    let CurveGeometry::Circle(circle_curve) = &mut unequal_chamfers
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut unequal_chamfers
         .model
         .curves
         .last_mut()
@@ -871,7 +881,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     assert!(super::super::simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty());
 
     let mut mismatched = ir;
-    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut mismatched.model.surfaces[1].geometry
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut mismatched.model.surfaces[1].geometry
     else {
         unreachable!()
     };

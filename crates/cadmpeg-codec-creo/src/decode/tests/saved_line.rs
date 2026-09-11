@@ -29,7 +29,9 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::feature::definitions::ScalarLane;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -1776,23 +1778,23 @@ fn placed_extrusion_line_defines_plane() {
     let points = BTreeMap::from([(1, [2.0, 3.0]), (2, [6.0, 3.0])]);
     assert_eq!(
         extruded_segment_surface(&transform, &points, &segment),
-        Some(SurfaceGeometry::Plane(
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 Point3::new(10.0, 22.0, 33.0),
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(0.0, 1.0, 0.0)
             )
             .expect("valid PlaneSurface fixture")
-        ))
+        )))
     );
     assert_eq!(
         placed_section_curve_geometry(&transform, &points, &segment),
-        Some(CurveGeometry::Line(
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(10.0, 22.0, 33.0),
                 Vector3::new(0.0, 1.0, 0.0)
             )
             .expect("valid LineCurve fixture")
-        ))
+        )))
     );
 }

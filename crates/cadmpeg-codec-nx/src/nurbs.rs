@@ -19,7 +19,8 @@ use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use curve_references::CurveDescriptorReferences;
@@ -139,7 +140,7 @@ fn decode_surfaces(
             }
             Some(Surface {
                 pos: node.pos,
-                geometry: SurfaceGeometry::Nurbs(
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::new(
                         descriptor.u_degree as u32,
                         descriptor.v_degree as u32,
@@ -160,7 +161,7 @@ fn decode_surfaces(
                         descriptor.v_periodic,
                     )
                     .ok()?,
-                ),
+                )),
             })
         })
         .collect()
@@ -319,7 +320,7 @@ fn decode_curves(
             }
             Some(Curve {
                 pos: node.pos,
-                geometry: CurveGeometry::Nurbs(
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     NurbsCurve::new(
                         descriptor.basis.degree as u32,
                         knots,
@@ -328,7 +329,7 @@ fn decode_curves(
                         descriptor.basis.periodic,
                     )
                     .ok()?,
-                ),
+                )),
             })
         })
         .collect()

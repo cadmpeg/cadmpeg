@@ -2,7 +2,7 @@
 //! Edge parameter ranges for lines, NURBS, and conics.
 
 use crate::vecmath::normalize;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::super::surfaces::curve_contains_points;
@@ -21,7 +21,7 @@ pub fn orient_line_edge_carrier(
     if !curve_contains_points(geometry, points) {
         return None;
     }
-    let CurveGeometry::Line(line_curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
     let delta: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
@@ -42,7 +42,7 @@ pub fn exact_line_edge_parameter_range(
     if !curve_contains_points(geometry, points) {
         return None;
     }
-    let CurveGeometry::Line(line_curve) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
     let origin = line_curve.origin();
@@ -123,7 +123,7 @@ pub fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
 }
 
 pub fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f64; 3]; 2]> {
-    let CurveGeometry::Nurbs(nurbs) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return None;
     };
     (!nurbs.periodic()).then_some(())?;
@@ -146,7 +146,7 @@ pub fn nonperiodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
-    let CurveGeometry::Nurbs(nurbs) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return None;
     };
     if nurbs.periodic() {
@@ -200,14 +200,14 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
     let range = nonperiodic_nurbs_edge_parameter_range(geometry, points)?;
-    let CurveGeometry::Nurbs(nurbs) = &*geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
         return None;
     };
     let degree = usize::try_from(nurbs.degree()).ok()?;
     let intrinsic_range = nurbs_intrinsic_parameter_range(nurbs)?;
     if degree == 1 {
         let (first, second) = {
-            let CurveGeometry::Nurbs(nurbs) = &*geometry else {
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
                 return None;
             };
             let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
@@ -230,7 +230,7 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
         if first <= second {
             return Some([first, second]);
         }
-        let CurveGeometry::Nurbs(nurbs) = geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
             return None;
         };
         reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
@@ -248,7 +248,7 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
     match point_pair_alignments([first, second], points) {
         [true, false] => Some(range),
         [false, true] => {
-            let CurveGeometry::Nurbs(nurbs) = geometry else {
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
                 return None;
             };
             reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
@@ -277,7 +277,7 @@ pub fn full_periodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     point: [f64; 3],
 ) -> Option<[f64; 2]> {
-    let CurveGeometry::Nurbs(nurbs) = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return None;
     };
     nurbs.periodic().then_some(())?;
@@ -461,7 +461,7 @@ pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEqua
 
 pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
-        CurveGeometry::Parabola(parabola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
@@ -475,7 +475,7 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
                 NonperiodicConicFamily::Parabola,
             )
         }
-        CurveGeometry::Hyperbola(hyperbola_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
@@ -515,7 +515,7 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
 
 pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
     let (center, axis, x_axis, radii) = match geometry {
-        CurveGeometry::Circle(circle_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -527,7 +527,7 @@ pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFra
                 [radius, radius],
             )
         }
-        CurveGeometry::Ellipse(ellipse_curve) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
