@@ -3474,7 +3474,7 @@ fn admit_pcurve_parameter_range(range: [f64; 2]) -> Result<[f64; 2], &'static st
 
 /// The fields carried together by an ASM inline `exp_par_cur` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "PcurveInlineFormWire")]
+#[serde(try_from = "PcurveInlineFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveInlineForm {
     /// Parameterization wrapper reversal.
@@ -3551,7 +3551,7 @@ impl PcurveInlineForm {
 
 /// Pcurve metadata with no ASM inline-record contract.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "PcurveGeneralFormWire")]
+#[serde(try_from = "PcurveGeneralFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
     /// Source wrapper reversal, when stored independently of an ASM tail.
