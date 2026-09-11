@@ -319,7 +319,10 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
                 "direction": {"x": 0.0, "y": 0.0, "z": -1.0}
             }],
             "shape": {
-                "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0},
+                "construction": {
+                    "construction": "form",
+                    "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0}
+                },
                 "diameter": 5.0
             },
             "extent": {"kind": "blind", "length": 10.0}

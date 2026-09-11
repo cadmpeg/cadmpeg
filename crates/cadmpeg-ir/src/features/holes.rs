@@ -44,7 +44,6 @@ impl CounterdrillDiameters {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct HoleShape {
-    #[serde(flatten)]
     construction: HoleConstruction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
@@ -54,11 +53,10 @@ pub struct HoleShape {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HoleShapeWire {
-    kind: HoleKindWire,
-    #[serde(default)]
-    specification: Option<Box<HoleSpecification>>,
+    construction: HoleConstruction,
     #[serde(default)]
     exit_kind: Option<HoleKind>,
     #[serde(default)]
@@ -131,15 +129,17 @@ impl HoleShape {
     }
 }
 
+impl TryFrom<HoleShapeWire> for HoleShape {
+    type Error = &'static str;
+
+    fn try_from(wire: HoleShapeWire) -> Result<Self, Self::Error> {
+        Self::new(wire.construction, wire.exit_kind, wire.diameter)
+    }
+}
+
 impl<'de> Deserialize<'de> for HoleShape {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = HoleShapeWire::deserialize(deserializer)?;
-        let construction = HoleConstruction::try_from(HoleConstructionWire {
-            kind: wire.kind,
-            specification: wire.specification,
-        })
-        .map_err(serde::de::Error::custom)?;
-        Self::new(construction, wire.exit_kind, wire.diameter).map_err(serde::de::Error::custom)
+        Self::try_from(HoleShapeWire::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -205,13 +205,14 @@ pub enum HoleKind {
 /// Mutually exclusive ordinary and source-native threaded hole constructions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HoleConstructionWire", into = "HoleConstructionWire")]
+#[serde(tag = "construction", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HoleConstruction {
     /// Entry treatment with optional named standard sizing or thread metadata.
     Form {
         /// Structural entry treatment.
         kind: HoleKind,
         /// Standard sizing and thread construction, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         specification: Option<Box<HoleSpecification>>,
     },
     /// SLDPRT native thread geometry carried without a named standard specification.
@@ -221,6 +222,7 @@ pub enum HoleConstruction {
         /// Axial length over which the thread is cut.
         thread_depth: PositiveLength,
         /// Thread pitch, when carried independently of a nominal designation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pitch: Option<PositiveLength>,
         /// Included angle of the conical drill point.
         drill_point_angle: InteriorAngle,
@@ -355,13 +357,6 @@ enum HoleKindWire {
         diameter: PositiveLength,
         angle: InteriorAngle,
     },
-    Threaded {
-        major_diameter: PositiveLength,
-        thread_depth: PositiveLength,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pitch: Option<PositiveLength>,
-        drill_point_angle: InteriorAngle,
-    },
     Counterdrill {
         diameter: PositiveLength,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -459,9 +454,6 @@ impl TryFrom<HoleKindWire> for HoleKind {
                 drill_point_angle,
             },
             HoleKindWire::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
-            HoleKindWire::Threaded { .. } => {
-                return Err("threaded hole kind requires a HoleConstruction".to_string())
-            }
             HoleKindWire::Counterdrill {
                 diameter,
                 entry_diameter,
@@ -473,75 +465,6 @@ impl TryFrom<HoleKindWire> for HoleKind {
                 angle,
             },
         })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct HoleConstructionWire {
-    kind: HoleKindWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    specification: Option<Box<HoleSpecification>>,
-}
-
-impl From<HoleConstruction> for HoleConstructionWire {
-    fn from(value: HoleConstruction) -> Self {
-        match value {
-            HoleConstruction::Form {
-                kind,
-                specification,
-            } => Self {
-                kind: kind.into(),
-                specification,
-            },
-            HoleConstruction::NativeThread {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            } => Self {
-                kind: HoleKindWire::Threaded {
-                    major_diameter,
-                    thread_depth,
-                    pitch,
-                    drill_point_angle,
-                },
-                specification: None,
-            },
-        }
-    }
-}
-
-impl TryFrom<HoleConstructionWire> for HoleConstruction {
-    type Error = String;
-
-    fn try_from(value: HoleConstructionWire) -> Result<Self, Self::Error> {
-        match value.kind {
-            HoleKindWire::Threaded {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            } => {
-                if value.specification.is_some() {
-                    return Err(
-                        "a native threaded hole cannot also carry a standard specification"
-                            .to_string(),
-                    );
-                }
-                Ok(Self::NativeThread {
-                    major_diameter,
-                    thread_depth,
-                    pitch,
-                    drill_point_angle,
-                })
-            }
-            kind => Ok(Self::Form {
-                kind: kind.try_into()?,
-                specification: value.specification,
-            }),
-        }
     }
 }
 

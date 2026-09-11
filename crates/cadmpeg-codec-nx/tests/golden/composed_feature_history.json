@@ -627,11 +627,14 @@
                 "kind": "through_all"
               },
               "shape": {
-                "exit_kind": {
-                  "form": "chamfer",
-                  "kind": "unresolved"
+                "construction": {
+                  "construction": "form",
+                  "kind": {
+                    "form": "chamfer",
+                    "kind": "unresolved"
+                  }
                 },
-                "kind": {
+                "exit_kind": {
                   "form": "chamfer",
                   "kind": "unresolved"
                 }
