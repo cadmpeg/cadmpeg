@@ -645,7 +645,9 @@ pub enum SplineSurfaceParameters {
 }
 
 /// Mutually exclusive legacy and revision-gated exact-spline layouts.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
 // Variant payloads retain the native layout as one value without separate heap ownership.
 #[allow(clippy::large_enum_variant)]
 pub enum ExactSpline {
@@ -665,91 +667,6 @@ pub enum ExactSpline {
         /// Required revision-gated form.
         form: RevisionSurfaceForm,
     },
-}
-
-#[derive(Serialize)]
-struct ExactSplineWriteWire<'a> {
-    parameters: SplineSurfaceParameters,
-    extension: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    revision_form: Option<&'a RevisionSurfaceForm>,
-}
-
-#[derive(Deserialize)]
-struct ExactSplineReadWire {
-    parameters: SplineSurfaceParameters,
-    extension: i64,
-    #[serde(default)]
-    revision_form: Option<RevisionSurfaceForm>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the exact-spline wire schema")]
-struct ExactSplineSchemaWire {
-    parameters: SplineSurfaceParameters,
-    extension: i64,
-    revision_form: Option<RevisionSurfaceForm>,
-}
-
-impl Serialize for ExactSpline {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (parameters, extension, revision_form) = match self {
-            Self::Legacy { ranges, extension } => (
-                SplineSurfaceParameters::OrderedRanges { ranges: *ranges },
-                *extension,
-                None,
-            ),
-            Self::Revision {
-                intervals,
-                extension,
-                form,
-            } => (
-                SplineSurfaceParameters::RevisionRanges {
-                    intervals: *intervals,
-                },
-                *extension,
-                Some(form),
-            ),
-        };
-        ExactSplineWriteWire {
-            parameters,
-            extension,
-            revision_form,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ExactSpline {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = ExactSplineReadWire::deserialize(deserializer)?;
-        match (wire.parameters, wire.revision_form) {
-            (SplineSurfaceParameters::OrderedRanges { ranges }, None) => Ok(Self::Legacy {
-                ranges,
-                extension: wire.extension,
-            }),
-            (SplineSurfaceParameters::RevisionRanges { intervals }, Some(form)) => {
-                Ok(Self::Revision {
-                    intervals,
-                    extension: wire.extension,
-                    form,
-                })
-            }
-            (SplineSurfaceParameters::OrderedRanges { .. }, Some(_)) => Err(
-                serde::de::Error::custom("exact spline ordered ranges cannot carry revision_form"),
-            ),
-            (SplineSurfaceParameters::RevisionRanges { .. }, None) => Err(
-                serde::de::Error::custom("exact spline revision ranges require revision_form"),
-            ),
-        }
-    }
 }
 
 /// One component and its native construction scalar.

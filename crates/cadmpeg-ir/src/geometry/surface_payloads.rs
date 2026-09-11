@@ -2,9 +2,6 @@
 //! Checked procedural surface payloads.
 
 #[cfg(feature = "schema")]
-#[cfg(feature = "schema")]
-use super::ExactSplineSchemaWire;
-#[cfg(feature = "schema")]
 use super::OffsetExtensionSchemaWire;
 use super::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, CompoundComponent, CompoundLoftConstruction,
@@ -1008,14 +1005,12 @@ impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
 #[serde(try_from = "ExactSurfacePayloadWire")]
 pub struct ExactSurfacePayload {
     #[serde(flatten)]
-    #[cfg_attr(feature = "schema", schemars(with = "ExactSplineSchemaWire"))]
     spline: ExactSpline,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ExactSurfacePayloadWire {
     #[serde(flatten)]
-    #[cfg_attr(feature = "schema", schemars(with = "ExactSplineSchemaWire"))]
     spline: ExactSpline,
 }
 impl ExactSurfacePayload {
