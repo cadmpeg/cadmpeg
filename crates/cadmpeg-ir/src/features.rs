@@ -1901,7 +1901,6 @@ fn known_body_count(selection: &BodySelection) -> Option<usize> {
         BodySelection::ResolvedSet { members } => Some(members.len()),
         BodySelection::Historical { bodies, .. } => Some(bodies.len()),
         BodySelection::HistoricalSet { members, .. } => Some(members.len()),
-        BodySelection::HistoricalUnorderedSet { selection, .. } => Some(selection.len()),
         BodySelection::Generated { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
     }
@@ -2109,9 +2108,6 @@ fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> boo
             }
             BodySelection::HistoricalSet { state, members } => {
                 Some((state, members.bodies().collect()))
-            }
-            BodySelection::HistoricalUnorderedSet { state, selection } => {
-                Some((state, selection.bodies().iter().collect()))
             }
             _ => None,
         }
@@ -5937,79 +5933,6 @@ where
     }
 }
 
-/// Checked aggregate for historical selections whose native members have no
-/// established body-to-member correspondence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct HistoricalUnorderedBodySelection {
-    bodies: Vec<HistoricalBodyId>,
-    native: Vec<String>,
-}
-
-impl HistoricalUnorderedBodySelection {
-    /// Construct a checked unordered selection while preserving both orders.
-    pub fn try_from_parts(
-        bodies: Vec<HistoricalBodyId>,
-        native: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        if bodies.is_empty() {
-            return Err(BodySelectionError::Empty);
-        }
-        if bodies.len() != native.len() {
-            return Err(BodySelectionError::MismatchedLengths);
-        }
-        if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
-            return Err(BodySelectionError::RepeatedBody);
-        }
-        if native.iter().any(|member| member.trim().is_empty()) {
-            return Err(BodySelectionError::BlankNativeMember);
-        }
-        if native.iter().collect::<HashSet<_>>().len() != native.len() {
-            return Err(BodySelectionError::RepeatedNativeMember);
-        }
-        Ok(Self { bodies, native })
-    }
-
-    /// Historical body identities in deterministic source order.
-    #[must_use]
-    pub fn bodies(&self) -> &[HistoricalBodyId] {
-        &self.bodies
-    }
-
-    /// Native members in their retained source order.
-    #[must_use]
-    pub fn native(&self) -> &[String] {
-        &self.native
-    }
-
-    /// Number of retained bodies and native members.
-    #[must_use]
-    pub const fn len(&self) -> usize {
-        self.bodies.len()
-    }
-
-    /// Whether the checked aggregate is empty.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.bodies.is_empty()
-    }
-}
-
-impl<'de> Deserialize<'de> for HistoricalUnorderedBodySelection {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            bodies: Vec<HistoricalBodyId>,
-            native: Vec<String>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::try_from_parts(wire.bodies, wire.native).map_err(serde::de::Error::custom)
-    }
-}
-
 /// Body operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6052,14 +5975,6 @@ pub enum BodySelection {
         state: FeatureInputTopologyId,
         /// Checked rows in native member order.
         members: BodyMembers<HistoricalBodyId>,
-    },
-    /// Bodies resolved collectively in the containing feature's input topology
-    /// when no body-to-native-member correspondence is established.
-    HistoricalUnorderedSet {
-        /// Input topology containing every selected body.
-        state: FeatureInputTopologyId,
-        /// Checked aggregate retaining both independent source orders.
-        selection: HistoricalUnorderedBodySelection,
     },
     /// Bodies in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.

@@ -817,20 +817,6 @@ fn body_selections_round_trip_through_json() {
             )
             .expect("valid historical body selection rows"),
         },
-        BodySelection::HistoricalUnorderedSet {
-            state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                .expect("valid identity"),
-            selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
-                vec![
-                    HistoricalBodyId::mint("synthetic:history-input:body#0")
-                        .expect("valid identity"),
-                    HistoricalBodyId::mint("synthetic:history-input:body#1")
-                        .expect("valid identity"),
-                ],
-                vec!["body:16".into(), "body:17".into()],
-            )
-            .expect("valid unordered historical body selection"),
-        },
         BodySelection::Native("body:17,body:18".into()),
         BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()].try_into().unwrap()),
     ];

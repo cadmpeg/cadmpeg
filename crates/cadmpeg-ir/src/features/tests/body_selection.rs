@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::features::{BodyMembers, HistoricalUnorderedBodySelection};
+use crate::features::{BodyMembers, BodySelection};
 use crate::ids::{BodyId, HistoricalBodyId};
 
 #[test]
@@ -29,7 +29,7 @@ fn ordered_members_reject_empty_sets_duplicates_and_mismatched_columns() {
 }
 
 #[test]
-fn unordered_members_reject_invalid_collections_without_pairing_their_orders() {
+fn historical_body_members_refuse_the_deleted_parallel_arrays() {
     let a: HistoricalBodyId = "a".try_into().unwrap();
     let b: HistoricalBodyId = "b".try_into().unwrap();
     for (bodies, native) in [
@@ -39,26 +39,45 @@ fn unordered_members_reject_invalid_collections_without_pairing_their_orders() {
         (vec![a.clone(), b.clone()], vec!["a", "a"]),
         (vec![a.clone()], vec![" "]),
     ] {
-        let wire = serde_json::json!({"bodies": bodies, "native": native});
-        assert!(HistoricalUnorderedBodySelection::try_from_parts(
+        assert!(BodyMembers::try_from_parts(
             bodies,
             native.into_iter().map(str::to_owned).collect(),
         )
         .is_err());
-        assert!(serde_json::from_value::<HistoricalUnorderedBodySelection>(wire).is_err());
     }
-    let selection = HistoricalUnorderedBodySelection::try_from_parts(
+
+    let members = BodyMembers::try_from_parts(
         vec![b.clone(), a.clone()],
         vec!["native-first".into(), "native-second".into()],
     )
     .unwrap();
-    assert_eq!(selection.bodies(), [b, a]);
-    assert_eq!(selection.native(), ["native-first", "native-second"]);
+    assert_eq!(members.bodies().collect::<Vec<_>>(), [&b, &a]);
     assert_eq!(
-        serde_json::from_value::<HistoricalUnorderedBodySelection>(
-            serde_json::to_value(&selection).unwrap(),
-        )
-        .unwrap(),
-        selection,
+        members.native().collect::<Vec<_>>(),
+        ["native-first", "native-second"]
     );
+    let selection = BodySelection::HistoricalSet {
+        state: "test:selection:feature_input_topology#state"
+            .try_into()
+            .unwrap(),
+        members,
+    };
+    let wire = serde_json::to_value(&selection).unwrap();
+    assert!(wire["value"].get("bodies").is_none());
+    assert_eq!(
+        serde_json::from_value::<BodySelection>(wire.clone()).unwrap(),
+        selection
+    );
+
+    let mut restated = wire;
+    let value = restated["value"].as_object_mut().unwrap();
+    value.insert("bodies".into(), serde_json::json!(["b", "a"]));
+    value.insert(
+        "native".into(),
+        serde_json::json!(["native-first", "native-second"]),
+    );
+    let error = serde_json::from_value::<BodySelection>(restated)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `bodies`"), "{error}");
 }

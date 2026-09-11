@@ -13,7 +13,7 @@ use crate::CadIr;
 use super::*;
 
 #[test]
-fn historical_body_overlap_ignores_set_ordering_form() {
+fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
 
     let state =
@@ -24,16 +24,16 @@ fn historical_body_overlap_ignores_set_ordering_form() {
         "target".into(),
     )
     .unwrap();
-    let overlapping = BodySelection::HistoricalUnorderedSet {
+    let overlapping = BodySelection::HistoricalSet {
         state: state.clone(),
-        selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
+        members: crate::features::BodyMembers::try_from_parts(
             vec![
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
             ],
             vec!["tool-a".into(), "tool-b".into()],
         )
-        .expect("valid unordered historical body selection"),
+        .expect("valid historical body selection rows"),
     };
     let disjoint = BodySelection::HistoricalSet {
         state,

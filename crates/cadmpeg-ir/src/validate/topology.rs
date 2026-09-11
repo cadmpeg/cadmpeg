@@ -3605,28 +3605,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
-                BodySelection::HistoricalUnorderedSet { state, selection } => {
-                    check_historical_members(
-                        findings,
-                        &feature.id,
-                        (
-                            state,
-                            selection
-                                .bodies()
-                                .iter()
-                                .map(crate::ids::HistoricalBodyId::as_str),
-                        ),
-                        "body",
-                        &input_topologies,
-                        |topology| {
-                            topology
-                                .bodies
-                                .iter()
-                                .map(crate::ids::HistoricalBodyId::as_str)
-                                .collect()
-                        },
-                    );
-                }
                 BodySelection::Generated { bodies, .. } => {
                     if bodies.iter().any(|body| {
                         !feature.dependencies.contains(&body.feature)
