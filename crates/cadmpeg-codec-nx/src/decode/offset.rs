@@ -2427,7 +2427,7 @@ mod tests {
                         None,
                         true,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                         },
                     )
                     .unwrap(),

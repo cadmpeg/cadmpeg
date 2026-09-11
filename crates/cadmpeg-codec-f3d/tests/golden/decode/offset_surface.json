@@ -377,11 +377,11 @@
             "u_sense": 3,
             "v_sense": -4,
             "layout": "legacy",
-            "flags": [
-              true,
-              false,
-              true
-            ]
+            "flags": {
+              "state": "enabled",
+              "secondary": false,
+              "tertiary": true
+            }
           },
           "cache_fit_tolerance": 0.05499999999999999
         }

@@ -108,7 +108,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                     None,
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),
@@ -242,7 +242,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                     None,
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),
@@ -296,7 +296,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                     None,
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),
@@ -1155,7 +1155,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                         None,
                         false,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                         },
                     )
                     .unwrap(),
@@ -1737,7 +1737,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                         Some(0),
                         false,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                         },
                     )
                     .unwrap(),

@@ -1151,7 +1151,7 @@ mod route_tests {
                     Some(1),
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .and_then(|admitted_payload| {

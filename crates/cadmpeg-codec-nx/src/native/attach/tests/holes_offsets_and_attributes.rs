@@ -697,7 +697,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
                     Some(1),
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),
@@ -830,7 +830,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
                     Some(1),
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),
@@ -949,7 +949,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                     Some(1),
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),

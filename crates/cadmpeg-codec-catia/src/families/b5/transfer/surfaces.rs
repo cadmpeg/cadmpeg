@@ -693,7 +693,7 @@ pub(super) fn emit_surfaces(
                 None,
                 false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                 },
             )
             .and_then(|admitted_payload| {

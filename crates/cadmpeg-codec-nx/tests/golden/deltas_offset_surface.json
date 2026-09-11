@@ -103,7 +103,9 @@
           {
             "definition": {
               "distance": 4.5,
-              "flags": [],
+              "flags": {
+                "state": "absent"
+              },
               "kind": "offset",
               "layout": "legacy",
               "linear_support_extension": true,

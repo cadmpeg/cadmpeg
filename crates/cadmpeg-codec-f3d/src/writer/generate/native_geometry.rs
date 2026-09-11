@@ -1070,7 +1070,9 @@ fn native_procedural_surface_definition(
                         bytes.push(0x10);
                         return Ok(true);
                     }
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } => flags.wire_values(),
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } => {
+                        legacy_extension_flag_run(*flags)
+                    }
                 };
                 let u_sense = (*u_sense).ok_or_else(|| {
                     CodecError::NotImplemented(
@@ -6700,5 +6702,21 @@ mod revision_surface_tail_tests {
             fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(0.5).unwrap(),
         };
         assert!(native_revision_tail_head(&mut bytes, "test carrier", &cache, None).is_err());
+    }
+}
+
+/// The pre-revision offset-surface extension gate in its positional native run.
+fn legacy_extension_flag_run(flags: cadmpeg_ir::geometry::LegacyExtensionFlags) -> Vec<bool> {
+    match flags {
+        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {} => Vec::new(),
+        cadmpeg_ir::geometry::LegacyExtensionFlags::Disabled {} => vec![false],
+        cadmpeg_ir::geometry::LegacyExtensionFlags::Enabled {
+            secondary,
+            tertiary,
+        } => {
+            let mut run = vec![true, secondary];
+            run.extend(tertiary);
+            run
+        }
     }
 }
