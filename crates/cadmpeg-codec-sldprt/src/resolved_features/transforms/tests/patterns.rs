@@ -814,7 +814,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 cadmpeg_ir::features::SweepSection::Unresolved(None),
                 Vec::new(),
                 SweepMode::Solid {
-                    op: cadmpeg_ir::features::BooleanKind::Join,
+                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
                 },
             )
             .unwrap(),

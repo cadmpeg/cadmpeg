@@ -215,7 +215,7 @@ pub(crate) fn bind_sweep_operations(
             };
             shape
                 .try_edit(|_, _, mode| {
-                    if *mode != cadmpeg_ir::features::SweepMode::Unresolved {
+                    if !matches!(*mode, cadmpeg_ir::features::SweepMode::Unresolved { .. }) {
                         return;
                     }
                     let Some(history) = feature
@@ -246,15 +246,17 @@ pub(crate) fn bind_sweep_operations(
                     if operations.all(|operation| operation == first) {
                         *mode = match first {
                             BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::BooleanKind::Join,
+                                op: cadmpeg_ir::features::SolidSweepOperation::Join,
                             },
                             BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::BooleanKind::Cut,
+                                op: cadmpeg_ir::features::SolidSweepOperation::Cut,
                             },
                             BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::BooleanKind::Intersect,
+                                op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
                             },
-                            BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::NewBody,
+                            BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::Solid {
+                                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                            },
                             BooleanOp::Unresolved => return,
                         };
                     }

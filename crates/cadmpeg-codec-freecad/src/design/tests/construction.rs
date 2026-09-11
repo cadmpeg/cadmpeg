@@ -887,7 +887,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             allow_multi_profile_faces: Some(true),
             ..
         } if matches!((shape.section(), shape.sections(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Profile(profile), sections, cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Cut,
+                op: cadmpeg_ir::features::SolidSweepOperation::Cut,
             },) if matches!(&**profile, cadmpeg_ir::features::ProfileRef::Sketch(_)) && path.ends_with(":Spine") && sections.len() == 1)));
     assert!(matches!(
         feature("SurfaceSweep").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Sweep {
@@ -898,7 +898,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             transformation: Some(cadmpeg_ir::features::SweepTransformation::Constant),
             linearize: true,
             ..
-        } if matches!((shape.sections(), shape.mode(),), (sections, cadmpeg_ir::features::SweepMode::Surface,) if sections.len() == 1)));
+        } if matches!((shape.sections(), shape.mode(),), (sections, cadmpeg_ir::features::SweepMode::Surface {},) if sections.len() == 1)));
     assert_eq!(feature("Loft").dependencies.len(), 2);
     assert_eq!(feature("Pipe").dependencies.len(), 3);
     assert!(result.report().losses.is_empty());
@@ -1182,7 +1182,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
             linearize: false,
             allow_multi_profile_faces: None,
             ..
-        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::NewBody,))));
+        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
     assert!(matches!(
         definition(&result, "SweepValid"), FeatureDefinition::Sweep {
             shape,
@@ -1191,7 +1191,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
             linearize: true,
             allow_multi_profile_faces: None,
             ..
-        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface,))));
+        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface {},))));
     assert!(matches!(
         definition(&result, "PipeAbsent"), FeatureDefinition::Sweep {
             shape,

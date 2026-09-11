@@ -555,7 +555,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 shape: cadmpeg_ir::features::SweepShape::new(
                     SweepSection::Unresolved(None),
                     Vec::new(),
-                    SweepMode::Unresolved,
+                    SweepMode::Unresolved {},
                 )
                 .unwrap(),
 
@@ -609,10 +609,15 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         FeatureDefinition::Sweep { shape, .. } => shape.mode(),
         _ => unreachable!(),
     });
-    assert_eq!(modes[0], SweepMode::Surface);
-    assert_eq!(modes[1], SweepMode::NewBody);
-    assert_eq!(modes[2], SweepMode::Unresolved);
-    assert_eq!(modes[3], SweepMode::Unresolved);
+    assert_eq!(modes[0], SweepMode::Surface {});
+    assert_eq!(
+        modes[1],
+        SweepMode::Solid {
+            op: cadmpeg_ir::features::SolidSweepOperation::NewBody
+        }
+    );
+    assert_eq!(modes[2], SweepMode::Unresolved {});
+    assert_eq!(modes[3], SweepMode::Unresolved {});
 }
 
 #[test]

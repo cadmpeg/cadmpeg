@@ -641,7 +641,10 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                     path,
                     Some(cadmpeg_ir::features::PathRef::Unresolved(_))
                 ));
-                assert!(matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved));
+                assert!(matches!(
+                    mode,
+                    cadmpeg_ir::features::SweepMode::Unresolved {}
+                ));
             }
             Some("EdgeFillet") => {
                 assert!(matches!(

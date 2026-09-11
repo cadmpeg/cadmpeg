@@ -6970,7 +6970,9 @@ pub(crate) fn project_fixed_sweep(
             ),
             Vec::new(),
             if *operation == DesignExtrudeOperation::NewBody {
-                SweepMode::NewBody
+                SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                }
             } else {
                 SweepMode::Solid {
                     op: fixed_boolean_operation(*operation).try_into().ok()?,
@@ -7157,7 +7159,9 @@ fn project_fixed_pipe(
                 .ok()?,
             }),
             Vec::new(),
-            SweepMode::NewBody,
+            SweepMode::Solid {
+                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            },
         )
         .ok()?,
 

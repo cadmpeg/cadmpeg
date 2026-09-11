@@ -385,7 +385,7 @@ fn encoder_writes_source_less_line_sketches() {
                 cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
                 Vec::new(),
                 cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::BooleanKind::Join,
+                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
                 },
             )
             .unwrap(),

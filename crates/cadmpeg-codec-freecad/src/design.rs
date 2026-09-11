@@ -5018,14 +5018,12 @@ fn sweep_definition(
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .ok()?,
-            if !solid {
-                SweepMode::Surface
-            } else if operation_boolean(kind) == BooleanOp::NewBody {
-                SweepMode::NewBody
-            } else {
+            if solid {
                 SweepMode::Solid {
                     op: operation_boolean(kind).try_into().ok()?,
                 }
+            } else {
+                SweepMode::Surface {}
             },
         )
         .ok()?,

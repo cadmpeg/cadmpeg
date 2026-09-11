@@ -165,7 +165,7 @@ pub(crate) fn project_sweep(
         || feature.xml_tag == "Surface-Sweep"
         || feature.kind == "Surface-Sweep"
     {
-        SweepMode::Surface
+        SweepMode::Surface {}
     } else if feature_input_class(feature, NativeClassKind::Sweep)
         || feature_input_class(feature, NativeClassKind::SweepCut)
     {
@@ -177,7 +177,7 @@ pub(crate) fn project_sweep(
     {
         sweep_mode(op)
     } else {
-        SweepMode::Unresolved
+        SweepMode::Unresolved {}
     };
     let twist = match feature.parameters.get("Twist") {
         Some(value) => Some(Angle::new(parse_angle_rad(value)?)?),
@@ -222,16 +222,18 @@ pub(crate) fn project_sweep(
 
 fn sweep_mode(op: BooleanOp) -> SweepMode {
     match op {
-        BooleanOp::Unresolved => SweepMode::Unresolved,
-        BooleanOp::NewBody => SweepMode::NewBody,
+        BooleanOp::Unresolved => SweepMode::Unresolved {},
+        BooleanOp::NewBody => SweepMode::Solid {
+            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+        },
         BooleanOp::Join => SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanKind::Join,
+            op: cadmpeg_ir::features::SolidSweepOperation::Join,
         },
         BooleanOp::Cut => SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanKind::Cut,
+            op: cadmpeg_ir::features::SolidSweepOperation::Cut,
         },
         BooleanOp::Intersect => SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanKind::Intersect,
+            op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
         },
     }
 }

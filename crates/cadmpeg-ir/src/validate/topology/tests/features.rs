@@ -175,7 +175,9 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
                     ProfileRef::Sketch(sketch.clone()).try_into().unwrap(),
                 ),
                 Vec::new(),
-                crate::features::SweepMode::NewBody,
+                crate::features::SweepMode::Solid {
+                    op: crate::features::SolidSweepOperation::NewBody,
+                },
             )
             .unwrap(),
 
