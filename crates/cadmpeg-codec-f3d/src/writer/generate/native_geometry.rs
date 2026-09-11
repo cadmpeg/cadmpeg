@@ -1530,7 +1530,7 @@ fn native_loft_section(
             }
             native_loft_member_tail(bytes, &member.form);
         }
-        if let Some(path_curve) = &entry.path.curve {
+        if let Some(path_curve) = &entry.path.path {
             let path = native_loft_curve_in_range(target, &path_curve.id, parameter_range)?;
             native_nurbs_curve(bytes, &path)?;
             if let Some(endpoints) = path_curve.endpoints {
@@ -3645,7 +3645,7 @@ fn native_revision_cl_scale(
         }
         native_loft_member_tail(bytes, &member.form);
     }
-    if let Some(path_curve) = &path.curve {
+    if let Some(path_curve) = &path.path {
         let curve = native_loft_curve_in_range(target, &path_curve.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
         if let Some(endpoints) = path_curve.endpoints {

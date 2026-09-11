@@ -653,7 +653,9 @@
                         }
                       ],
                       "path": {
-                        "curve": "f3d:brep:procedural_surface#9:net:0:0:path",
+                        "path": {
+                          "curve": "f3d:brep:procedural_surface#9:net:0:0:path"
+                        },
                         "auxiliaries": [
                           "f3d:brep:procedural_surface#9:net:0:0:auxiliary:0"
                         ],
@@ -720,7 +722,9 @@
                         }
                       ],
                       "path": {
-                        "curve": "f3d:brep:procedural_surface#9:net:1:0:path",
+                        "path": {
+                          "curve": "f3d:brep:procedural_surface#9:net:1:0:path"
+                        },
                         "auxiliaries": [
                           "f3d:brep:procedural_surface#9:net:1:0:auxiliary:0"
                         ],

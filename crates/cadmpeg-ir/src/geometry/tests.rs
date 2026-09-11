@@ -498,30 +498,6 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
 }
 
 #[test]
-fn loft_path_rejects_endpoints_without_a_curve() {
-    let path = crate::geometry::LoftPath {
-        curve: Some(crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId::mint("test:model:curve#path").expect("valid identity"),
-            endpoints: Some([Some(0.0), Some(1.0)]),
-        }),
-        auxiliaries: Vec::new(),
-        flag: 4,
-    };
-    let wire = serde_json::to_value(&path).unwrap();
-    assert_eq!(wire["curve"], "test:model:curve#path");
-    assert_eq!(wire["endpoints"], serde_json::json!([0.0, 1.0]));
-    assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftPath>(wire.clone()).unwrap(),
-        path
-    );
-
-    let mut invalid = wire;
-    invalid.as_object_mut().unwrap().remove("curve");
-    let error = serde_json::from_value::<crate::geometry::LoftPath>(invalid).unwrap_err();
-    assert!(error.to_string().contains("endpoints require a curve"));
-}
-
-#[test]
 fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
     let expression = crate::geometry::LawExpression::Edge {
         curve: crate::geometry::LoftPathCurve {
@@ -816,6 +792,8 @@ mod revision_cache_form;
 mod variable_blend_cache;
 
 mod revision_compound_loft_tail;
+
+mod loft_path;
 
 mod rolling_ball_jet;
 

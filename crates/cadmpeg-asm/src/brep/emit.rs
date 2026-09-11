@@ -815,7 +815,7 @@ fn emit_loft_surface(
                                                 parameter: entry.parameter,
                                                 profile,
                                                 path: cadmpeg_ir::geometry::LoftPath {
-                                                    curve: path_curve,
+                                                    path: path_curve,
                                                     auxiliaries,
                                                     flag: entry.path.flag,
                                                 },
@@ -1502,7 +1502,7 @@ fn emit_net_surface(
                                                 parameter: entry.parameter,
                                                 profile,
                                                 path: cadmpeg_ir::geometry::LoftPath {
-                                                    curve: path,
+                                                    path,
                                                     auxiliaries,
                                                     flag: entry.path.flag,
                                                 },
@@ -2081,7 +2081,7 @@ fn emit_revision_compound_loft_surface(
             })
             .collect();
         cadmpeg_ir::geometry::LoftPath {
-            curve,
+            path: curve,
             auxiliaries,
             flag: path.flag,
         }
