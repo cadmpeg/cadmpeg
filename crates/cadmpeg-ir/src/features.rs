@@ -18,7 +18,7 @@ use crate::scalar::{
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal) => {
@@ -892,31 +892,44 @@ impl<'a> IntoIterator for &'a ConfigurationBodies {
 }
 
 /// A named parametric model variant.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DesignConfiguration {
     /// Globally unique configuration id.
     pub id: ConfigurationId,
     /// Position in the design configuration list.
+    #[serde(default)]
     pub ordinal: u32,
     /// Whether this configuration supplies the document's active model state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub active: bool,
     /// Format-native configuration slot, when distinct from list order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_index: Option<u32>,
     /// Source display name, when established.
+    #[serde(default, skip_serializing_if = "ConfigurationName::is_unresolved")]
     pub name: ConfigurationName,
     /// Material override, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
     /// Configuration-local named values not otherwise represented.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
     /// Configuration-specific source expressions keyed by the overridden parameter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_overrides: BTreeMap<ParameterId, String>,
     /// Bodies present when this configuration is active.
+    #[serde(default, skip_serializing_if = "ConfigurationBodies::is_unresolved")]
     pub bodies: ConfigurationBodies,
     /// Evaluated parameter state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
     /// Evaluated feature operation state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
     /// Identifier of the full-fidelity record in a native namespace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
 }
 
@@ -926,152 +939,6 @@ impl DesignConfiguration {
         self.feature_states
             .iter()
             .filter_map(|(feature, state)| state.evaluation.is_suppressed().then_some(feature))
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub(crate) struct DesignConfigurationReadWire {
-    id: ConfigurationId,
-    #[serde(default)]
-    ordinal: u32,
-    #[serde(default)]
-    active: bool,
-    #[serde(default)]
-    source_index: Option<u32>,
-    #[serde(default)]
-    name: ConfigurationName,
-    #[serde(default)]
-    material: Option<String>,
-    #[serde(default)]
-    properties: BTreeMap<String, String>,
-    #[serde(default)]
-    parameter_overrides: BTreeMap<ParameterId, String>,
-    #[serde(default)]
-    suppressed_features: Vec<FeatureId>,
-    #[serde(default)]
-    bodies: ConfigurationBodies,
-    #[serde(default)]
-    parameter_values: BTreeMap<ParameterId, ParameterValue>,
-    #[serde(default)]
-    feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
-    #[serde(default)]
-    native_ref: Option<String>,
-}
-
-impl DesignConfigurationReadWire {
-    pub(crate) fn into_configuration(self) -> Result<DesignConfiguration, String> {
-        let mut listed = HashSet::new();
-        for feature_id in &self.suppressed_features {
-            if !listed.insert(feature_id.clone()) {
-                return Err(format!(
-                    "configuration repeats suppressed feature `{}`",
-                    feature_id.0
-                ));
-            }
-            let Some(state) = self.feature_states.get(feature_id) else {
-                return Err(format!(
-                    "configuration suppressed feature `{}` has no configuration feature state",
-                    feature_id.0
-                ));
-            };
-            if !state.evaluation.is_suppressed() {
-                return Err(format!(
-                    "configuration suppression disagrees with feature state `{}`",
-                    feature_id.0
-                ));
-            }
-        }
-        if let Some(feature) = self.feature_states.iter().find_map(|(feature, state)| {
-            (state.evaluation.is_suppressed() && !listed.contains(feature)).then_some(feature)
-        }) {
-            return Err(format!(
-                "configuration feature state `{}` is suppressed but absent from suppressed_features",
-                feature.0
-            ));
-        }
-        Ok(DesignConfiguration {
-            id: self.id,
-            ordinal: self.ordinal,
-            active: self.active,
-            source_index: self.source_index,
-            name: self.name,
-            material: self.material,
-            properties: self.properties,
-            parameter_overrides: self.parameter_overrides,
-            bodies: self.bodies,
-            parameter_values: self.parameter_values,
-            feature_states: self.feature_states,
-            native_ref: self.native_ref,
-        })
-    }
-}
-
-impl Serialize for DesignConfiguration {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let suppressed_features = self.suppressed_features().collect::<Vec<_>>();
-        let mut state = serializer.serialize_struct("DesignConfiguration", 13)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("ordinal", &self.ordinal)?;
-        if self.active {
-            state.serialize_field("active", &self.active)?;
-        }
-        if let Some(source_index) = self.source_index {
-            state.serialize_field("source_index", &source_index)?;
-        }
-        if !self.name.is_unresolved() {
-            state.serialize_field("name", &self.name)?;
-        }
-        if let Some(material) = &self.material {
-            state.serialize_field("material", material)?;
-        }
-        if !self.properties.is_empty() {
-            state.serialize_field("properties", &self.properties)?;
-        }
-        if !self.parameter_overrides.is_empty() {
-            state.serialize_field("parameter_overrides", &self.parameter_overrides)?;
-        }
-        if !suppressed_features.is_empty() {
-            state.serialize_field("suppressed_features", &suppressed_features)?;
-        }
-        if !self.bodies.is_unresolved() {
-            state.serialize_field("bodies", &self.bodies)?;
-        }
-        if !self.parameter_values.is_empty() {
-            state.serialize_field("parameter_values", &self.parameter_values)?;
-        }
-        if !self.feature_states.is_empty() {
-            state.serialize_field("feature_states", &self.feature_states)?;
-        }
-        if let Some(native_ref) = &self.native_ref {
-            state.serialize_field("native_ref", native_ref)?;
-        }
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for DesignConfiguration {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        DesignConfigurationReadWire::deserialize(deserializer)?
-            .into_configuration()
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DesignConfiguration {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "DesignConfiguration".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DesignConfigurationReadWire::json_schema(generator)
     }
 }
 
