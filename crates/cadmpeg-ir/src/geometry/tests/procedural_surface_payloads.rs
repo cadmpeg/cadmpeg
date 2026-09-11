@@ -157,7 +157,7 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
         crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
             LawSurfaceConstruction {
                 parameter_ranges: None,
-                primary: LawFormula::Null,
+                primary: LawFormula::Null {},
                 additional: Vec::new(),
                 tail: LawSurfaceTail::Historical {},
                 discontinuities: std::array::from_fn(|_| Vec::new()),

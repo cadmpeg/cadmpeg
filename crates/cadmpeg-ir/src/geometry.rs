@@ -5155,10 +5155,12 @@ impl std::fmt::Display for LawFormulaName {
 }
 
 /// One recursively framed native law formula.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawFormula {
     /// Native `null_law` with no variables.
-    Null,
+    Null {},
     /// Named formula and its ordered recursive variables.
     Named {
         /// Non-sentinel native formula name.
@@ -5173,7 +5175,7 @@ impl LawFormula {
     #[must_use]
     pub fn name(&self) -> &str {
         match self {
-            Self::Null => "null_law",
+            Self::Null {} => "null_law",
             Self::Named { name, .. } => name.as_str(),
         }
     }
@@ -5182,59 +5184,9 @@ impl LawFormula {
     #[must_use]
     pub fn variables(&self) -> &[LawExpression] {
         match self {
-            Self::Null => &[],
+            Self::Null {} => &[],
             Self::Named { variables, .. } => variables,
         }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct LawFormulaWire {
-    name: String,
-    variables: Vec<LawExpression>,
-}
-
-impl Serialize for LawFormula {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("LawFormula", 2)?;
-        state.serialize_field("name", self.name())?;
-        state.serialize_field("variables", self.variables())?;
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for LawFormula {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = LawFormulaWire::deserialize(deserializer)?;
-        match LawFormulaName::new(wire.name) {
-            Some(name) => Ok(Self::Named {
-                name,
-                variables: wire.variables,
-            }),
-            None if wire.variables.is_empty() => Ok(Self::Null),
-            None => Err(serde::de::Error::custom(
-                "null_law formula cannot carry variables",
-            )),
-        }
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LawFormula {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LawFormula".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LawFormulaWire::json_schema(generator)
     }
 }
 

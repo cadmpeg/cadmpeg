@@ -566,7 +566,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     assert_eq!(profile_frame.as_ref().unwrap().0.z, 30.0);
     assert_eq!(origin.z, 60.0);
     assert_eq!(*path_range, [-20.0, 30.0]);
-    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null));
+    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null {}));
     let profile = profile.clone();
     let spine = spine.clone();
 
@@ -904,7 +904,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     assert_eq!((*mode, *first_mode, *formula_mode), (10, 21, 23));
     assert!(matches!(first_law.as_ref(), LawExpression::Double { value } if *value == 2.5));
     assert!(matches!(second_law.as_ref(), LawExpression::Vector { value } if value.z == 3.0));
-    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null));
+    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null {}));
     let bounded_curves = [
         (profile.clone(), *profile_range),
         (spine.clone(), *path_range),

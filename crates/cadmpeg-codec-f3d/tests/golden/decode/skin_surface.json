@@ -482,6 +482,7 @@
               },
               "trailing_parameter": 0.75,
               "formula": {
+                "kind": "named",
                 "name": "skin-law",
                 "variables": [
                   {

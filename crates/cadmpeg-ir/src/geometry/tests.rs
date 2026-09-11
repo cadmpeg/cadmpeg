@@ -517,13 +517,10 @@ fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
 }
 
 #[test]
-fn law_formula_keeps_its_flat_wire_shape_and_rejects_sentinel_payloads() {
-    let null = crate::geometry::LawFormula::Null;
+fn a_law_formula_names_its_variant_with_a_tag() {
+    let null = crate::geometry::LawFormula::Null {};
     let null_wire = serde_json::to_value(&null).unwrap();
-    assert_eq!(
-        null_wire,
-        serde_json::json!({ "name": "null_law", "variables": [] })
-    );
+    assert_eq!(null_wire, serde_json::json!({ "kind": "null" }));
     assert_eq!(
         serde_json::from_value::<crate::geometry::LawFormula>(null_wire).unwrap(),
         null
@@ -537,6 +534,7 @@ fn law_formula_keeps_its_flat_wire_shape_and_rejects_sentinel_payloads() {
     assert_eq!(
         named_wire,
         serde_json::json!({
+            "kind": "named",
             "name": "distance-law",
             "variables": [{ "kind": "double", "value": 2.0 }]
         })
@@ -548,13 +546,21 @@ fn law_formula_keeps_its_flat_wire_shape_and_rejects_sentinel_payloads() {
 
     assert!(crate::geometry::LawFormulaName::new("null_law").is_none());
     let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
-        "name": "null_law",
-        "variables": [{ "kind": "double", "value": 2.0 }]
+        "kind": "null",
+        "variables": []
     }))
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("null_law formula cannot carry variables"));
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("variables"), "{error}");
+
+    let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+        "kind": "named",
+        "name": "null_law",
+        "variables": []
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("null_law"), "{error}");
 }
 
 fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
