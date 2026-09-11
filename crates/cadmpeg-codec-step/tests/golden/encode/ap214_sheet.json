@@ -54,7 +54,6 @@
       "fidelity": {
         "status": "not_provided"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
@@ -67,6 +66,7 @@
         }
       ],
       "notes": [],
+      "payload": "native",
       "target": "step:ap242-e3",
       "write_path": "synthesized"
     }
@@ -126,9 +126,9 @@
       "fidelity": {
         "status": "not_provided"
       },
-      "format": "step",
       "losses": [],
       "notes": [],
+      "payload": "native",
       "target": "step:ap214",
       "write_path": "synthesized"
     }
@@ -188,9 +188,9 @@
       "fidelity": {
         "status": "not_provided"
       },
-      "format": "step",
       "losses": [],
       "notes": [],
+      "payload": "native",
       "target": "step:ap214",
       "write_path": "synthesized"
     }

@@ -7,16 +7,19 @@ use std::fmt;
 use cadmpeg_core::dialect::DialectId;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use super::{LossNote, Severity};
 use crate::codec::write::WritePath as BackendWritePath;
 use crate::document::CensusKey;
 
 /// Entity census and fidelity details from a successful export.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "ExportReportWire"))]
+#[serde(try_from = "ExportReportWire")]
 pub struct ExportReport {
+    #[serde(flatten)]
     identity: ExportIdentity,
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
@@ -28,120 +31,72 @@ pub struct ExportReport {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// What an export report describes: the canonical CADIR document, or one
+/// native dialect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "payload", rename_all = "snake_case", deny_unknown_fields)]
 enum ExportIdentity {
     /// The dialect-free canonical CADIR document.
-    Cadir,
+    Cadir {},
     /// A current native export, identified by its resolved target.
-    Native(DialectId),
+    Native {
+        /// Resolved native dialect written.
+        target: DialectId,
+    },
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ExportReportWire {
-    format: String,
+    #[serde(flatten)]
+    identity: ExportIdentity,
     census: EntityCensus,
     fidelity: FidelityResolution,
     write_path: WritePath,
     losses: Vec<LossNote>,
     notes: Vec<String>,
-    #[serde(default)]
-    target: Option<DialectId>,
 }
 
-impl Serialize for ExportReport {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("ExportReport", 7)?;
-        state.serialize_field("format", self.format())?;
-        state.serialize_field("census", &self.census)?;
-        state.serialize_field("fidelity", &self.fidelity)?;
-        state.serialize_field("write_path", &self.write_path)?;
-        state.serialize_field("losses", &self.losses)?;
-        state.serialize_field("notes", &self.notes)?;
-        state.serialize_field("target", &self.target())?;
-        state.end()
-    }
-}
+impl TryFrom<ExportReportWire> for ExportReport {
+    type Error = &'static str;
 
-impl<'de> Deserialize<'de> for ExportReport {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = ExportReportWire::deserialize(deserializer)?;
-        let identity = match wire.target {
-            Some(target) if wire.format == "cadir" => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "CADIR export report cannot name native dialect {:?}",
-                    target.as_str()
-                )))
-            }
-            Some(target) if target.namespace() == wire.format => ExportIdentity::Native(target),
-            Some(target) => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "format {:?} does not match classified payload format {:?}",
-                    wire.format,
-                    target.namespace(),
-                )))
-            }
-            None if wire.format == "cadir" => ExportIdentity::Cadir,
-            None => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "native export report for format {:?} requires a target",
-                    wire.format
-                )))
-            }
-        };
-        let (write_path, fidelity) = match (wire.write_path, wire.fidelity) {
+    fn try_from(wire: ExportReportWire) -> Result<Self, Self::Error> {
+        match (wire.write_path, &wire.fidelity) {
             (
                 WritePath::VerbatimReplay,
                 FidelityResolution::NotConsumed | FidelityResolution::Degraded { .. },
-            ) => {
-                return Err(serde::de::Error::custom(
-                    "verbatim_replay cannot pair with not_consumed or degraded fidelity",
-                ))
-            }
+            ) => Err("verbatim_replay cannot pair with not_consumed or degraded fidelity"),
             (WritePath::Synthesized, FidelityResolution::Replayed) => {
-                return Err(serde::de::Error::custom(
-                    "synthesized cannot pair with replayed fidelity",
-                ))
+                Err("synthesized cannot pair with replayed fidelity")
             }
-            (write_path, fidelity) => (write_path, fidelity),
-        };
-        Ok(Self {
-            identity,
-            census: wire.census,
-            fidelity,
-            write_path,
-            losses: wire.losses,
-            notes: wire.notes,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ExportReport {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ExportReport".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::ExportReport").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = ExportReportWire::json_schema(generator);
-        crate::schema::require_object_fields(&mut schema, ["target"]);
-        schema
+            _ => Ok(Self {
+                identity: wire.identity,
+                census: wire.census,
+                fidelity: wire.fidelity,
+                write_path: wire.write_path,
+                losses: wire.losses,
+                notes: wire.notes,
+            }),
+        }
     }
 }
 
 #[cfg(all(test, feature = "schema"))]
 mod schema_tests {
     #[test]
-    fn current_export_report_schema_requires_target() {
-        let schema = serde_json::to_value(schemars::schema_for!(super::ExportReport))
-            .expect("export report schema serializes");
-        let required = schema["required"]
+    fn the_native_export_payload_schema_requires_its_target() {
+        let schema = serde_json::to_value(schemars::schema_for!(super::ExportIdentity))
+            .expect("export identity schema serializes");
+        let native = schema["oneOf"]
             .as_array()
-            .expect("export report schema has required fields");
+            .expect("export identity schema is a tagged union")
+            .iter()
+            .find(|arm| arm["properties"]["payload"]["const"] == "native")
+            .expect("the native arm");
+        let required = native["required"]
+            .as_array()
+            .expect("the native arm has required fields");
         assert!(required.iter().any(|field| field == "target"), "{schema:#}");
     }
 }
@@ -245,8 +200,8 @@ impl ExportReport {
     #[must_use]
     pub fn format(&self) -> &str {
         match &self.identity {
-            ExportIdentity::Cadir => "cadir",
-            ExportIdentity::Native(target) => target.namespace(),
+            ExportIdentity::Cadir {} => "cadir",
+            ExportIdentity::Native { target } => target.namespace(),
         }
     }
 
@@ -256,8 +211,8 @@ impl ExportReport {
     #[must_use]
     pub fn target(&self) -> Option<&DialectId> {
         match &self.identity {
-            ExportIdentity::Native(target) => Some(target),
-            ExportIdentity::Cadir => None,
+            ExportIdentity::Native { target } => Some(target),
+            ExportIdentity::Cadir {} => None,
         }
     }
 
@@ -273,7 +228,7 @@ impl ExportReport {
     ) -> Self {
         let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
-            identity: ExportIdentity::Cadir,
+            identity: ExportIdentity::Cadir {},
             census,
             fidelity,
             write_path,
@@ -295,7 +250,7 @@ impl ExportReport {
     ) -> Self {
         let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
-            identity: ExportIdentity::Native(target),
+            identity: ExportIdentity::Native { target },
             census,
             fidelity,
             write_path,

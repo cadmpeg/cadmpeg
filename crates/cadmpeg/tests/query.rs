@@ -212,7 +212,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
           },
           "decode_report": null,
           "check_report": null,
-          "export": {"format": "step", "target": "step:ap242-e3"}
+          "export": {"payload": "native", "target": "step:ap242-e3"}
         }"#,
     );
 
@@ -229,7 +229,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         "inspect_dialects\t{\"primary\":",
         "inspect_dialect\trhino:archive-80",
         "inspect_dialect_declared\t{\"archive_version\":\"80\"}",
-        "export_format\tstep",
+        "export_payload\tnative",
         "export_target\tstep:ap242-e3",
     ] {
         assert!(
