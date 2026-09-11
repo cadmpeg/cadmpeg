@@ -428,18 +428,15 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         color: None,
         tolerance: None,
     };
-    features[1]
-        .evaluation
-        .try_edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, diameter, .. } =
-                definition
-            else {
-                panic!("expected cosmetic thread");
-            };
-            *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-            *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
-        })
-        .unwrap();
+    features[1].evaluation.edit(|definition, _| {
+        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, diameter, .. } =
+            definition
+        else {
+            panic!("expected cosmetic thread");
+        };
+        *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+        *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
+    });
     project_unbound_cosmetic_thread_faces(
         &mut features,
         std::slice::from_ref(&history),
@@ -1109,16 +1106,13 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     ));
 
     features[1].dependencies.clear();
-    features[1]
-        .evaluation
-        .try_edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } = definition
-            else {
-                panic!("expected cosmetic thread");
-            };
-            *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-        })
-        .unwrap();
+    features[1].evaluation.edit(|definition, _| {
+        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } = definition
+        else {
+            panic!("expected cosmetic thread");
+        };
+        *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+    });
     let mut conflicting = selection("conflicting", first_signature);
     conflicting.components[0].local_id = Some(8);
     project_compact_surface_selections(

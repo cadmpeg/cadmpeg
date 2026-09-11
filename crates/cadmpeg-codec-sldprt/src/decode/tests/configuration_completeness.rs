@@ -68,32 +68,29 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         .iter()
         .all(|loss| !loss.message.contains("typed feature(s) retain native")));
 
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::Draft { anchor, .. } = definition else {
-                unreachable!();
-            };
-            *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                plane: FaceSelection::generated(
-                    vec![cadmpeg_ir::features::GeneratedFaceRef::new(
-                        FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
-                        "2".into(),
-                    )
-                    .unwrap()],
-                    "native".into(),
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Draft { anchor, .. } = definition else {
+            unreachable!();
+        };
+        *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            plane: FaceSelection::generated(
+                vec![cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "2".into(),
                 )
+                .unwrap()],
+                "native".into(),
+            )
+            .unwrap(),
+            pull: Some(cadmpeg_ir::features::DraftPull {
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    1.0, 0.0, 0.0,
+                ))
                 .unwrap(),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        1.0, 0.0, 0.0,
-                    ))
-                    .unwrap(),
-                    plane: None,
-                }),
-            };
-        })
-        .unwrap();
+                plane: None,
+            }),
+        };
+    });
     let mut neutral_plane_report = super::empty_report(true);
 
     append_design_losses(&ir, &mut neutral_plane_report);
@@ -547,8 +544,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
                 children: cadmpeg_ir::features::TreeChildren::default(),
             },
             vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
     let parameter_id = ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar");

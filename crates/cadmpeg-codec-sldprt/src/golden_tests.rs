@@ -336,15 +336,12 @@ fn visit_blind_extrude_lengths(
     }
     let mut count = 0;
     for feature in &mut ir.model.features {
-        feature
-            .evaluation
-            .try_edit(|definition, _| {
-                if let Some(length) = depth(definition) {
-                    count += 1;
-                    visit(length);
-                }
-            })
-            .unwrap();
+        feature.evaluation.edit(|definition, _| {
+            if let Some(length) = depth(definition) {
+                count += 1;
+                visit(length);
+            }
+        });
     }
     for state in ir
         .model

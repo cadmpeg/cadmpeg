@@ -154,8 +154,7 @@ pub(crate) fn project_helix_axes(
                 clockwise: *clockwise,
                 segment_turns: None,
                 construction_style: None,
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
 
     Ok(())
@@ -1364,10 +1363,7 @@ pub(crate) fn project_profiled_hole_constructions(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1612,10 +1608,7 @@ pub(crate) fn project_hole_position_sketches(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1860,10 +1853,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 *placements = Some(resolved);
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2097,10 +2087,7 @@ pub(crate) fn project_generated_hole_axes(
                 *placements = Some(solution.clone());
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2158,7 +2145,7 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         };
         if diameter_counts.get(&diameter.to_bits()) == Some(&1) {
-            set_hole_placements(&mut features[unresolved_index], candidates)?;
+            set_hole_placements(&mut features[unresolved_index], candidates);
             continue;
         }
 
@@ -2230,7 +2217,7 @@ pub(crate) fn project_hole_topology_axes(
         if residual.is_empty() {
             continue;
         }
-        set_hole_placements(&mut features[unresolved_index], residual)?;
+        set_hole_placements(&mut features[unresolved_index], residual);
     }
 
     let cylinders = cylindrical_bore_face_spans(topology);
@@ -2291,7 +2278,7 @@ fn project_flat_blind_topology_axes(
         )) else {
             continue;
         };
-        set_hole_placements(&mut features[index], placements)?;
+        set_hole_placements(&mut features[index], placements);
     }
 
     Ok(())
@@ -2356,7 +2343,7 @@ fn project_drilled_hole_topology_axes(
         ) else {
             continue;
         };
-        set_hole_placements(&mut features[index], placements)?;
+        set_hole_placements(&mut features[index], placements);
     }
 
     Ok(())
@@ -2624,24 +2611,18 @@ fn partition_seeded_hole_axes(
         return Ok(());
     }
     for (&sibling, partition) in siblings.iter().zip(partitions) {
-        set_hole_placements(&mut features[sibling], partition)?;
+        set_hole_placements(&mut features[sibling], partition);
     }
 
     Ok(())
 }
 
-fn set_hole_placements(
-    feature: &mut cadmpeg_ir::features::Feature,
-    value: Vec<HolePlacement>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    feature
-        .evaluation
-        .try_edit(|definition, _| {
-            if let FeatureDefinition::Hole { placements, .. } = definition {
-                *placements = Some(value);
-            }
-        })
-        .map_err(cadmpeg_core::CodecError::malformed)
+fn set_hole_placements(feature: &mut cadmpeg_ir::features::Feature, value: Vec<HolePlacement>) {
+    feature.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Hole { placements, .. } = definition {
+            *placements = Some(value);
+        }
+    });
 }
 
 fn hole_construction_is_unique(features: &[cadmpeg_ir::features::Feature], index: usize) -> bool {
@@ -3098,10 +3079,7 @@ pub(crate) fn project_hole_axes(
                 *placements = Some(solution.clone());
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -3441,10 +3419,7 @@ pub(crate) fn project_topological_hole_constructions(
                 });
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -3640,10 +3615,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         entities.extend(projection.entities);
         sketches.push(projection.sketch);
 
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

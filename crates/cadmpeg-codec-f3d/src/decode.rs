@@ -722,7 +722,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::BaseFeature { bodies } => {
             !base_feature_body_selection_is_resolved(bodies)
         }
-        FeatureDefinition::InsertBodies { bodies } => !body_selection_is_resolved(bodies),
+        FeatureDefinition::InsertBodies { bodies } => !bodies.is_resolved(),
         FeatureDefinition::DeleteBody { bodies, mode } => {
             !body_selection_is_resolved(bodies)
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
@@ -1458,9 +1458,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }
         ));
         match feature.evaluation.definition() {
-            FeatureDefinition::BaseFeature { bodies }
-            | FeatureDefinition::InsertBodies { bodies } => {
+            FeatureDefinition::BaseFeature { bodies } => {
                 gaps.body_selections += native_body_selection_count(bodies);
+            }
+            FeatureDefinition::InsertBodies { bodies } => {
+                gaps.body_selections += usize::from(!bodies.is_resolved());
             }
             FeatureDefinition::Combine { operands, .. } => {
                 let target = operands.target();
@@ -3439,8 +3441,7 @@ fn bind_mesh_feature_definitions(
                     .clone()
                     .try_into()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
 
     Ok(())

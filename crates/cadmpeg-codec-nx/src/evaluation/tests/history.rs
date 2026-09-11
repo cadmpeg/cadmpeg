@@ -37,8 +37,7 @@ fn complete_sphere_rederives_a_new_body() {
                 op: BooleanOp::NewBody,
             },
             vec![body.clone()],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
 
@@ -157,12 +156,9 @@ fn curve_construction_family_cannot_claim_a_body_output() {
             approximate: None,
         },
     );
-    section
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.push(body);
-        })
-        .unwrap();
+    section.evaluation.edit(|_, outputs| {
+        outputs.push(body);
+    });
     ir.model.features.push(section);
 
     assert_eq!(
@@ -183,15 +179,12 @@ fn curve_construction_family_cannot_claim_a_body_output() {
 #[test]
 fn unresolved_block_result_mode_stops_before_body_effect_evaluation() {
     let mut ir = complete_block_ir();
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::Block { op, .. } = definition else {
-                unreachable!("block fixture")
-            };
-            *op = BooleanOp::Unresolved;
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Block { op, .. } = definition else {
+            unreachable!("block fixture")
+        };
+        *op = BooleanOp::Unresolved;
+    });
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
@@ -518,14 +511,12 @@ fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
     let mut ir = complete_block_ir();
     let body = ir.model.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
-    hole.evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::Hole { placements, .. } = definition else {
-                unreachable!("hole fixture")
-            };
-            *placements = None;
-        })
-        .unwrap();
+    hole.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Hole { placements, .. } = definition else {
+            unreachable!("hole fixture")
+        };
+        *placements = None;
+    });
     ir.model.features.push(hole);
 
     assert!(feature_completeness::hole_definition_is_incomplete(
@@ -625,8 +616,7 @@ fn base_feature_introduces_its_complete_selected_outputs() {
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![body.clone()]),
-        })
-        .unwrap();
+        });
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
@@ -657,8 +647,7 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
                 source: BodySelection::Bodies(vec![source]),
             },
             vec![extracted.clone()],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
 
@@ -817,18 +806,14 @@ fn keep_selected_removes_every_unselected_body() {
     let mut ir = complete_block_ir();
     let retained = ir.model.bodies[0].id.clone();
     let removed = BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.push(removed.clone());
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.push(removed.clone());
+    });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
-        })
-        .unwrap();
+        });
     ir.model.features.push(body_neutral_feature(
         "retain",
         1,

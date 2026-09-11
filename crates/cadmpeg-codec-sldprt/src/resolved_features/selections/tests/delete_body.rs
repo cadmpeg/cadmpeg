@@ -123,19 +123,15 @@ fn decode_and_validate_compact_delete_body_selection() {
                 .iter_mut()
                 .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
                 .expect("delete-body feature");
-            delete_feature
-                .evaluation
-                .try_edit(|definition, _| {
-                    let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } =
-                        definition
-                    else {
-                        panic!("typed delete-body feature");
-                    };
-                    *bodies = cadmpeg_ir::features::BodySelection::Native(
-                        "sldprt:feature-input:body-ids:287".into(),
-                    );
-                })
-                .unwrap();
+            delete_feature.evaluation.edit(|definition, _| {
+                let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } = definition
+                else {
+                    panic!("typed delete-body feature");
+                };
+                *bodies = cadmpeg_ir::features::BodySelection::Native(
+                    "sldprt:feature-input:body-ids:287".into(),
+                );
+            });
         }
         let error = crate::test_support::plan_inherited_write(
             decoded.ir(),
@@ -157,22 +153,19 @@ fn decode_and_validate_compact_delete_body_selection() {
                 .iter_mut()
                 .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
                 .expect("delete-body feature");
-            delete_feature
-                .evaluation
-                .try_edit(|definition, _| {
-                    let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode } =
-                        definition
-                    else {
-                        unreachable!("typed delete-body feature");
-                    };
-                    *bodies = cadmpeg_ir::features::BodySelection::local(
-                        vec!["287".into(), "115".into()],
-                        "sldprt:feature-input:body-ids:287,115".into(),
-                    )
-                    .unwrap();
-                    *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
-                })
+            delete_feature.evaluation.edit(|definition, _| {
+                let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode } =
+                    definition
+                else {
+                    unreachable!("typed delete-body feature");
+                };
+                *bodies = cadmpeg_ir::features::BodySelection::local(
+                    vec!["287".into(), "115".into()],
+                    "sldprt:feature-input:body-ids:287,115".into(),
+                )
                 .unwrap();
+                *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
+            });
         }
         let error = crate::test_support::plan_inherited_write(
             decoded.ir(),

@@ -310,8 +310,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         .set_definition(FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_MIRROR,
-        })
-        .unwrap();
+        });
     let mut nonmirror_history = history.clone();
     nonmirror_history.features[0].input_class = Some("moCirPattern_c".into());
     bind_mirror_surface_planes(

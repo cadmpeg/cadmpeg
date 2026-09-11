@@ -302,8 +302,7 @@ mod tests {
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 },
                 outputs,
-            )
-            .unwrap(),
+            ),
             native_ref: native.then(|| format!("native:{id}")),
         }
     }
@@ -572,8 +571,7 @@ mod tests {
                         },
                     },
                     vec![body.clone()],
-                )
-                .unwrap(),
+                ),
                 native_ref: None,
             },
             history_feature(
@@ -660,8 +658,7 @@ mod tests {
                     },
                 },
                 vec![body.clone()],
-            )
-            .unwrap(),
+            ),
             native_ref: None,
         }]);
 

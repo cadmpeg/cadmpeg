@@ -77,8 +77,7 @@ pub(crate) fn bind_unique_sketch_feature(
             .evaluation
             .set_definition(FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
     let mut aliases = Vec::new();
     for index in &feature_indices {
@@ -168,10 +167,7 @@ pub(crate) fn bind_unique_sketch_feature(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -394,10 +390,7 @@ pub(crate) fn derive_feature_outputs(
             if !feature.evaluation.outputs().contains(&body) {
                 let mut outputs = feature.evaluation.outputs().clone();
                 outputs.push(body);
-                feature
-                    .evaluation
-                    .set_outputs(outputs)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                feature.evaluation.set_outputs(outputs);
             }
         }
     }
@@ -433,10 +426,7 @@ pub(crate) fn derive_feature_outputs(
             continue;
         };
         if let Some(bodies) = produced.get(&source_id) {
-            feature
-                .evaluation
-                .set_outputs(bodies.clone())
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            feature.evaluation.set_outputs(bodies.clone());
         }
     }
     Ok(())

@@ -58,8 +58,7 @@ fn complete_block_ir() -> CadIr {
                 op: BooleanOp::NewBody,
             },
             vec![body],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
     ir
@@ -147,8 +146,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 allow_multi_profile_faces: None,
             },
             vec![body],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     }
 }
@@ -170,7 +168,7 @@ fn body_preserving_feature(
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, vec![body]).unwrap(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, vec![body]),
         native_ref: None,
     }
 }
@@ -223,6 +221,6 @@ fn complete_extrude_feature(
         },
     );
     feature.dependencies.insert(profile);
-    feature.evaluation.set_outputs(outputs).unwrap();
+    feature.evaluation.set_outputs(outputs);
     feature
 }

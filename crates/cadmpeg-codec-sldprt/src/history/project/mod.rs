@@ -191,14 +191,11 @@ pub(crate) fn project_feature_model(
         let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
             continue;
         };
-        parent
-            .evaluation
-            .try_edit(|definition, _| {
-                if let FeatureDefinition::TreeNode { children, .. } = definition {
-                    children.insert(child);
-                }
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        parent.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::TreeNode { children, .. } = definition {
+                children.insert(child);
+            }
+        });
     }
     bind_offset_plane_references(&mut features)?;
     bind_native_construction_features(&mut features, histories)?;
@@ -481,10 +478,7 @@ pub(crate) fn bind_offset_plane_references(
             feature.dependencies.insert(reference_id);
         }
 
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
     let mut frames = features
         .iter()
@@ -640,10 +634,7 @@ pub(crate) fn bind_offset_plane_references(
             }
             changed = true;
 
-            features[index]
-                .evaluation
-                .set_definition(definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            features[index].evaluation.set_definition(definition);
         }
         if !changed {
             break;
@@ -668,10 +659,7 @@ pub(crate) fn bind_offset_plane_references(
             })
         })();
 
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -771,10 +759,7 @@ pub(crate) fn bind_native_construction_features(
             }
             _ => {}
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
 
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {

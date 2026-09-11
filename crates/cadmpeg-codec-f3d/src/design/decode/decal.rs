@@ -107,18 +107,15 @@ pub fn project_decal_images(
         else {
             continue;
         };
-        feature
-            .evaluation
-            .set_definition(FeatureDefinition::Decal {
-                asset: asset.id.clone(),
-                faces: FaceSelection::Resolved {
-                    faces,
-                    native: operand.id.clone(),
-                },
-                mapping: DecalMapping::FitToFaces,
-                opacity: None,
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(FeatureDefinition::Decal {
+            asset: asset.id.clone(),
+            faces: FaceSelection::Resolved {
+                faces,
+                native: operand.id.clone(),
+            },
+            mapping: DecalMapping::FitToFaces,
+            opacity: None,
+        });
         assets.push(asset);
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));

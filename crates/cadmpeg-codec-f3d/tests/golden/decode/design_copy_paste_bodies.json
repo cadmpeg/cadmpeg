@@ -237,9 +237,6 @@
             "bodies": {
               "kind": "resolved",
               "value": {
-                "bodies": [
-                  "f3d:brep:entity#1"
-                ],
                 "native": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3042"
               }
             }

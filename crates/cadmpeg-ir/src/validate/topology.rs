@@ -2543,7 +2543,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::InsertBodies { bodies } => body_selections.push(bodies),
+            FeatureDefinition::InsertBodies { .. } => {}
             FeatureDefinition::InsertComponent { occurrence } => {
                 if !ir
                     .model

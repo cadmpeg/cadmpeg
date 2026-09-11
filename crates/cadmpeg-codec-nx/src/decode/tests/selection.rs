@@ -1304,8 +1304,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         .evaluation
         .set_definition(FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
 
@@ -1341,8 +1340,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
                     construction: None,
                 },
                 vec![body],
-            )
-            .unwrap(),
+            ),
             native_ref: None,
         },
         Feature {
@@ -1455,8 +1453,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
                     },
                 },
                 vec![body.clone()],
-            )
-            .unwrap(),
+            ),
             native_ref: None,
         },
         Feature {

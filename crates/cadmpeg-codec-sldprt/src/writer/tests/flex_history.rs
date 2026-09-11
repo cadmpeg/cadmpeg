@@ -1348,9 +1348,7 @@ fn semantic_writer_round_trips_flex_operations() {
         *mode = FlexMode::Twisting {
             angle: Angle::new(0.75).unwrap(),
         };
-        updated_ir_edit_evaluation
-            .set_definition(updated_ir_edit_definition)
-            .unwrap();
+        updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
     let mut encoded = Vec::new();
@@ -1400,30 +1398,27 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
-        feature
-            .evaluation
-            .try_edit(|definition, _| {
-                if let FeatureDefinition::Flex { mode, .. } = definition {
-                    *mode = match feature.name.as_deref().unwrap() {
-                        "Bend" => FlexMode::Bending {
-                            angle: Angle::new(0.1).unwrap(),
-                        },
-                        "Twist" => FlexMode::Twisting {
-                            angle: Angle::new(0.2).unwrap(),
-                        },
-                        "Taper" => FlexMode::Tapering {
-                            factor: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
-                        },
-                        "Stretch" => FlexMode::Stretching {
-                            distance: Length::new(12.0).unwrap(),
-                        },
-                        name => panic!("unexpected flex {name}"),
-                    };
-                } else {
-                    panic!("untyped flex feature");
-                }
-            })
-            .unwrap();
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Flex { mode, .. } = definition {
+                *mode = match feature.name.as_deref().unwrap() {
+                    "Bend" => FlexMode::Bending {
+                        angle: Angle::new(0.1).unwrap(),
+                    },
+                    "Twist" => FlexMode::Twisting {
+                        angle: Angle::new(0.2).unwrap(),
+                    },
+                    "Taper" => FlexMode::Tapering {
+                        factor: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
+                    },
+                    "Stretch" => FlexMode::Stretching {
+                        distance: Length::new(12.0).unwrap(),
+                    },
+                    name => panic!("unexpected flex {name}"),
+                };
+            } else {
+                panic!("untyped flex feature");
+            }
+        });
     }
 
     let mut encoded = Vec::new();

@@ -126,10 +126,7 @@ pub(super) fn bind_circular_profile_by_dimension(
                     *bound = cadmpeg_ir::features::SketchFeatureBinding::Planar(None);
                 }
             }
-            feature
-                .evaluation
-                .set_definition(definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            feature.evaluation.set_definition(definition);
         }
         let name = features[feature_index].name.clone();
         let mut definition = features[feature_index].evaluation.definition().clone();
@@ -139,8 +136,7 @@ pub(super) fn bind_circular_profile_by_dimension(
         *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone()));
         features[feature_index]
             .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .set_definition(definition);
         if let Some(native) = sketches.iter_mut().find(|sketch| sketch.id == sketch_id) {
             native.name = name;
         }
@@ -669,10 +665,7 @@ pub(crate) fn project_compact_body_selections(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -784,10 +777,7 @@ pub(crate) fn project_compact_edge_selections(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1565,10 +1555,7 @@ pub(crate) fn project_compact_surface_selections(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
     let face_aliases = features
         .iter()
@@ -1619,10 +1606,7 @@ pub(crate) fn project_compact_surface_selections(
             }
             *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1783,10 +1767,7 @@ pub(crate) fn project_draft_operands(
                 _ => {}
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2132,10 +2113,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 None => cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
             };
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2217,10 +2195,7 @@ pub(crate) fn project_unbound_offset_plane_faces(
                 face: cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
             });
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

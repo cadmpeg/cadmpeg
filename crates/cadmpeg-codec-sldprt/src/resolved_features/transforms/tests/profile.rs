@@ -599,8 +599,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         .evaluation
         .set_definition(FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        })
-        .unwrap();
+        });
     project_marker_backed_sketches(
         &mut configured_features,
         &mut sketches,
@@ -637,8 +636,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         .evaluation
         .set_definition(FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(compact_id)),
-        })
-        .unwrap();
+        });
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
     project_marker_backed_sketches(
@@ -1149,17 +1147,14 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         (vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")])
             .try_into()
             .unwrap();
-    multi_consumer
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::Extrude { profile, .. } = definition else {
-                unreachable!();
-            };
-            *profile = ProfileRef::Feature(
-                FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar"),
-            );
-        })
-        .unwrap();
+    multi_consumer.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Extrude { profile, .. } = definition else {
+            unreachable!();
+        };
+        *profile = ProfileRef::Feature(
+            FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar"),
+        );
+    });
     features.push(multi_consumer);
     let sketch = |id: SketchId, profile_count: usize| Sketch {
         id,

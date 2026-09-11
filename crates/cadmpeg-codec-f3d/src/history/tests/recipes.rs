@@ -1161,11 +1161,10 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
                 BodyId::mint("test:model:body#2").expect("identity grammar"),
                 BodyId::mint("test:model:body#1").expect("identity grammar"),
             ],
-        )
-        .unwrap(),
+        ),
         native_ref: Some("native:scope".into()),
     };
-    super::super::bind_base_feature_output_selection(&mut feature).unwrap();
+    super::super::bind_base_feature_output_selection(&mut feature);
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::BaseFeature {

@@ -54,10 +54,7 @@ fn refresh_feature_outputs(
         .collect::<BTreeMap<_, _>>();
     for feature in &mut ir.model.features {
         if let Some(outputs) = output_updates.get(&feature.id) {
-            feature
-                .evaluation
-                .set_outputs(outputs.clone())
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            feature.evaluation.set_outputs(outputs.clone());
         }
     }
     Ok(())
@@ -169,8 +166,7 @@ pub(super) fn emit_model_features(
                     IrFeatureDefinition::StoredGeometry {}
                 },
                 feature_output_bodies(scan, ir, feature_id),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             native_ref: None,
         });
         refresh_feature_outputs(scan, ir)?;
@@ -300,10 +296,7 @@ pub(super) fn emit_model_features(
                     IrFeatureDefinition::StoredGeometry {}
                 );
             if upgrade_legacy_round {
-                existing
-                    .evaluation
-                    .set_definition(definition)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                existing.evaluation.set_definition(definition);
             }
             if name.is_some() {
                 existing.name = name;
@@ -326,10 +319,7 @@ pub(super) fn emit_model_features(
                     combined_outputs.push(output);
                 }
             }
-            existing
-                .evaluation
-                .set_outputs(combined_outputs)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            existing.evaluation.set_outputs(combined_outputs);
             refresh_feature_outputs(scan, ir)?;
             continue;
         }
@@ -359,8 +349,7 @@ pub(super) fn emit_model_features(
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
             native_ref,
         });
         refresh_feature_outputs(scan, ir)?;
@@ -458,8 +447,7 @@ pub(super) fn emit_model_features(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
                 feature_output_bodies(scan, ir, feature_id),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
         refresh_feature_outputs(scan, ir)?;

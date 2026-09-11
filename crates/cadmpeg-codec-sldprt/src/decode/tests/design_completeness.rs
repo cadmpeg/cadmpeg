@@ -105,7 +105,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs).unwrap(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
             native_ref: None,
         });
     };
@@ -1226,8 +1226,7 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
                 children: cadmpeg_ir::features::TreeChildren::default(),
             },
             outputs,
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     };
     ir.model.features.push(feature(

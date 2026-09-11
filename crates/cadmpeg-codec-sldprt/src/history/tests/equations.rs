@@ -546,7 +546,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         ir.model.features[extrusion].name = Some("Renamed equation boss".into());
         ir.model.features[extrusion]
             .evaluation
-            .try_edit(|definition, _| {
+            .edit(|definition, _| {
                 let FeatureDefinition::Extrude { extent, .. } = definition else {
                     panic!("typed extrusion");
                 };
@@ -558,8 +558,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
                         draft: None,
                     },
                 };
-            })
-            .unwrap();
+            });
         let depth = ir
             .model
             .parameters

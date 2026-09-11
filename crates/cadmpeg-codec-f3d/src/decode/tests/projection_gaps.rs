@@ -453,13 +453,12 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         }))
         .expect("lost-reference construction group"),
     );
-    ir.model.features[2]
-        .evaluation
-        .try_edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
-                unreachable!();
-            };
-            groups[2].edges = cadmpeg_ir::features::EdgeSelection::historical(
+    ir.model.features[2].evaluation.edit(|definition, _| {
+        let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
+            unreachable!();
+        };
+        groups[2].edges =
+            cadmpeg_ir::features::EdgeSelection::historical(
                 cadmpeg_ir::ids::FeatureInputTopologyId::mint(
                     "test:model:feature-input#history-input",
                 )
@@ -469,8 +468,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 "native:partial-edges".into(),
             )
             .unwrap();
-        })
-        .unwrap();
+    });
     assert_eq!(
         design_projection_gaps(&ir, &native).unrepaired_lost_edge_references,
         0

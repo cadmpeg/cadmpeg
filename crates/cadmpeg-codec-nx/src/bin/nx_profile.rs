@@ -1040,8 +1040,7 @@ mod tests {
                     op: cadmpeg_ir::features::BooleanOp::NewBody,
                 },
                 vec![body],
-            )
-            .expect("valid block fixture"),
+            ),
             native_ref: None,
         });
 
@@ -1074,8 +1073,7 @@ mod tests {
                     op: cadmpeg_ir::features::BooleanOp::Unresolved,
                 },
                 vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
-            )
-            .expect("valid unresolved block fixture"),
+            ),
             native_ref: None,
         });
 

@@ -1130,8 +1130,7 @@ fn fixed_kind_edge_and_revolve_operations(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             face_axis_definition.clone(),
             (feature.clone()).evaluation.outputs().clone(),
-        )
-        .unwrap(),
+        ),
         ..feature.clone()
     };
     let axis_faces = [
@@ -1213,8 +1212,7 @@ fn fixed_kind_edge_and_revolve_operations(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             face_axis_definition,
             (feature).evaluation.outputs().clone(),
-        )
-        .unwrap(),
+        ),
         ..feature
     };
     axis_surfaces[1].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(

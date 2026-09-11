@@ -40,22 +40,19 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
     {
         let mut ir = decoded.ir_mut();
-        ir.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Hole { shape, extent, .. } = definition else {
-                    panic!("typed hole feature");
-                };
-                shape
-                    .try_edit(|_, _, diameter| {
-                        *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
-                    })
-                    .unwrap();
-                *extent = Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
-                });
-            })
-            .unwrap();
+        ir.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Hole { shape, extent, .. } = definition else {
+                panic!("typed hole feature");
+            };
+            shape
+                .try_edit(|_, _, diameter| {
+                    *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
+                })
+                .unwrap();
+            *extent = Some(LinearTermination::Blind {
+                length: cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
+            });
+        });
     }
 
     let mut encoded = Vec::new();
@@ -160,9 +157,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         shape.diameter(),
     )
     .unwrap();
-    updated_detached_evaluation
-        .set_definition(updated_detached_definition)
-        .unwrap();
+    updated_detached_evaluation.set_definition(updated_detached_definition);
     let error = crate::test_support::plan_inherited_write(
         &detached,
         decoded.source_fidelity(),
@@ -246,9 +241,7 @@ fn semantic_writer_round_trips_hole_placement() {
                 .unwrap(),
         }]);
         *extent = Some(LinearTermination::ThroughAll {});
-        updated_ir_evaluation
-            .set_definition(updated_ir_definition)
-            .unwrap();
+        updated_ir_evaluation.set_definition(updated_ir_definition);
     }
 
     let mut encoded = Vec::new();
@@ -350,9 +343,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             shape.diameter(),
         )
         .unwrap();
-        updated_ir_evaluation
-            .set_definition(updated_ir_definition)
-            .unwrap();
+        updated_ir_evaluation.set_definition(updated_ir_definition);
         let updated_ir_evaluation = &mut ir.model.features[1].evaluation;
         let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
         let FeatureDefinition::Hole { shape, extent, .. } = &mut updated_ir_definition else {
@@ -377,9 +368,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             shape.diameter(),
         )
         .unwrap();
-        updated_ir_evaluation
-            .set_definition(updated_ir_definition)
-            .unwrap();
+        updated_ir_evaluation.set_definition(updated_ir_definition);
     }
 
     let mut encoded = Vec::new();

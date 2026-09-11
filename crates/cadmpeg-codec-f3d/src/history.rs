@@ -846,42 +846,35 @@ pub(crate) fn bind_feature_outputs(
             })
             .eq([true]);
         if transition_matches {
-            feature
-                .evaluation
-                .set_outputs(
-                    outputs
-                        .iter()
-                        .filter_map(|slot| active.get(slot).cloned())
-                        .collect(),
-                )
-                .map_err(CodecError::malformed)?;
-            bind_base_feature_output_selection(feature)?;
+            feature.evaluation.set_outputs(
+                outputs
+                    .iter()
+                    .filter_map(|slot| active.get(slot).cloned())
+                    .collect(),
+            );
+            bind_base_feature_output_selection(feature);
         }
     }
     Ok(())
 }
 
-fn bind_base_feature_output_selection(
-    feature: &mut cadmpeg_ir::features::Feature,
-) -> Result<(), CodecError> {
+fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Feature) {
     if feature.evaluation.outputs().is_empty() {
-        return Ok(());
+        return;
     }
     let cadmpeg_ir::features::FeatureDefinition::BaseFeature {
         bodies: cadmpeg_ir::features::BodySelection::Native(native),
     } = feature.evaluation.definition()
     else {
-        return Ok(());
+        return;
+    };
+    let bodies = cadmpeg_ir::features::BodySelection::Resolved {
+        bodies: feature.evaluation.outputs().clone(),
+        native: native.clone(),
     };
     feature
         .evaluation
-        .set_definition(cadmpeg_ir::features::FeatureDefinition::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Resolved {
-                bodies: feature.evaluation.outputs().clone(),
-                native: native.clone(),
-            },
-        })
-        .map_err(CodecError::malformed)
+        .set_definition(cadmpeg_ir::features::FeatureDefinition::BaseFeature { bodies });
 }
 
 pub(crate) fn bind_sweep_result_modes(
@@ -923,10 +916,7 @@ pub(crate) fn bind_sweep_result_modes(
                 .try_edit(|_, _, result| *result = mode)
                 .map_err(CodecError::malformed)?;
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1388,10 +1378,7 @@ pub(crate) fn bind_feature_body_selections(
             )
             .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1608,10 +1595,7 @@ fn bind_pattern_body_selections(
                 bind_direct_body_recipe_body_selection(selection, scope, inputs);
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2260,10 +2244,7 @@ pub(crate) fn bind_feature_face_selections(
                 _ => {}
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2608,10 +2589,7 @@ pub(crate) fn bind_feature_path_selections(
                 _ => {}
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

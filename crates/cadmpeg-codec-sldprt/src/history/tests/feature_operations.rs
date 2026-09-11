@@ -111,23 +111,21 @@ fn decode_resolves_feature_topology_selections() {
 
     decoded.ir_mut().model.features[0]
         .evaluation
-        .try_edit(|definition, _| {
+        .edit(|definition, _| {
             if let FeatureDefinition::Fillet { groups } = definition {
                 groups[0].edges = EdgeSelection::Edges(vec![edge_id.clone()]);
             }
-        })
-        .unwrap();
+        });
     decoded.ir_mut().model.features[1]
         .evaluation
-        .try_edit(|definition, _| {
+        .edit(|definition, _| {
             if let FeatureDefinition::DeleteFace { faces, .. } = definition {
                 *faces = FaceSelection::Faces(vec![face_id.clone()]);
             }
-        })
-        .unwrap();
+        });
     decoded.ir_mut().model.features[2]
         .evaluation
-        .try_edit(|definition, _| {
+        .edit(|definition, _| {
             if let FeatureDefinition::Combine { operands, .. } = definition {
                 operands
                     .try_edit(|target, tools| {
@@ -136,11 +134,10 @@ fn decode_resolves_feature_topology_selections() {
                     })
                     .unwrap();
             }
-        })
-        .unwrap();
+        });
     decoded.ir_mut().model.features[3]
         .evaluation
-        .try_edit(|definition, _| {
+        .edit(|definition, _| {
             if let FeatureDefinition::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
@@ -155,16 +152,14 @@ fn decode_resolves_feature_topology_selections() {
             {
                 *face = FaceSelection::Faces(vec![face_id.clone()]);
             }
-        })
-        .unwrap();
+        });
     decoded.ir_mut().model.features[4]
         .evaluation
-        .try_edit(|definition, _| {
+        .edit(|definition, _| {
             if let FeatureDefinition::Hole { face, .. } = definition {
                 *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
             }
-        })
-        .unwrap();
+        });
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -293,9 +288,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
             panic!("constant fillet");
         };
         *radius = cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap();
-        updated_ir_evaluation
-            .set_definition(updated_ir_definition)
-            .unwrap();
+        updated_ir_evaluation.set_definition(updated_ir_definition);
         ir.model.features[2]
             .source_properties
             .insert("Algorithm".into(), "FaceBlend".into());
@@ -798,9 +791,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         shape.mode(),
     )
     .unwrap();
-    updated_changed_profile_evaluation
-        .set_definition(updated_changed_profile_definition)
-        .unwrap();
+    updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
     let error = crate::test_support::plan_inherited_write(
         &changed_profile,
         decoded.source_fidelity(),

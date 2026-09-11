@@ -177,10 +177,7 @@ pub(crate) fn bind_sketch_profiles(
                 }
                 _ => {}
             }
-            feature
-                .evaluation
-                .set_definition(definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            feature.evaluation.set_definition(definition);
         }
     }
     let mut removed = superseded
@@ -476,12 +473,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 continue;
             };
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                features[feature_index]
-                    .evaluation
-                    .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
+                features[feature_index].evaluation.set_definition(
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    },
+                );
                 continue;
             }
             let sketch = Sketch {
@@ -572,12 +568,11 @@ pub(crate) fn project_compact_sketch_profiles(
                     continue;
                 }
                 sketches.push(sketch);
-                features[feature_index]
-                    .evaluation
-                    .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
+                features[feature_index].evaluation.set_definition(
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    },
+                );
                 continue;
             }
             if let (Some(curves), Some(vertices)) =
@@ -715,12 +710,11 @@ pub(crate) fn project_compact_sketch_profiles(
                     continue;
                 }
                 sketches.push(sketch);
-                features[feature_index]
-                    .evaluation
-                    .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
+                features[feature_index].evaluation.set_definition(
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    },
+                );
                 continue;
             }
             let Some(addresses) = addresses else {
@@ -781,12 +775,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 continue;
             }
             sketches.push(sketch);
-            features[feature_index]
-                .evaluation
-                .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
+            features[feature_index].evaluation.set_definition(
+                cadmpeg_ir::features::FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                },
+            );
         }
     }
 
@@ -1002,14 +995,13 @@ pub(crate) fn project_marker_backed_sketches(
                         };
                         sketches.push(sketch);
                     }
-                    features[feature_index]
-                        .evaluation
-                        .set_definition(cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    features[feature_index].evaluation.set_definition(
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                                 sketch_id,
                             )),
-                        })
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                        },
+                    );
                 }
                 continue;
             }
@@ -1026,8 +1018,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 sketch_id,
                             )),
                         }
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    });
                 continue;
             }
             if bound_sketch
@@ -1856,8 +1847,7 @@ pub(crate) fn project_marker_backed_sketches(
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                });
         }
     }
 
@@ -2098,8 +2088,7 @@ pub(crate) fn project_sketch_block_profiles(
                 }
                 features[profile_index]
                     .evaluation
-                    .set_definition(definition)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    .set_definition(definition);
             }
         }
     }
@@ -2577,10 +2566,7 @@ fn project_detached_legacy_config_sketches(
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id)),
                 };
             }
-            feature
-                .evaluation
-                .set_definition(definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            feature.evaluation.set_definition(definition);
         }
     }
 

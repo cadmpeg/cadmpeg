@@ -192,8 +192,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         .set_definition(FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: cadmpeg_ir::features::TreeChildren::default(),
-        })
-        .unwrap();
+        });
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
 }
 

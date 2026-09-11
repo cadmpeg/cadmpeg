@@ -143,10 +143,7 @@ pub(super) fn normalize_model_lengths(
     for feature in &mut ir.model.features {
         let mut definition = feature.evaluation.definition().clone();
         scale_feature_definition(&mut definition, length_scale_mm)?;
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     for parameter in &mut ir.model.parameters {

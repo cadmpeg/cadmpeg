@@ -88,15 +88,12 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
         simple_hole_definition(6.1468),
     );
-    unresolved_hole
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::Hole { shape, .. } = definition else {
-                panic!("expected hole definition");
-            };
-            shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
-        })
-        .unwrap();
+    unresolved_hole.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Hole { shape, .. } = definition else {
+            panic!("expected hole definition");
+        };
+        shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
+    });
     unresolved.push(unresolved_hole);
     assert!(pattern_hole_nominal_context(&unresolved).is_empty());
 }

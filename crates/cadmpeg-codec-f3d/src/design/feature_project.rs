@@ -670,6 +670,7 @@ pub fn project_parameter_design_with_edge_identities(
                 })
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind());
+            let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved },
                 Some(DesignFeatureFamily::Assemble) => scope
@@ -1310,15 +1311,31 @@ pub fn project_parameter_design_with_edge_identities(
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             },
-                            |operation| FeatureDefinition::InsertBodies {
-                                bodies: design_body_selection(
+                            |operation| {
+                                let selection = design_body_selection(
                                     scope,
                                     operation
                                         .bodies()
                                         .iter()
                                         .map(|body| u64::from(body.copied.value)),
                                     body_bindings,
-                                ),
+                                );
+                                FeatureDefinition::InsertBodies {
+                                    bodies: match selection {
+                                        cadmpeg_ir::features::BodySelection::Resolved {
+                                            bodies,
+                                            native,
+                                        } => {
+                                            inserted_bodies = bodies;
+                                            cadmpeg_ir::features::InsertedBodies::Resolved {
+                                                native,
+                                            }
+                                        }
+                                        _ => cadmpeg_ir::features::InsertedBodies::Native(
+                                            scope.id.clone(),
+                                        ),
+                                    },
+                                }
                             },
                         )
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::CopyPaste {
@@ -1360,12 +1377,7 @@ pub fn project_parameter_design_with_edge_identities(
                     }
                 }
             };
-            let outputs = match &definition {
-                FeatureDefinition::InsertBodies {
-                    bodies: cadmpeg_ir::features::BodySelection::Resolved { bodies, .. },
-                } => bodies.clone(),
-                _ => Vec::new(),
-            };
+            let outputs = inserted_bodies;
             Ok(Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
@@ -1391,7 +1403,7 @@ pub fn project_parameter_design_with_edge_identities(
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs).map_err(cadmpeg_core::CodecError::malformed)?,
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
                 native_ref: Some(scope.id.clone()),
             })
         })
@@ -2560,10 +2572,7 @@ pub fn bind_sketch_feature_geometry(
                 },
             };
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
     for feature in features.iter_mut() {
         let mut definition = feature.evaluation.definition().clone();
@@ -2627,10 +2636,7 @@ pub fn bind_sketch_feature_geometry(
             )
             .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
     let sketch_features = features
         .iter()
@@ -2831,10 +2837,7 @@ pub fn bind_work_point_sketch_point_constructions(
                 }));
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -4352,12 +4355,9 @@ pub(crate) fn bind_form_cages(
                             feature.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Native { .. }
                         ) {
-                            feature
-                                .evaluation
-                                .set_definition(cadmpeg_ir::features::FeatureDefinition::Form {
-                                    cages: resolved,
-                                })
-                                .map_err(cadmpeg_core::CodecError::malformed)?;
+                            feature.evaluation.set_definition(
+                                cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved },
+                            );
                         }
                     }
                 }
@@ -4409,12 +4409,9 @@ pub(crate) fn bind_form_cages(
                         feature.evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Native { .. }
                     ) {
-                        feature
-                            .evaluation
-                            .set_definition(cadmpeg_ir::features::FeatureDefinition::Form {
-                                cages: resolved,
-                            })
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        feature.evaluation.set_definition(
+                            cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved },
+                        );
                     }
                 }
             }
@@ -4436,12 +4433,11 @@ pub(crate) fn bind_form_cages(
                     feature.evaluation.definition(),
                     cadmpeg_ir::features::FeatureDefinition::Native { .. }
                 ) {
-                    feature
-                        .evaluation
-                        .set_definition(cadmpeg_ir::features::FeatureDefinition::Form {
+                    feature.evaluation.set_definition(
+                        cadmpeg_ir::features::FeatureDefinition::Form {
                             cages: vec![cages[0].id.clone()],
-                        })
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                        },
+                    );
                 }
             }
             continue;
@@ -4487,8 +4483,7 @@ pub(crate) fn bind_form_cages(
         ) {
             feature
                 .evaluation
-                .set_definition(cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                .set_definition(cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved });
         }
     }
     Ok(())
@@ -6014,10 +6009,7 @@ pub(crate) fn bind_revolve_face_axes(
                 _ => None,
             });
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -7711,10 +7703,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

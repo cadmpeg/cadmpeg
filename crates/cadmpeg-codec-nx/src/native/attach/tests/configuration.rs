@@ -467,8 +467,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 },
                 outputs,
-            )
-            .unwrap(),
+            ),
             native_ref: None,
         };
     let configuration = |active, bodies| DesignConfiguration {
@@ -554,8 +553,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
                 children: cadmpeg_ir::features::TreeChildren::default(),
             },
             outputs,
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     };
     let mut ir = CadIr::empty();
@@ -628,8 +626,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 children: cadmpeg_ir::features::TreeChildren::default(),
             },
             vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     };
     let configuration = |id: &str, active, bodies| DesignConfiguration {

@@ -1153,8 +1153,7 @@ fn attach_initial_segment_bodies(
                 },
             },
             outputs.clone(),
-        )
-        .ok()?,
+        ),
         native_ref: None,
     });
     Some(id)
@@ -3366,7 +3365,7 @@ fn attach_feature_operations(
             }) {
                 initial_feature
                     .evaluation
-                    .try_edit(|definition, initial_outputs| {
+                    .edit(|definition, initial_outputs| {
                         initial_outputs.retain(|body| !outputs.contains(body));
                         if let FeatureDefinition::BaseFeature {
                             bodies: BodySelection::Resolved { bodies, .. },
@@ -3374,8 +3373,7 @@ fn attach_feature_operations(
                         {
                             bodies.retain(|body| !outputs.contains(body));
                         }
-                    })
-                    .map_err(CodecError::malformed)?;
+                    });
                 body_writer_history.retract_outputs(&initial_feature.id, &outputs);
             }
         }
@@ -3714,8 +3712,7 @@ fn attach_feature_operations(
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
             native_ref: Some(label.id.clone()),
         });
         if !deletes_body && !operation_body_writes.is_empty() {

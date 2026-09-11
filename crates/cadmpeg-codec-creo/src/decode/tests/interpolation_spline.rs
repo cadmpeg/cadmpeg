@@ -1568,8 +1568,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
-            .expect("valid feature fixture"),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
         native_ref: None,
     };
     let mut ir = CadIr::empty();
@@ -1591,8 +1590,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         .evaluation
         .set_outputs(vec![
             BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")
-        ])
-        .expect("valid test fixture");
+        ]);
     assert!(preceding_features_establish_body(&ir));
 
     ir.model.features[0] = feature(
@@ -1622,15 +1620,12 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features[0].suppressed = Some(true);
     assert!(!preceding_features_establish_body(&ir));
     ir.model.features[0].suppressed = Some(false);
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|definition, _| {
-            let IrFeatureDefinition::Extrude { op, .. } = definition else {
-                unreachable!();
-            };
-            *op = BooleanOp::Join;
-        })
-        .expect("valid test fixture");
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let IrFeatureDefinition::Extrude { op, .. } = definition else {
+            unreachable!();
+        };
+        *op = BooleanOp::Join;
+    });
     assert!(!preceding_features_establish_body(&ir));
 }
 

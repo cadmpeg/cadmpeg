@@ -1074,8 +1074,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::EquationCurve { .. }
             | FeatureDefinition::Helix { .. } => false,
-            FeatureDefinition::BaseFeature { bodies }
-            | FeatureDefinition::InsertBodies { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::BaseFeature { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::InsertBodies { bodies } => !bodies.is_resolved(),
             FeatureDefinition::MeshImport { .. } => false,
             FeatureDefinition::InsertComponent { occurrence } => !ir
                 .model

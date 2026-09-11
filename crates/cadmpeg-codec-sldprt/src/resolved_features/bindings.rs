@@ -297,8 +297,7 @@ pub(crate) fn bind_pattern_inputs(
                         }
                         model_features[model_index]
                             .evaluation
-                            .set_definition(definition)
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                            .set_definition(definition);
                     }
                 }
                 let (needs_seed, needs_direction) =
@@ -480,10 +479,7 @@ pub(crate) fn bind_pattern_inputs(
                 seeds.push(PatternSeed::Feature(seed.clone()));
             }
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
     let mut paths_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, dependency, path) in curve_path_assignments {
@@ -509,10 +505,7 @@ pub(crate) fn bind_pattern_inputs(
                 }
             }
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
     let mut linear_directions_by_pattern = HashMap::<usize, Vec<Vector3>>::new();
     for (index, direction) in linear_direction_assignments {
@@ -557,10 +550,7 @@ pub(crate) fn bind_pattern_inputs(
             *pattern = PatternKind::new(transform)
                 .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
     let mut mirror_planes_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, origin, normal) in mirror_plane_assignments {
@@ -583,10 +573,7 @@ pub(crate) fn bind_pattern_inputs(
                 .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
             }
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
     let mut mirror_seed_sets_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, seeds) in mirror_seed_assignments {
@@ -613,10 +600,7 @@ pub(crate) fn bind_pattern_inputs(
                 seed_slots.extend(seeds.iter().cloned().map(PatternSeed::Feature));
             }
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
     let mut circular_axes_by_pattern = HashMap::<usize, Vec<(Point3, Vector3)>>::new();
     for (index, origin, direction) in circular_axis_assignments {
@@ -669,10 +653,7 @@ pub(crate) fn bind_pattern_inputs(
             })
             .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -792,10 +773,7 @@ pub(crate) fn bind_mirror_surface_planes(
                 *pattern = admitted;
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -916,10 +894,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 }
             }
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
 
         if profile_bound
             && !model_features[index]

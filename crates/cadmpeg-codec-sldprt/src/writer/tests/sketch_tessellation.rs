@@ -101,8 +101,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     decoded.ir_mut().model.features[0].name = Some("Renamed spatial path".into());
     decoded.ir_mut().model.features[1]
         .evaluation
-        .set_definition(FeatureDefinition::SpatialSketch { sketch: None })
-        .unwrap();
+        .set_definition(FeatureDefinition::SpatialSketch { sketch: None });
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(

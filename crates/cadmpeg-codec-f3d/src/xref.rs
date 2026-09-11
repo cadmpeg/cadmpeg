@@ -368,8 +368,7 @@ pub fn bind_component_insert_features(
                         reference.ordinal,
                         reference.occurrence_ordinal,
                     ),
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                });
         }
     }
 

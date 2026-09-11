@@ -31,8 +31,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
     );
     pattern
         .evaluation
-        .set_outputs(vec![first_copy.clone(), second_copy.clone()])
-        .unwrap();
+        .set_outputs(vec![first_copy.clone(), second_copy.clone()]);
     ir.model.features.push(pattern);
 
     assert_eq!(

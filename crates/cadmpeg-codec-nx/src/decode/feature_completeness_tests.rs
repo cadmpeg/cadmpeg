@@ -593,8 +593,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
                 Some(PathRef::Native("nx:centerline#0".into())),
             ),
             vec![output],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
 
@@ -603,39 +602,33 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
-    ir.model.features[0]
-        .evaluation
-        .set_definition(definition(
-            vec![
-                LoftSection::Point(LoftPointSection::Native(
-                    cadmpeg_ir::NonEmptyString::new("nx:point#0").unwrap(),
-                )),
-                LoftSection::Point(LoftPointSection::Point(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap(),
-                )),
-            ],
-            None,
-        ))
-        .unwrap();
+    ir.model.features[0].evaluation.set_definition(definition(
+        vec![
+            LoftSection::Point(LoftPointSection::Native(
+                cadmpeg_ir::NonEmptyString::new("nx:point#0").unwrap(),
+            )),
+            LoftSection::Point(LoftPointSection::Point(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap(),
+            )),
+        ],
+        None,
+    ));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
-    ir.model.features[0]
-        .evaluation
-        .set_definition(definition(
-            vec![
-                LoftSection::Point(LoftPointSection::Point(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                )),
-                LoftSection::Point(LoftPointSection::Point(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap(),
-                )),
-            ],
-            None,
-        ))
-        .unwrap();
+    ir.model.features[0].evaluation.set_definition(definition(
+        vec![
+            LoftSection::Point(LoftPointSection::Point(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            )),
+            LoftSection::Point(LoftPointSection::Point(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap(),
+            )),
+        ],
+        None,
+    ));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
@@ -765,8 +758,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(complete.clone(), vec![output])
-            .unwrap(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(complete.clone(), vec![output]),
         native_ref: None,
     });
 
@@ -791,26 +783,17 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             None,
         ),
     ] {
-        ir.model.features[0]
-            .evaluation
-            .set_definition(incomplete)
-            .unwrap();
+        ir.model.features[0].evaluation.set_definition(incomplete);
         losses.clear();
         append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("extrude (1)"));
     }
 
-    ir.model.features[0]
-        .evaluation
-        .set_definition(complete)
-        .unwrap();
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.clear();
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.set_definition(complete);
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.clear();
+    });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -964,20 +947,16 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
                 op: BooleanOp::NewBody,
             },
             vec![output],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
     let mut losses = Vec::new();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.clear();
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.clear();
+    });
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("revolve (1)"));
@@ -1219,8 +1198,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
                 bodies: BodySelection::Bodies(vec![output.clone()]),
             },
             vec![output.clone()],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     };
     ir.model.features.push(feature.clone());
@@ -1355,8 +1333,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     let output = cadmpeg_ir::ids::BodyId::mint("test:model:body#output").expect("identity grammar");
     ir.model.features[0]
         .evaluation
-        .set_outputs(vec![output.clone()])
-        .unwrap();
+        .set_outputs(vec![output.clone()]);
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1364,8 +1341,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     ir.model.features[0]
         .evaluation
-        .set_outputs(vec![output.clone(), output.clone()])
-        .unwrap();
+        .set_outputs(vec![output.clone(), output.clone()]);
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1388,8 +1364,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             linearize: false,
             max_degree: None,
             allow_multi_profile_faces: None,
-        })
-        .unwrap();
+        });
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
@@ -1410,8 +1385,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1454,10 +1428,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             None,
         ),
     ] {
-        ir.model.features[0]
-            .evaluation
-            .set_definition(incomplete)
-            .unwrap();
+        ir.model.features[0].evaluation.set_definition(incomplete);
         losses.clear();
         append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
@@ -1469,8 +1440,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .set_definition(FeatureDefinition::DatumOffsetPlane {
             reference: None,
             distance: Length::new(5.0).unwrap(),
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1484,8 +1454,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                 feature: datum.clone(),
             }),
             distance: Length::new(5.0).unwrap(),
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1531,8 +1500,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .try_into()
             .unwrap(),
             gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1549,8 +1517,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .try_into()
             .unwrap(),
             gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1575,8 +1542,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1586,8 +1552,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-        })
-        .unwrap();
+        });
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1749,8 +1714,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
                 gap_tolerance: None,
             },
             vec![first.clone()],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
 
