@@ -231,7 +231,7 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
                         parameter,
                         profile: Vec::new(),
                         path: LoftPath {
-                            curve: None,
+                            path: None,
                             auxiliaries: Vec::new(),
                             flag: 0,
                         },

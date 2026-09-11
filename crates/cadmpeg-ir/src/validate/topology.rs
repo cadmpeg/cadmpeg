@@ -440,7 +440,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 for entry in sections.iter().flat_map(|section| &section.entries) {
                     for curve in entry
                         .path
-                        .curve
+                        .path
                         .iter()
                         .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
@@ -698,7 +698,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 {
                     for curve in entry
                         .path
-                        .curve
+                        .path
                         .iter()
                         .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
@@ -835,7 +835,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 for curve in std::iter::once(&construction.base_path)
                     .chain(construction.entries.iter().map(|entry| &entry.path))
                     .flat_map(|path| {
-                        path.curve
+                        path.path
                             .iter()
                             .map(|curve| &curve.id)
                             .chain(path.auxiliaries.iter())

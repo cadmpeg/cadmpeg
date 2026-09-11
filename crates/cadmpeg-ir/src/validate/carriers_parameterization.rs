@@ -152,7 +152,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 let sections = definition_payload.sections();
 
                 for entry in sections.iter().flat_map(|section| &section.entries) {
-                    if let Some(curve) = &entry.path.curve {
+                    if let Some(curve) = &entry.path.path {
                         curves.insert(curve.id.as_str());
                     }
                     curves.extend(
@@ -342,7 +342,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .iter()
                     .flat_map(|section| &section.entries)
                 {
-                    if let Some(curve) = &entry.path.curve {
+                    if let Some(curve) = &entry.path.path {
                         curves.insert(curve.id.as_str());
                     }
                     curves.extend(
@@ -420,7 +420,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 for path in std::iter::once(&construction.base_path)
                     .chain(construction.entries.iter().map(|entry| &entry.path))
                 {
-                    if let Some(curve) = &path.curve {
+                    if let Some(curve) = &path.path {
                         curves.insert(curve.id.as_str());
                     }
                     curves.extend(
