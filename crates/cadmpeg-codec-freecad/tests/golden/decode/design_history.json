@@ -5829,7 +5829,6 @@
           "outputs": [
             "fcstd:model:body#Fillet:Shape:Fillet.Shape.brp:47"
           ],
-          "parent": "fcstd:design:feature#Body",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "true"
@@ -5891,7 +5890,6 @@
             "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:24",
             "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24"
           ],
-          "parent": "fcstd:design:feature#Body",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "false"
@@ -5914,7 +5912,6 @@
           "outputs": [
             "fcstd:model:body#PadSketch:Shape:PadSketch.Shape.brp:9"
           ],
-          "parent": "fcstd:design:feature#Body",
           "source_properties": {
             "MapMode": "0",
             "Visibility": "true"
@@ -5977,7 +5974,6 @@
             "fcstd:model:body#Pocket:AddSubShape:Pocket.AddSubShape.brp:9",
             "fcstd:model:body#Pocket:Shape:Pocket.Shape.brp:37"
           ],
-          "parent": "fcstd:design:feature#Body",
           "source_properties": {
             "Suppressed": "false",
             "Visibility": "false"
@@ -6000,7 +5996,6 @@
           "outputs": [
             "fcstd:model:body#PocketSketch:Shape:PocketSketch.Shape.brp:3%4076889a8b8100da92"
           ],
-          "parent": "fcstd:design:feature#Body",
           "source_properties": {
             "MapMode": "0",
             "Visibility": "true"

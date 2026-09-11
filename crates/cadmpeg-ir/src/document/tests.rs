@@ -96,6 +96,8 @@ fn current_json_without_configurations_defaults_to_empty() {
     assert!(decoded.model.configurations.is_empty());
 }
 
+/// The structural edge is on the wire once, inside the owning tree node's
+/// ordered children, and a tree child states no regeneration parent.
 #[test]
 fn feature_parent_wire_is_derived_from_its_single_owner() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
@@ -121,11 +123,13 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     };
 
     let value = serde_json::to_value(&model).unwrap();
-    assert_eq!(value["features"][1]["parent"], parent_id.as_str());
+    assert!(value["features"][1].get("parent").is_none());
+    assert!(value["features"][1].get("regeneration_parent").is_none());
     assert_eq!(
         value["features"][0]["definition"]["children"]["children"][0],
         child_id.as_str()
     );
+    assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
     assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
 
     let mut regeneration = Model {
@@ -139,13 +143,43 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         .set_feature_regeneration_parent(child_id, parent_id.clone())
         .unwrap();
     let value = serde_json::to_value(&regeneration).unwrap();
-    assert_eq!(value["features"][1]["parent"], parent_id.as_str());
+    assert_eq!(
+        value["features"][1]["regeneration_parent"],
+        parent_id.as_str()
+    );
     assert_eq!(
         serde_json::from_value::<Model>(value).unwrap(),
         regeneration
     );
 }
 
+/// The deleted `parent` key is refused at the level it was deleted from.
+#[test]
+fn feature_wire_refuses_the_deleted_parent_key() {
+    let wire = serde_json::json!({
+        "features": [
+            {
+                "id": "test:model:feature#parent",
+                "ordinal": 0,
+                "definition": {
+                    "definition": "tree_node",
+                    "role": "history",
+                    "children": {"children": ["test:model:feature#child"], "active_child": "test:model:feature#child"}
+                }
+            },
+            {
+                "id": "test:model:feature#child",
+                "ordinal": 1,
+                "parent": "test:model:feature#parent",
+                "definition": {"definition": "stored_geometry"}
+            }
+        ]
+    });
+    let error = serde_json::from_value::<Model>(wire).unwrap_err().to_string();
+    assert!(error.contains("unknown field `parent`"), "{error}");
+}
+
+/// A tree child cannot also state a regeneration predecessor.
 #[test]
 fn feature_parent_wire_rejects_disagreement_with_tree_children() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
@@ -170,9 +204,13 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
         ..Model::default()
     };
     let mut value = serde_json::to_value(model).unwrap();
-    value["features"][2]["parent"] = serde_json::Value::String(second_id.into_string());
+    value["features"][2]["regeneration_parent"] =
+        serde_json::Value::String(second_id.into_string());
 
-    assert!(serde_json::from_value::<Model>(value).is_err());
+    let error = serde_json::from_value::<Model>(value)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("states no regeneration parent"), "{error}");
 }
 
 #[test]
@@ -459,6 +497,22 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
     let wire = serde_json::to_value(&model).unwrap();
     assert!(wire["features"][0]["definition"].get("children").is_none());
-    assert_eq!(wire["features"][1]["parent"], parent_id.as_str());
-    assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
+    assert_eq!(
+        wire["features"][1]["regeneration_parent"],
+        parent_id.as_str()
+    );
+    assert!(wire["features"][1].get("parent").is_none());
+    assert_eq!(
+        serde_json::from_value::<Model>(wire.clone()).unwrap(),
+        model
+    );
+
+    // The structural edge is stated once, by the owning tree node's children.
+    let mut owned = wire;
+    owned["features"][0]["definition"]["children"]["children"] =
+        serde_json::json!([child_id.as_str()]);
+    let error = serde_json::from_value::<Model>(owned)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("states no regeneration parent"), "{error}");
 }

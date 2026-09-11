@@ -52,7 +52,7 @@
           ],
           "id": "creo:model:feature#8053",
           "ordinal": 1,
-          "parent": "creo:model:feature#8051",
+          "regeneration_parent": "creo:model:feature#8051",
           "source_properties": {
             "featdefs_row_schema_classes": "917",
             "featdefs_schema_class": "917",
