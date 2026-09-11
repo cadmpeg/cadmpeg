@@ -2242,115 +2242,115 @@
       },
       "exactness": {
         "f3d:brep:entity#16": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#17": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#18": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#19": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#20": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#21": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#22": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#23": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#24": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#25": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#26": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#27": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#28": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#29": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#30": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#31": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#32": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#33": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }

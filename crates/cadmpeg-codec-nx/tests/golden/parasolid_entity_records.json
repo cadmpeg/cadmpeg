@@ -267,10 +267,12 @@
       "annotations": {
         "exactness": {
           "nx:container:parasolid#0": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:s0:attribute-class-use#50-178": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           }
         },
         "provenance": {

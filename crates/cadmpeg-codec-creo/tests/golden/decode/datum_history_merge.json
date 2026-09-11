@@ -661,7 +661,8 @@
     "annotations": {
       "exactness": {
         "creo:ActDatums:section#76": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         }
       },
       "provenance": {

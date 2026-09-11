@@ -249,19 +249,20 @@
             "entity": "derived",
             "fields": {
               "links": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:s0:nurbs-crv#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:nurbs-surf#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {

@@ -549,7 +549,8 @@
     "annotations": {
       "exactness": {
         "creo:container:expanded_section#SolidPrimdata:211": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

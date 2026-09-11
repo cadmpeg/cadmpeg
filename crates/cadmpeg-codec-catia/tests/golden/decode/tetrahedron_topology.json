@@ -1179,324 +1179,328 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:body#0": {
           "entity": "inferred",
           "fields": {
             "kind": "derived",
             "regions": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:coedge#0:0:0": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#0:0:1": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#0:0:2": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#1:0:0": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#1:0:1": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#1:0:2": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#2:0:0": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#2:0:1": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#2:0:2": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#3:0:0": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#3:0:1": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:coedge#3:0:2": {
-          "entity": "byte_exact",
           "fields": {
             "edge": "derived",
             "owner_loop": "derived",
             "radial_next": "derived",
             "sense": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:curve#290": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.direction": "derived",
             "geometry.origin": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:curve#301": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.direction": "derived",
             "geometry.origin": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:curve#312": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.direction": "derived",
             "geometry.origin": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:curve#323": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.direction": "derived",
             "geometry.origin": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:curve#334": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.direction": "derived",
             "geometry.origin": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:curve#345": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.direction": "derived",
             "geometry.origin": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:edge#0": {
-          "entity": "byte_exact",
           "fields": {
             "curve": "derived",
             "end": "derived",
             "param_range": "derived",
             "start": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:edge#1": {
-          "entity": "byte_exact",
           "fields": {
             "curve": "derived",
             "end": "derived",
             "param_range": "derived",
             "start": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:edge#2": {
-          "entity": "byte_exact",
           "fields": {
             "curve": "derived",
             "end": "derived",
             "param_range": "derived",
             "start": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:edge#3": {
-          "entity": "byte_exact",
           "fields": {
             "curve": "derived",
             "end": "derived",
             "param_range": "derived",
             "start": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:edge#4": {
-          "entity": "byte_exact",
           "fields": {
             "curve": "derived",
             "end": "derived",
             "param_range": "derived",
             "start": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:edge#5": {
-          "entity": "byte_exact",
           "fields": {
             "curve": "derived",
             "end": "derived",
             "param_range": "derived",
             "start": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:face#0": {
-          "entity": "byte_exact",
           "fields": {
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:face#1": {
-          "entity": "byte_exact",
           "fields": {
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:face#2": {
-          "entity": "byte_exact",
           "fields": {
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:face#3": {
-          "entity": "byte_exact",
           "fields": {
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:loop#0:0": {
-          "entity": "byte_exact",
           "fields": {
             "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived",
             "vertex_uses": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:loop#1:0": {
-          "entity": "byte_exact",
           "fields": {
             "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived",
             "vertex_uses": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:loop#2:0": {
-          "entity": "byte_exact",
           "fields": {
             "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived",
             "vertex_uses": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:loop#3:0": {
-          "entity": "byte_exact",
           "fields": {
             "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived",
             "vertex_uses": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:region#0-0": {
           "entity": "inferred",
           "fields": {
             "body": "derived",
             "shells": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:shell#0-0": {
           "entity": "inferred",
           "fields": {
             "faces": "derived",
             "region": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:v#0": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#1": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#2": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#3": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {

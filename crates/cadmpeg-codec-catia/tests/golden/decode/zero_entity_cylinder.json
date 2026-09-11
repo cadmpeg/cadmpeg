@@ -540,7 +540,8 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         }
       },
       "provenance": {

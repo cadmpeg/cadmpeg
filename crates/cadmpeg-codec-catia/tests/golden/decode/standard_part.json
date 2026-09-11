@@ -735,40 +735,44 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:body#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:standard:circle#0": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.axis": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:region#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:standard:shell#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:standard:v#0": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#1": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#2": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {

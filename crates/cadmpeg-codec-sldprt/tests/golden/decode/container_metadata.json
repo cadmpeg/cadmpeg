@@ -194,7 +194,8 @@
     "annotations": {
       "exactness": {
         "sldprt:file:block#54": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         }
       },
       "provenance": {

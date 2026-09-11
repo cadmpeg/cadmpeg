@@ -278,31 +278,32 @@
             "entity": "derived",
             "fields": {
               "links": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:s0:crv#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:pt#0": {
-            "entity": "byte_exact",
             "fields": {
               "position": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:region#12": {
-            "entity": "byte_exact",
             "fields": {
               "body": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {

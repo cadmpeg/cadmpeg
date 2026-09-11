@@ -672,76 +672,100 @@
     "annotations": {
       "exactness": {
         "rhino:object:body#record-000000-offset-177": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.slot-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.slot-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.slot-2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.c3-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.c3-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.c3-2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.slot-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.slot-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.slot-2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:face#record-000000-offset-177.slot-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:loop#record-000000-offset-177.slot-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.trim-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.trim-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.trim-2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.vertex-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.vertex-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.vertex-2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:region#record-000000-offset-177.slot-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:shell#record-000000-offset-177.component-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:surface#record-000000-offset-177.slot-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.slot-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.slot-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.slot-2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },

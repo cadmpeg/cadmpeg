@@ -346,19 +346,22 @@
     "annotations": {
       "exactness": {
         "sldprt:brep:body#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:surf#10": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {

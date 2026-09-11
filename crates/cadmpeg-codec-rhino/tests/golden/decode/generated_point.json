@@ -319,16 +319,20 @@
     "annotations": {
       "exactness": {
         "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },

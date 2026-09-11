@@ -583,20 +583,20 @@
       },
       "exactness": {
         "f3d:brep:entity#10": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "param_range": "derived"
           }
         },
         "f3d:brep:entity#19": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.axis": "derived",
             "geometry.ref_direction": "derived"
           }
         },
         "f3d:brep:entity#6": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"

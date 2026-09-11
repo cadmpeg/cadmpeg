@@ -558,10 +558,12 @@
     "annotations": {
       "exactness": {
         "creo:NovisGeom:section#143": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         },
         "creo:VisibGeom:section#76": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         }
       },
       "provenance": {

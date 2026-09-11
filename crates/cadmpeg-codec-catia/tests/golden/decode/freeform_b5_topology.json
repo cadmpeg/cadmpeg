@@ -510,7 +510,8 @@
     "annotations": {
       "exactness": {
         "catia:payload:unknown#brep-stream": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         }
       },
       "provenance": {

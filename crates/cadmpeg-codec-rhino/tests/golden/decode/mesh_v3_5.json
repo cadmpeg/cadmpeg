@@ -306,7 +306,8 @@
     "annotations": {
       "exactness": {
         "rhino:object:tessellation#record-000000-offset-177": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },

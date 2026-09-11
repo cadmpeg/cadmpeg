@@ -742,13 +742,16 @@
     "annotations": {
       "exactness": {
         "creo:featdefs:sketch#40": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:model:sketch#40": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:model:sketch_feature#40": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

@@ -1735,613 +1735,614 @@
             "entity": "derived",
             "fields": {
               "links": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:s0:face#300": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#301": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#302": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#303": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#304": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#305": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#306": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#307": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#308": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#309": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#310": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#311": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#312": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#313": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#314": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#315": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#316": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#317": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#318": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#319": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#320": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#321": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#322": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#323": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#324": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#325": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#326": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#327": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#328": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#329": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#330": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#331": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#332": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#333": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#334": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#335": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#336": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#337": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#338": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#339": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#340": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#341": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#342": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#343": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#344": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#345": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#346": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#347": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#348": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#349": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:region#4": {
-            "entity": "byte_exact",
             "fields": {
               "body": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#1": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#10": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#11": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#12": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#13": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#14": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#15": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#16": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#17": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#18": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#19": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#2": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#20": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#21": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#22": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#23": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#24": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#25": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#26": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#27": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#28": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#29": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#3": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#30": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#31": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#32": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#33": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#34": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#35": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#36": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#37": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#38": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#39": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#4": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#40": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#41": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#42": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#43": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#44": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#45": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#46": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#47": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#48": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#49": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#5": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#6": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#7": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#8": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#9": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {
