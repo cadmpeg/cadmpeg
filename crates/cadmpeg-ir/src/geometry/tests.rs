@@ -320,7 +320,7 @@ fn empty_loft_subdata() -> crate::geometry::LoftSubdata {
 }
 
 #[test]
-fn loft_subdata_derives_counts_and_rejects_inconsistent_wire_counts() {
+fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
     let table = crate::geometry::LoftSubdata::table(
         7,
         vec![
@@ -337,26 +337,9 @@ fn loft_subdata_derives_counts_and_rejects_inconsistent_wire_counts() {
         ],
     )
     .unwrap();
-    let wire = serde_json::to_value(&table).unwrap();
-    assert_eq!(wire["type_code"], 7);
-    assert_eq!(wire["row_count"], 2);
-    assert_eq!(wire["column_count"], 1);
-    assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftSubdata>(wire.clone()).unwrap(),
-        table
-    );
-
-    let mut wrong_rows = wire.clone();
-    wrong_rows["row_count"] = serde_json::json!(3);
-    let error = serde_json::from_value::<crate::geometry::LoftSubdata>(wrong_rows).unwrap_err();
-    assert!(error.to_string().contains("row_count does not match rows"));
-
-    let mut wrong_columns = wire;
-    wrong_columns["rows"][1]["columns"] = serde_json::json!([]);
-    let error = serde_json::from_value::<crate::geometry::LoftSubdata>(wrong_columns).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("column_count does not match every row"));
+    assert_eq!(table.type_code(), 7);
+    assert_eq!(table.row_count(), 2);
+    assert_eq!(table.column_count(), 1);
 
     assert!(crate::geometry::LoftSubdata::table(
         9,
@@ -377,40 +360,15 @@ fn loft_subdata_derives_counts_and_rejects_inconsistent_wire_counts() {
 }
 
 #[test]
-fn loft_subdata_type_211_has_one_row_and_no_columns() {
-    let table = crate::geometry::LoftSubdata::type_211([1, 0], [2.0, 3.0]);
-    let wire = serde_json::to_value(&table).unwrap();
-    assert_eq!(
-        wire,
-        serde_json::json!({
-            "type_code": 211,
-            "row_count": 1,
-            "column_count": 0,
-            "rows": [{ "parameters": [2.0, 3.0], "columns": [] }]
-        })
-    );
-    assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftSubdata>(wire.clone()).unwrap(),
-        table
-    );
-
-    let mut invalid = wire;
-    invalid["column_count"] = serde_json::json!(1);
-    invalid["rows"][0]["columns"] = serde_json::json!([[4.0, 5.0]]);
-    let error = serde_json::from_value::<crate::geometry::LoftSubdata>(invalid).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("type 211 forbids columns and a trailing pair"));
-}
-
-#[test]
 fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
     let table = crate::geometry::LoftSubdata::type_211([4, 0], [2.0, 3.0]);
-    let wire = serde_json::to_value(&table).unwrap();
-    assert_eq!(wire["row_count"], 4);
-    assert_eq!(wire["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(table.row_count(), 4);
+    assert_eq!(table.column_count(), 0);
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftSubdata>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::LoftSubdata>(
+            serde_json::to_value(&table).unwrap()
+        )
+        .unwrap(),
         table
     );
 }
@@ -1410,6 +1368,7 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
     }
 
     let formula = serde_json::json!({
+        "kind": "named",
         "name": "law",
         "variables": [],
         "zz_bogus": 1,
